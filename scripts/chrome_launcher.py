@@ -140,6 +140,7 @@ def launch_chrome(
         f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--remote-allow-origins=*",  # 允许 WebSocket 连接
     ]
 
     if headless:
