@@ -52,3 +52,9 @@ images/publish_temp/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code
+.claude/
+
+# Generated data
+yahoo_china_news_*.json
