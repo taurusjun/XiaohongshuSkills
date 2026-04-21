@@ -278,6 +278,22 @@ def auto_classify(title: str, content: str = "", keyword: str = "中国") -> Tup
     if "韓中" in text or "中韩" in text:
         tags.append("中韩关系")
 
+    # 娱乐标签（统一用中文/英文）
+    entertainment_map = {
+        "AKB": ["akb48", "akb", "akb47"],
+        "乃木坂": ["乃木坂46", "乃木坂"],
+        "欅坂": ["欅坂46", "欅坂", "櫻坂"],
+        "cosplay": ["コスプレ", "コスプ", "cosplay"],
+        "动漫": ["アニメ", "anime"],
+        "游戏": ["ゲーム", "game"],
+        "鸣潮": ["鳴潮"],
+        "崩坏": ["崩壊", "崩坏"],
+        "星穹铁道": ["スターレイル"],
+    }
+    for tag, keywords in entertainment_map.items():
+        if any(k in text for k in keywords):
+            tags.append(tag)
+
     return category, list(set(tags))
 
 
