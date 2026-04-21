@@ -320,8 +320,20 @@ def main():
             "#日本新闻", "#日本热点", "#日本资讯",
             "#日语学习打卡", "#日本文化", "#日本生活"
         ]
+        # 标签规范化映射（日文/繁体 → 中文）
+        TAG_NORMALIZE = {
+            "コスプレ": "cosplay", "コスプ": "cosplay",
+            "AKB48": "AKB", "乃木坂46": "乃木坂", "欅坂46": "欅坂",
+            "鳴潮": "鸣潮", "原神": "原神", "崩壊": "崩坏", "スターレイル": "星穹铁道",
+            "アニメ": "动漫", "マンガ": "漫画", "ゲーム": "游戏",
+            "中東": "中东", "政治": "时政",
+        }
+
+        def normalize_tag(t: str) -> str:
+            return TAG_NORMALIZE.get(t, t)
+
         # 从 Notion 标签 + 必选标签 + 随机1-2个热门标签
-        all_tags = list(info.get("tags", []))
+        all_tags = [normalize_tag(t) for t in info.get("tags", [])]
         if must_tag not in all_tags:
             all_tags.append(must_tag)
         random_hot = random.sample(hot_tags, min(2, len(hot_tags)))
