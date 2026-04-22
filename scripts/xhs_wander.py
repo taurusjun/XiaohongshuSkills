@@ -28,11 +28,13 @@ except ImportError:
 
 # ============ 默认配置 ============
 
-DEFAULT_LIKE_PROB = 0.5       # 点赞概率
-DEFAULT_BOOKMARK_PROB = 0.25  # 收藏概率
-DEFAULT_COMMENT_PROB = 0.15   # 评论概率（需要 LiteLLM）
-DEFAULT_BROWSE_DELAY = (3, 8) # 浏览停留秒数区间（模拟阅读）
-DEFAULT_ACTION_DELAY = (1, 3) # 操作间隔秒数区间
+DEFAULT_LIKE_PROB = 0.25       # 点赞概率（保守，降低风控风险）
+DEFAULT_BOOKMARK_PROB = 0.10   # 收藏概率
+DEFAULT_COMMENT_PROB = 0.05    # 评论概率（最容易触发风控，最低）
+DEFAULT_BROWSE_DELAY = (8, 20) # 浏览停留秒数（模拟阅读，拉长）
+DEFAULT_ACTION_DELAY = (5, 12) # 操作间隔秒数（操作后强制冷却）
+DEFAULT_NOTE_DELAY = (15, 30)  # 每条笔记之间的间隔（帖子级别冷却）
+MAX_LIKES_PER_SESSION = 10     # 单次会话点赞上限，超出后停止点赞
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
@@ -119,33 +121,50 @@ def search_feeds(keyword: str, sort_by: str = "最新") -> list:
     return []
 
 
-def do_like(feed_id: str, xsec_token: str, dry_run: bool) -> bool:
+RISK_KEYWORDS = ["主页不见了", "你的主页", "账号异常", "操作频繁", "请稍后再试"]
+
+
+def check_risk(text: str) -> bool:
+    return any(k in text for k in RISK_KEYWORDS)
+
+
+def do_like(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool]:
+    """返回 (success, risk_detected)"""
     if dry_run:
         print("  [dry] 点赞")
-        return True
+        return True, False
     code, out, err = run_cmd(["--reuse-existing-tab", "note-upvote", "--feed-id", feed_id, "--xsec-token", xsec_token])
-    return code == 0
+    combined = out + err
+    if check_risk(combined):
+        return False, True
+    return code == 0, False
 
 
-def do_bookmark(feed_id: str, xsec_token: str, dry_run: bool) -> bool:
+def do_bookmark(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool]:
     if dry_run:
         print("  [dry] 收藏")
-        return True
+        return True, False
     code, out, err = run_cmd(["--reuse-existing-tab", "note-bookmark", "--feed-id", feed_id, "--xsec-token", xsec_token])
-    return code == 0
+    combined = out + err
+    if check_risk(combined):
+        return False, True
+    return code == 0, False
 
 
-def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> bool:
+def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> tuple[bool, bool]:
     if dry_run:
         print(f"  [dry] 评论: {comment}")
-        return True
+        return True, False
     code, out, err = run_cmd([
         "--reuse-existing-tab", "post-comment-to-feed",
         "--feed-id", feed_id,
         "--xsec-token", xsec_token,
         "--content", comment,
     ])
-    return code == 0
+    combined = out + err
+    if check_risk(combined):
+        return False, True
+    return code == 0, False
 
 
 # ============ 主逻辑 ============
@@ -167,12 +186,15 @@ def wander(
     print("=" * 60)
 
     stats = {"like": 0, "bookmark": 0, "comment": 0, "browse": 0, "skip": 0}
+    risk_triggered = False
 
     # 每个关键词分配配额
     per_kw = max(1, count // len(keywords))
     remainder = count - per_kw * len(keywords)
 
     for ki, kw in enumerate(keywords):
+        if risk_triggered:
+            break
         quota = per_kw + (1 if ki < remainder else 0)
         print(f"\n🔍 搜索「{kw}」，计划处理 {quota} 条")
 
@@ -186,6 +208,8 @@ def wander(
         selected = feeds[:quota]
 
         for i, feed in enumerate(selected, 1):
+            if risk_triggered:
+                break
             feed_id = feed.get("id", "")
             xsec_token = feed.get("xsecToken", "")
             title = feed.get("title", "（无标题）")
@@ -201,32 +225,50 @@ def wander(
             human_sleep(*DEFAULT_BROWSE_DELAY, "浏览")
             stats["browse"] += 1
 
-            # 点赞
-            if random.random() < like_prob:
-                ok = do_like(feed_id, xsec_token, dry_run)
+            # 点赞（有单次会话上限）
+            if stats["like"] < MAX_LIKES_PER_SESSION and random.random() < like_prob:
+                ok, risk = do_like(feed_id, xsec_token, dry_run)
+                if risk:
+                    print("  🚨 检测到风控提示，停止操作！")
+                    risk_triggered = True
+                    break
                 print(f"  👍 点赞: {'✅' if ok else '❌'}")
                 if ok:
                     stats["like"] += 1
                 human_sleep(*DEFAULT_ACTION_DELAY)
 
             # 收藏
-            if random.random() < bookmark_prob:
-                ok = do_bookmark(feed_id, xsec_token, dry_run)
+            if not risk_triggered and random.random() < bookmark_prob:
+                ok, risk = do_bookmark(feed_id, xsec_token, dry_run)
+                if risk:
+                    print("  🚨 检测到风控提示，停止操作！")
+                    risk_triggered = True
+                    break
                 print(f"  🔖 收藏: {'✅' if ok else '❌'}")
                 if ok:
                     stats["bookmark"] += 1
                 human_sleep(*DEFAULT_ACTION_DELAY)
 
             # 评论
-            if random.random() < comment_prob:
-                comment = generate_comment(title)
-                ok = do_comment(feed_id, xsec_token, comment, dry_run)
-                print(f"  💬 评论「{comment}」: {'✅' if ok else '❌'}")
+            if not risk_triggered and random.random() < comment_prob:
+                comment_text = generate_comment(title)
+                ok, risk = do_comment(feed_id, xsec_token, comment_text, dry_run)
+                if risk:
+                    print("  🚨 检测到风控提示，停止操作！")
+                    risk_triggered = True
+                    break
+                print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
                 if ok:
                     stats["comment"] += 1
                 human_sleep(*DEFAULT_ACTION_DELAY)
 
+            # 每条笔记之间额外冷却
+            if i < len(selected):
+                human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+
     print("\n" + "=" * 60)
+    if risk_triggered:
+        print("⚠️  因风控提示提前终止")
     print(f"✅ 闲逛完成 | 浏览:{stats['browse']}  点赞:{stats['like']}  收藏:{stats['bookmark']}  评论:{stats['comment']}  跳过:{stats['skip']}")
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}")
 
