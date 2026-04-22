@@ -9,11 +9,13 @@
 """
 
 import argparse
+import hashlib
 import os
 import re
 import sys
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import requests
 
@@ -27,6 +29,10 @@ from bs4 import BeautifulSoup
 
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = "34aaaa31a0aa806aa20bdd5f9a6d53e8"
+
+LITELLM_URL = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
+LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
+LITELLM_MODEL = os.environ.get("LITELLM_MODEL", "bedrock-claude-4-6-sonnet")
 
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
@@ -79,6 +85,87 @@ def extract_tokens(title: str) -> list[str]:
         if any(k in title_lower for k in keywords):
             found.append(token)
     return found[:5]
+
+
+def url_to_key(url: str) -> str:
+    """取 URL 最后一段路径（slug）的 MD5"""
+    slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+    return hashlib.md5(slug.encode()).hexdigest()
+
+
+def fetch_article_text(url: str) -> str:
+    """抓取文章正文（前 2000 字符，供摘要用）"""
+    try:
+        resp = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }, timeout=12)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # crypto.news 正文在 .article-content 或 .post-content
+        body = (soup.find(class_=re.compile(r"article.content|post.content|entry.content"))
+                or soup.find("article"))
+        if body:
+            # 去掉 script/style
+            for tag in body(["script", "style", "aside", "nav"]):
+                tag.decompose()
+            return body.get_text(" ", strip=True)[:2000]
+    except Exception:
+        pass
+    return ""
+
+
+def summarize_zh(title: str, body: str) -> tuple[str, str]:
+    """用 LiteLLM 生成中文标题 + 摘要，返回 (zh_title, summary)"""
+    if not LITELLM_API_KEY:
+        return "", ""
+    try:
+        prompt = (
+            f"请对以下加密货币新闻完成两项任务，直接输出结果，不要有多余解释：\n\n"
+            f"1. 用中文翻译标题（一句话，不超过30字）\n"
+            f"2. 用中文写3-5句摘要，简洁客观\n\n"
+            f"按以下格式输出：\n"
+            f"【标题】翻译后的中文标题\n"
+            f"【摘要】3-5句中文摘要\n\n"
+            f"原文标题：{title}\n\n正文节选：{body[:1500]}"
+        )
+        resp = requests.post(
+            f"{LITELLM_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
+            json={
+                "model": LITELLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 4000,
+            },
+            timeout=20,
+        )
+        if resp.status_code == 200:
+            msg = resp.json()["choices"][0]["message"]
+            raw = msg.get("content") or ""
+            if not raw.strip():
+                rc = msg.get("reasoning_content") or ""
+                # GLM-5: 最终答案在 reasoning_content 末尾，找【标题】【摘要】标记
+                if "【标题】" in rc:
+                    raw = rc[rc.rfind("【标题】"):]
+                else:
+                    paras = [p.strip() for p in rc.split("\n\n") if p.strip()]
+                    candidates = [p for p in paras[-6:] if any('\u4e00' <= c <= '\u9fff' for c in p)]
+                    raw = "\n\n".join(candidates)
+
+            if raw.strip():
+                # 解析 【标题】 和 【摘要】
+                zh_title, summary = "", ""
+                for line in raw.splitlines():
+                    line = line.strip()
+                    if line.startswith("【标题】"):
+                        zh_title = line.replace("【标题】", "").strip()
+                    elif line.startswith("【摘要】"):
+                        summary = line.replace("【摘要】", "").strip()
+                # 摘要可能跨多行
+                if "【摘要】" in raw and not summary:
+                    summary = raw.split("【摘要】", 1)[1].strip()
+                return zh_title, summary
+    except Exception as e:
+        print(f"  ⚠️ 摘要生成失败: {e}")
+    return "", ""
 
 
 # 自动打标签关键词
@@ -205,22 +292,26 @@ def page_exists(title: str) -> bool:
 def create_page(news: dict) -> bool:
     tags = auto_tags(news["title"])
     category = map_category(news.get("category_raw", ""))
+    key = url_to_key(news["link"])
+    summary = news.get("summary", "")
+    zh_title = news.get("zh_title", "") or news["title"]
 
     properties = {
-        "Name": {"title": [{"text": {"content": news["title"]}}]},
-        "来源": {"rich_text": [{"text": {"content": "crypto.news"}}]},
-        "发布时间": {"rich_text": [{"text": {"content": news.get("pub_time", "")}}]},
-        "原文链接": {"url": news["link"]},
-        "分类": {"select": {"name": category}},
+        "Name":       {"title": [{"text": {"content": zh_title}}]},
+        "key":        {"rich_text": [{"text": {"content": key}}]},
+        "来源":       {"rich_text": [{"text": {"content": "crypto.news"}}]},
+        "发布时间":   {"rich_text": [{"text": {"content": news.get("pub_time", "")}}]},
+        "原文链接":   {"url": news["link"]},
+        "分类":       {"select": {"name": category}},
         "发布BNSquare": {"checkbox": False},
     }
 
+    if summary:
+        properties["摘要"] = {"rich_text": [{"text": {"content": summary[:2000]}}]}
     if news.get("image_url"):
         properties["封面图"] = {"url": news["image_url"]}
-
     if tags:
         properties["标签"] = {"multi_select": [{"name": t} for t in tags]}
-
     tokens = extract_tokens(news["title"])
     if tokens:
         properties["tokens"] = {"multi_select": [{"name": t} for t in tokens]}
@@ -263,16 +354,27 @@ def main():
         print(f"  tokens: {extract_tokens(news['title'])}")
         print(f"  时间: {news['pub_time']}")
 
+        # 抓文章正文（同时顺手取封面图）
+        print("  正在抓取正文...")
+        body_text = fetch_article_text(news["link"])
         if not news.get("image_url"):
-            print("  封面图: 抓取 og:image...")
             news["image_url"] = fetch_og_image(news["link"])
         print(f"  封面图: {news['image_url'][:60] if news['image_url'] else '无'}")
+
+        # 生成中文标题 + 摘要
+        print("  生成中文标题和摘要...")
+        zh_title, summary = summarize_zh(news["title"], body_text)
+        news["zh_title"] = zh_title
+        news["summary"] = summary
+        print(f"  中文标题: {zh_title or '(无)'}")
+        print(f"  摘要: {summary[:80]}..." if summary else "  摘要: 无")
+        print(f"  key: {url_to_key(news['link'])}")
 
         if args.dry_run:
             print("  [dry-run] 跳过写入\n")
             continue
 
-        if page_exists(news["title"]):
+        if page_exists(zh_title or news["title"]):
             print("  ⏭  已存在，跳过\n")
             skipped += 1
             continue
