@@ -149,38 +149,13 @@ class SquarePublisher:
         self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": "Return", "code": "Enter", "windowsVirtualKeyCode": 13})
         time.sleep(0.08)
 
-    def fill_content(self, content: str) -> bool:
-        """填入正文，保留段落空行"""
-        self._clear_editor()
-        lines = content.split("\n")
-        for i, line in enumerate(lines):
-            if line.strip():
-                self._insert_text(line)
-            # 每行后都按 Enter（空行行 = 两次 Enter = 段落间距）
-            if i < len(lines) - 1:
-                self._press_enter()
-        time.sleep(0.5)
-        text = self._get_editor_text()
-        counter = self._get_counter()
-        print(f"[square] 内容已填入 {counter} 字，编辑器预览: {text[:50]}...")
-        return len(text) > 0
-
-    def insert_tag(self, keyword: str) -> bool:
-        """
-        在光标处插入 tag：
-        1. 输入 #keyword 触发 suggestion dropdown
-        2. 优先点选匹配话题；若无匹配则选「+新话题」
-        """
-        self._key("Return", "Enter")
-        time.sleep(0.1)
-
-        # 逐字输入 #keyword（只用 insertText，避免重复）
-        for ch in f"#{keyword}":
-            self._insert_text(ch)
+    def _insert_mention(self, prefix: str, keyword: str) -> bool:
+        """输入 prefix+keyword（如 $BTC 或 #DOGE），从弹窗点选第一个匹配项"""
+        for ch in f"{prefix}{keyword}":
+            self._send("Input.insertText", {"text": ch})
             time.sleep(0.08)
         time.sleep(1.5)
 
-        # 找 suggestion 列表
         result = self._eval("""
             (function() {
                 var sug = document.querySelector('.editor-suggestion');
@@ -190,53 +165,67 @@ class SquarePublisher:
                 return JSON.stringify(items);
             })()
         """)
-
         if not result:
-            print(f"  ⚠️ #{keyword}: 未出现 suggestion，跳过")
-            # 清掉已输入的 # 触发文字
-            for _ in range(len(keyword) + 1):
-                self._key("Backspace", "Backspace")
-            return False
+            return False  # 无弹窗，文字已作普通文本留着
 
         items = json.loads(result)
-        print(f"  候选话题: {items[:4]}")
-
-        # 找最匹配的项（精确匹配 or 包含）
         kw_lower = keyword.lower()
-        match_idx = None
-        for i, item in enumerate(items):
-            clean = item.lstrip("#").lower()
-            if clean == kw_lower or kw_lower in clean:
-                match_idx = i
-                break
-
-        # 如无精确匹配，用「+新话题」
-        if match_idx is None:
-            for i, item in enumerate(items):
-                if "新话题" in item or "+" in item:
-                    match_idx = i
-                    break
-
-        if match_idx is None:
-            match_idx = 0
-
-        chosen = items[match_idx] if match_idx < len(items) else ""
-        print(f"  选择: {chosen}")
-
-        # 点击对应项
+        match_idx = next(
+            (i for i, t in enumerate(items) if kw_lower in t.lstrip(prefix).lower()),
+            0
+        )
         idx_js = json.dumps(match_idx)
         clicked = self._eval(f"""
             (function() {{
                 var sug = document.querySelector('.editor-suggestion');
                 if (!sug) return false;
-                var items = sug.querySelectorAll('.css-chc6cu');
-                var el = items[{idx_js}];
+                var el = sug.querySelectorAll('.css-chc6cu')[{idx_js}];
                 if (el) {{ el.click(); return true; }}
                 return false;
             }})()
         """)
-        time.sleep(0.8)
+        time.sleep(0.5)
         return bool(clicked)
+
+    def _insert_line(self, line: str):
+        """插入一行文字，自动处理 $TOKEN 和 #TAG 触发弹窗"""
+        import re
+        # 按 $TOKEN 和 #TAG 拆分
+        parts = re.split(r'(\$[A-Za-z]+|#[^\s#$]+)', line)
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith('$'):
+                self._insert_mention('$', part[1:])
+            elif part.startswith('#'):
+                self._insert_mention('#', part[1:])
+            else:
+                self._send("Input.insertText", {"text": part})
+                time.sleep(0.05)
+
+    def fill_content(self, content: str) -> bool:
+        """填入正文，保留段落空行，自动处理 $TOKEN / #TAG"""
+        self._clear_editor()
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip():
+                self._insert_line(line)
+            if i < len(lines) - 1:
+                self._press_enter()
+        time.sleep(0.5)
+        text = self._get_editor_text()
+        counter = self._get_counter()
+        print(f"[square] 内容已填入 {counter} 字，编辑器预览: {text[:50]}...")
+        return len(text) > 0
+
+    def insert_tag(self, keyword: str) -> bool:
+        """在正文末尾换行插入 #话题 tag"""
+        self._press_enter()
+        time.sleep(0.1)
+        ok = self._insert_mention('#', keyword)
+        if not ok:
+            print(f"  ⚠️ #{keyword}: suggestion 未出现")
+        return ok
 
     def _mouse_click(self, x: float, y: float):
         """用 CDP 真实鼠标事件点击坐标"""
