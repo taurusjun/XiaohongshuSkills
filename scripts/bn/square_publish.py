@@ -220,6 +220,56 @@ class SquarePublisher:
         print(f"[square] 内容已填入 {counter} 字，编辑器预览: {text[:50]}...")
         return len(text) > 0
 
+    def attach_coin_card(self, symbol: str) -> bool:
+        """点击工具栏「币种信息」按钮，搜索并选择指定 symbol（如 BTC/ETH）"""
+        # 点击 trade-widget-icon 按钮
+        clicked = self._eval("""
+            (function(){
+                var btn = document.querySelector('.trade-widget-icon.icon-box');
+                if (!btn) return false;
+                btn.click();
+                return true;
+            })()
+        """)
+        if not clicked:
+            print(f"  ⚠️ 未找到币种信息按钮")
+            return False
+        time.sleep(1.5)
+
+        # 聚焦搜索框并输入 symbol
+        self._eval("(function(){ var i=document.querySelector('input.bn-textField-input'); if(i) i.focus(); })()")
+        time.sleep(0.3)
+        self._send("Input.insertText", {"text": symbol})
+        time.sleep(1.5)
+
+        # 点第一个精确匹配的 item（symbol 不含 USDT/永续）
+        result = self._eval(f"""
+            (function(){{
+                var target = {json.dumps(symbol)};
+                var spans = Array.from(document.querySelectorAll('*')).filter(function(el){{
+                    return el.children.length === 0 && (el.innerText||'').trim() === target && el.offsetParent;
+                }});
+                if (spans.length > 0) {{
+                    var p = spans[0].closest('[class*="cursor"]') || spans[0].parentElement;
+                    if (p) {{ p.click(); return true; }}
+                }}
+                return false;
+            }})()
+        """)
+        time.sleep(1)
+
+        # 确认卡片出现
+        has_card = self._eval("""
+            (function(){
+                return !!document.querySelector('.coinpair-kline-card');
+            })()
+        """)
+        if has_card:
+            print(f"  ✅ 币种卡: {symbol}")
+        else:
+            print(f"  ⚠️ 币种卡 {symbol} 未确认")
+        return bool(has_card)
+
     def insert_tag(self, keyword: str) -> bool:
         """在正文末尾换行插入 #话题 tag"""
         self._press_enter()
@@ -298,6 +348,14 @@ class SquarePublisher:
                 self.upload_image(image_path)
             else:
                 print("  [dry-run] 跳过图片上传")
+
+        # 附加币种行情卡（第一个 token）
+        if token_tags:
+            print(f"[square] 附加币种卡: {token_tags[0]}")
+            if not dry_run:
+                self.attach_coin_card(token_tags[0])
+            else:
+                print("  [dry-run] 跳过币种卡")
 
         # 填正文
         print(f"[square] 填写正文 ({len(content)} 字)...")
