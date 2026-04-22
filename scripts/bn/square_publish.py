@@ -232,18 +232,27 @@ class SquarePublisher:
 
 def main():
     parser = argparse.ArgumentParser(description="币安广场发帖")
-    parser.add_argument("--content", required=True, help="发帖内容")
+    parser.add_argument("--content", default="", help="发帖内容")
+    parser.add_argument("--content-file", default="", help="从文件读取发帖内容")
     parser.add_argument("--image", default="", help="图片本地路径（可选）")
     parser.add_argument("--host", default=CDP_HOST)
     parser.add_argument("--port", type=int, default=CDP_PORT)
     parser.add_argument("--dry-run", action="store_true", help="不实际点击发布")
     args = parser.parse_args()
 
+    content = args.content
+    if args.content_file:
+        with open(args.content_file, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+    if not content:
+        print("❌ 请通过 --content 或 --content-file 提供内容")
+        sys.exit(1)
+
     pub = SquarePublisher(host=args.host, port=args.port)
     try:
         pub.connect()
         ok = pub.publish(
-            content=args.content,
+            content=content,
             image_path=args.image,
             dry_run=args.dry_run,
         )
