@@ -26,6 +26,8 @@ try:
 except ImportError:
     pass
 
+MY_USER_ID = os.environ.get("XHS_MY_USER_ID", "")  # 填入自己的 userId 以跳过自己的帖子
+
 # ============ 默认配置 ============
 
 DEFAULT_LIKE_PROB = 0.25       # 点赞概率（保守，降低风控风险）
@@ -212,12 +214,20 @@ def wander(
                 break
             feed_id = feed.get("id", "")
             xsec_token = feed.get("xsecToken", "")
-            title = feed.get("title", "（无标题）")
+            note_card = feed.get("noteCard", {})
+            title = note_card.get("displayTitle") or feed.get("title") or "（无标题）"
+            author_id = note_card.get("user", {}).get("userId", "")
 
             print(f"\n  [{i}/{len(selected)}] {title[:40]}")
 
             if not feed_id or not xsec_token:
                 print("  ⚠️ 缺少 feed_id/xsec_token，跳过")
+                stats["skip"] += 1
+                continue
+
+            # 跳过自己的帖子
+            if MY_USER_ID and author_id == MY_USER_ID:
+                print("  ⏭  自己的帖子，跳过")
                 stats["skip"] += 1
                 continue
 
