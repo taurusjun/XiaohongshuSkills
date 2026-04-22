@@ -27,6 +27,9 @@ except ImportError:
 
 from bs4 import BeautifulSoup
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from image_uploader import upload_to_cloudinary
+
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = "34aaaa31a0aa806aa20bdd5f9a6d53e8"
 
@@ -293,34 +296,51 @@ def create_page(news: dict) -> bool:
     tags = auto_tags(news["title"])
     category = map_category(news.get("category_raw", ""))
     key = url_to_key(news["link"])
-    summary = news.get("summary", "")
     zh_title = news.get("zh_title", "") or news["title"]
+    summary = news.get("summary", "")
 
     properties = {
-        "Name":       {"title": [{"text": {"content": zh_title}}]},
-        "key":        {"rich_text": [{"text": {"content": key}}]},
-        "来源":       {"rich_text": [{"text": {"content": "crypto.news"}}]},
-        "发布时间":   {"rich_text": [{"text": {"content": news.get("pub_time", "")}}]},
-        "原文链接":   {"url": news["link"]},
-        "分类":       {"select": {"name": category}},
+        "Name":         {"title": [{"text": {"content": zh_title}}]},
+        "key":          {"rich_text": [{"text": {"content": key}}]},
+        "来源":         {"rich_text": [{"text": {"content": "crypto.news"}}]},
+        "发布时间":     {"rich_text": [{"text": {"content": news.get("pub_time", "")}}]},
+        "原文链接":     {"url": news["link"]},
+        "分类":         {"select": {"name": category}},
         "发布BNSquare": {"checkbox": False},
     }
 
-    if summary:
-        properties["摘要"] = {"rich_text": [{"text": {"content": summary[:2000]}}]}
-    if news.get("image_url"):
-        properties["封面图"] = {"url": news["image_url"]}
+    if news.get("original_img"):
+        properties["原图链接"] = {"url": news["original_img"]}
+    cdn = news.get("cdn_img") or news.get("original_img", "")
+    if cdn:
+        properties["封面图"] = {"url": cdn}
     if tags:
         properties["标签"] = {"multi_select": [{"name": t} for t in tags]}
     tokens = extract_tokens(news["title"])
     if tokens:
         properties["tokens"] = {"multi_select": [{"name": t} for t in tokens]}
 
-    body: dict = {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": properties}
+    # 摘要和要点写入页面正文 blocks
+    children = []
+    if summary:
+        for para in summary.split("\n"):
+            para = para.strip()
+            if para:
+                children.append({
+                    "object": "block", "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": para[:2000]}}]}
+                })
 
-    # 封面图同时设为页面 cover
-    if news.get("image_url"):
-        body["cover"] = {"type": "external", "external": {"url": news["image_url"]}}
+    body: dict = {
+        "parent": {"database_id": NOTION_DATABASE_ID},
+        "properties": properties,
+    }
+    if children:
+        body["children"] = children
+
+    cover_url = cdn
+    if cover_url:
+        body["cover"] = {"type": "external", "external": {"url": cover_url}}
 
     resp = requests.post(
         "https://api.notion.com/v1/pages",
@@ -328,6 +348,8 @@ def create_page(news: dict) -> bool:
         json=body,
         timeout=10,
     )
+    if resp.status_code != 200:
+        print(f"  Notion error: {resp.text[:200]}")
     return resp.status_code == 200
 
 
@@ -365,7 +387,17 @@ def main():
         body_text = fetch_article_text(news["link"])
         if not news.get("image_url"):
             news["image_url"] = fetch_og_image(news["link"])
-        print(f"  封面图: {news['image_url'][:60] if news['image_url'] else '无'}")
+        original_img = news.get("image_url", "")
+        print(f"  原图链接: {original_img[:60] if original_img else '无'}")
+
+        # 上传到 Cloudinary
+        cdn_url = ""
+        if original_img:
+            print("  上传 Cloudinary...")
+            cdn_url = upload_to_cloudinary(original_img) or ""
+        news["original_img"] = original_img
+        news["cdn_img"] = cdn_url
+        print(f"  封面图(CDN): {cdn_url[:60] if cdn_url else '跳过'}")
 
         # 生成中文标题 + 摘要
         print("  生成中文标题和摘要...")
