@@ -130,33 +130,44 @@ def check_risk(text: str) -> bool:
     return any(k in text for k in RISK_KEYWORDS)
 
 
-def do_like(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool]:
-    """返回 (success, risk_detected)"""
+INACCESSIBLE_KEYWORDS = ["当前笔记暂时无法浏览", "已被删除", "内容不存在", "笔记不存在", "已失效", "私密笔记", "Feed page is not accessible"]
+
+
+def check_inaccessible(text: str) -> bool:
+    return any(k in text for k in INACCESSIBLE_KEYWORDS)
+
+
+def do_like(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool, bool]:
+    """返回 (success, risk_detected, inaccessible)"""
     if dry_run:
         print("  [dry] 点赞")
-        return True, False
+        return True, False, False
     code, out, err = run_cmd(["--reuse-existing-tab", "note-upvote", "--feed-id", feed_id, "--xsec-token", xsec_token])
     combined = out + err
+    if check_inaccessible(combined):
+        return False, False, True
     if check_risk(combined):
-        return False, True
-    return code == 0, False
+        return False, True, False
+    return code == 0, False, False
 
 
-def do_bookmark(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool]:
+def do_bookmark(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool, bool]:
     if dry_run:
         print("  [dry] 收藏")
-        return True, False
+        return True, False, False
     code, out, err = run_cmd(["--reuse-existing-tab", "note-bookmark", "--feed-id", feed_id, "--xsec-token", xsec_token])
     combined = out + err
+    if check_inaccessible(combined):
+        return False, False, True
     if check_risk(combined):
-        return False, True
-    return code == 0, False
+        return False, True, False
+    return code == 0, False, False
 
 
-def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> tuple[bool, bool]:
+def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> tuple[bool, bool, bool]:
     if dry_run:
         print(f"  [dry] 评论: {comment}")
-        return True, False
+        return True, False, False
     code, out, err = run_cmd([
         "--reuse-existing-tab", "post-comment-to-feed",
         "--feed-id", feed_id,
@@ -164,9 +175,11 @@ def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> tu
         "--content", comment,
     ])
     combined = out + err
+    if check_inaccessible(combined):
+        return False, False, True
     if check_risk(combined):
-        return False, True
-    return code == 0, False
+        return False, True, False
+    return code == 0, False, False
 
 
 # ============ 主逻辑 ============
@@ -237,7 +250,11 @@ def wander(
 
             # 点赞（有单次会话上限）
             if stats["like"] < MAX_LIKES_PER_SESSION and random.random() < like_prob:
-                ok, risk = do_like(feed_id, xsec_token, dry_run)
+                ok, risk, inaccessible = do_like(feed_id, xsec_token, dry_run)
+                if inaccessible:
+                    print("  ⏭  帖子不可访问，跳过互动")
+                    stats["skip"] += 1
+                    continue
                 if risk:
                     print("  🚨 检测到风控提示，停止操作！")
                     risk_triggered = True
@@ -249,28 +266,34 @@ def wander(
 
             # 收藏
             if not risk_triggered and random.random() < bookmark_prob:
-                ok, risk = do_bookmark(feed_id, xsec_token, dry_run)
-                if risk:
+                ok, risk, inaccessible = do_bookmark(feed_id, xsec_token, dry_run)
+                if inaccessible:
+                    pass  # 点赞已经跳过了，这里静默忽略
+                elif risk:
                     print("  🚨 检测到风控提示，停止操作！")
                     risk_triggered = True
                     break
-                print(f"  🔖 收藏: {'✅' if ok else '❌'}")
-                if ok:
-                    stats["bookmark"] += 1
-                human_sleep(*DEFAULT_ACTION_DELAY)
+                else:
+                    print(f"  🔖 收藏: {'✅' if ok else '❌'}")
+                    if ok:
+                        stats["bookmark"] += 1
+                    human_sleep(*DEFAULT_ACTION_DELAY)
 
             # 评论
             if not risk_triggered and random.random() < comment_prob:
                 comment_text = generate_comment(title)
-                ok, risk = do_comment(feed_id, xsec_token, comment_text, dry_run)
-                if risk:
+                ok, risk, inaccessible = do_comment(feed_id, xsec_token, comment_text, dry_run)
+                if inaccessible:
+                    pass
+                elif risk:
                     print("  🚨 检测到风控提示，停止操作！")
                     risk_triggered = True
                     break
-                print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
-                if ok:
-                    stats["comment"] += 1
-                human_sleep(*DEFAULT_ACTION_DELAY)
+                else:
+                    print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
+                    if ok:
+                        stats["comment"] += 1
+                    human_sleep(*DEFAULT_ACTION_DELAY)
 
             # 每条笔记之间额外冷却
             if i < len(selected):
