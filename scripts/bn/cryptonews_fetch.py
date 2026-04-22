@@ -316,10 +316,16 @@ def create_page(news: dict) -> bool:
     if tokens:
         properties["tokens"] = {"multi_select": [{"name": t} for t in tokens]}
 
+    body: dict = {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": properties}
+
+    # 封面图同时设为页面 cover
+    if news.get("image_url"):
+        body["cover"] = {"type": "external", "external": {"url": news["image_url"]}}
+
     resp = requests.post(
         "https://api.notion.com/v1/pages",
         headers=NOTION_HEADERS,
-        json={"parent": {"database_id": NOTION_DATABASE_ID}, "properties": properties},
+        json=body,
         timeout=10,
     )
     return resp.status_code == 200
