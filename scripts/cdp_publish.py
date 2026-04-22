@@ -109,6 +109,7 @@ XHS_NOTIFICATION_MENTIONS_API_PATH = "/api/sns/web/v1/you/mentions"
 XHS_SEARCH_RECOMMEND_API_PATH = "/api/sns/web/v1/search/recommend"
 XHS_FEED_INACCESSIBLE_KEYWORDS = (
     "当前笔记暂时无法浏览",
+    "你访问的页面不见了",
     "该内容因违规已被删除",
     "该笔记已被删除",
     "内容不存在",
