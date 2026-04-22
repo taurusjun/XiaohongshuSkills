@@ -110,16 +110,21 @@ class SquarePublisher:
     def _get_counter(self) -> str:
         return self._eval("(function(){ var c=document.querySelector('[class*=\"count\"]'); return c?c.innerText:''; })()") or ""
 
+    def _press_enter(self):
+        self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Return", "code": "Enter", "windowsVirtualKeyCode": 13})
+        self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": "Return", "code": "Enter", "windowsVirtualKeyCode": 13})
+        time.sleep(0.08)
+
     def fill_content(self, content: str) -> bool:
-        """填入正文（逐段插入，支持换行）"""
+        """填入正文，保留段落空行"""
         self._clear_editor()
-        paragraphs = content.split("\n")
-        for i, para in enumerate(paragraphs):
-            if para:
-                self._insert_text(para)
-            if i < len(paragraphs) - 1:
-                self._key("Return", "Enter")
-                time.sleep(0.05)
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip():
+                self._insert_text(line)
+            # 每行后都按 Enter（空行行 = 两次 Enter = 段落间距）
+            if i < len(lines) - 1:
+                self._press_enter()
         time.sleep(0.5)
         text = self._get_editor_text()
         counter = self._get_counter()
