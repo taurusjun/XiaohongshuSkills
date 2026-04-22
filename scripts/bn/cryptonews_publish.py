@@ -131,16 +131,21 @@ def mark_published(page_id: str):
 # ============ 下载封面图到本地 ============
 
 def download_image(url: str) -> str:
-    """下载图片到临时文件，返回本地路径"""
+    """下载图片并转成 JPEG，返回本地路径"""
     import tempfile
     import urllib.request
-    suffix = ".jpg" if "jpg" in url.lower() else ".webp" if "webp" in url.lower() else ".png"
-    tmp = tempfile.mktemp(suffix=suffix)
+    from PIL import Image
+    import io
+
+    tmp_jpg = tempfile.mktemp(suffix=".jpg")
     try:
-        urllib.request.urlretrieve(url, tmp)
-        return tmp
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        img.save(tmp_jpg, "JPEG", quality=92)
+        return tmp_jpg
     except Exception as e:
-        print(f"  ⚠️ 图片下载失败: {e}")
+        print(f"  ⚠️ 图片下载/转换失败: {e}")
         return ""
 
 
