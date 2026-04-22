@@ -93,7 +93,9 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
             timeout=15,
         )
         if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"].strip()
+            content = resp.json()["choices"][0]["message"].get("content") or ""
+            if content.strip():
+                return content.strip()
     except Exception as e:
         print(f"  ⚠️ LiteLLM 评论生成失败: {e}")
     return random.choice(COMMENT_TEMPLATES)
