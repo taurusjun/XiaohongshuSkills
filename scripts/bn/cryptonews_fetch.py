@@ -331,7 +331,7 @@ def create_page(news: dict) -> bool:
                 continue
             if line.startswith("【") and "】" in line:
                 # 章节标题 → heading_3
-                heading = line[line.index("】") + 1:].strip() or line
+                heading = line[line.index("】") + 1:].strip()
                 section = line[1:line.index("】")]
                 children.append({
                     "object": "block", "type": "heading_3",
