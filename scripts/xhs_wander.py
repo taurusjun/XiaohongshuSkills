@@ -130,7 +130,7 @@ def check_risk(text: str) -> bool:
     return any(k in text for k in RISK_KEYWORDS)
 
 
-INACCESSIBLE_KEYWORDS = ["当前笔记暂时无法浏览", "已被删除", "内容不存在", "笔记不存在", "已失效", "私密笔记", "Feed page is not accessible"]
+INACCESSIBLE_KEYWORDS = ["当前笔记暂时无法浏览", "你访问的页面不见了", "已被删除", "内容不存在", "笔记不存在", "已失效", "私密笔记", "Feed page is not accessible"]
 
 
 def check_inaccessible(text: str) -> bool:
