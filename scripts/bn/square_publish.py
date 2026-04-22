@@ -276,7 +276,7 @@ class SquarePublisher:
                 return True
         return True
 
-    def publish(self, content: str, tags: list[str] = None, image_path: str = "", dry_run: bool = False) -> bool:
+    def publish(self, content: str, tags: list[str] = None, token_tags: list[str] = None, image_path: str = "", dry_run: bool = False) -> bool:
         print(f"[square] 导航到币安广场...")
         self._navigate(SQUARE_URL)
 
@@ -303,13 +303,25 @@ class SquarePublisher:
             print("❌ 正文填写失败")
             return False
 
-        # 插入 tags
+        # 插入 #话题 tags
         if tags:
-            print(f"[square] 插入 tag: {tags}")
+            print(f"[square] 插入 #tag: {tags}")
             for tag in tags:
                 ok = self.insert_tag(tag)
                 if not ok:
                     print(f"  ⚠️ tag #{tag} 插入失败，继续")
+                time.sleep(0.5)
+
+        # 插入 $TOKEN tags
+        if token_tags:
+            print(f"[square] 插入 $token: {token_tags}")
+            self._press_enter()
+            for token in token_tags:
+                ok = self._insert_mention('$', token)
+                if not ok:
+                    print(f"  ⚠️ token ${token} 插入失败，继续")
+                # 两个 token 之间加空格
+                self._send("Input.insertText", {"text": " "})
                 time.sleep(0.5)
 
         time.sleep(0.5)
