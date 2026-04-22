@@ -28,7 +28,54 @@ except ImportError:
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from image_uploader import upload_to_cloudinary
+from image_uploader import upload_to_cloudinary as _upload_raw
+
+
+def upload_as_jpeg(image_url: str) -> str:
+    """下载图片，转成 JPEG 后上传到 Cloudinary，返回 CDN URL"""
+    import io
+    import tempfile
+    from PIL import Image
+
+    cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    api_key = os.environ.get("CLOUDINARY_API_KEY")
+    api_secret = os.environ.get("CLOUDINARY_API_SECRET")
+    if not all([cloud_name, api_key, api_secret]):
+        print("[cloudinary] 缺少配置")
+        return ""
+
+    try:
+        # 下载原图
+        resp = requests.get(image_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp.raise_for_status()
+
+        # 转 JPEG
+        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=92)
+        buf.seek(0)
+
+        # 上传文件到 Cloudinary
+        import hashlib, time as _time
+        timestamp = int(_time.time())
+        params = f"timestamp={timestamp}{api_secret}"
+        signature = hashlib.sha1(params.encode()).hexdigest()
+
+        upload_resp = requests.post(
+            f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload",
+            files={"file": ("cover.jpg", buf, "image/jpeg")},
+            data={"api_key": api_key, "timestamp": timestamp, "signature": signature},
+            timeout=30,
+        )
+        if upload_resp.status_code == 200:
+            url = upload_resp.json().get("secure_url", "")
+            if url:
+                print(f"[cloudinary] Uploaded JPEG: {url}")
+                return url
+        print(f"[cloudinary] Failed: {upload_resp.status_code} {upload_resp.text[:200]}")
+    except Exception as e:
+        print(f"[cloudinary] Error: {e}")
+    return ""
 
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = "34aaaa31a0aa806aa20bdd5f9a6d53e8"
@@ -278,13 +325,13 @@ def auto_tags(title: str) -> list[str]:
 
 # ============ Notion 操作 ============
 
-def page_exists(title: str) -> bool:
-    """检查标题是否已存在（避免重复）"""
+def key_exists(key: str) -> bool:
+    """用 key（slug MD5）检查是否已存在，比标题去重更精准"""
     resp = requests.post(
         f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
         headers=NOTION_HEADERS,
         json={
-            "filter": {"property": "Name", "title": {"equals": title}},
+            "filter": {"property": "key", "rich_text": {"equals": key}},
             "page_size": 1,
         },
         timeout=10,
@@ -417,8 +464,8 @@ def main():
         # 上传到 Cloudinary
         cdn_url = ""
         if original_img:
-            print("  上传 Cloudinary...")
-            cdn_url = upload_to_cloudinary(original_img) or ""
+            print("  上传 Cloudinary (JPEG)...")
+            cdn_url = upload_as_jpeg(original_img)
         news["original_img"] = original_img
         news["cdn_img"] = cdn_url
         print(f"  封面图(CDN): {cdn_url[:60] if cdn_url else '跳过'}")
@@ -436,7 +483,7 @@ def main():
             print("  [dry-run] 跳过写入\n")
             continue
 
-        if page_exists(zh_title or news["title"]):
+        if key_exists(url_to_key(news["link"])):
             print("  ⏭  已存在，跳过\n")
             skipped += 1
             continue
