@@ -117,35 +117,36 @@ def fetch_article_text(url: str) -> str:
 
 
 def summarize_zh(title: str, body: str) -> tuple[str, str]:
-    """用 LiteLLM 生成中文标题 + 摘要，返回 (zh_title, summary)"""
+    """用 LiteLLM 生成中文标题 + 摘要+要点，返回 (zh_title, content)"""
     if not LITELLM_API_KEY:
         return "", ""
     try:
         prompt = (
-            f"请对以下加密货币新闻完成两项任务，直接输出结果，不要有多余解释：\n\n"
-            f"1. 用中文翻译标题（一句话，不超过30字）\n"
-            f"2. 用中文写3-5句摘要，简洁客观\n\n"
+            f"请对以下加密货币新闻完成任务，直接输出结果，不要有多余解释：\n\n"
             f"按以下格式输出：\n"
-            f"【标题】翻译后的中文标题\n"
-            f"【摘要】3-5句中文摘要\n\n"
+            f"【标题】中文标题（不超过30字）\n"
+            f"【摘要】2-3句总结性描述\n"
+            f"【要点】\n"
+            f"• 要点1\n"
+            f"• 要点2\n"
+            f"• 要点3\n\n"
             f"原文标题：{title}\n\n正文节选：{body[:1500]}"
         )
         resp = requests.post(
             f"{LITELLM_URL}/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
             json={
-                "model": LITELLM_MODEL,
+                "model": "bedrock-claude-4-6-sonnet",  # 比 GLM-5 快，适合摘要任务
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 4000,
+                "max_tokens": 1000,
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code == 200:
             msg = resp.json()["choices"][0]["message"]
             raw = msg.get("content") or ""
             if not raw.strip():
                 rc = msg.get("reasoning_content") or ""
-                # GLM-5: 最终答案在 reasoning_content 末尾，找【标题】【摘要】标记
                 if "【标题】" in rc:
                     raw = rc[rc.rfind("【标题】"):]
                 else:
@@ -154,18 +155,19 @@ def summarize_zh(title: str, body: str) -> tuple[str, str]:
                     raw = "\n\n".join(candidates)
 
             if raw.strip():
-                # 解析 【标题】 和 【摘要】
-                zh_title, summary = "", ""
+                zh_title = ""
                 for line in raw.splitlines():
                     line = line.strip()
                     if line.startswith("【标题】"):
                         zh_title = line.replace("【标题】", "").strip()
-                    elif line.startswith("【摘要】"):
-                        summary = line.replace("【摘要】", "").strip()
-                # 摘要可能跨多行
-                if "【摘要】" in raw and not summary:
-                    summary = raw.split("【摘要】", 1)[1].strip()
-                return zh_title, summary
+                        break
+                # 摘要+要点 = 【标题】之后的全部内容
+                body_content = raw
+                if "【摘要】" in raw:
+                    body_content = raw[raw.index("【摘要】"):]
+                elif "【标题】" in raw:
+                    body_content = raw[raw.index("【标题】") + len(zh_title) + 5:].strip()
+                return zh_title, body_content
     except Exception as e:
         print(f"  ⚠️ 摘要生成失败: {e}")
     return "", ""
@@ -320,15 +322,37 @@ def create_page(news: dict) -> bool:
     if tokens:
         properties["tokens"] = {"multi_select": [{"name": t} for t in tokens]}
 
-    # 摘要和要点写入页面正文 blocks
+    # 摘要和要点写入页面正文 blocks（格式化渲染）
     children = []
     if summary:
-        for para in summary.split("\n"):
-            para = para.strip()
-            if para:
+        for line in summary.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("【") and "】" in line:
+                # 章节标题 → heading_3
+                heading = line[line.index("】") + 1:].strip() or line
+                section = line[1:line.index("】")]
+                children.append({
+                    "object": "block", "type": "heading_3",
+                    "heading_3": {"rich_text": [{"type": "text", "text": {"content": section}}]}
+                })
+                if heading:
+                    children.append({
+                        "object": "block", "type": "paragraph",
+                        "paragraph": {"rich_text": [{"type": "text", "text": {"content": heading[:2000]}}]}
+                    })
+            elif line.startswith(("•", "-", "*", "·")):
+                # 要点 → bulleted_list_item
+                text = line.lstrip("•-*· ").strip()
+                children.append({
+                    "object": "block", "type": "bulleted_list_item",
+                    "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": text[:2000]}}]}
+                })
+            else:
                 children.append({
                     "object": "block", "type": "paragraph",
-                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": para[:2000]}}]}
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": line[:2000]}}]}
                 })
 
     body: dict = {
