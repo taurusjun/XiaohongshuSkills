@@ -51,6 +51,36 @@ CATEGORY_MAP = {
     "xrp": "Altcoin",
 }
 
+# Token 识别（从标题提取相关 token）
+TOKEN_KEYWORDS = {
+    "BTC": ["bitcoin", "btc", "blackrock", "microstrategy", "satoshi"],
+    "ETH": ["ethereum", "eth", "vitalik", "ether"],
+    "BNB": ["bnb", "binance coin"],
+    "SOL": ["solana", "sol"],
+    "XRP": ["xrp", "ripple"],
+    "DOGE": ["doge", "dogecoin"],
+    "USDT": ["usdt", "tether"],
+    "USDC": ["usdc", "circle"],
+    "ADA": ["cardano", "ada"],
+    "AVAX": ["avalanche", "avax"],
+    "MATIC": ["polygon", "matic"],
+    "LINK": ["chainlink", "link"],
+    "DOT": ["polkadot", "dot"],
+    "UNI": ["uniswap", "uni"],
+    "PEPE": ["pepe"],
+    "SHIB": ["shiba", "shib"],
+}
+
+def extract_tokens(title: str) -> list[str]:
+    """从标题提取相关 token"""
+    title_lower = title.lower()
+    found = []
+    for token, keywords in TOKEN_KEYWORDS.items():
+        if any(k in title_lower for k in keywords):
+            found.append(token)
+    return found[:5]
+
+
 # 自动打标签关键词
 TAG_KEYWORDS = {
     "Bitcoin": ["bitcoin", "btc"],
@@ -191,6 +221,10 @@ def create_page(news: dict) -> bool:
     if tags:
         properties["标签"] = {"multi_select": [{"name": t} for t in tags]}
 
+    tokens = extract_tokens(news["title"])
+    if tokens:
+        properties["tokens"] = {"multi_select": [{"name": t} for t in tokens]}
+
     resp = requests.post(
         "https://api.notion.com/v1/pages",
         headers=NOTION_HEADERS,
@@ -224,8 +258,9 @@ def main():
     saved = skipped = failed = 0
     for i, news in enumerate(articles, 1):
         print(f"[{i}/{len(articles)}] {news['title'][:60]}")
-        print(f"  分类: {news['category_raw']} → {map_category(news['category_raw'])}")
+        print(f"  分类: {map_category(news['category_raw'])}")
         print(f"  标签: {auto_tags(news['title'])}")
+        print(f"  tokens: {extract_tokens(news['title'])}")
         print(f"  时间: {news['pub_time']}")
 
         if not news.get("image_url"):
