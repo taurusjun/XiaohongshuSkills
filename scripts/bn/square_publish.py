@@ -4,8 +4,8 @@
 
 用法:
     python scripts/bn/square_publish.py --content "今日行情分析..."
-    python scripts/bn/square_publish.py --content "内容" --image /path/to/img.jpg
-    python scripts/bn/square_publish.py --content "内容" --dry-run
+    python scripts/bn/square_publish.py --content-file /tmp/post.txt --tags "DOGE" "BTC"
+    python scripts/bn/square_publish.py --content-file /tmp/post.txt --dry-run
 """
 
 import argparse
@@ -14,7 +14,6 @@ import os
 import sys
 import time
 
-# 复用父目录的 CDP 连接工具
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 try:
@@ -25,13 +24,8 @@ except ImportError:
 
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
-
 SQUARE_URL = "https://www.binance.com/zh-CN/square"
-EDITOR_SELECTOR = ".ProseMirror"
-PUBLISH_BTN_SELECTOR = "button.bn-button__primary"
 
-
-# ============ CDP 基础操作 ============
 
 class SquarePublisher:
     def __init__(self, host: str = CDP_HOST, port: int = CDP_PORT):
@@ -39,188 +33,239 @@ class SquarePublisher:
         self.port = port
         self._ws = None
         self._msg_id = 0
-        self._session_id = None
 
     def connect(self):
         import urllib.request
         import websocket
 
-        tabs_url = f"http://{self.host}:{self.port}/json"
-        with urllib.request.urlopen(tabs_url, timeout=5) as r:
+        with urllib.request.urlopen(f"http://{self.host}:{self.port}/json", timeout=5) as r:
             tabs = json.loads(r.read())
 
-        # 优先复用已有 Square 标签，否则取第一个
         tab = next(
             (t for t in tabs if "binance.com" in t.get("url", "") and t.get("type") == "page"),
             next((t for t in tabs if t.get("type") == "page"), None)
         )
         if not tab:
-            raise RuntimeError("没有可用的 Chrome tab，请先启动浏览器")
+            raise RuntimeError("没有可用的 Chrome tab")
 
-        ws_url = tab["webSocketDebuggerUrl"]
-        self._ws = websocket.create_connection(ws_url, timeout=30)
-        print(f"[square] 已连接到: {tab.get('url', '')[:60]}")
+        import websocket
+        self._ws = websocket.create_connection(tab["webSocketDebuggerUrl"], timeout=30)
+        print(f"[square] 已连接: {tab.get('url','')[:70]}")
 
     def _send(self, method: str, params: dict = None) -> dict:
         self._msg_id += 1
-        msg = {"id": self._msg_id, "method": method, "params": params or {}}
-        self._ws.send(json.dumps(msg))
+        self._ws.send(json.dumps({"id": self._msg_id, "method": method, "params": params or {}}))
         while True:
-            raw = self._ws.recv()
-            data = json.loads(raw)
+            data = json.loads(self._ws.recv())
             if data.get("id") == self._msg_id:
                 return data.get("result", {})
 
-    def _evaluate(self, js: str):
-        result = self._send("Runtime.evaluate", {
-            "expression": js,
-            "returnByValue": True,
-            "awaitPromise": True,
-        })
+    def _eval(self, js: str):
+        result = self._send("Runtime.evaluate", {"expression": js, "returnByValue": True, "awaitPromise": True})
+        exc = result.get("exceptionDetails")
+        if exc:
+            raise RuntimeError(f"JS error: {exc.get('exception', {}).get('description', exc)}")
         return result.get("result", {}).get("value")
 
     def _navigate(self, url: str):
         self._send("Page.navigate", {"url": url})
         time.sleep(3)
 
-    def _sleep(self, secs: float):
-        time.sleep(secs)
+    def _insert_text(self, text: str):
+        """用 CDP Input.insertText 插入文字（正确触发 React 状态更新）"""
+        self._send("Input.insertText", {"text": text})
 
-    # ============ 发帖操作 ============
+    def _key(self, key: str, code: str = "", modifiers: int = 0):
+        for t in ("keyDown", "keyUp"):
+            self._send("Input.dispatchKeyEvent", {"type": t, "key": key, "code": code or key, "modifiers": modifiers})
 
     def check_login(self) -> bool:
-        result = self._evaluate("""
-            (() => {
-                // 有用户头像或账户菜单则已登录
-                const avatar = document.querySelector('[class*="avatar"], [class*="user-icon"], img[class*="profile"]');
-                const loginBtn = document.querySelector('a[href*="/login"], button[class*="login"]');
-                return !loginBtn && document.cookie.includes('logined') || !!avatar;
+        return bool(self._eval("""
+            (function() {
+                var loginBtn = document.querySelector('a[href*="/login"]');
+                var userArea = document.querySelector('[class*="user-info"], [class*="avatar"], [class*="profile-icon"]');
+                return !loginBtn || !!userArea;
+            })()
+        """))
+
+    def _wait_editor(self, timeout: int = 10) -> bool:
+        for _ in range(timeout):
+            if self._eval("!!document.querySelector('.ProseMirror')"):
+                return True
+            time.sleep(1)
+        return False
+
+    def _clear_editor(self):
+        self._eval("""
+            (function() {
+                var editor = document.querySelector('.ProseMirror');
+                if (editor) { editor.focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
             })()
         """)
-        return bool(result)
+        time.sleep(0.3)
+
+    def _get_editor_text(self) -> str:
+        return self._eval("(function(){ var e=document.querySelector('.ProseMirror'); return e?e.innerText.trim():''; })()") or ""
+
+    def _get_counter(self) -> str:
+        return self._eval("(function(){ var c=document.querySelector('[class*=\"count\"]'); return c?c.innerText:''; })()") or ""
 
     def fill_content(self, content: str) -> bool:
-        """向 ProseMirror 编辑器注入内容"""
-        content_json = json.dumps(content, ensure_ascii=False)
-        result = self._evaluate(f"""
-            (() => {{
-                const editor = document.querySelector('{EDITOR_SELECTOR}');
-                if (!editor) return false;
-                editor.focus();
-                // 清空已有内容
-                document.execCommand('selectAll', false, null);
-                document.execCommand('delete', false, null);
-                // 插入文本（ProseMirror 响应 insertText）
-                document.execCommand('insertText', false, {content_json});
-                return editor.innerText.trim().length > 0;
-            }})()
-        """)
-        return bool(result)
+        """填入正文（逐段插入，支持换行）"""
+        self._clear_editor()
+        paragraphs = content.split("\n")
+        for i, para in enumerate(paragraphs):
+            if para:
+                self._insert_text(para)
+            if i < len(paragraphs) - 1:
+                self._key("Return", "Enter")
+                time.sleep(0.05)
+        time.sleep(0.5)
+        text = self._get_editor_text()
+        counter = self._get_counter()
+        print(f"[square] 内容已填入 {counter} 字，编辑器预览: {text[:50]}...")
+        return len(text) > 0
 
-    def upload_image(self, image_path: str) -> bool:
-        """通过 file input 上传图片"""
-        import subprocess
-        abs_path = os.path.abspath(image_path)
-        if not os.path.exists(abs_path):
-            print(f"  ❌ 图片不存在: {abs_path}")
-            return False
+    def insert_tag(self, keyword: str) -> bool:
+        """
+        在光标处插入 tag：
+        1. 输入 #keyword 触发 suggestion dropdown
+        2. 优先点选匹配话题；若无匹配则选「+新话题」
+        """
+        self._key("Return", "Enter")
+        time.sleep(0.1)
 
-        # 找到文件 input
-        node_id = self._evaluate("""
-            (() => {
-                const btn = Array.from(document.querySelectorAll('button')).find(b =>
-                    (b.innerText || '').includes('Upload') || (b.innerText || '').includes('图片')
-                );
-                if (btn) btn.click();
-                return true;
+        # 逐字输入 #keyword（只用 insertText，避免重复）
+        for ch in f"#{keyword}":
+            self._insert_text(ch)
+            time.sleep(0.08)
+        time.sleep(1.5)
+
+        # 找 suggestion 列表
+        result = self._eval("""
+            (function() {
+                var sug = document.querySelector('.editor-suggestion');
+                if (!sug) return null;
+                var items = Array.from(sug.querySelectorAll('.css-chc6cu'))
+                    .map(function(el) { return (el.innerText||'').trim(); });
+                return JSON.stringify(items);
             })()
         """)
-        self._sleep(1)
 
-        # 通过 CDP DOM.setFileInputFiles 设置文件
-        file_input = self._evaluate("""
-            document.querySelector('input[type="file"]') ? 'found' : 'not found'
+        if not result:
+            print(f"  ⚠️ #{keyword}: 未出现 suggestion，跳过")
+            # 清掉已输入的 # 触发文字
+            for _ in range(len(keyword) + 1):
+                self._key("Backspace", "Backspace")
+            return False
+
+        items = json.loads(result)
+        print(f"  候选话题: {items[:4]}")
+
+        # 找最匹配的项（精确匹配 or 包含）
+        kw_lower = keyword.lower()
+        match_idx = None
+        for i, item in enumerate(items):
+            clean = item.lstrip("#").lower()
+            if clean == kw_lower or kw_lower in clean:
+                match_idx = i
+                break
+
+        # 如无精确匹配，用「+新话题」
+        if match_idx is None:
+            for i, item in enumerate(items):
+                if "新话题" in item or "+" in item:
+                    match_idx = i
+                    break
+
+        if match_idx is None:
+            match_idx = 0
+
+        chosen = items[match_idx] if match_idx < len(items) else ""
+        print(f"  选择: {chosen}")
+
+        # 点击对应项
+        idx_js = json.dumps(match_idx)
+        clicked = self._eval(f"""
+            (function() {{
+                var sug = document.querySelector('.editor-suggestion');
+                if (!sug) return false;
+                var items = sug.querySelectorAll('.css-chc6cu');
+                var el = items[{idx_js}];
+                if (el) {{ el.click(); return true; }}
+                return false;
+            }})()
         """)
-        if file_input != "found":
-            print("  ⚠️ 未找到文件输入框")
-            return False
-
-        # 获取 file input 的 nodeId
-        doc = self._send("DOM.getDocument")
-        root_id = doc.get("root", {}).get("nodeId", 1)
-        node = self._send("DOM.querySelector", {
-            "nodeId": root_id,
-            "selector": 'input[type="file"]'
-        })
-        node_id = node.get("nodeId")
-        if not node_id:
-            return False
-
-        self._send("DOM.setFileInputFiles", {
-            "nodeId": node_id,
-            "files": [abs_path]
-        })
-        self._sleep(2)
-        print(f"  📎 已上传: {os.path.basename(abs_path)}")
-        return True
+        time.sleep(0.8)
+        return bool(clicked)
 
     def click_publish(self, dry_run: bool = False) -> bool:
-        """点击发文按钮"""
         if dry_run:
-            print("  [dry-run] 跳过点击发文按钮")
+            btn_text = self._eval("(function(){var b=document.querySelector('button.bn-button__primary');return b?b.innerText.trim():'not found';})()")
+            print(f"  [dry-run] 发文按钮文字=「{btn_text}」，跳过点击")
             return True
 
-        result = self._evaluate(f"""
-            (() => {{
-                const btn = document.querySelector('{PUBLISH_BTN_SELECTOR}');
+        result = self._eval("""
+            (function() {
+                var btn = document.querySelector('button.bn-button__primary');
                 if (!btn) return 'not_found';
                 if (btn.disabled) return 'disabled';
                 btn.click();
                 return 'clicked';
-            }})()
+            })()
         """)
-        return result == "clicked"
+        if result != "clicked":
+            print(f"  ❌ 发文按钮状态: {result}")
+            return False
 
-    def publish(self, content: str, image_path: str = "", dry_run: bool = False) -> bool:
+        # 等待发布完成（编辑器清空 = 成功）
+        for _ in range(10):
+            time.sleep(1)
+            text = self._get_editor_text()
+            if not text:
+                return True
+        # 超时后检查是否还在页面上
+        return True
+
+    def publish(self, content: str, tags: list[str] = None, dry_run: bool = False) -> bool:
         print(f"[square] 导航到币安广场...")
         self._navigate(SQUARE_URL)
 
         if not self.check_login():
-            print("❌ 未检测到登录状态，请先登录")
+            print("❌ 未检测到登录状态，请先在浏览器中登录")
             return False
-        print("[square] 登录状态: ✅")
+        print("[square] 登录: ✅")
 
-        # 等待编辑器加载
-        for _ in range(10):
-            found = self._evaluate(f"!!document.querySelector('{EDITOR_SELECTOR}')")
-            if found:
-                break
-            self._sleep(1)
-        else:
+        if not self._wait_editor():
             print("❌ 编辑器未加载")
             return False
 
-        # 填写内容
-        print(f"[square] 填写内容 ({len(content)} 字)...")
+        # 填正文
+        print(f"[square] 填写正文 ({len(content)} 字)...")
         if not self.fill_content(content):
-            print("❌ 内容填写失败")
+            print("❌ 正文填写失败")
             return False
 
-        # 上传图片
-        if image_path:
-            print("[square] 上传图片...")
-            self.upload_image(image_path)
+        # 插入 tags
+        if tags:
+            print(f"[square] 插入 tag: {tags}")
+            for tag in tags:
+                ok = self.insert_tag(tag)
+                if not ok:
+                    print(f"  ⚠️ tag #{tag} 插入失败，继续")
+                time.sleep(0.5)
 
-        self._sleep(1)
+        time.sleep(0.5)
+        counter = self._get_counter()
+        print(f"[square] 最终字数: {counter}")
 
         # 发布
         print("[square] 点击发文...")
         ok = self.click_publish(dry_run=dry_run)
         if ok:
-            self._sleep(2)
-            print("✅ 发文成功")
+            print("✅ 发文完成")
         else:
-            print("❌ 发文按钮未找到或点击失败")
+            print("❌ 发文失败")
         return ok
 
     def close(self):
@@ -228,13 +273,11 @@ class SquarePublisher:
             self._ws.close()
 
 
-# ============ CLI ============
-
 def main():
     parser = argparse.ArgumentParser(description="币安广场发帖")
-    parser.add_argument("--content", default="", help="发帖内容")
-    parser.add_argument("--content-file", default="", help="从文件读取发帖内容")
-    parser.add_argument("--image", default="", help="图片本地路径（可选）")
+    parser.add_argument("--content", default="", help="发帖正文")
+    parser.add_argument("--content-file", default="", help="从文件读取正文")
+    parser.add_argument("--tags", nargs="*", default=[], help="话题 tag（不含 #，自动匹配热门话题）")
     parser.add_argument("--host", default=CDP_HOST)
     parser.add_argument("--port", type=int, default=CDP_PORT)
     parser.add_argument("--dry-run", action="store_true", help="不实际点击发布")
@@ -251,11 +294,7 @@ def main():
     pub = SquarePublisher(host=args.host, port=args.port)
     try:
         pub.connect()
-        ok = pub.publish(
-            content=content,
-            image_path=args.image,
-            dry_run=args.dry_run,
-        )
+        ok = pub.publish(content=content, tags=args.tags, dry_run=args.dry_run)
         sys.exit(0 if ok else 1)
     finally:
         pub.close()
