@@ -199,32 +199,53 @@ class SquarePublisher:
         time.sleep(0.8)
         return bool(clicked)
 
-    def click_publish(self, dry_run: bool = False) -> bool:
-        if dry_run:
-            btn_text = self._eval("(function(){var b=document.querySelector('button.bn-button__primary');return b?b.innerText.trim():'not found';})()")
-            print(f"  [dry-run] 发文按钮文字=「{btn_text}」，跳过点击")
-            return True
+    def _mouse_click(self, x: float, y: float):
+        """用 CDP 真实鼠标事件点击坐标"""
+        for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
+            self._send("Input.dispatchMouseEvent", {
+                "type": event_type, "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+            time.sleep(0.05)
 
-        result = self._eval("""
+    def click_publish(self, dry_run: bool = False) -> bool:
+        # 找活跃的发文按钮（非 inactive，文字=发文）
+        btn_info = self._eval("""
             (function() {
-                var btn = document.querySelector('button.bn-button__primary');
-                if (!btn) return 'not_found';
-                if (btn.disabled) return 'disabled';
-                btn.click();
-                return 'clicked';
+                var btns = Array.from(document.querySelectorAll('button')).filter(function(b) {
+                    return (b.innerText||'').trim() === '发文' && !b.disabled
+                        && !(b.className||'').includes('inactive');
+                });
+                if (!btns.length) return null;
+                // 优先选黄色实心按钮（css-1nd2rhj 或 bn-button__primary）
+                var btn = btns.find(function(b){ return (b.className||'').includes('css-1nd2rhj'); })
+                       || btns.find(function(b){ return (b.className||'').includes('bn-button__primary'); })
+                       || btns[0];
+                var r = btn.getBoundingClientRect();
+                return JSON.stringify({cls: btn.className, x: r.left + r.width/2, y: r.top + r.height/2});
             })()
         """)
-        if result != "clicked":
-            print(f"  ❌ 发文按钮状态: {result}")
+
+        if not btn_info:
+            print("  ❌ 未找到可用的发文按钮")
             return False
 
-        # 等待发布完成（编辑器清空 = 成功）
-        for _ in range(10):
+        info = json.loads(btn_info)
+        print(f"  发文按钮: cls={info['cls'][:60]} 坐标=({info['x']:.0f},{info['y']:.0f})")
+
+        if dry_run:
+            print("  [dry-run] 跳过点击")
+            return True
+
+        self._mouse_click(info["x"], info["y"])
+        time.sleep(2)
+
+        # 等待编辑器清空（发布成功后编辑器会重置）
+        for _ in range(8):
             time.sleep(1)
             text = self._get_editor_text()
             if not text:
                 return True
-        # 超时后检查是否还在页面上
         return True
 
     def publish(self, content: str, tags: list[str] = None, dry_run: bool = False) -> bool:
@@ -290,6 +311,13 @@ def main():
     if not content:
         print("❌ 请通过 --content 或 --content-file 提供内容")
         sys.exit(1)
+
+    # 如果 --tags 已指定，剥掉内容末尾的 #tag 行（避免重复）
+    if args.tags:
+        lines = content.splitlines()
+        while lines and all(w.startswith("#") for w in lines[-1].split() if w):
+            lines.pop()
+        content = "\n".join(lines).strip()
 
     pub = SquarePublisher(host=args.host, port=args.port)
     try:
