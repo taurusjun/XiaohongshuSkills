@@ -107,6 +107,8 @@ def parse_page(page: dict) -> dict:
         return "".join(r.get("plain_text", "") for r in props.get("Name", {}).get("title", []))
 
     tokens = [t.get("name", "") for t in props.get("tokens", {}).get("multi_select", [])]
+    if not tokens:
+        tokens = ["BTC"]  # 默认 BTC
 
     return {
         "id": page["id"],

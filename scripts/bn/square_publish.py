@@ -130,16 +130,18 @@ class SquarePublisher:
         self._send("DOM.setFileInputFiles", {"nodeId": node_id, "files": [abs_path]})
         print(f"  📎 已提交: {os.path.basename(abs_path)}")
 
-        # 等待预览图出现（最多 15s）
+        # 等待编辑器内出现 blob URL 的预览图（最多 15s）
         for i in range(15):
             time.sleep(1)
             count = self._eval("""
                 (function(){
-                    return document.querySelectorAll('img.images-box-item').length;
+                    var imgs = Array.from(document.querySelectorAll('img.images-box-item'))
+                        .filter(function(img){ return img.src.startsWith('blob:'); });
+                    return imgs.length;
                 })()
             """) or 0
             if count > 0:
-                print(f"  ✅ 图片上传完成（预览数: {count}）")
+                print(f"  ✅ 图片上传完成（blob预览数: {count}）")
                 return True
         print("  ⚠️ 等待超时，图片可能未上传成功")
         return False
