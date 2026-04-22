@@ -110,6 +110,40 @@ class SquarePublisher:
     def _get_counter(self) -> str:
         return self._eval("(function(){ var c=document.querySelector('[class*=\"count\"]'); return c?c.innerText:''; })()") or ""
 
+    def upload_image(self, image_path: str) -> bool:
+        """通过 DOM.setFileInputFiles 上传图片，等待 images-box-item 出现确认成功"""
+        abs_path = os.path.abspath(image_path)
+        if not os.path.exists(abs_path):
+            print(f"  ❌ 图片不存在: {abs_path}")
+            return False
+
+        doc = self._send("DOM.getDocument")
+        root_id = doc.get("root", {}).get("nodeId", 1)
+        node = self._send("DOM.querySelector", {
+            "nodeId": root_id, "selector": 'input[type="file"]'
+        })
+        node_id = node.get("nodeId")
+        if not node_id:
+            print("  ❌ 未找到 file input")
+            return False
+
+        self._send("DOM.setFileInputFiles", {"nodeId": node_id, "files": [abs_path]})
+        print(f"  📎 已提交: {os.path.basename(abs_path)}")
+
+        # 等待预览图出现（最多 15s）
+        for i in range(15):
+            time.sleep(1)
+            count = self._eval("""
+                (function(){
+                    return document.querySelectorAll('img.images-box-item').length;
+                })()
+            """) or 0
+            if count > 0:
+                print(f"  ✅ 图片上传完成（预览数: {count}）")
+                return True
+        print("  ⚠️ 等待超时，图片可能未上传成功")
+        return False
+
     def _press_enter(self):
         self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Return", "code": "Enter", "windowsVirtualKeyCode": 13})
         self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": "Return", "code": "Enter", "windowsVirtualKeyCode": 13})
@@ -253,7 +287,7 @@ class SquarePublisher:
                 return True
         return True
 
-    def publish(self, content: str, tags: list[str] = None, dry_run: bool = False) -> bool:
+    def publish(self, content: str, tags: list[str] = None, image_path: str = "", dry_run: bool = False) -> bool:
         print(f"[square] 导航到币安广场...")
         self._navigate(SQUARE_URL)
 
@@ -265,6 +299,14 @@ class SquarePublisher:
         if not self._wait_editor():
             print("❌ 编辑器未加载")
             return False
+
+        # 上传图片（先传图，再填文字）
+        if image_path:
+            print(f"[square] 上传图片: {os.path.basename(image_path)}")
+            if not dry_run:
+                self.upload_image(image_path)
+            else:
+                print("  [dry-run] 跳过图片上传")
 
         # 填正文
         print(f"[square] 填写正文 ({len(content)} 字)...")
@@ -304,6 +346,7 @@ def main():
     parser.add_argument("--content", default="", help="发帖正文")
     parser.add_argument("--content-file", default="", help="从文件读取正文")
     parser.add_argument("--tags", nargs="*", default=[], help="话题 tag（不含 #，自动匹配热门话题）")
+    parser.add_argument("--image", default="", help="图片本地路径")
     parser.add_argument("--host", default=CDP_HOST)
     parser.add_argument("--port", type=int, default=CDP_PORT)
     parser.add_argument("--dry-run", action="store_true", help="不实际点击发布")
@@ -327,7 +370,7 @@ def main():
     pub = SquarePublisher(host=args.host, port=args.port)
     try:
         pub.connect()
-        ok = pub.publish(content=content, tags=args.tags, dry_run=args.dry_run)
+        ok = pub.publish(content=content, tags=args.tags, image_path=args.image, dry_run=args.dry_run)
         sys.exit(0 if ok else 1)
     finally:
         pub.close()
