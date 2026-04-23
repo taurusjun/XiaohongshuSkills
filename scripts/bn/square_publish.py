@@ -417,20 +417,25 @@ class SquarePublisher:
             else:
                 print("  [dry-run] 跳过封面图")
 
-        # 填标题（article-editor-main 内第一个 ProseMirror，即「添加标题」输入框）
+        # 填标题（textarea，「添加标题」下方）
         print(f"[square] 填写标题: {title[:40]}")
-        self._eval("""
-            (function(){
-                var main = document.querySelector('.article-editor-main');
-                if (!main) return;
-                var editor = main.querySelector('.ProseMirror');
-                if (editor) { editor.focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
-            })()
+        title_json = json.dumps(title, ensure_ascii=False)
+        filled = self._eval(f"""
+            (function(){{
+                var ta = document.querySelector('textarea.css-1eno7b4');
+                if (!ta) return false;
+                ta.focus();
+                ta.value = {title_json};
+                ta.dispatchEvent(new Event('input', {{bubbles: true}}));
+                ta.dispatchEvent(new Event('change', {{bubbles: true}}));
+                return true;
+            }})()
         """)
-        time.sleep(0.3)
-        self._eval("(function(){ var m=document.querySelector('.article-editor-main'); if(m){ var e=m.querySelector('.ProseMirror'); if(e) e.focus(); } })()")
-        time.sleep(0.2)
-        self._send("Input.insertText", {"text": title})
+        if not filled:
+            print("  ⚠️ 标题 textarea 未找到，尝试备用方式")
+            self._eval("(function(){ var m=document.querySelector('.article-editor-main'); if(m){ var e=m.querySelector('.ProseMirror'); if(e) e.focus(); } })()")
+            time.sleep(0.2)
+            self._send("Input.insertText", {"text": title})
         time.sleep(0.5)
 
         # 填正文（article-editor 内第二个 ProseMirror，即正文大编辑框）
