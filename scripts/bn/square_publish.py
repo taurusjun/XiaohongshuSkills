@@ -410,18 +410,23 @@ class SquarePublisher:
                     })
                     print("  📎 封面图已提交，等待上传...")
                     # 等待封面区域「上传封面」文字消失，或出现 img 标签
-                    for i in range(20):
+                    # 等待裁剪弹窗出现，然后点「应用」
+                    for i in range(15):
                         time.sleep(1)
-                        done = self._eval("""
+                        apply_btn = self._eval("""
                             (function(){
-                                return !!document.querySelector('.cover-img img');
+                                var btns = Array.from(document.querySelectorAll('button'));
+                                var btn = btns.find(function(b){ return (b.innerText||'').trim() === '应用' && b.offsetParent; });
+                                if (btn) { btn.dispatchEvent(new MouseEvent('click', {bubbles:true,cancelable:true})); return true; }
+                                return false;
                             })()
                         """)
-                        if done:
-                            print(f"  ✅ 封面图上传完成（{i+1}s）")
+                        if apply_btn:
+                            print(f"  ✅ 封面裁剪确认（{i+1}s）")
+                            time.sleep(1.5)
                             break
                     else:
-                        print("  ⚠️ 封面图上传超时，继续发布")
+                        print("  ⚠️ 裁剪弹窗超时，继续发布")
                 else:
                     print("  ⚠️ 未找到封面图 input")
             else:
