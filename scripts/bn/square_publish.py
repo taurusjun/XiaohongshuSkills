@@ -348,6 +348,126 @@ class SquarePublisher:
                 return True
         return True
 
+    def publish_article(self, title: str, content: str, token_tags: list[str] = None, image_path: str = "", dry_run: bool = False) -> bool:
+        """文章模式发布：有独立封面图、标题、富文本正文，最多 100,000 字"""
+        print(f"[square] 导航到币安广场（文章模式）...")
+        self._navigate(SQUARE_URL)
+
+        if not self.check_login():
+            print("❌ 未检测到登录状态")
+            return False
+        print("[square] 登录: ✅")
+
+        if not self._wait_editor():
+            print("❌ 编辑器未加载")
+            return False
+
+        # 点击「文章」按钮进入文章模式
+        self._eval("(function(){ var btn=document.querySelector('.article-icon.cursor-pointer'); if(btn) btn.click(); })()")
+        time.sleep(2)
+
+        # 等待文章编辑器出现（两个 ProseMirror）
+        for _ in range(8):
+            count = self._eval("document.querySelectorAll('.ProseMirror').length") or 0
+            if count >= 2:
+                break
+            time.sleep(1)
+        else:
+            print("❌ 文章编辑器未加载")
+            return False
+        print("[square] 文章编辑器: ✅")
+
+        # 上传封面图（第二个 file input，accept=image/png...）
+        if image_path:
+            print(f"[square] 上传封面图: {os.path.basename(image_path)}")
+            if not dry_run:
+                doc = self._send("DOM.getDocument")
+                root_id = doc.get("root", {}).get("nodeId", 1)
+                # 找 accept 包含 image 的 input（文章封面）
+                inputs = self._send("DOM.querySelectorAll", {
+                    "nodeId": root_id, "selector": 'input[type="file"][accept*="image"]'
+                })
+                node_ids = inputs.get("nodeIds", [])
+                if node_ids:
+                    self._send("DOM.setFileInputFiles", {
+                        "nodeId": node_ids[-1],  # 取最后一个（封面图）
+                        "files": [os.path.abspath(image_path)]
+                    })
+                    # 等待封面图预览
+                    for _ in range(10):
+                        time.sleep(1)
+                        has_cover = self._eval("""
+                            !!document.querySelector('[class*="cover"] img, [class*="article-cover"] img')
+                        """)
+                        if has_cover:
+                            print("  ✅ 封面图上传完成")
+                            break
+            else:
+                print("  [dry-run] 跳过封面图")
+
+        # 填标题（Editor[0]，顶部小编辑框）
+        print(f"[square] 填写标题: {title[:40]}")
+        self._eval("""
+            (function(){
+                var editors = document.querySelectorAll('.ProseMirror');
+                if (editors[0]) { editors[0].focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
+            })()
+        """)
+        time.sleep(0.3)
+        # 切换 focus 到标题编辑器
+        self._eval("document.querySelectorAll('.ProseMirror')[0].focus()")
+        time.sleep(0.2)
+        self._send("Input.insertText", {"text": title})
+        time.sleep(0.5)
+
+        # 填正文（Editor[1]，大编辑框）
+        print(f"[square] 填写正文 ({len(content)} 字)...")
+        self._eval("""
+            (function(){
+                var editors = document.querySelectorAll('.ProseMirror');
+                if (editors[1]) { editors[1].focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
+            })()
+        """)
+        time.sleep(0.3)
+        self._eval("document.querySelectorAll('.ProseMirror')[1].focus()")
+        time.sleep(0.2)
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip():
+                self._insert_line(line)
+            if i < len(lines) - 1:
+                self._press_enter()
+        time.sleep(0.5)
+
+        # 插入 $TOKEN
+        if token_tags:
+            print(f"[square] 插入 $token: {token_tags}")
+            self._press_enter()
+            for token in token_tags:
+                ok = self._insert_mention('$', token)
+                if not ok:
+                    print(f"  ⚠️ ${token} 插入失败")
+                self._send("Input.insertText", {"text": " "})
+                time.sleep(0.3)
+
+        if dry_run:
+            print("  [dry-run] 跳过发布")
+            return True
+
+        # 点击发布按钮（文章模式的发布按钮 class 不同）
+        print("[square] 点击发布...")
+        self._eval("""
+            (function(){
+                var btn = Array.from(document.querySelectorAll('button')).find(function(b){
+                    return (b.innerText||'').trim() === '发布' && b.offsetParent && !b.disabled;
+                });
+                if (btn) btn.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+            })()
+        """)
+        time.sleep(3)
+        print("✅ 文章发布完成")
+        return True
+
     def publish(self, content: str, tags: list[str] = None, token_tags: list[str] = None, image_path: str = "", dry_run: bool = False) -> bool:
         print(f"[square] 导航到币安广场...")
         self._navigate(SQUARE_URL)
