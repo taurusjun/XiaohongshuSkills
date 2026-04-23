@@ -321,23 +321,33 @@ def main():
         import random
         # 必选标签
         must_tag = "#看新闻学日语"
-        # 其他热门标签库
-        hot_tags = [
-            # 日语学习
+        # 分类标签池（按内容分类选择，避免不相关标签混入）
+        BASE_TAGS = [
             "#日语学习", "#日语N1", "#日语N2", "#日语单词",
             "#中日双语", "#中日对照", "#中日翻译",
-            "#日语学习打卡",
-            # 日本资讯
-            "#日本新闻", "#日本热点", "#日本资讯",
+            "#日语学习打卡", "#日本新闻", "#日本热点",
             "#日本文化", "#日本生活",
-            # 时尚穿搭
-            "#日系穿搭", "#日本穿搭", "#日系风格",
-            "#穿搭分享", "#今日穿搭", "#韩国穿搭",
-            # 美妆护肤
-            "#日本化妆", "#日系妆容", "#韩国化妆",
-            "#日本护肤", "#日本コスメ", "#日本美妆",
-            "#护肤分享", "#化妆教程",
         ]
+        FASHION_TAGS = [
+            "#日系穿搭", "#日本穿搭", "#日系风格",
+            "#穿搭分享", "#今日穿搭",
+        ]
+        BEAUTY_TAGS = [
+            "#日本化妆", "#日系妆容", "#日本美妆",
+            "#日本护肤", "#护肤分享", "#化妆教程",
+        ]
+
+        # 根据内容标签判断分类，选对应的标签池
+        existing_tag_str = " ".join(info.get("tags", []))
+        is_fashion = any(k in existing_tag_str for k in ["穿搭", "ファッション", "コーデ", "fashion"])
+        is_beauty = any(k in existing_tag_str for k in ["メイク", "コスメ", "スキンケア", "美妆", "化妆", "护肤"])
+
+        if is_fashion:
+            hot_tags = BASE_TAGS[:6] + FASHION_TAGS
+        elif is_beauty:
+            hot_tags = BASE_TAGS[:6] + BEAUTY_TAGS
+        else:
+            hot_tags = BASE_TAGS
         # 标签规范化映射（日文/繁体 → 中文）
         TAG_NORMALIZE = {
             "コスプレ": "cosplay", "コスプ": "cosplay",
