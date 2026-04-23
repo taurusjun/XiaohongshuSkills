@@ -109,9 +109,7 @@ def build_post_content(title: str, summary: str, bullets: list[str], markdown: b
     parts = []
 
     if markdown:
-        # 文章模式：段落间一个空行，要点之间不加空行（list items 自带间距）
-        parts.append(title)
-        parts.append("")
+        # 文章模式：正文不含标题（标题单独填），段落间一个空行，bullet 紧密排列
         if summary:
             parts.append(summary)
             parts.append("")
