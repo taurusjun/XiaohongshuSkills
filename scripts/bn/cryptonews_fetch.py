@@ -31,8 +31,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from image_uploader import upload_to_cloudinary as _upload_raw
 
 
+def remove_watermark(img: "Image.Image") -> "Image.Image":
+    """
+    去掉 crypto.news 底部水印条带。
+    crypto.news 的水印固定在底部约 12% 的区域，直接裁掉。
+    """
+    w, h = img.size
+    crop_y = int(h * 0.88)
+    return img.crop((0, 0, w, crop_y))
+
+
 def upload_as_jpeg(image_url: str) -> str:
-    """下载图片，转成 JPEG 后上传到 Cloudinary，返回 CDN URL"""
+    """下载图片，去水印，转成 JPEG 后上传到 Cloudinary，返回 CDN URL"""
     import io
     import tempfile
     from PIL import Image
@@ -49,8 +59,9 @@ def upload_as_jpeg(image_url: str) -> str:
         resp = requests.get(image_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         resp.raise_for_status()
 
-        # 转 JPEG
+        # 去水印 + 转 JPEG
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        img = remove_watermark(img)
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=92)
         buf.seek(0)
