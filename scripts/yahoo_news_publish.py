@@ -313,8 +313,6 @@ def main():
                 parts.append(ja_summary)
                 parts.append("")  # 添加空行
 
-        parts.append(f"原文链接：{info['link']}")
-
         xhs_content = "\n".join(parts)
 
         # 添加标签（最后一行 #标签1 #标签2 格式）
