@@ -109,10 +109,9 @@ def build_post_content(title: str, summary: str, bullets: list[str], markdown: b
     parts = []
 
     if markdown:
-        # 文章模式：正文不含标题（标题单独填），段落间一个空行，bullet 紧密排列
+        # 文章模式：正文不含标题，摘要直接接 bullet（ProseMirror 自带段落间距）
         if summary:
             parts.append(summary)
-            parts.append("")
         for bullet in bullets:
             parts.append(f"{bullet_prefix}{bullet}")
     else:
