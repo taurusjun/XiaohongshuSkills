@@ -477,36 +477,49 @@ class SquarePublisher:
         lines = content.split("\n")
         in_list = False
         for i, line in enumerate(lines):
+            is_last = (i == len(lines) - 1)
+
             if line.startswith("- "):
                 if not in_list:
-                    # 第一个 bullet：逐字符输入 "- " 触发 ProseMirror 列表模式
-                    for ch in "- ":
-                        self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
-                        self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch, "text": ch})
-                        time.sleep(0.05)
+                    # 第一个 bullet：insertText 触发 ProseMirror inputRules
+                    self._send("Input.insertText", {"text": "-"})
+                    time.sleep(0.1)
+                    self._send("Input.insertText", {"text": " "})
+                    time.sleep(0.3)
                     in_list = True
-                # 已在列表模式：直接输内容（不再重复 "- "）
+                else:
+                    # 后续 bullet：Enter 在 list 内创建新 item
+                    self._press_enter()
+                    time.sleep(0.15)
                 self._send("Input.insertText", {"text": line[2:]})
+                # bullet 行末不 Enter（下一轮开头处理）
+
             elif line.strip():
                 if in_list:
-                    # 退出列表模式：按两次 Enter
+                    # 退出列表：连按两次 Enter（第二次清空空 item 并退出）
+                    self._press_enter()
                     self._press_enter()
                     in_list = False
+                    time.sleep(0.2)
                 self._insert_line(line)
-            else:
+                if not is_last:
+                    self._press_enter()
+
+            else:  # 空行
                 if in_list:
-                    # 空行退出列表
+                    self._press_enter()
                     self._press_enter()
                     in_list = False
-            if i < len(lines) - 1:
-                self._press_enter()
+                elif not is_last:
+                    self._press_enter()
         time.sleep(0.5)
 
         # 插入 $TOKEN（先退出列表模式）
         if token_tags:
             print(f"[square] 插入 $token: {token_tags}")
             if in_list:
-                self._press_enter()  # 退出列表
+                self._press_enter()
+                self._press_enter()
             self._press_enter()
             for token in token_tags:
                 ok = self._insert_mention('$', token)
