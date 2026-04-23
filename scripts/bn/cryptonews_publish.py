@@ -70,31 +70,64 @@ def get_page_blocks(page_id: str) -> list:
     return []
 
 
-def blocks_to_text(blocks: list) -> str:
+def blocks_to_parts(blocks: list) -> tuple[str, str, list[str]]:
     """
-    将 blocks 转成发布用文字：
-    - heading_3（摘要/要点章节名）→ 跳过
-    - paragraph → 正常段落
-    - bulleted_list_item → • 要点
+    将 Notion blocks 解析为 (摘要, 要点列表)。
+    - heading_3 → 跳过（章节标题）
+    - paragraph → 摘要（第一段）
+    - bulleted_list_item → 要点
     """
-    lines = []
+    summary_lines = []
+    bullets = []
+    in_summary = True  # 第一批段落作为摘要
+
     for block in blocks:
         btype = block.get("type", "")
         rich = block.get(btype, {}).get("rich_text", [])
         text = "".join(r.get("plain_text", "") for r in rich).strip()
 
         if btype == "heading_3":
-            # 跳过「摘要」「要点」标题行
             continue
-        elif btype == "paragraph":
-            if text:
-                lines.append(text)
-                lines.append("")  # 段落后空行
-        elif btype == "bulleted_list_item":
-            if text:
-                lines.append(f"• {text}")
+        elif btype == "paragraph" and text:
+            if in_summary:
+                summary_lines.append(text)
+        elif btype == "bulleted_list_item" and text:
+            in_summary = False
+            bullets.append(text)
 
-    return "\n".join(lines).strip()
+    summary = "\n".join(summary_lines)
+    return summary, bullets
+
+
+def build_post_content(title: str, summary: str, bullets: list[str]) -> str:
+    """
+    组装发布正文：
+    题目
+    （空行）
+    摘要
+    （空行）
+    • 要点1
+    （空行）
+    • 要点2
+    ...
+    """
+    parts = []
+    parts.append(title)
+    parts.append("")
+
+    if summary:
+        parts.append(summary)
+        parts.append("")
+
+    for bullet in bullets:
+        parts.append(f"• {bullet}")
+        parts.append("")
+
+    # 去掉末尾多余空行
+    while parts and parts[-1] == "":
+        parts.pop()
+
+    return "\n".join(parts)
 
 
 def parse_page(page: dict) -> dict:
@@ -181,14 +214,15 @@ def main():
         print(f"  tokens: {info['tokens']}")
         print(f"  封面图: {info['cdn_img'][:60] if info['cdn_img'] else '无'}")
 
-        # 读取页面正文 blocks
+        # 读取页面正文 blocks，组装发布格式
         blocks = get_page_blocks(page["id"])
-        content_text = blocks_to_text(blocks)
-        if not content_text:
+        summary, bullets = blocks_to_parts(blocks)
+        content_text = build_post_content(info["title"], summary, bullets)
+        if not summary and not bullets:
             print("  ⚠️ 正文为空，跳过\n")
             continue
 
-        print(f"  正文预览: {content_text[:80]}...")
+        print(f"  正文预览:\n{content_text[:200]}")
 
         # 下载封面图
         local_img = ""
