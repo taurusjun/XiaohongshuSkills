@@ -358,14 +358,6 @@ class SquarePublisher:
             else:
                 print("  [dry-run] 跳过图片上传")
 
-        # 附加币种行情卡（第一个 token）
-        if token_tags:
-            print(f"[square] 附加币种卡: {token_tags[0]}")
-            if not dry_run:
-                self.attach_coin_card(token_tags[0])
-            else:
-                print("  [dry-run] 跳过币种卡")
-
         # 填正文
         print(f"[square] 填写正文 ({len(content)} 字)...")
         if not self.fill_content(content):
