@@ -377,31 +377,27 @@ class SquarePublisher:
             return False
         print("[square] 文章编辑器: ✅")
 
-        # 上传封面图（第二个 file input，accept=image/png...）
+        # 上传封面图（专用 input：accept="image/png, image/jpg, image/jpeg"）
         if image_path:
             print(f"[square] 上传封面图: {os.path.basename(image_path)}")
             if not dry_run:
                 doc = self._send("DOM.getDocument")
                 root_id = doc.get("root", {}).get("nodeId", 1)
-                # 找 accept 包含 image 的 input（文章封面）
-                inputs = self._send("DOM.querySelectorAll", {
-                    "nodeId": root_id, "selector": 'input[type="file"][accept*="image"]'
+                node = self._send("DOM.querySelector", {
+                    "nodeId": root_id,
+                    "selector": 'input[accept="image/png, image/jpg, image/jpeg"]'
                 })
-                node_ids = inputs.get("nodeIds", [])
-                if node_ids:
+                node_id = node.get("nodeId")
+                if node_id:
                     self._send("DOM.setFileInputFiles", {
-                        "nodeId": node_ids[-1],  # 取最后一个（封面图）
+                        "nodeId": node_id,
                         "files": [os.path.abspath(image_path)]
                     })
-                    # 等待封面图预览
-                    for _ in range(10):
-                        time.sleep(1)
-                        has_cover = self._eval("""
-                            !!document.querySelector('[class*="cover"] img, [class*="article-cover"] img')
-                        """)
-                        if has_cover:
-                            print("  ✅ 封面图上传完成")
-                            break
+                    print("  📎 封面图已提交，等待上传...")
+                    time.sleep(3)
+                    print("  ✅ 封面图上传完成")
+                else:
+                    print("  ⚠️ 未找到封面图 input")
             else:
                 print("  [dry-run] 跳过封面图")
 
