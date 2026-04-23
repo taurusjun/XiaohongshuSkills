@@ -383,12 +383,30 @@ class SquarePublisher:
             if not dry_run:
                 doc = self._send("DOM.getDocument")
                 root_id = doc.get("root", {}).get("nodeId", 1)
-                # 封面上传 input：accept="image/png, image/jpg, image/jpeg"（Input[1]）
-                # 不能用 rc-upload input（那是工具栏插图按钮）
-                node = self._send("DOM.querySelector", {
-                    "nodeId": root_id,
-                    "selector": 'input[accept="image/png, image/jpg, image/jpeg"]'
+                # 封面上传 input：找「上传封面」容器内的 file input
+                # 用 JS 定位节点，再通过 objectId 获取 nodeId
+                obj = self._send("Runtime.evaluate", {
+                    "expression": """
+                        (function(){
+                            var inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                            var cover = inputs.find(function(inp){
+                                var el = inp;
+                                for (var i=0; i<10; i++){
+                                    if (!el.parentElement) break;
+                                    el = el.parentElement;
+                                    if ((el.innerText||'').includes('上传封面')) return true;
+                                }
+                                return false;
+                            });
+                            return cover || null;
+                        })()
+                    """,
+                    "returnByValue": False,
                 })
+                obj_id = obj.get("result", {}).get("objectId")
+                node = {}
+                if obj_id:
+                    node = self._send("DOM.requestNode", {"objectId": obj_id})
                 node_id = node.get("nodeId")
                 if node_id:
                     self._send("DOM.setFileInputFiles", {
