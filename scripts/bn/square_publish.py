@@ -383,6 +383,8 @@ class SquarePublisher:
             if not dry_run:
                 doc = self._send("DOM.getDocument")
                 root_id = doc.get("root", {}).get("nodeId", 1)
+                # 封面上传 input：accept="image/png, image/jpg, image/jpeg"（Input[1]）
+                # 不能用 rc-upload input（那是工具栏插图按钮）
                 node = self._send("DOM.querySelector", {
                     "nodeId": root_id,
                     "selector": 'input[accept="image/png, image/jpg, image/jpeg"]'
@@ -420,7 +422,10 @@ class SquarePublisher:
                 var ta = document.querySelector('textarea.css-1eno7b4');
                 if (!ta) return false;
                 ta.focus();
-                ta.value = {title_json};
+                // React 受控组件需用原生 setter 触发状态更新
+                var nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype, 'value').set;
+                nativeSetter.call(ta, {title_json});
                 ta.dispatchEvent(new Event('input', {{bubbles: true}}));
                 ta.dispatchEvent(new Event('change', {{bubbles: true}}));
                 return true;
