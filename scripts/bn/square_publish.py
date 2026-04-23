@@ -383,30 +383,25 @@ class SquarePublisher:
             if not dry_run:
                 doc = self._send("DOM.getDocument")
                 root_id = doc.get("root", {}).get("nodeId", 1)
-                # 封面上传 input：找「上传封面」容器内的 file input
-                # 用 JS 定位节点，再通过 objectId 获取 nodeId
-                obj = self._send("Runtime.evaluate", {
-                    "expression": """
-                        (function(){
-                            var inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-                            var cover = inputs.find(function(inp){
-                                var el = inp;
-                                for (var i=0; i<10; i++){
-                                    if (!el.parentElement) break;
-                                    el = el.parentElement;
-                                    if ((el.innerText||'').includes('上传封面')) return true;
-                                }
-                                return false;
-                            });
-                            return cover || null;
-                        })()
-                    """,
-                    "returnByValue": False,
+                # 封面上传 input：找所有 rc-upload input，排除工具栏内的
+                toolbar = self._send("DOM.querySelector", {
+                    "nodeId": root_id, "selector": ".editor-toolbar-container"
                 })
-                obj_id = obj.get("result", {}).get("objectId")
+                toolbar_inputs = set(self._send("DOM.querySelectorAll", {
+                    "nodeId": toolbar.get("nodeId", root_id),
+                    "selector": "input[type='file']"
+                }).get("nodeIds", []))
+
+                all_inputs = self._send("DOM.querySelectorAll", {
+                    "nodeId": root_id,
+                    "selector": "span.rc-upload input[type='file']"
+                }).get("nodeIds", [])
+
                 node = {}
-                if obj_id:
-                    node = self._send("DOM.requestNode", {"objectId": obj_id})
+                for nid in all_inputs:
+                    if nid not in toolbar_inputs:
+                        node = {"nodeId": nid}
+                        break
                 node_id = node.get("nodeId")
                 if node_id:
                     self._send("DOM.setFileInputFiles", {
