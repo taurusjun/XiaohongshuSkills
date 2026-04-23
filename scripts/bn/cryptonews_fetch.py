@@ -336,20 +336,34 @@ def auto_tags(title: str) -> list[str]:
 
 # ============ Notion 操作 ============
 
-def key_exists(key: str) -> bool:
-    """用 key（slug MD5）检查是否已存在，比标题去重更精准"""
-    resp = requests.post(
-        f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
-        headers=NOTION_HEADERS,
-        json={
-            "filter": {"property": "key", "rich_text": {"equals": key}},
-            "page_size": 1,
-        },
-        timeout=10,
-    )
-    if resp.status_code == 200:
-        return len(resp.json().get("results", [])) > 0
-    return False
+def load_existing_keys() -> set:
+    """预加载 Notion 数据库中所有已有的 key，返回 set 供快速去重"""
+    keys = set()
+    cursor = None
+    while True:
+        body = {"page_size": 100}
+        if cursor:
+            body["start_cursor"] = cursor
+        resp = requests.post(
+            f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
+            headers=NOTION_HEADERS,
+            json=body,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            break
+        data = resp.json()
+        for page in data.get("results", []):
+            k = "".join(
+                r.get("plain_text", "")
+                for r in page.get("properties", {}).get("key", {}).get("rich_text", [])
+            )
+            if k:
+                keys.add(k)
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return keys
 
 
 def create_page(news: dict) -> bool:
@@ -452,13 +466,26 @@ def main():
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}  抓取: {args.count} 条")
     print("=" * 60)
 
+    # 预加载已有 key，避免重复处理
+    print("🗂  加载已有记录...")
+    existing_keys = load_existing_keys()
+    print(f"  已有 {len(existing_keys)} 条记录\n")
+
     print("🔍 抓取 crypto.news...")
     articles = fetch_news(args.count)
     print(f"找到 {len(articles)} 条\n")
 
     saved = skipped = failed = 0
     for i, news in enumerate(articles, 1):
+        key = url_to_key(news["link"])
         print(f"[{i}/{len(articles)}] {news['title'][:60]}")
+
+        # 先用预加载的 key 集合判断，命中则直接跳过
+        if not args.dry_run and key in existing_keys:
+            print(f"  ⏭  已存在（key={key[:8]}...），跳过\n")
+            skipped += 1
+            continue
+
         print(f"  分类: {map_category(news['category_raw'])}")
         print(f"  标签: {auto_tags(news['title'])}")
         print(f"  tokens: {extract_tokens(news['title'])}")
@@ -488,19 +515,15 @@ def main():
         news["summary"] = summary
         print(f"  中文标题: {zh_title or '(无)'}")
         print(f"  摘要: {summary[:80]}..." if summary else "  摘要: 无")
-        print(f"  key: {url_to_key(news['link'])}")
+        print(f"  key: {key}")
 
         if args.dry_run:
             print("  [dry-run] 跳过写入\n")
             continue
 
-        if key_exists(url_to_key(news["link"])):
-            print("  ⏭  已存在，跳过\n")
-            skipped += 1
-            continue
-
         if create_page(news):
             print("  ✅ 已写入 Notion\n")
+            existing_keys.add(key)  # 防同批次重复
             saved += 1
         else:
             print("  ❌ 写入失败\n")
