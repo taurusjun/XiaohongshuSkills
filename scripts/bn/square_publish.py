@@ -399,12 +399,7 @@ class SquarePublisher:
                         time.sleep(1)
                         done = self._eval("""
                             (function(){
-                                // 封面已上传：img 出现 或 「上传封面」文字消失
-                                var coverImg = document.querySelector('.article-editor-main img');
-                                var uploadText = Array.from(document.querySelectorAll('*')).find(function(el){
-                                    return el.offsetParent && (el.innerText||'').trim() === '上传封面';
-                                });
-                                return !!coverImg || !uploadText;
+                                return !!document.querySelector('.cover-img img');
                             })()
                         """)
                         if done:
