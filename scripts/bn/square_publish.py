@@ -475,23 +475,38 @@ class SquarePublisher:
         """)
         time.sleep(0.2)
         lines = content.split("\n")
+        in_list = False
         for i, line in enumerate(lines):
             if line.startswith("- "):
-                # markdown bullet：逐字符输入让 ProseMirror 触发列表转换
-                for ch in "- ":
-                    self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
-                    self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch, "text": ch})
-                    time.sleep(0.05)
+                if not in_list:
+                    # 第一个 bullet：逐字符输入 "- " 触发 ProseMirror 列表模式
+                    for ch in "- ":
+                        self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+                        self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch, "text": ch})
+                        time.sleep(0.05)
+                    in_list = True
+                # 已在列表模式：直接输内容（不再重复 "- "）
                 self._send("Input.insertText", {"text": line[2:]})
             elif line.strip():
+                if in_list:
+                    # 退出列表模式：按两次 Enter
+                    self._press_enter()
+                    in_list = False
                 self._insert_line(line)
+            else:
+                if in_list:
+                    # 空行退出列表
+                    self._press_enter()
+                    in_list = False
             if i < len(lines) - 1:
                 self._press_enter()
         time.sleep(0.5)
 
-        # 插入 $TOKEN
+        # 插入 $TOKEN（先退出列表模式）
         if token_tags:
             print(f"[square] 插入 $token: {token_tags}")
+            if in_list:
+                self._press_enter()  # 退出列表
             self._press_enter()
             for token in token_tags:
                 ok = self._insert_mention('$', token)
