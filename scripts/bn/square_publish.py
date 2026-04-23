@@ -394,38 +394,62 @@ class SquarePublisher:
                         "files": [os.path.abspath(image_path)]
                     })
                     print("  📎 封面图已提交，等待上传...")
-                    time.sleep(3)
-                    print("  ✅ 封面图上传完成")
+                    # 等待封面区域「上传封面」文字消失，或出现 img 标签
+                    for i in range(20):
+                        time.sleep(1)
+                        done = self._eval("""
+                            (function(){
+                                // 封面已上传：img 出现 或 「上传封面」文字消失
+                                var coverImg = document.querySelector('.article-editor-main img');
+                                var uploadText = Array.from(document.querySelectorAll('*')).find(function(el){
+                                    return el.offsetParent && (el.innerText||'').trim() === '上传封面';
+                                });
+                                return !!coverImg || !uploadText;
+                            })()
+                        """)
+                        if done:
+                            print(f"  ✅ 封面图上传完成（{i+1}s）")
+                            break
+                    else:
+                        print("  ⚠️ 封面图上传超时，继续发布")
                 else:
                     print("  ⚠️ 未找到封面图 input")
             else:
                 print("  [dry-run] 跳过封面图")
 
-        # 填标题（Editor[0]，顶部小编辑框）
+        # 填标题（article-editor-main 内第一个 ProseMirror，即「添加标题」输入框）
         print(f"[square] 填写标题: {title[:40]}")
         self._eval("""
             (function(){
-                var editors = document.querySelectorAll('.ProseMirror');
-                if (editors[0]) { editors[0].focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
+                var main = document.querySelector('.article-editor-main');
+                if (!main) return;
+                var editor = main.querySelector('.ProseMirror');
+                if (editor) { editor.focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
             })()
         """)
         time.sleep(0.3)
-        # 切换 focus 到标题编辑器
-        self._eval("document.querySelectorAll('.ProseMirror')[0].focus()")
+        self._eval("(function(){ var m=document.querySelector('.article-editor-main'); if(m){ var e=m.querySelector('.ProseMirror'); if(e) e.focus(); } })()")
         time.sleep(0.2)
         self._send("Input.insertText", {"text": title})
         time.sleep(0.5)
 
-        # 填正文（Editor[1]，大编辑框）
+        # 填正文（article-editor 内第二个 ProseMirror，即正文大编辑框）
         print(f"[square] 填写正文 ({len(content)} 字)...")
         self._eval("""
             (function(){
-                var editors = document.querySelectorAll('.ProseMirror');
-                if (editors[1]) { editors[1].focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
+                var editors = document.querySelectorAll('.article-editor .ProseMirror, .article-editor-main .ProseMirror');
+                var body = editors[editors.length - 1];
+                if (body) { body.focus(); document.execCommand('selectAll'); document.execCommand('delete'); }
             })()
         """)
         time.sleep(0.3)
-        self._eval("document.querySelectorAll('.ProseMirror')[1].focus()")
+        self._eval("""
+            (function(){
+                var editors = document.querySelectorAll('.article-editor .ProseMirror, .article-editor-main .ProseMirror');
+                var body = editors[editors.length - 1];
+                if (body) body.focus();
+            })()
+        """)
         time.sleep(0.2)
         lines = content.split("\n")
         for i, line in enumerate(lines):
