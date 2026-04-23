@@ -187,6 +187,7 @@ def download_image(url: str) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Notion cryptonews → 币安广场")
     parser.add_argument("--dry-run", action="store_true", help="不实际发布")
+    parser.add_argument("--article", action="store_true", help="使用文章模式发布（有标题+封面+富文本）")
     args = parser.parse_args()
 
     if not NOTION_API_KEY:
@@ -236,11 +237,19 @@ def main():
 
         # 发布到币安广场
         print("  发布中...")
-        ok = pub.publish(
-            content=content_text,
-            token_tags=info["tokens"],  # $BTC $ETH 等 token 标签
-            image_path=local_img,
-        )
+        if args.article:
+            ok = pub.publish_article(
+                title=info["title"],
+                content=content_text,
+                token_tags=info["tokens"],
+                image_path=local_img,
+            )
+        else:
+            ok = pub.publish(
+                content=content_text,
+                token_tags=info["tokens"],
+                image_path=local_img,
+            )
 
         if ok:
             mark_published(page["id"])
