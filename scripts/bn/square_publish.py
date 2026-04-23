@@ -298,35 +298,46 @@ class SquarePublisher:
             time.sleep(0.05)
 
     def click_publish(self, dry_run: bool = False) -> bool:
-        # 找活跃的发文按钮（非 inactive，文字=发文）
-        btn_info = self._eval("""
+        # 找活跃的发文按钮（非 inactive，文字=发文）并直接派发点击事件
+        btn_cls = self._eval("""
             (function() {
                 var btns = Array.from(document.querySelectorAll('button')).filter(function(b) {
                     return (b.innerText||'').trim() === '发文' && !b.disabled
                         && !(b.className||'').includes('inactive');
                 });
                 if (!btns.length) return null;
-                // 优先选黄色实心按钮（css-1nd2rhj 或 bn-button__primary）
                 var btn = btns.find(function(b){ return (b.className||'').includes('css-1nd2rhj'); })
                        || btns.find(function(b){ return (b.className||'').includes('bn-button__primary'); })
                        || btns[0];
-                var r = btn.getBoundingClientRect();
-                return JSON.stringify({cls: btn.className, x: r.left + r.width/2, y: r.top + r.height/2});
+                return (btn.className||'').slice(0, 60);
             })()
         """)
 
-        if not btn_info:
+        if not btn_cls:
             print("  ❌ 未找到可用的发文按钮")
             return False
 
-        info = json.loads(btn_info)
-        print(f"  发文按钮: cls={info['cls'][:60]} 坐标=({info['x']:.0f},{info['y']:.0f})")
+        print(f"  发文按钮: {btn_cls}")
 
         if dry_run:
             print("  [dry-run] 跳过点击")
             return True
 
-        self._mouse_click(info["x"], info["y"])
+        # 直接对 DOM 元素派发 MouseEvent，不依赖坐标
+        self._eval("""
+            (function() {
+                var btns = Array.from(document.querySelectorAll('button')).filter(function(b) {
+                    return (b.innerText||'').trim() === '发文' && !b.disabled
+                        && !(b.className||'').includes('inactive');
+                });
+                var btn = btns.find(function(b){ return (b.className||'').includes('css-1nd2rhj'); })
+                       || btns.find(function(b){ return (b.className||'').includes('bn-button__primary'); })
+                       || btns[0];
+                if (btn) {
+                    btn.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                }
+            })()
+        """)
         time.sleep(2)
 
         # 等待编辑器清空（发布成功后编辑器会重置）
