@@ -230,10 +230,18 @@ def publish_to_xhs(title: str, content: str, image_url: str = "", article_url: s
 # ============ 主程序 ============
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="小红书发布器")
+    parser.add_argument("--auto", action="store_true", help="一键发布，跳过确认")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("📤 小红书发布器 - 从 Notion 读取待发布内容")
     print("=" * 60)
-    print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}\n")
+    print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}")
+    if args.auto:
+        print("⚡ 自动模式：跳过确认")
+    print()
 
     # 查询待发布条目
     print("📡 查询 Notion 待发布内容...")
@@ -347,11 +355,14 @@ def main():
         print()
 
         # 确认发布
-        print(f"是否发布此条？(y/n/q退出): ", end="")
-        try:
-            choice = input().strip().lower()
-        except EOFError:
+        if args.auto:
             choice = "y"
+        else:
+            print(f"是否发布此条？(y/n/q退出): ", end="")
+            try:
+                choice = input().strip().lower()
+            except EOFError:
+                choice = "y"
 
         if choice == "q":
             print("已退出")
