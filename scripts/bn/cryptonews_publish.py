@@ -99,33 +99,36 @@ def blocks_to_parts(blocks: list) -> tuple[str, str, list[str]]:
     return summary, bullets
 
 
-def build_post_content(title: str, summary: str, bullets: list[str]) -> str:
+def build_post_content(title: str, summary: str, bullets: list[str], markdown: bool = False) -> str:
     """
-    组装发布正文：
-    题目
-    （空行）
-    摘要
-    （空行）
-    • 要点1
-    （空行）
-    • 要点2
-    ...
+    组装发布正文。
+    markdown=True 时要点用 `- ` 前缀（文章模式 ProseMirror 自动转 bullet list）
+    markdown=False 时用 `• ` 普通字符（普通帖子模式）
     """
+    bullet_prefix = "- " if markdown else "• "
     parts = []
-    parts.append(title)
-    parts.append("")
 
-    if summary:
-        parts.append(summary)
+    if markdown:
+        # 文章模式：段落间一个空行，要点之间不加空行（list items 自带间距）
+        parts.append(title)
         parts.append("")
-
-    for bullet in bullets:
-        parts.append(f"• {bullet}")
+        if summary:
+            parts.append(summary)
+            parts.append("")
+        for bullet in bullets:
+            parts.append(f"{bullet_prefix}{bullet}")
+    else:
+        # 普通帖子模式：每段空行分隔
+        parts.append(title)
         parts.append("")
-
-    # 去掉末尾多余空行
-    while parts and parts[-1] == "":
-        parts.pop()
+        if summary:
+            parts.append(summary)
+            parts.append("")
+        for bullet in bullets:
+            parts.append(f"{bullet_prefix}{bullet}")
+            parts.append("")
+        while parts and parts[-1] == "":
+            parts.pop()
 
     return "\n".join(parts)
 
@@ -218,7 +221,7 @@ def main():
         # 读取页面正文 blocks，组装发布格式
         blocks = get_page_blocks(page["id"])
         summary, bullets = blocks_to_parts(blocks)
-        content_text = build_post_content(info["title"], summary, bullets)
+        content_text = build_post_content(info["title"], summary, bullets, markdown=args.article)
         if not summary and not bullets:
             print("  ⚠️ 正文为空，跳过\n")
             continue

@@ -476,7 +476,14 @@ class SquarePublisher:
         time.sleep(0.2)
         lines = content.split("\n")
         for i, line in enumerate(lines):
-            if line.strip():
+            if line.startswith("- "):
+                # markdown bullet：逐字符输入让 ProseMirror 触发列表转换
+                for ch in "- ":
+                    self._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+                    self._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch, "text": ch})
+                    time.sleep(0.05)
+                self._send("Input.insertText", {"text": line[2:]})
+            elif line.strip():
                 self._insert_line(line)
             if i < len(lines) - 1:
                 self._press_enter()
