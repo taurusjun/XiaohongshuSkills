@@ -168,7 +168,16 @@ class SquarePublisher:
             })()
         """)
         if not result:
-            return False  # 无弹窗，文字已作普通文本留着
+            # $TOKEN 类型：编辑器自动识别，直接包成 suggestion span，无需点选
+            auto_recognized = self._eval(f"""
+                (function() {{
+                    var spans = Array.from(document.querySelectorAll('span.suggestion'));
+                    return spans.some(function(s){{
+                        return (s.innerText||'').includes({json.dumps(keyword)});
+                    }});
+                }})()
+            """)
+            return bool(auto_recognized)
 
         items = json.loads(result)
         kw_lower = keyword.lower()
