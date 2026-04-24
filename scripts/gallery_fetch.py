@@ -49,6 +49,9 @@ GALLERY_SITES: dict[str, str] = {
     "natalie.mu":           ".chronicle-article-photo, article",
     "billboard-japan.com":  ".article-photo, article",
     "crank-in.net":         ".photo-link-img",
+    "limo.media":           "article, .article-body",
+    "mezamashi.media":      "article, .gallery-body",
+    "smart-flash.jp":       ".imageArea, article",
 }
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
@@ -132,9 +135,16 @@ def detect_gallery_link(article_url: str) -> str:
             matched = next((k for k in GALLERY_SITES if k in domain), None)
             if not matched:
                 continue
-            # 必须含图集关键词 且 有实际路径深度
+            # 必须有实际路径深度
+            if not _is_valid_gallery_url(href):
+                continue
+            # 新增站点直接返回，不需要关键词匹配
+            if any(site in domain for site in ["limo.media", "mezamashi.media", "smart-flash.jp"]):
+                print(f"  🔗 找到图集外链 ({domain}): {href[:70]}")
+                return href
+            # 其他站点需要含图集关键词
             href_lower = href.lower()
-            if any(hint in href_lower for hint in GALLERY_URL_HINTS) and _is_valid_gallery_url(href):
+            if any(hint in href_lower for hint in GALLERY_URL_HINTS):
                 print(f"  🔗 找到图集外链 ({domain}): {href[:70]}")
                 return href
     except Exception as e:
@@ -232,6 +242,124 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_limo(gallery_url: str) -> list[str]:
+    """limo.media 图集：遍历分页抓取正文中的图片"""
+    import re
+    from urllib.parse import urlparse
+
+    # 清理 URL，提取基础路径
+    base_url = re.sub(r'\?page=\d+', '', gallery_url)
+
+    headers = {**HEADERS, "Referer": "https://limo.media/"}
+    images = []
+
+    try:
+        # 先请求第一页，获取分页数量
+        r = requests.get(base_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        # 找分页链接
+        page_nums = set()
+        for a in s.find_all("a", href=True):
+            m = re.search(r'page=(\d+)', a["href"])
+            if m:
+                page_nums.add(int(m.group(1)))
+        max_page = max(page_nums) if page_nums else 1
+        max_page = min(max_page, 5)  # 最多 5 页
+
+        # 遍历所有分页
+        for page in range(1, max_page + 1):
+            if page == 1:
+                page_url = base_url
+            else:
+                page_url = f"{base_url}?page={page}"
+
+            r = requests.get(page_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+
+            # 找大图（870wm 尺寸）
+            for img in s.find_all("img"):
+                src = img.get("data-src") or img.get("src", "")
+                if "ismcdn.jp" in src and "/mwimgs/" in src and any(ext in src.lower() for ext in [".jpg", ".jpeg"]):
+                    # 只取大图（宽度 >= 500）
+                    m = re.search(r'/(\d+)m?/img_', src)
+                    if m and int(m.group(1)) < 500:
+                        continue
+                    # 转大图：替换尺寸部分为 1200w
+                    src = re.sub(r'/mwimgs/\w+/\w+/\d+\w*/', '/mwimgs/1200w/', src)
+                    if src not in images:
+                        images.append(src)
+                    if len(images) >= MAX_IMAGES:
+                        return images
+            time.sleep(0.3)
+    except Exception as e:
+        print(f"  ⚠️ limo 抓取失败: {e}")
+
+    return images
+
+
+def _scrape_mezamashi(gallery_url: str) -> list[str]:
+    """mezamashi.media 图集：从 gallery 页面提取所有图片"""
+    import re
+    from urllib.parse import urlparse, urlunparse
+
+    # 去掉 query 参数
+    p = urlparse(gallery_url)
+    clean_url = urlunparse(p._replace(query="", fragment=""))
+
+    headers = {**HEADERS, "Referer": "https://mezamashi.media/"}
+    images = []
+
+    try:
+        r = requests.get(clean_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        # 找所有 data-src 包含 ismcdn.jp/img 的图片
+        for img in s.find_all("img"):
+            src = img.get("data-src") or img.get("src", "")
+            if "ismcdn.jp" in src and "img_" in src:
+                # 转大图：/708/ -> /1200w/
+                src = re.sub(r'/\d+m?/', '/1200w/', src)
+                if src not in images:
+                    images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+    except Exception as e:
+        print(f"  ⚠️ mezamashi 抓取失败: {e}")
+
+    return images
+
+
+def _scrape_smart_flash(gallery_url: str) -> list[str]:
+    """smart-flash.jp 图集：提取 data.smart-flash.jp 图片"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://smart-flash.jp/"}
+    images = []
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        # 找所有 data.smart-flash.jp 图片
+        for img in s.find_all("img"):
+            src = img.get("data-src") or img.get("src", "")
+            if "data.smart-flash.jp" in src and any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                # 跳过缩略图（带尺寸后缀的）
+                if re.search(r'-\d+x\d+\.', src):
+                    # 尝试转大图：去掉尺寸后缀
+                    src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+                if src not in images:
+                    images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+    except Exception as e:
+        print(f"  ⚠️ smart-flash 抓取失败: {e}")
+
+    return images
+
+
 def _to_large_url(src: str, domain: str) -> str:
     """将缩略图 URL 转换为大图 URL（站点专用规则）"""
     if "oricon.co.jp" in domain:
@@ -253,6 +381,18 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "crank-in.net" in domain:
         images = _scrape_crank_in(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "limo.media" in domain:
+        images = _scrape_limo(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "mezamashi.media" in domain:
+        images = _scrape_mezamashi(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "smart-flash.jp" in domain:
+        images = _scrape_smart_flash(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
