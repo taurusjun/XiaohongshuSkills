@@ -285,8 +285,9 @@ def _scrape_limo(gallery_url: str) -> list[str]:
                     m = re.search(r'/(\d+)m?/img_', src)
                     if m and int(m.group(1)) < 500:
                         continue
-                    # 转大图：替换尺寸部分为 1200w
-                    src = re.sub(r'/mwimgs/\w+/\w+/\d+\w*/', '/mwimgs/1200w/', src)
+                    # 转大图：保留子目录，只替换尺寸部分
+                    # /mwimgs/3/d/870m/ -> /mwimgs/3/d/1200w/
+                    src = re.sub(r'/mwimgs/(\w+)/(\w+)/\d+\w*/', r'/mwimgs/\1/\2/1200w/', src)
                     if src not in images:
                         images.append(src)
                     if len(images) >= MAX_IMAGES:
@@ -318,8 +319,9 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
         for img in s.find_all("img"):
             src = img.get("data-src") or img.get("src", "")
             if "ismcdn.jp" in src and "img_" in src:
-                # 转大图：/708/ -> /1200w/
-                src = re.sub(r'/\d+m?/', '/1200w/', src)
+                # 转大图：保留子目录，只替换尺寸部分
+                # /mwimgs/8/0/708/ -> /mwimgs/8/0/1200w/
+                src = re.sub(r'/mwimgs/(\w+)/(\w+)/\d+\w*/', r'/mwimgs/\1/\2/1200w/', src)
                 if src not in images:
                     images.append(src)
             if len(images) >= MAX_IMAGES:
