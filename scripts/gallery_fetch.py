@@ -52,7 +52,12 @@ GALLERY_SITES: dict[str, str] = {
     "limo.media":           "article, .article-body",
     "mezamashi.media":      "article, .gallery-body",
     "smart-flash.jp":       ".imageArea, article",
+    "mantan-web.jp":        ".photo-area, article",
 }
+
+# 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
+GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
+                         "chunichi.co.jp", "mantan-web.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide"]
@@ -101,6 +106,7 @@ def parse_page_meta(page: dict) -> dict:
         "title": get_title(),
         "key": get_text("key"),
         "link": props.get("原文链接", {}).get("url", ""),
+        "gallery_url": props.get("图集链接", {}).get("url", ""),
     }
 
 
@@ -138,8 +144,8 @@ def detect_gallery_link(article_url: str) -> str:
             # 必须有实际路径深度
             if not _is_valid_gallery_url(href):
                 continue
-            # 新增站点直接返回，不需要关键词匹配
-            if any(site in domain for site in ["limo.media", "mezamashi.media", "smart-flash.jp"]):
+            # 无需关键词的站点直接返回
+            if any(site in domain for site in GALLERY_NO_HINT_SITES):
                 print(f"  🔗 找到图集外链 ({domain}): {href[:70]}")
                 return href
             # 其他站点需要含图集关键词
@@ -362,6 +368,99 @@ def _scrape_smart_flash(gallery_url: str) -> list[str]:
     return images
 
 
+def _mantan_to_jpeg(src: str) -> str:
+    """将 mantan CDN URL 的参数替换为 w=1200,f=jpg，获取高质量 JPEG 大图。
+    输入: https://storage.mantan-web.jp/w=977,h=1466,f=webp:auto/images/...
+    输出: https://storage.mantan-web.jp/w=1200,f=jpg/images/...
+    """
+    import re
+    return re.sub(
+        r'storage\.mantan-web\.jp/[^/]+/images/',
+        'storage.mantan-web.jp/w=1200,f=jpg/images/',
+        src,
+    )
+
+
+def _scrape_mantan(gallery_url: str) -> list[str]:
+    """mantan-web.jp 图集：第一页已包含全部图片的导航列表（photo__photolist-item），
+    直接从导航列表一次性提取，无需逐页请求。URL 转换为 w=1200,f=jpg 大图 JPEG。"""
+    headers = {**HEADERS, "Referer": "https://gravure.mantan-web.jp/"}
+    images = []
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        # photo__photolist-item 是导航缩略图列表，每项对应一张图，
+        # src 已经是大图 URL（与各 photopage 主图相同）
+        for a in s.find_all("a", class_="photo__photolist-item"):
+            img = a.find("img")
+            if not img:
+                continue
+            src = img.get("src", "")
+            if "storage.mantan-web.jp" in src and "_size" in src:
+                src = _mantan_to_jpeg(src)
+                if src not in images:
+                    images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+
+        # fallback：若导航列表为空（页面结构变更），退回到只取主图（第一个非导航 img）
+        if not images:
+            for img in s.find_all("img"):
+                src = img.get("src", "")
+                if "storage.mantan-web.jp" in src and "_size" in src:
+                    parent_classes = img.parent.get("class", [])
+                    if "photo__photolist-item" not in parent_classes:
+                        images.append(_mantan_to_jpeg(src))
+                        break
+    except Exception as e:
+        print(f"  ⚠️ mantan-web 抓取失败: {e}")
+
+    return images
+
+
+def _scrape_chunichi(gallery_url: str) -> list[str]:
+    """chunichi.co.jp 文章页：只提取正文图（/article/size1/），排除推荐缩略图和 UI 素材"""
+    from urllib.parse import urlparse, urlunparse
+
+    # 去掉 fragment（#1 锚点）
+    p = urlparse(gallery_url)
+    clean_url = urlunparse(p._replace(fragment=""))
+
+    headers = {**HEADERS, "Referer": "https://www.chunichi.co.jp/"}
+    images = []
+
+    try:
+        r = requests.get(clean_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        seen = set()
+        for img in s.find_all("img"):
+            src = img.get("src", "") or img.get("data-src", "")
+            if not src:
+                continue
+            if "static.chunichi.co.jp" not in src:
+                continue
+            # 协议补全
+            if src.startswith("//"):
+                src = "https:" + src
+            # 只取正文大图：路径必须含 /article/size1/
+            # size3 是推荐文章缩略图，/images/ 目录是 logo/banner/icon
+            if "/article/size1/" not in src:
+                continue
+            if src in seen:
+                continue
+            seen.add(src)
+            images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+    except Exception as e:
+        print(f"  ⚠️ chunichi 抓取失败: {e}")
+
+    return images
+
+
 def _to_large_url(src: str, domain: str) -> str:
     """将缩略图 URL 转换为大图 URL（站点专用规则）"""
     if "oricon.co.jp" in domain:
@@ -395,6 +494,14 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "smart-flash.jp" in domain:
         images = _scrape_smart_flash(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "mantan-web.jp" in domain:
+        images = _scrape_mantan(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "chunichi.co.jp" in domain:
+        images = _scrape_chunichi(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
@@ -525,13 +632,29 @@ def update_notion_gallery_url(page_id: str, gallery_url: str):
 
 # ============ Download ============
 
-def download_images(image_urls: list[str], article_dir: Path) -> list[str]:
+def _referer_for(image_url: str, gallery_url: str = "") -> str:
+    """根据图片 URL 推断下载所需的 Referer（防盗链）"""
+    from urllib.parse import urlparse
+    img_host = urlparse(image_url).netloc
+    # storage.mantan-web.jp → 需要 gravure.mantan-web.jp 作为 Referer
+    if "mantan-web.jp" in img_host:
+        return "https://gravure.mantan-web.jp/"
+    # 其余站点：优先用 gallery_url 的 origin，fallback 到图片自身 origin
+    if gallery_url:
+        p = urlparse(gallery_url)
+        return f"{p.scheme}://{p.netloc}/"
+    return f"https://{img_host}/"
+
+
+def download_images(image_urls: list[str], article_dir: Path,
+                    gallery_url: str = "") -> list[str]:
     """下载图片到目录，返回成功的文件名列表"""
     article_dir.mkdir(parents=True, exist_ok=True)
     local_files = []
     for i, url in enumerate(image_urls):
         try:
-            resp = requests.get(url, headers={**HEADERS, "Referer": "https://mdpr.jp/"}, timeout=15)
+            referer = _referer_for(url, gallery_url)
+            resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=15)
             resp.raise_for_status()
             fname = f"{i + 1:03d}.jpg"
             fpath = article_dir / fname
@@ -547,7 +670,7 @@ def download_images(image_urls: list[str], article_dir: Path) -> list[str]:
 
 # ============ Main ============
 
-def process_page(page: dict) -> bool:
+def process_page(page: dict, redownload: bool = False) -> bool:
     meta = parse_page_meta(page)
     if not meta["link"]:
         return False
@@ -555,16 +678,28 @@ def process_page(page: dict) -> bool:
     key = meta["key"] or meta["id"]
     article_dir = CACHE_DIR / key
 
-    # 已处理过（有 meta.json）则跳过
+    # 已处理过（有 meta.json）则跳过，除非强制重新下载
     if (article_dir / "meta.json").exists():
-        print(f"  ⏭ 已缓存，跳过")
-        return False
+        if not redownload:
+            print(f"  ⏭ 已缓存，跳过（加 --redownload 可强制重新下载）")
+            return False
+        # 清除旧图片文件，保留目录
+        import shutil
+        for f in article_dir.iterdir():
+            if f.name != "uploaded.flag":  # 保留上传标记以外的都删除
+                f.unlink() if f.is_file() else shutil.rmtree(f)
+        print(f"  🔄 强制重新下载")
 
-    print(f"  🔍 检测图集链接: {meta['link'][:60]}")
-    gallery_url = detect_gallery_link(meta["link"])
-    if not gallery_url:
-        print(f"  — 未找到图集链接")
-        return False
+    # 优先用 Notion 里已填的「图集链接」，没有才从 Yahoo 文章页自动检测
+    if meta.get("gallery_url"):
+        gallery_url = meta["gallery_url"]
+        print(f"  📎 使用 Notion 图集链接: {gallery_url[:70]}")
+    else:
+        print(f"  🔍 检测图集链接: {meta['link'][:60]}")
+        gallery_url = detect_gallery_link(meta["link"])
+        if not gallery_url:
+            print(f"  — 未找到图集链接")
+            return False
 
     print(f"  📸 图集: {gallery_url}")
     image_urls = scrape_gallery_images(gallery_url)
@@ -573,7 +708,7 @@ def process_page(page: dict) -> bool:
         return False
 
     print(f"  下载 {len(image_urls)} 张图片...")
-    local_files = download_images(image_urls, article_dir)
+    local_files = download_images(image_urls, article_dir, gallery_url=gallery_url)
     if not local_files:
         return False
 
@@ -600,6 +735,8 @@ def main():
     parser.add_argument("--limit", type=int, default=20, help="扫描最近 N 条")
     parser.add_argument("--max-images", type=int, default=None, help="每篇最多下载图片数（默认 9）")
     parser.add_argument("--notion-id", help="指定单条 Notion 页面 ID")
+    parser.add_argument("--redownload", action="store_true",
+                        help="强制重新下载已缓存的条目（会清除旧图片）")
     args = parser.parse_args()
 
     if args.max_images:
@@ -624,7 +761,7 @@ def main():
     for i, page in enumerate(pages, 1):
         meta = parse_page_meta(page)
         print(f"[{i}/{len(pages)}] {meta['title'][:40]}")
-        if process_page(page):
+        if process_page(page, redownload=args.redownload):
             found += 1
         print()
 

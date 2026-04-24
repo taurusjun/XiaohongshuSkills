@@ -80,14 +80,25 @@ def upload_local_jpeg(file_path: Path) -> str:
 # ============ Notion ============
 
 def append_image_blocks(page_id: str, cloudinary_urls: list[str]):
-    """在 Notion 页面末尾追加图片 blocks"""
-    children = [
-        {
+    """在 Notion 页面末尾追加图片 blocks。
+    每张图写一对：to_do(checkbox，默认选中) + image block。
+    在 Notion 中取消勾选 checkbox 即可在发布时排除该图片。
+    """
+    children = []
+    for url in cloudinary_urls:
+        # checkbox：默认选中，文字显示图片序号，方便识别
+        idx = len(children) // 2 + 1
+        children.append({
+            "type": "to_do",
+            "to_do": {
+                "rich_text": [{"type": "text", "text": {"content": f"图片 {idx:02d}"}}],
+                "checked": True,
+            },
+        })
+        children.append({
             "type": "image",
             "image": {"type": "external", "external": {"url": url}},
-        }
-        for url in cloudinary_urls
-    ]
+        })
     resp = requests.patch(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS,
