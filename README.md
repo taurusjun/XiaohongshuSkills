@@ -225,6 +225,117 @@ python scripts/cdp_publish.py content_data
 python scripts/cdp_publish.py content-data --csv-file "/abs/path/content_data.csv"
 ```
 
+---
+
+## Yahoo 新闻 → 小红书自动发布流程
+
+从 Yahoo Japan 抓取新闻，经图集选图后自动发布到小红书。
+
+### 前置配置（.env）
+
+```env
+NOTION_API_KEY=...
+NOTION_DATABASE_ID=...          # 日本新闻数据库 ID
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+```
+
+Notion 日本新闻数据库需包含以下属性：
+- `图集下载`（Checkbox）— 勾选后才会下载图集
+- `图集链接`（URL）— 自动写入，无需手动填
+- `发布XHS`（Checkbox）— 勾选后才会发布
+- `发布XHS时间`（Date）— 发布成功后自动写入
+
+---
+
+### 方式一：完整一键流程（推荐）
+
+```bash
+# 抓取图集 → 预览选图 → 上传 → 发布，全流程一键完成
+python scripts/xhs_news_pipeline.py
+
+# 一键全自动（发布时跳过逐条确认）
+python scripts/xhs_news_pipeline.py --auto
+
+# 限制每篇最多下载图片数
+python scripts/xhs_news_pipeline.py --max-images 6
+
+# 跳过图集流程，直接发布已有文章
+python scripts/xhs_news_pipeline.py --skip-gallery --auto
+```
+
+流程说明：
+1. `gallery_fetch.py` — 扫描 Notion 勾选了「图集下载」的文章，抓取图集图片到本地缓存
+2. `gallery_preview.py` — 浏览器打开预览页，勾选图片后「确认上传」（自动调用 gallery_upload.py）
+3. `yahoo_news_publish.py` — 读取 Notion 勾选了「发布XHS」的文章，合并封面图 + 图集最多 9 张发布
+
+---
+
+### 方式二：分步执行
+
+#### Step 1：抓取新闻
+
+```bash
+# 抓取并推送到 Notion（含图集链接检测）
+python scripts/yahoo_news_auto.py --push
+
+# 指定关键词
+python scripts/yahoo_news_auto.py --keyword 乃木坂 --push
+
+# 指定关键词 + 抓取数量
+python scripts/yahoo_news_auto.py --keyword AKB48 --max 5 --push
+```
+
+执行后 Notion 中每条文章会自动填入`图集链接`（如有）。
+
+#### Step 2：下载图集并选图上传
+
+在 Notion 中勾选需要下载图集的文章（`图集下载 = ✓`），然后：
+
+```bash
+# 简化入口：下载图集 → 浏览器预览选图 → 上传 Cloudinary → 写入 Notion
+python scripts/gallery_download.py
+
+# 限制每篇最多下载图片数
+python scripts/gallery_download.py --max-images 4
+```
+
+也可分步执行（便于调试或跳过某一步）：
+
+```bash
+# 仅下载图集
+python scripts/gallery_fetch.py --limit 20
+
+# 仅预览选图（确认后自动上传）
+python scripts/gallery_preview.py
+
+# 仅上传已选图片（通常由 preview 自动触发）
+python scripts/gallery_upload.py
+```
+
+浏览器会打开预览页，勾选需要上传的图片后点「确认上传」，自动完成上传并将图片 URL 写入 Notion 页面 blocks。
+
+#### Step 3：发布到小红书
+
+在 Notion 中勾选需要发布的文章（`发布XHS = ✓`），然后：
+
+```bash
+# 逐条确认发布（有图集链接但未下载图片时会提醒）
+python scripts/yahoo_news_publish.py
+
+# 一键发布，跳过逐条确认
+python scripts/yahoo_news_publish.py --auto
+
+# 忽略图集检查，直接发布
+python scripts/yahoo_news_publish.py --force
+
+# 一键发布 + 忽略图集检查
+python scripts/yahoo_news_publish.py --auto --force
+```
+
+---
+
 ## 命令参考
 
 ### 话题标签（publish_pipeline.py）
