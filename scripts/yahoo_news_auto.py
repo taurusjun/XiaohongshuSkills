@@ -727,7 +727,8 @@ def push_to_notion(news: Dict) -> bool:
     resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
     if resp.status_code != 200:
         print(f"    ⚠️ Notion 错误: {resp.status_code} {resp.text[:200]}")
-    return resp.status_code == 200
+        return False
+    return resp.json().get("id", "")
 
 
 # ============ 主程序 ============
@@ -818,10 +819,22 @@ def process_keyword(keyword: str, max_results: int, china_filter: bool, no_trans
         # 立即推送到 Notion
         if push:
             key = extract_key_from_url(news["link"])
-            if push_to_notion(news):
+            page_id = push_to_notion(news)
+            if page_id:
                 print(f"    ✅ 已推送到 Notion")
                 if existing_keys is not None:
                     existing_keys.add(key)
+                # 检测图集外链并写入 Notion
+                try:
+                    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                    from gallery_fetch import detect_gallery_link, update_notion_gallery_url
+                    gallery_url = detect_gallery_link(news["link"])
+                    if gallery_url:
+                        update_notion_gallery_url(page_id, gallery_url)
+                    else:
+                        print(f"    — 未检测到图集外链")
+                except Exception as e:
+                    print(f"    ⚠️ 图集检测失败: {e}")
             else:
                 print(f"    ❌ 推送失败")
 

@@ -55,6 +55,24 @@ def get_pending_pages() -> list:
     return []
 
 
+def get_page_image_blocks(page_id: str) -> list[str]:
+    """获取页面中 image blocks 的 URL 列表（gallery_upload 写入的图集图片）"""
+    resp = requests.get(
+        f"https://api.notion.com/v1/blocks/{page_id}/children",
+        headers=NOTION_HEADERS
+    )
+    if resp.status_code != 200:
+        return []
+    urls = []
+    for block in resp.json().get("results", []):
+        if block.get("type") == "image":
+            img = block.get("image", {})
+            url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
+            if url:
+                urls.append(url)
+    return urls
+
+
 def get_page_content(page_id: str) -> tuple:
     """获取页面正文内容，返回 (正文, 词汇部分, 日文原标题, 日文摘要)"""
     resp = requests.get(
@@ -148,6 +166,7 @@ def parse_page(page: dict) -> dict:
         "pub_time": get_text("发布时间"),
         "link": props.get("原文链接", {}).get("url", ""),
         "image_url": props.get("封面图", {}).get("url", ""),
+        "gallery_url": props.get("图集链接", {}).get("url", ""),
         "category": props.get("分类", {}).get("select", {}).get("name", ""),
         "tags": [t.get("name", "") for t in props.get("标签", {}).get("multi_select", [])],
     }
@@ -181,9 +200,12 @@ def fetch_article_image(url: str) -> str:
 
 # ============ XHS 发布 ============
 
-def publish_to_xhs(title: str, content: str, image_url: str = "", article_url: str = "") -> bool:
-    """调用 publish_pipeline.py 发布到小红书"""
+def publish_to_xhs(title: str, content: str, image_urls: list[str] = None, article_url: str = "") -> bool:
+    """调用 publish_pipeline.py 发布到小红书，image_urls 支持多张（封面图 + 图集）"""
     import subprocess
+    if image_urls is None:
+        image_urls = []
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     pipeline = os.path.join(script_dir, "publish_pipeline.py")
 
@@ -194,9 +216,11 @@ def publish_to_xhs(title: str, content: str, image_url: str = "", article_url: s
         "--headless"
     ]
 
-    if image_url:
-        cmd += ["--image-urls", image_url]
-        print(f"  配图: {image_url[:60]}...")
+    # XHS 最多 9 张
+    effective_urls = image_urls[:9]
+    if effective_urls:
+        cmd += ["--image-urls"] + effective_urls
+        print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
     else:
         print(f"  ⚠️ 未找到封面图，发布可能失败")
 
@@ -206,7 +230,7 @@ def publish_to_xhs(title: str, content: str, image_url: str = "", article_url: s
     if result.returncode == 0:
         return True
 
-    # 如果图片下载失败，尝试重新抓取
+    # 如果图片下载失败，尝试重新抓取封面图
     if "All image downloads failed" in result.stderr and article_url:
         print("  ⚠️ 图片URL已过期，重新抓取...")
         new_image_url = fetch_article_image(article_url)
@@ -232,7 +256,8 @@ def publish_to_xhs(title: str, content: str, image_url: str = "", article_url: s
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="小红书发布器")
-    parser.add_argument("--auto", action="store_true", help="一键发布，跳过确认")
+    parser.add_argument("--auto", action="store_true", help="一键发布，跳过逐条确认")
+    parser.add_argument("--force", action="store_true", help="忽略图集检查，直接发布")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -393,17 +418,42 @@ def main():
             print("跳过\n")
             continue
 
-        # 从 Notion 读取封面图，没有再抓取
+        # 封面图
         image_url = info.get("image_url", "")
         if not image_url and info["link"]:
             print("  封面图不在 Notion，重新抓取...")
             image_url = fetch_article_image(info["link"])
+
+        # 图集图片（gallery_upload 写入的 image blocks）
+        gallery_urls = get_page_image_blocks(page["id"])
+        if gallery_urls:
+            print(f"  图集图片: {len(gallery_urls)} 张")
+
+        # 有图集链接但图片未下载 → 提醒
+        if info.get("gallery_url") and not gallery_urls and not args.force:
+            print(f"  ⚠️  此文章有图集链接但图片尚未下载：")
+            print(f"      {info['gallery_url']}")
+            print(f"  先运行 gallery_download.py 下载图集，或加 --force 强制发布")
+            try:
+                ans = input("  强制发布？(y/N): ").strip().lower()
+            except EOFError:
+                ans = "n"
+            if ans != "y":
+                print("  跳过\n")
+                continue
+
+        # 合并：封面图在前，图集在后，去重，最多 9 张
+        all_images = []
         if image_url:
-            print(f"  封面图: {image_url[:60]}...")
+            all_images.append(image_url)
+        for u in gallery_urls:
+            if u not in all_images:
+                all_images.append(u)
+        all_images = all_images[:9]
 
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(short_title, xhs_content, image_url, info["link"]):
+        if publish_to_xhs(short_title, xhs_content, all_images, info["link"]):
             if mark_as_published(page["id"]):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
