@@ -56,20 +56,46 @@ def get_pending_pages() -> list:
 
 
 def get_page_image_blocks(page_id: str) -> list[str]:
-    """获取页面中 image blocks 的 URL 列表（gallery_upload 写入的图集图片）"""
+    """获取页面中图集图片 URL 列表。
+    识别两种写法：
+    1. 新格式（to_do + image 成对）：只取 checked=True 的 to_do 后面紧跟的 image URL
+    2. 旧格式（裸 image block）：直接取所有 image URL（兼容旧数据）
+    """
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
     )
     if resp.status_code != 200:
         return []
+
+    blocks = resp.json().get("results", [])
     urls = []
-    for block in resp.json().get("results", []):
-        if block.get("type") == "image":
-            img = block.get("image", {})
-            url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
-            if url:
-                urls.append(url)
+
+    # 判断是否是新格式（含 to_do block）
+    has_todo = any(b.get("type") == "to_do" for b in blocks)
+
+    if has_todo:
+        # 新格式：to_do(checked) 后面紧跟的 image 才取
+        for i, block in enumerate(blocks):
+            if block.get("type") != "to_do":
+                continue
+            if not block.get("to_do", {}).get("checked", False):
+                continue
+            # 找紧跟其后的 image block
+            if i + 1 < len(blocks) and blocks[i + 1].get("type") == "image":
+                img = blocks[i + 1].get("image", {})
+                url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
+                if url:
+                    urls.append(url)
+    else:
+        # 旧格式：直接取所有 image block（兼容旧数据）
+        for block in blocks:
+            if block.get("type") == "image":
+                img = block.get("image", {})
+                url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
+                if url:
+                    urls.append(url)
+
     return urls
 
 
