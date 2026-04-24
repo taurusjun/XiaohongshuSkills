@@ -222,7 +222,9 @@ class SquarePublisher:
             if line.strip():
                 self._insert_line(line)
             if i < len(lines) - 1:
-                self._press_enter()
+                # 用 insertText("\n") 触发 input 事件，确保 ProseMirror 创建段落
+                self._send("Input.insertText", {"text": "\n"})
+                time.sleep(0.05)
         time.sleep(0.5)
         text = self._get_editor_text()
         counter = self._get_counter()
