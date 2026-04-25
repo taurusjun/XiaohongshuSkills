@@ -59,6 +59,7 @@ GALLERY_SITES: dict[str, str] = {
     "smart-flash.jp":       ".imageArea, article",
     "mantan-web.jp":        ".photo-area, article",
     "inside-games.jp":      "article, body",
+    "thetv.jp":             ".newsimage",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）

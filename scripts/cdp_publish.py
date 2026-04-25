@@ -1486,19 +1486,89 @@ class XiaohongshuPublisher:
             "suggestions": suggestions,
         }
 
+    def _select_sort_newest(self) -> bool:
+        """Open the filter panel on a search_result page and click 「最新」.
+
+        Uses JS .click() to open the panel (which works for the toggle button),
+        then uses real CDP Input.dispatchMouseEvent to click the 「最新」 tag
+        (JS .click() alone does not trigger Vue's reactivity on filter tags).
+
+        Returns True if 最新 was successfully selected, False otherwise.
+        """
+        # Step 1: open panel via JS click on 「筛选」
+        clicked = self._evaluate("""
+(function(){
+    var btn = document.querySelector('.filter');
+    if (!btn) return false;
+    btn.click();
+    return true;
+})()
+""")
+        if not clicked:
+            return False
+        self._sleep(0.8, minimum_seconds=0.6)
+
+        # Step 2: wait for panel to become visible
+        for _ in range(8):
+            visible = self._evaluate(
+                "(function(){"
+                "var p=document.querySelector('.filter-panel');"
+                "return !!(p && window.getComputedStyle(p).display !== 'none');"
+                "})()"
+            )
+            if visible:
+                break
+            self._sleep(0.3, minimum_seconds=0.2)
+        else:
+            return False
+
+        # Step 3: get BCR coords of 「最新」 tag and do a real CDP mouse click
+        coords = self._evaluate("""
+(function(){
+    var panel = document.querySelector('.filter-panel');
+    if (!panel) return null;
+    var target = Array.from(panel.querySelectorAll('.tags')).find(function(el){
+        return (el.innerText || '').trim() === '最新';
+    });
+    if (!target) return null;
+    var r = target.getBoundingClientRect();
+    if (r.width === 0) return null;
+    return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+})()
+""")
+        if not coords or not coords.get("x"):
+            return False
+
+        self._mouse_click(coords["x"], coords["y"])
+        self._sleep(0.5, minimum_seconds=0.3)
+
+        # Dismiss the filter panel: move mouse away (panel hides on mouse-out)
+        self._send("Input.dispatchMouseEvent", {
+            "type": "mouseMoved", "x": 50, "y": 300,
+        })
+        self._sleep(0.3, minimum_seconds=0.2)
+        return True
+
     def search_feeds(
         self,
         keyword: str,
         filters: SearchFilters | None = None,
+        sort: str = "newest",
     ) -> dict[str, Any]:
         """
         Search Xiaohongshu feeds by keyword and optional filters.
 
+        Args:
+            keyword: Search keyword.
+            filters: Optional search filters.
+            sort: Sort order — "newest" (default) or "general".
+                  "newest" opens the filter panel and clicks 「最新」 after navigation.
+
         Returns:
             {
                 "keyword": str,
-                "recommended_keywords": list[str],  # dropdown related terms
-                "feeds": list[dict[str, Any]],      # extracted from __INITIAL_STATE__
+                "recommended_keywords": list[str],
+                "feeds": list[dict[str, Any]],
             }
         """
         if not self.ws:
@@ -1508,9 +1578,6 @@ class XiaohongshuPublisher:
         if not keyword:
             raise CDPError("Keyword cannot be empty.")
 
-        self._navigate(SEARCH_BASE_URL)
-        self._sleep(2, minimum_seconds=1.0)
-
         explorer = FeedExplorer(
             self._evaluate,
             self._sleep,
@@ -1518,6 +1585,7 @@ class XiaohongshuPublisher:
             click_mouse=self._click_mouse,
         )
 
+        # Capture recommendations in parallel with the keyword navigation
         recommendation_result = self._capture_search_recommendations_via_network(keyword=keyword)
         recommended_keywords = recommendation_result.get("suggestions", [])
 
@@ -1528,10 +1596,19 @@ class XiaohongshuPublisher:
                 f"reason={reason}"
             )
 
-        # Always navigate with keyword URL to keep feed extraction stable.
+        # Navigate straight to keyword URL — single navigate, no double-jump
         search_url = make_search_url(keyword)
         self._navigate(search_url)
         self._sleep(2, minimum_seconds=1.0)
+
+        # Select sort order via filter panel click
+        if sort == "newest":
+            ok = self._select_sort_newest()
+            if ok:
+                print("[cdp_publish] Sort set to 最新.")
+                self._sleep(1.5, minimum_seconds=1.0)
+            else:
+                print("[cdp_publish] Warning: failed to select 最新 sort, using default.")
 
         try:
             feeds = explorer.search_feeds(keyword=keyword, filters=filters)
@@ -2643,7 +2720,15 @@ class XiaohongshuPublisher:
    .replace("__CLS_KW__",   cls_kw_js) \
    .replace("__TEXT_KW__",  text_kw_js)
 
-        state = self._evaluate(state_script)
+        # Retry state read — modal DOM may not be fully painted when
+        # _wait_engage_bar returns (especially for multi-image/video notes)
+        state = None
+        for _retry in range(3):
+            state = self._evaluate(state_script)
+            if isinstance(state, dict) and state.get("found"):
+                break
+            if _retry < 2:
+                self._sleep(0.5, minimum_seconds=0.3)
         if not isinstance(state, dict) or not state.get("found"):
             raise CDPError("Failed to set note action state: action_button_not_found")
 
@@ -2665,13 +2750,14 @@ class XiaohongshuPublisher:
         if not coords:
             raise CDPError("Failed to set note action state: action_button_not_found")
 
-        # --- Step 3: real mouse click ---
-        self._mouse_click(coords[0], coords[1])
-        self._sleep(1.5, minimum_seconds=1.0)
-
-        # --- Step 4: verify state changed ---
-        state_after_raw = self._evaluate(state_script)
-        state_after = bool(state_after_raw.get("active")) if isinstance(state_after_raw, dict) else state_before
+        # --- Step 3: real mouse click (retry once if unregistered) ---
+        for _click_attempt in range(2):
+            self._mouse_click(coords[0], coords[1])
+            self._sleep(2.5, minimum_seconds=2.0)
+            state_after_raw = self._evaluate(state_script)
+            state_after = bool(state_after_raw.get("active")) if isinstance(state_after_raw, dict) else state_before
+            if state_after != state_before:
+                break
 
         return {
             "ok": True,
@@ -2695,7 +2781,7 @@ class XiaohongshuPublisher:
                     "(function(){"
                     "var eb=document.querySelector('.engage-bar-container');"
                     "if (eb && eb.offsetParent !== null) return true;"
-                    "return /\\/explore\\/[a-f0-9]{16,}/.test(location.href);"
+                    "return /\\/explore\\/[a-f0-9]{16,}(?:\\?|$)/.test(location.href);"
                     "})()"
                 )
             except Exception:
@@ -2854,7 +2940,7 @@ class XiaohongshuPublisher:
             "(function(){"
             "var eb=document.querySelector('.engage-bar-container');"
             "if (eb && eb.offsetParent !== null) return true;"
-            "return /\\/explore\\/[a-f0-9]{16,}/.test(location.href);"
+            "return /\\/explore\\/[a-f0-9]{16,}(?:\\?|$)/.test(location.href);"
             "})()"
         )
         if modal_open:
@@ -2948,8 +3034,9 @@ class XiaohongshuPublisher:
         Returns True if the modal opened, False otherwise.
         """
         # Guard: close any already-open modal first
+        import re as _re
         cur_url = self._evaluate("location.href") or ""
-        if "/explore/" in cur_url and "search_result" not in cur_url:
+        if _re.search(r"/explore/[a-f0-9]{16,}(\?|$)", cur_url):
             self.close_note_modal()
             self._sleep(0.5, minimum_seconds=0.4)
 
@@ -3039,8 +3126,10 @@ class XiaohongshuPublisher:
 
         def _is_modal_open() -> bool:
             url = self._evaluate("location.href") or ""
-            # URL is /explore/{hex-id} while modal is open
-            return "/explore/" in url and "search_result" not in url
+            # URL is /explore/{hex-id}?... while modal is open
+            # Use word-boundary to avoid matching "web_explore_feed" in search_result URLs
+            import re
+            return bool(re.search(r"/explore/[a-f0-9]{16,}(\?|$)", url))
 
         # Nothing to do if modal is already closed
         if not _is_modal_open():
@@ -3060,10 +3149,11 @@ class XiaohongshuPublisher:
             _esc()
             self._sleep(0.6, minimum_seconds=0.4)
 
-        # Wait for URL to settle back to search_result (up to ~2s)
+        # Wait for modal URL (/explore/{id}?...) to disappear (up to ~2s)
+        import re as _re
         for _ in range(8):
             url = self._evaluate("location.href") or ""
-            if "search_result" in url:
+            if not _re.search(r"/explore/[a-f0-9]{16,}(\?|$)", url):
                 break
             self._sleep(0.25, minimum_seconds=0.2)
 
@@ -3159,7 +3249,7 @@ class XiaohongshuPublisher:
         return self._set_note_toggle_state(
             selectors=[".engage-bar-container .like-wrapper"],
             desired_active=desired,
-            active_class_keywords=["like-active", "liked", "active"],
+            active_class_keywords=[],  # "like-active" is always present on XHS — use SVG href instead
             active_text_keywords=["已赞", "取消赞"],
         )
 
@@ -3168,7 +3258,7 @@ class XiaohongshuPublisher:
         return self._set_note_toggle_state(
             selectors=[".engage-bar-container .collect-wrapper"],
             desired_active=desired,
-            active_class_keywords=["collect-active", "collected", "active"],
+            active_class_keywords=[],  # "collect-active" is not used by XHS — rely on SVG href
             active_text_keywords=["已收藏", "取消收藏"],
         )
 
@@ -3196,7 +3286,7 @@ class XiaohongshuPublisher:
                 ".engage-bar-container .like-wrapper",
             ],
             desired_active=upvoted,
-            active_class_keywords=["like-active", "liked", "active", "on", "selected"],
+            active_class_keywords=[],  # "like-active" is always present — use SVG href
             active_text_keywords=["已赞", "取消赞"],
         )
         return {
@@ -3233,7 +3323,7 @@ class XiaohongshuPublisher:
                 ".engage-bar-container .collect-wrapper",
             ],
             desired_active=bookmarked,
-            active_class_keywords=["collect-active", "collected", "bookmarked", "active", "on", "selected"],
+            active_class_keywords=[],  # XHS uses SVG href, not CSS class, for bookmark state
             active_text_keywords=["已收藏", "取消收藏"],
         )
         return {

@@ -100,21 +100,32 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
     return random.choice(COMMENT_TEMPLATES)
 
 
-def get_dom_feed_ids(pub: XiaohongshuPublisher) -> list[str]:
-    """Return feed_ids of note cards currently rendered in the DOM (search_result)."""
+def get_dom_feed_info(pub: XiaohongshuPublisher) -> dict[str, str]:
+    """Return {feed_id: title} mapping from cards currently rendered in the DOM.
+
+    Titles extracted from the card's .title element, <img alt="">, or first
+    text line — in that priority order.  This is used as a fallback when the
+    API response doesn't include a displayTitle (e.g. video notes).
+    """
     result = pub._evaluate(r"""
 (function(){
     var sections = Array.from(document.querySelectorAll('section.note-item'));
-    var ids = [];
+    var out = {};
     sections.forEach(function(sec){
         var a = sec.querySelector('a[href*="/explore/"]');
         var m = a ? a.href.match(/\/explore\/([a-f0-9]{20,})/) : null;
-        if (m) ids.push(m[1]);
+        if (!m) return;
+        var fid = m[1];
+        var t = (sec.querySelector('.title') || {}).innerText;
+        if (!t) t = (sec.querySelector('img') || {}).alt;
+        if (!t) t = (sec.innerText || '').trim().split('\n')[0];
+        if (t) t = t.trim();
+        out[fid] = t || '';
     });
-    return ids;
+    return out;
 })()
 """)
-    return result if isinstance(result, list) else []
+    return result if isinstance(result, dict) else {}
 
 
 def check_page_accessible(pub: XiaohongshuPublisher) -> bool:
@@ -161,14 +172,21 @@ def process_note_in_modal(
         print("  🚨 检测到风控提示，停止操作！")
         return True  # risk triggered
 
+    acted = False  # track whether any action was taken
+
     # 点赞
     if stats["like"] < MAX_LIKES_PER_SESSION and random.random() < like_prob:
         try:
             res = pub.toggle_like_in_modal(desired=True)
-            ok  = res.get("ok") and (res.get("changed") or res.get("state_after"))
-            print(f"  👍 点赞: {'✅' if ok else '❌'}")
-            if ok:
+            changed = res.get("changed", False)
+            if not res.get("ok"):
+                print("  👍 点赞: ❌")
+            elif changed:
+                print("  👍 点赞: ✅")
                 stats["like"] += 1
+                acted = True
+            else:
+                print("  👍 点赞: 👍 已赞")
         except CDPError as e:
             print(f"  👍 点赞: ❌ ({e})")
         human_sleep(*DEFAULT_ACTION_DELAY)
@@ -177,10 +195,15 @@ def process_note_in_modal(
     if random.random() < bookmark_prob:
         try:
             res = pub.toggle_bookmark_in_modal(desired=True)
-            ok  = res.get("ok") and (res.get("changed") or res.get("state_after"))
-            print(f"  🔖 收藏: {'✅' if ok else '❌'}")
-            if ok:
+            changed = res.get("changed", False)
+            if not res.get("ok"):
+                print("  🔖 收藏: ❌")
+            elif changed:
+                print("  🔖 收藏: ✅")
                 stats["bookmark"] += 1
+                acted = True
+            else:
+                print("  🔖 收藏: 🔖 已收藏")
         except CDPError as e:
             print(f"  🔖 收藏: ❌ ({e})")
         human_sleep(*DEFAULT_ACTION_DELAY)
@@ -193,9 +216,15 @@ def process_note_in_modal(
             print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
             if ok:
                 stats["comment"] += 1
+                acted = True
         except CDPError as e:
             print(f"  💬 评论: ❌ ({e})")
         human_sleep(*DEFAULT_ACTION_DELAY)
+
+    # 无操作时模拟人类浏览停留（modal 弹出就秒关会被 XHS 检测为异常）
+    if not acted:
+        print(f"  📖 正在浏览…")
+        human_sleep(*DEFAULT_BROWSE_DELAY)
 
     return False  # no risk
 
@@ -234,7 +263,10 @@ def wander_search(
             continue
 
         feed_meta: dict[str, dict] = {f["id"]: f for f in feeds if f.get("id")}
-        dom_ids = get_dom_feed_ids(pub)
+
+        # DOM card info: {feed_id: title} for fallback when API has no displayTitle
+        dom_feed_info = get_dom_feed_info(pub)
+        dom_ids = list(dom_feed_info.keys())
         eligible = [fid for fid in dom_ids if fid in feed_meta]
         if not eligible:
             print("  ⚠️ DOM 中没有匹配的 card，跳过")
@@ -250,7 +282,8 @@ def wander_search(
 
             feed      = feed_meta[feed_id]
             note_card = feed.get("noteCard", {})
-            title     = note_card.get("displayTitle") or feed.get("title") or "（无标题）"
+            title     = (note_card.get("displayTitle") or feed.get("title")
+                         or dom_feed_info.get(feed_id) or "（无标题）")
             author_id = (note_card.get("user") or {}).get("userId", "")
 
             print(f"\n  [{i}/{len(selected_ids)}] {title[:40]}")
@@ -278,6 +311,9 @@ def wander_search(
                 print("  ⚠️ modal 未打开，跳过")
                 stats["skip"] += 1
                 continue
+
+            # 等待 modal DOM 完全渲染（图片/视频加载），避免点击被遮挡
+            time.sleep(1.5)
 
             risk = process_note_in_modal(pub, title, like_prob, bookmark_prob, comment_prob, stats, dry_run=False)
             if risk:
