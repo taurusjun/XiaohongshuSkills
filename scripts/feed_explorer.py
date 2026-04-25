@@ -81,12 +81,22 @@ class SearchFilters:
                 )
 
 
+SORT_TYPE_MAP = {
+    "general": None,   # 综合（默认，不带 type 参数）
+    "newest":  51,     # 最新（通过面板点击切换，type 值仅供参考）
+}
+
+
 def make_search_url(keyword: str) -> str:
-    """Build Xiaohongshu search URL for feed search."""
+    """Build Xiaohongshu search URL for feed search (no sort param — sort is
+    applied by _select_sort_newest() after navigation)."""
     if not keyword.strip():
         raise FeedExplorerError("Keyword cannot be empty.")
-    query = urlencode({"keyword": keyword.strip(), "source": "web_explore_feed"})
-    return f"{SEARCH_BASE_URL}?{query}"
+    params: dict[str, Any] = {
+        "keyword": keyword.strip(),
+        "source": "web_explore_feed",
+    }
+    return f"{SEARCH_BASE_URL}?{urlencode(params)}"
 
 
 def make_feed_detail_url(feed_id: str, xsec_token: str) -> str:
