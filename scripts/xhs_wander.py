@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
 小红书自动闲逛脚本
-- 按关键词搜索帖子
-- 随机点赞 / 收藏 / 评论，模拟真人行为
+- search 模式：按关键词搜索帖子，在 search_result 页点击 card
+- explore 模式：在 /explore 发现页点击 card
+- 全程模拟鼠标：点击 card 打开 modal → 在 modal 里点赞/收藏/评论 → ESC 关闭
+- 不使用 Page.navigate 到 /explore/{id}，避免 SPA 拦截
 - 支持多关键词、概率配置、评论模板
 
 用法:
     python xhs_wander.py --keywords "日语学习" "AKB" --count 10
-    python xhs_wander.py --keywords "日语学习" --like-prob 0.6 --bookmark-prob 0.3 --comment-prob 0.2
-    python xhs_wander.py --keywords "日语学习" --dry-run
+    python xhs_wander.py --keywords "日语学习" --like-prob 0.6 --bookmark-prob 0.3
+    python xhs_wander.py --page explore --count 10
+    python xhs_wander.py --dry-run
 """
 
 import argparse
-import json
 import os
 import random
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -26,47 +27,42 @@ try:
 except ImportError:
     pass
 
-MY_USER_ID = os.environ.get("XHS_MY_USER_ID", "")  # 填入自己的 userId 以跳过自己的帖子
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from cdp_publish import XiaohongshuPublisher, CDPError  # noqa: E402
+
+MY_USER_ID = os.environ.get("XHS_MY_USER_ID", "")
 
 # ============ 默认配置 ============
 
-DEFAULT_LIKE_PROB = 0.25       # 点赞概率（保守，降低风控风险）
-DEFAULT_BOOKMARK_PROB = 0.10   # 收藏概率
-DEFAULT_COMMENT_PROB = 0.05    # 评论概率（最容易触发风控，最低）
-DEFAULT_BROWSE_DELAY = (8, 20) # 浏览停留秒数（模拟阅读，拉长）
-DEFAULT_ACTION_DELAY = (5, 12) # 操作间隔秒数（操作后强制冷却）
-DEFAULT_NOTE_DELAY = (15, 30)  # 每条笔记之间的间隔（帖子级别冷却）
-MAX_LIKES_PER_SESSION = 10     # 单次会话点赞上限，超出后停止点赞
+DEFAULT_LIKE_PROB     = 0.25
+DEFAULT_BOOKMARK_PROB = 0.10
+DEFAULT_COMMENT_PROB  = 0.05
+DEFAULT_BROWSE_DELAY  = (6, 12)
+DEFAULT_ACTION_DELAY  = (3, 6)
+DEFAULT_NOTE_DELAY    = (8, 12)
+MAX_LIKES_PER_SESSION = 10
 
-LITELLM_URL = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
+LITELLM_URL     = os.environ.get("LITELLM_URL", "")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_MODEL = os.environ.get("LITELLM_MODEL", "bedrock-claude-4-6-sonnet")
+LITELLM_MODEL   = os.environ.get("LITELLM_MODEL", "")
 
-# 评论模板（无 LiteLLM 时随机选用）
 COMMENT_TEMPLATES = [
     "学到了！",
-    "太实用了，收藏慢慢看",
-    "这个角度真的很棒！",
+    "写得好！",
     "谢谢分享～",
-    "正在学，感谢🙏",
-    "好详细！",
-    "跟着一起学习了",
-    "涨知识了！",
+    "这个角度真的很棒！",
 ]
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CDP_PUBLISH = os.path.join(SCRIPT_DIR, "cdp_publish.py")
+RISK_KEYWORDS = ["主页不见了", "你的主页", "账号异常", "操作频繁", "请稍后再试"]
+INACCESSIBLE_KEYWORDS = [
+    "当前笔记暂时无法浏览", "你访问的页面不见了", "已被删除",
+    "内容不存在", "笔记不存在", "已失效", "私密笔记",
+]
 
 
 # ============ 工具函数 ============
-
-def run_cmd(args: list, timeout: int = 60) -> tuple[int, str, str]:
-    result = subprocess.run(
-        [sys.executable, CDP_PUBLISH] + args,
-        capture_output=True, text=True, timeout=timeout
-    )
-    return result.returncode, result.stdout, result.stderr
-
 
 def human_sleep(low: float, high: float, label: str = ""):
     secs = random.uniform(low, high)
@@ -76,17 +72,16 @@ def human_sleep(low: float, high: float, label: str = ""):
 
 
 def generate_comment(title: str, content_snippet: str = "") -> str:
-    """用 LiteLLM 生成一条自然评论，失败则用模板"""
     if not LITELLM_API_KEY:
         return random.choice(COMMENT_TEMPLATES)
     try:
-        import requests
+        import requests as _req
         prompt = (
             f"请为以下小红书帖子写一条简短自然的中文评论（10-20字，口语化，不要emoji太多）：\n"
             f"标题：{title}\n"
             f"内容片段：{content_snippet[:100] if content_snippet else '（无）'}"
         )
-        resp = requests.post(
+        resp = _req.post(
             f"{LITELLM_URL}/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
             json={
@@ -105,86 +100,267 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
     return random.choice(COMMENT_TEMPLATES)
 
 
-# ============ 核心操作 ============
-
-def search_feeds(keyword: str, sort_by: str = "最新") -> list:
-    code, out, err = run_cmd(["search-feeds", "--keyword", keyword, "--sort-by", sort_by])
-    if code != 0:
-        print(f"  ❌ 搜索失败: {err[-200:]}")
-        return []
-    for line in out.splitlines():
-        if line.startswith("SEARCH_FEEDS_RESULT:"):
-            idx = out.index("SEARCH_FEEDS_RESULT:") + len("SEARCH_FEEDS_RESULT:")
-            try:
-                data = json.loads(out[idx:].strip())
-                return data.get("feeds", [])
-            except json.JSONDecodeError:
-                pass
-    return []
-
-
-RISK_KEYWORDS = ["主页不见了", "你的主页", "账号异常", "操作频繁", "请稍后再试"]
+def get_dom_feed_ids(pub: XiaohongshuPublisher) -> list[str]:
+    """Return feed_ids of note cards currently rendered in the DOM (search_result)."""
+    result = pub._evaluate(r"""
+(function(){
+    var sections = Array.from(document.querySelectorAll('section.note-item'));
+    var ids = [];
+    sections.forEach(function(sec){
+        var a = sec.querySelector('a[href*="/explore/"]');
+        var m = a ? a.href.match(/\/explore\/([a-f0-9]{20,})/) : null;
+        if (m) ids.push(m[1]);
+    });
+    return ids;
+})()
+""")
+    return result if isinstance(result, list) else []
 
 
-def check_risk(text: str) -> bool:
+def check_page_accessible(pub: XiaohongshuPublisher) -> bool:
+    """Return False if the modal shows an inaccessible/deleted note page."""
+    text = pub._evaluate(
+        "(function(){ return document.body ? document.body.innerText : ''; })()"
+    ) or ""
+    return not any(k in text for k in INACCESSIBLE_KEYWORDS)
+
+
+def check_risk_page(pub: XiaohongshuPublisher) -> bool:
+    """Return True if a risk-control page is detected."""
+    text = pub._evaluate(
+        "(function(){ return document.body ? document.body.innerText : ''; })()"
+    ) or ""
     return any(k in text for k in RISK_KEYWORDS)
 
 
-INACCESSIBLE_KEYWORDS = ["当前笔记暂时无法浏览", "你访问的页面不见了", "已被删除", "内容不存在", "笔记不存在", "已失效", "私密笔记", "Feed page is not accessible"]
-
-
-def check_inaccessible(text: str) -> bool:
-    return any(k in text for k in INACCESSIBLE_KEYWORDS)
-
-
-def do_like(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool, bool]:
-    """返回 (success, risk_detected, inaccessible)"""
+def process_note_in_modal(
+    pub: XiaohongshuPublisher,
+    title: str,
+    like_prob: float,
+    bookmark_prob: float,
+    comment_prob: float,
+    stats: dict,
+    dry_run: bool,
+) -> bool:
+    """执行 modal 内的点赞/收藏/评论操作，返回是否触发风控。"""
     if dry_run:
-        print("  [dry] 点赞")
-        return True, False, False
-    code, out, err = run_cmd(["--reuse-existing-tab", "note-upvote", "--feed-id", feed_id, "--xsec-token", xsec_token])
-    combined = out + err
-    if check_inaccessible(combined):
-        return False, False, True
-    if check_risk(combined):
-        return False, True, False
-    return code == 0, False, False
+        if random.random() < like_prob:
+            print("  👍 点赞: [dry]")
+        if random.random() < bookmark_prob:
+            print("  🔖 收藏: [dry]")
+        return False
 
+    # 检查笔记是否可访问
+    if not check_page_accessible(pub):
+        print("  ⏭  帖子不可访问，关闭跳过")
+        pub.close_note_modal()
+        stats["skip"] += 1
+        return False
 
-def do_bookmark(feed_id: str, xsec_token: str, dry_run: bool) -> tuple[bool, bool, bool]:
-    if dry_run:
-        print("  [dry] 收藏")
-        return True, False, False
-    code, out, err = run_cmd(["--reuse-existing-tab", "note-bookmark", "--feed-id", feed_id, "--xsec-token", xsec_token])
-    combined = out + err
-    if check_inaccessible(combined):
-        return False, False, True
-    if check_risk(combined):
-        return False, True, False
-    return code == 0, False, False
+    if check_risk_page(pub):
+        print("  🚨 检测到风控提示，停止操作！")
+        return True  # risk triggered
 
+    # 点赞
+    if stats["like"] < MAX_LIKES_PER_SESSION and random.random() < like_prob:
+        try:
+            res = pub.toggle_like_in_modal(desired=True)
+            ok  = res.get("ok") and (res.get("changed") or res.get("state_after"))
+            print(f"  👍 点赞: {'✅' if ok else '❌'}")
+            if ok:
+                stats["like"] += 1
+        except CDPError as e:
+            print(f"  👍 点赞: ❌ ({e})")
+        human_sleep(*DEFAULT_ACTION_DELAY)
 
-def do_comment(feed_id: str, xsec_token: str, comment: str, dry_run: bool) -> tuple[bool, bool, bool]:
-    if dry_run:
-        print(f"  [dry] 评论: {comment}")
-        return True, False, False
-    code, out, err = run_cmd([
-        "--reuse-existing-tab", "post-comment-to-feed",
-        "--feed-id", feed_id,
-        "--xsec-token", xsec_token,
-        "--content", comment,
-    ])
-    combined = out + err
-    if check_inaccessible(combined):
-        return False, False, True
-    if check_risk(combined):
-        return False, True, False
-    return code == 0, False, False
+    # 收藏
+    if random.random() < bookmark_prob:
+        try:
+            res = pub.toggle_bookmark_in_modal(desired=True)
+            ok  = res.get("ok") and (res.get("changed") or res.get("state_after"))
+            print(f"  🔖 收藏: {'✅' if ok else '❌'}")
+            if ok:
+                stats["bookmark"] += 1
+        except CDPError as e:
+            print(f"  🔖 收藏: ❌ ({e})")
+        human_sleep(*DEFAULT_ACTION_DELAY)
+
+    # 评论
+    if random.random() < comment_prob:
+        comment_text = generate_comment(title)
+        try:
+            ok = pub.post_comment_in_modal(comment_text)
+            print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
+            if ok:
+                stats["comment"] += 1
+        except CDPError as e:
+            print(f"  💬 评论: ❌ ({e})")
+        human_sleep(*DEFAULT_ACTION_DELAY)
+
+    return False  # no risk
 
 
 # ============ 主逻辑 ============
 
+def wander_search(
+    pub: XiaohongshuPublisher,
+    keywords: list[str],
+    count: int,
+    like_prob: float,
+    bookmark_prob: float,
+    comment_prob: float,
+    dry_run: bool,
+    stats: dict,
+) -> bool:
+    """search_result 模式：按关键词搜索后逐条处理。返回是否触发风控。"""
+    per_kw    = max(1, count // len(keywords))
+    remainder = count - per_kw * len(keywords)
+
+    for ki, kw in enumerate(keywords):
+        if stats.get("_risk"):
+            break
+        quota = per_kw + (1 if ki < remainder else 0)
+        print(f"\n🔍 搜索「{kw}」，计划处理 {quota} 条")
+
+        try:
+            result = pub.search_feeds(keyword=kw)
+            feeds  = result.get("feeds", [])
+        except CDPError as e:
+            print(f"  ❌ 搜索失败: {e}")
+            continue
+
+        if not feeds:
+            print("  ⚠️ 未找到结果，跳过")
+            continue
+
+        feed_meta: dict[str, dict] = {f["id"]: f for f in feeds if f.get("id")}
+        dom_ids = get_dom_feed_ids(pub)
+        eligible = [fid for fid in dom_ids if fid in feed_meta]
+        if not eligible:
+            print("  ⚠️ DOM 中没有匹配的 card，跳过")
+            continue
+
+        random.shuffle(eligible)
+        selected_ids = eligible[:quota]
+        print(f"  DOM 可见 {len(dom_ids)} 张，匹配 {len(eligible)} 张，处理 {len(selected_ids)} 张")
+
+        for i, feed_id in enumerate(selected_ids, 1):
+            if stats.get("_risk"):
+                break
+
+            feed      = feed_meta[feed_id]
+            note_card = feed.get("noteCard", {})
+            title     = note_card.get("displayTitle") or feed.get("title") or "（无标题）"
+            author_id = (note_card.get("user") or {}).get("userId", "")
+
+            print(f"\n  [{i}/{len(selected_ids)}] {title[:40]}")
+
+            if MY_USER_ID and author_id == MY_USER_ID:
+                print("  ⏭  自己的帖子，跳过")
+                stats["skip"] += 1
+                continue
+
+            human_sleep(*DEFAULT_BROWSE_DELAY, "浏览")
+            stats["browse"] += 1
+
+            if dry_run:
+                process_note_in_modal(pub, title, like_prob, bookmark_prob, comment_prob, stats, dry_run=True)
+                if i < len(selected_ids):
+                    human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+                continue
+
+            # 点击 card，失败重试一次
+            modal_opened = pub.click_note_card_in_search(feed_id)
+            if not modal_opened:
+                time.sleep(1.5)
+                modal_opened = pub.click_note_card_in_search(feed_id)
+            if not modal_opened:
+                print("  ⚠️ modal 未打开，跳过")
+                stats["skip"] += 1
+                continue
+
+            risk = process_note_in_modal(pub, title, like_prob, bookmark_prob, comment_prob, stats, dry_run=False)
+            if risk:
+                stats["_risk"] = True
+                break
+
+            pub.close_note_modal()
+
+            if i < len(selected_ids):
+                human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+
+    return bool(stats.get("_risk"))
+
+
+def wander_explore(
+    pub: XiaohongshuPublisher,
+    count: int,
+    like_prob: float,
+    bookmark_prob: float,
+    comment_prob: float,
+    dry_run: bool,
+    stats: dict,
+) -> bool:
+    """explore 发现页模式：直接从 /explore 逐条处理。返回是否触发风控。"""
+    print(f"\n🌐 进入 explore 发现页，计划处理 {count} 条")
+    pub._navigate("https://www.xiaohongshu.com/explore")
+    time.sleep(2)
+
+    dom_ids = pub.get_dom_feed_ids_explore()
+    if not dom_ids:
+        print("  ⚠️ DOM 中未找到 card，跳过")
+        return False
+
+    random.shuffle(dom_ids)
+    selected_ids = dom_ids[:count]
+    print(f"  DOM 可见 {len(dom_ids)} 张，处理 {len(selected_ids)} 张")
+
+    for i, feed_id in enumerate(selected_ids, 1):
+        if stats.get("_risk"):
+            break
+
+        print(f"\n  [{i}/{len(selected_ids)}] {feed_id}")
+
+        human_sleep(*DEFAULT_BROWSE_DELAY, "浏览")
+        stats["browse"] += 1
+
+        if dry_run:
+            process_note_in_modal(pub, feed_id, like_prob, bookmark_prob, comment_prob, stats, dry_run=True)
+            if i < len(selected_ids):
+                human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+            continue
+
+        # 点击 card，失败重试一次
+        modal_opened = pub.click_note_card_in_explore(feed_id)
+        if not modal_opened:
+            time.sleep(1.5)
+            modal_opened = pub.click_note_card_in_explore(feed_id)
+        if not modal_opened:
+            print("  ⚠️ modal 未打开，跳过")
+            stats["skip"] += 1
+            continue
+
+        # explore 模式没有 API 标题，从 modal 内读取
+        title = pub._evaluate(
+            "(function(){ var t=document.querySelector('.note-container .title, .note-detail .title, #detail-title'); "
+            "return t ? t.innerText.trim() : ''; })()"
+        ) or feed_id
+
+        risk = process_note_in_modal(pub, title, like_prob, bookmark_prob, comment_prob, stats, dry_run=False)
+        if risk:
+            stats["_risk"] = True
+            break
+
+        pub.close_note_modal()
+
+        if i < len(selected_ids):
+            human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+
+    return bool(stats.get("_risk"))
+
+
 def wander(
+    page: str,
     keywords: list[str],
     count: int,
     like_prob: float,
@@ -194,115 +370,35 @@ def wander(
 ):
     print("=" * 60)
     print("🚶 小红书自动闲逛")
-    print(f"关键词: {', '.join(keywords)}  目标数: {count}")
+    if page == "explore":
+        print(f"模式: explore 发现页  目标数: {count}")
+    else:
+        print(f"模式: search  关键词: {', '.join(keywords)}  目标数: {count}")
     print(f"概率 — 点赞:{like_prob:.0%}  收藏:{bookmark_prob:.0%}  评论:{comment_prob:.0%}")
     if dry_run:
         print("⚠️  DRY-RUN 模式，不实际发送操作")
     print("=" * 60)
 
-    stats = {"like": 0, "bookmark": 0, "comment": 0, "browse": 0, "skip": 0}
-    risk_triggered = False
+    stats: dict = {"like": 0, "bookmark": 0, "comment": 0, "browse": 0, "skip": 0}
 
-    # 每个关键词分配配额
-    per_kw = max(1, count // len(keywords))
-    remainder = count - per_kw * len(keywords)
+    pub = XiaohongshuPublisher()
+    pub.connect(reuse_existing_tab=True)
 
-    for ki, kw in enumerate(keywords):
-        if risk_triggered:
-            break
-        quota = per_kw + (1 if ki < remainder else 0)
-        print(f"\n🔍 搜索「{kw}」，计划处理 {quota} 条")
-
-        feeds = search_feeds(kw)
-        if not feeds:
-            print(f"  ⚠️ 未找到结果，跳过")
-            continue
-
-        # 随机打乱，取配额数
-        random.shuffle(feeds)
-        selected = feeds[:quota]
-
-        for i, feed in enumerate(selected, 1):
-            if risk_triggered:
-                break
-            feed_id = feed.get("id", "")
-            xsec_token = feed.get("xsecToken", "")
-            note_card = feed.get("noteCard", {})
-            title = note_card.get("displayTitle") or feed.get("title") or "（无标题）"
-            author_id = note_card.get("user", {}).get("userId", "")
-
-            print(f"\n  [{i}/{len(selected)}] {title[:40]}")
-
-            if not feed_id or not xsec_token:
-                print("  ⚠️ 缺少 feed_id/xsec_token，跳过")
-                stats["skip"] += 1
-                continue
-
-            # 跳过自己的帖子
-            if MY_USER_ID and author_id == MY_USER_ID:
-                print("  ⏭  自己的帖子，跳过")
-                stats["skip"] += 1
-                continue
-
-            # 模拟浏览停留
-            human_sleep(*DEFAULT_BROWSE_DELAY, "浏览")
-            stats["browse"] += 1
-
-            # 点赞（有单次会话上限）
-            if stats["like"] < MAX_LIKES_PER_SESSION and random.random() < like_prob:
-                ok, risk, inaccessible = do_like(feed_id, xsec_token, dry_run)
-                if inaccessible:
-                    print("  ⏭  帖子不可访问，跳过互动")
-                    stats["skip"] += 1
-                    continue
-                if risk:
-                    print("  🚨 检测到风控提示，停止操作！")
-                    risk_triggered = True
-                    break
-                print(f"  👍 点赞: {'✅' if ok else '❌'}")
-                if ok:
-                    stats["like"] += 1
-                human_sleep(*DEFAULT_ACTION_DELAY)
-
-            # 收藏
-            if not risk_triggered and random.random() < bookmark_prob:
-                ok, risk, inaccessible = do_bookmark(feed_id, xsec_token, dry_run)
-                if inaccessible:
-                    pass  # 点赞已经跳过了，这里静默忽略
-                elif risk:
-                    print("  🚨 检测到风控提示，停止操作！")
-                    risk_triggered = True
-                    break
-                else:
-                    print(f"  🔖 收藏: {'✅' if ok else '❌'}")
-                    if ok:
-                        stats["bookmark"] += 1
-                    human_sleep(*DEFAULT_ACTION_DELAY)
-
-            # 评论
-            if not risk_triggered and random.random() < comment_prob:
-                comment_text = generate_comment(title)
-                ok, risk, inaccessible = do_comment(feed_id, xsec_token, comment_text, dry_run)
-                if inaccessible:
-                    pass
-                elif risk:
-                    print("  🚨 检测到风控提示，停止操作！")
-                    risk_triggered = True
-                    break
-                else:
-                    print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
-                    if ok:
-                        stats["comment"] += 1
-                    human_sleep(*DEFAULT_ACTION_DELAY)
-
-            # 每条笔记之间额外冷却
-            if i < len(selected):
-                human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+    try:
+        if page == "explore":
+            wander_explore(pub, count, like_prob, bookmark_prob, comment_prob, dry_run, stats)
+        else:
+            wander_search(pub, keywords, count, like_prob, bookmark_prob, comment_prob, dry_run, stats)
+    finally:
+        pub.disconnect()
 
     print("\n" + "=" * 60)
-    if risk_triggered:
+    if stats.get("_risk"):
         print("⚠️  因风控提示提前终止")
-    print(f"✅ 闲逛完成 | 浏览:{stats['browse']}  点赞:{stats['like']}  收藏:{stats['bookmark']}  评论:{stats['comment']}  跳过:{stats['skip']}")
+    print(
+        f"✅ 闲逛完成 | 浏览:{stats['browse']}  点赞:{stats['like']}  "
+        f"收藏:{stats['bookmark']}  评论:{stats['comment']}  跳过:{stats['skip']}"
+    )
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}")
 
 
@@ -310,15 +406,19 @@ def wander(
 
 def main():
     parser = argparse.ArgumentParser(description="小红书自动闲逛")
-    parser.add_argument("--keywords", nargs="+", default=["日语学习"], help="搜索关键词列表")
-    parser.add_argument("--count", type=int, default=10, help="总处理帖子数（均分到各关键词）")
-    parser.add_argument("--like-prob", type=float, default=DEFAULT_LIKE_PROB, help="点赞概率 0-1")
-    parser.add_argument("--bookmark-prob", type=float, default=DEFAULT_BOOKMARK_PROB, help="收藏概率 0-1")
-    parser.add_argument("--comment-prob", type=float, default=DEFAULT_COMMENT_PROB, help="评论概率 0-1")
-    parser.add_argument("--dry-run", action="store_true", help="仅模拟，不发送操作")
+    parser.add_argument("--page", choices=["search", "explore"], default="search",
+                        help="闲逛模式：search（按关键词搜索）或 explore（发现页）")
+    parser.add_argument("--keywords", nargs="+", default=["日语学习"],
+                        help="搜索关键词列表（仅 search 模式有效）")
+    parser.add_argument("--count",        type=int,   default=10,                  help="总处理帖子数")
+    parser.add_argument("--like-prob",    type=float, default=DEFAULT_LIKE_PROB)
+    parser.add_argument("--bookmark-prob",type=float, default=DEFAULT_BOOKMARK_PROB)
+    parser.add_argument("--comment-prob", type=float, default=DEFAULT_COMMENT_PROB)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     wander(
+        page=args.page,
         keywords=args.keywords,
         count=args.count,
         like_prob=args.like_prob,
