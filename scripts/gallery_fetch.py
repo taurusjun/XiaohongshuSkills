@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-从 Notion 日本新闻条目中，检测 Yahoo 文章包含的 mdpr.jp 图集链接，
+从 Notion 日本新闻条目中，检测 Yahoo 文章包含的图集链接，
 下载图片到本地缓存 ~/.cache/xhs_images/<key>/
+
+支持站点：mdpr.jp / modelpress.net / nikkansports.com / chunichi.co.jp /
+          hochi.news / sponichi.co.jp / oricon.co.jp / natalie.mu /
+          billboard-japan.com / crank-in.net / limo.media / mezamashi.media /
+          smart-flash.jp / mantan-web.jp / inside-games.jp
 
 用法:
     python scripts/gallery_fetch.py              # 扫描最近 20 条
@@ -53,11 +58,12 @@ GALLERY_SITES: dict[str, str] = {
     "mezamashi.media":      "article, .gallery-body",
     "smart-flash.jp":       ".imageArea, article",
     "mantan-web.jp":        ".photo-area, article",
+    "inside-games.jp":      "article, body",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
-                         "chunichi.co.jp", "mantan-web.jp"}
+                         "chunichi.co.jp", "mantan-web.jp", "inside-games.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide"]
@@ -461,6 +467,83 @@ def _scrape_chunichi(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_inside_games(gallery_url: str) -> list[str]:
+    """inside-games.jp 图集：从缩略图导航条提取所有图片 ID，转换为大图 URL。
+
+    URL 格式：/article/img/YYYY/MM/DD/<article_id>/<img_id>.html
+    缩略图路径：/imgs/p/<hash>/<img_id>.jpg  → 大图路径：/imgs/zoom/<img_id>.jpg
+
+    精准过滤策略：导航缩略图的 <a href> 都指向同一 article_id 下的图片页，
+    推荐/特集等无关缩略图指向不同 article_id，可借此剔除噪声。
+    """
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://www.inside-games.jp/"}
+    images = []
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        p = urlparse(gallery_url)
+        base_origin = f"{p.scheme}://{p.netloc}"
+
+        # 从 URL 中提取当前 article_id
+        # 路径形如 /article/img/2026/04/25/180484/1699001.html
+        m_article = re.search(r"/article/img/\d+/\d+/\d+/(\d+)/", p.path)
+        article_id = m_article.group(1) if m_article else None
+
+        seen_ids: list[str] = []
+        seen_set: set[str] = set()
+
+        if article_id:
+            # 精准模式：只取 <a href> 指向同一 article_id 的缩略图
+            # 导航条：<a href="/article/img/.../180484/1699003.html"><img src="/imgs/p/hash/1699003.jpg">
+            article_img_pattern = re.compile(
+                rf"/article/img/\d+/\d+/\d+/{re.escape(article_id)}/(\d+)\.html"
+            )
+            for a in s.find_all("a", href=True):
+                href = a["href"]
+                m = article_img_pattern.search(href)
+                if not m:
+                    continue
+                img_id = m.group(1)
+                if img_id not in seen_set:
+                    seen_set.add(img_id)
+                    seen_ids.append(img_id)
+        else:
+            # fallback：从 /imgs/p/<hash>/<img_id>.jpg 提取（可能含噪声）
+            for img in s.find_all("img"):
+                src = img.get("src", "")
+                m = re.search(r"/imgs/p/[^/]+/(\d+)\.jpg", src)
+                if m:
+                    img_id = m.group(1)
+                    if img_id not in seen_set:
+                        seen_set.add(img_id)
+                        seen_ids.append(img_id)
+
+        if seen_ids:
+            for img_id in seen_ids[:MAX_IMAGES]:
+                images.append(f"{base_origin}/imgs/zoom/{img_id}.jpg")
+        else:
+            # last-resort fallback：取当前页的大图
+            for img in s.find_all("img"):
+                src = img.get("src", "")
+                if "/imgs/zoom/" in src:
+                    if src.startswith("/"):
+                        src = base_origin + src
+                    if src not in images:
+                        images.append(src)
+                    if len(images) >= MAX_IMAGES:
+                        break
+
+    except Exception as e:
+        print(f"  ⚠️ inside-games 抓取失败: {e}")
+
+    return images
+
+
 def _to_large_url(src: str, domain: str) -> str:
     """将缩略图 URL 转换为大图 URL（站点专用规则）"""
     if "oricon.co.jp" in domain:
@@ -502,6 +585,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "chunichi.co.jp" in domain:
         images = _scrape_chunichi(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "inside-games.jp" in domain:
+        images = _scrape_inside_games(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")

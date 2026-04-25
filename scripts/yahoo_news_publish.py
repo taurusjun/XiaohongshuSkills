@@ -242,8 +242,8 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None, artic
         "--headless"
     ]
 
-    # XHS 最多 9 张
-    effective_urls = image_urls[:9]
+    # XHS 最多 18 张
+    effective_urls = image_urls[:18]
     if effective_urls:
         cmd += ["--image-urls"] + effective_urls
         print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
@@ -373,7 +373,7 @@ def main():
         # 分类标签池（按内容分类选择，避免不相关标签混入）
         BASE_TAGS = [
             "#日语学习", "#日语N1", "#日语N2", "#日语单词",
-            "#中日双语", "#中日对照", "#中日翻译",
+            "#中日双语", "#中日翻译",
             "#日语学习打卡", "#日本新闻", "#日本热点",
             "#日本文化", "#日本生活",
         ]
@@ -468,14 +468,14 @@ def main():
                 print("  跳过\n")
                 continue
 
-        # 合并：封面图在前，图集在后，去重，最多 9 张
+        # 合并：封面图在前，图集在后，去重，最多 18 张
         all_images = []
         if image_url:
             all_images.append(image_url)
         for u in gallery_urls:
             if u not in all_images:
                 all_images.append(u)
-        all_images = all_images[:9]
+        all_images = all_images[:18]
 
         # 发布
         print("📤 发布中...")

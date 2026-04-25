@@ -332,6 +332,7 @@ class XiaohongshuPublisher:
         self.host = host
         self.port = port
         self.ws = None
+        self._tab_ws_url: str | None = None  # WebSocket URL of the connected tab
         self._msg_id = 0
         self.timing_jitter = _normalize_timing_jitter(timing_jitter)
         self.account_name = (account_name or "default").strip() or "default"
@@ -539,12 +540,43 @@ class XiaohongshuPublisher:
                     return t["webSocketDebuggerUrl"]
 
         if reuse_existing_tab and pages:
-            url = pages[0].get("url", "")
+            # Prefer a tab that is already on xiaohongshu.com/explore with a
+            # note detail open (/explore/{feed_id}) — it has the SPA Vue Router
+            # context that allows note-detail overlays to mount correctly.
+            # Fall back to any xiaohongshu.com tab, then finally pages[0].
+            # Skip tabs that are stuck on a login/verify page.
+            _skip_patterns = ("verifyMsg", "login", "signin", "about:blank")
+
+            def _is_usable(t: dict) -> bool:
+                url = t.get("url", "")
+                return not any(p in url for p in _skip_patterns)
+
+            usable = [t for t in pages if _is_usable(t)]
+            if not usable:
+                usable = pages  # fallback — all tabs are suspect, use first
+
+            xhs_explore_detail = [
+                t for t in usable
+                if "/explore/" in t.get("url", "")
+                and "xiaohongshu.com" in t.get("url", "")
+            ]
+            xhs_explore_any = [
+                t for t in usable
+                if "xiaohongshu.com/explore" in t.get("url", "")
+            ]
+            xhs_any = [
+                t for t in usable
+                if "xiaohongshu.com" in t.get("url", "")
+            ]
+            chosen = (
+                (xhs_explore_detail or xhs_explore_any or xhs_any or usable)[0]
+            )
+            url = chosen.get("url", "")
             print(
                 "[cdp_publish] Reusing existing tab to reduce focus switching: "
                 f"{url}"
             )
-            return pages[0]["webSocketDebuggerUrl"]
+            return chosen["webSocketDebuggerUrl"]
 
         # Create a new tab
         resp = requests.put(
@@ -573,6 +605,7 @@ class XiaohongshuPublisher:
             raise CDPError("Could not obtain WebSocket URL for any tab.")
 
         print(f"[cdp_publish] Connecting to {ws_url}")
+        self._tab_ws_url = ws_url  # saved for reconnect after page navigation
         self.ws = ws_client.connect(ws_url)
         print("[cdp_publish] Connected to Chrome tab.")
 
@@ -849,12 +882,31 @@ class XiaohongshuPublisher:
             raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
         return remote_obj.get("value")
 
+    def _reconnect(self):
+        """Reconnect WebSocket to the same tab (used after full-page navigations)."""
+        if not self._tab_ws_url:
+            raise CDPError("Cannot reconnect: no tab WebSocket URL saved.")
+        try:
+            if self.ws:
+                self.ws.close()
+        except Exception:
+            pass
+        self.ws = ws_client.connect(self._tab_ws_url)
+
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
         print(f"[cdp_publish] Navigating to {url}")
         self._send("Page.enable")
         self._send("Page.navigate", {"url": url})
         self._sleep(PAGE_LOAD_WAIT, minimum_seconds=1.0)
+        # Page.navigate can trigger a full-page reload which closes the WebSocket.
+        # Silently reconnect so callers do not need to handle this.
+        try:
+            self._evaluate("1")  # lightweight liveness check
+        except Exception:
+            self._reconnect()
+            # After reconnect the page may still be loading; give it extra time.
+            self._sleep(2, minimum_seconds=1.5)
 
     # ------------------------------------------------------------------
     # Login check
@@ -1903,10 +1955,7 @@ class XiaohongshuPublisher:
         if not xsec_token:
             raise CDPError("xsec_token cannot be empty.")
 
-        detail_url = make_feed_detail_url(feed_id, xsec_token)
-        self._navigate(detail_url)
-        self._sleep(2, minimum_seconds=1.0)
-        self._check_feed_page_accessible()
+        self._open_feed_detail(feed_id, xsec_token)
 
         comment_loading = None
         if load_all_comments:
@@ -2410,10 +2459,7 @@ class XiaohongshuPublisher:
         if not content:
             raise CDPError("content cannot be empty.")
 
-        detail_url = make_feed_detail_url(feed_id, xsec_token)
-        self._navigate(detail_url)
-        self._sleep(2, minimum_seconds=1.0)
-        self._check_feed_page_accessible()
+        self._open_feed_detail(feed_id, xsec_token)
 
         target_result = self._activate_reply_target_for_comment(
             comment_id=comment_id,
@@ -2488,6 +2534,49 @@ class XiaohongshuPublisher:
             "success": True,
         }
 
+    def _get_element_center_cdp(self, selector: str) -> tuple[int, int] | None:
+        """Return the viewport centre of a DOM element using CDP DOM.getBoxModel.
+
+        Unlike getBoundingClientRect() this works correctly for background tabs
+        because Chrome computes the box model regardless of tab visibility.
+
+        Returns (x, y) integer viewport coordinates, or None if the element is
+        not found or has zero dimensions.
+        """
+        try:
+            doc = self._send("DOM.getDocument", {"depth": 0})
+            root_id = doc["root"]["nodeId"]
+            node = self._send("DOM.querySelector", {
+                "nodeId": root_id,
+                "selector": selector,
+            })
+            node_id = node.get("nodeId")
+            if not node_id:
+                return None
+            box = self._send("DOM.getBoxModel", {"nodeId": node_id})
+            content = box.get("model", {}).get("content", [])
+            if len(content) == 8:
+                cx = round((content[0] + content[2] + content[4] + content[6]) / 4)
+                cy = round((content[1] + content[3] + content[5] + content[7]) / 4)
+                if cx > 0 or cy > 0:
+                    return (cx, cy)
+        except Exception:
+            pass
+        return None
+
+    def _mouse_click(self, x: int, y: int):
+        """Dispatch a realistic mouse click sequence at the given viewport coords."""
+        self._send("Input.dispatchMouseEvent",
+                   {"type": "mouseMoved", "x": x, "y": y, "button": "none"})
+        self._sleep(0.08, minimum_seconds=0.05)
+        self._send("Input.dispatchMouseEvent",
+                   {"type": "mousePressed", "x": x, "y": y,
+                    "button": "left", "clickCount": 1})
+        self._sleep(0.1, minimum_seconds=0.06)
+        self._send("Input.dispatchMouseEvent",
+                   {"type": "mouseReleased", "x": x, "y": y,
+                    "button": "left", "clickCount": 1})
+
     def _set_note_toggle_state(
         self,
         selectors: list[str],
@@ -2495,107 +2584,593 @@ class XiaohongshuPublisher:
         active_class_keywords: list[str],
         active_text_keywords: list[str],
     ) -> dict[str, Any]:
-        """Toggle a note action button to desired active/inactive state."""
-        selectors_literal = json.dumps(selectors, ensure_ascii=False)
-        desired_literal = "true" if desired_active else "false"
-        class_keywords_literal = json.dumps(active_class_keywords, ensure_ascii=False)
-        text_keywords_literal = json.dumps(active_text_keywords, ensure_ascii=False)
+        """Toggle a note action button (like / bookmark) to the desired state.
 
-        script = """
-            (async () => {
-                const selectors = __SELECTORS__;
-                const desired = __DESIRED__;
-                const activeClassKeywords = __CLASS_KEYWORDS__;
-                const activeTextKeywords = __TEXT_KEYWORDS__;
-                const normalize = (text) => (text || "").replace(/\\s+/g, " ").trim().toLowerCase();
-                const isVisible = (node) => (
-                    node instanceof HTMLElement &&
-                    node.offsetParent !== null &&
-                    node.getBoundingClientRect().width > 6 &&
-                    node.getBoundingClientRect().height > 6
-                );
-                const isActive = (node) => {
-                    if (!(node instanceof HTMLElement)) {
-                        return false;
-                    }
-                    const classText = normalize(node.className || "");
-                    if (activeClassKeywords.some((kw) => classText.includes(String(kw).toLowerCase()))) {
-                        return true;
-                    }
-                    const ariaPressed = normalize(node.getAttribute("aria-pressed"));
-                    if (ariaPressed === "true") {
-                        return true;
-                    }
-                    const dataState = normalize(node.getAttribute("data-state"));
-                    if (dataState && ["active", "on", "selected", "checked", "true"].includes(dataState)) {
-                        return true;
-                    }
-                    const text = normalize(node.innerText || node.textContent || "");
-                    return activeTextKeywords.some((kw) => text.includes(normalize(String(kw))));
-                };
-                const resolveClickable = (node) => {
-                    if (!(node instanceof HTMLElement)) {
-                        return null;
-                    }
-                    return node.closest("button, [role='button'], a, div") || node;
-                };
-                const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-                const candidates = [];
-                const seen = new Set();
-                for (const selector of selectors) {
-                    const nodes = document.querySelectorAll(selector);
-                    for (const raw of nodes) {
-                        const clickable = resolveClickable(raw);
-                        if (!(clickable instanceof HTMLElement) || !isVisible(clickable)) {
-                            continue;
-                        }
-                        if (seen.has(clickable)) {
-                            continue;
-                        }
-                        seen.add(clickable);
-                        candidates.push(clickable);
-                    }
-                }
-                if (!candidates.length) {
-                    return { ok: false, reason: "action_button_not_found" };
-                }
-
-                const target = candidates[0];
-                const before = isActive(target);
-                if (before === desired) {
-                    return {
-                        ok: true,
-                        changed: false,
-                        state_before: before,
-                        state_after: before,
-                    };
-                }
-
-                target.click();
-                await sleep(260);
-                const after = isActive(target);
-                return {
-                    ok: true,
-                    changed: true,
-                    state_before: before,
-                    state_after: after,
-                };
-            })()
+        Uses CDP DOM.getBoxModel + Input.dispatchMouseEvent for the click so
+        that the operation works correctly on background tabs (getBoundingClientRect
+        returns zeros for background tabs, making JS-based isVisible checks fail).
         """
-        result = self._evaluate(
-            script
-            .replace("__SELECTORS__", selectors_literal)
-            .replace("__DESIRED__", desired_literal)
-            .replace("__CLASS_KEYWORDS__", class_keywords_literal)
-            .replace("__TEXT_KEYWORDS__", text_keywords_literal)
+        # Build selector scoped to engage-bar to avoid matching comment-area buttons
+        # The caller already passes scoped selectors like
+        # ".engage-bar-container .like-wrapper".
+
+        # --- Step 1: read current state via JS (no BCR needed) ---
+        cls_kw_js  = json.dumps(active_class_keywords, ensure_ascii=False)
+        text_kw_js = json.dumps(active_text_keywords,  ensure_ascii=False)
+        selectors_js = json.dumps(selectors, ensure_ascii=False)
+
+        state_script = """
+(function() {
+    const selectors = __SELECTORS__;
+    const activeClassKeywords = __CLS_KW__;
+    const activeTextKeywords  = __TEXT_KW__;
+    const normalize = (t) => (t || "").replace(/\\s+/g, " ").trim().toLowerCase();
+    const isActive = (node) => {
+        const cls = normalize(node.className || "");
+        if (activeClassKeywords.some((kw) => cls.includes(kw.toLowerCase()))) return true;
+        if (normalize(node.getAttribute("aria-pressed")) === "true") return true;
+        const ds = normalize(node.getAttribute("data-state") || "");
+        if (["active","on","selected","checked","true"].includes(ds)) return true;
+        const txt = normalize(node.innerText || node.textContent || "");
+        if (activeTextKeywords.some((kw) => txt.includes(normalize(kw)))) return true;
+        // SVG use[href] — XHS bookmark uses #collected (active) vs #collect (inactive)
+        // XHS like uses like-active class, but check SVG href as fallback
+        const use = node.querySelector && node.querySelector("svg use");
+        if (use) {
+            const href = (use.getAttribute("href") || use.getAttribute("xlink:href") || "").toLowerCase();
+            if (href.includes("collected") || href.includes("liked") || href.includes("-active")) return true;
+        }
+        return false;
+    };
+    // isPresent: element exists in DOM and is not hidden via display:none
+    // (offsetParent check is skipped — it fails on fixed/absolute elements
+    //  that are positioned outside the viewport in background tabs)
+    const isPresent = (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        const st = window.getComputedStyle(node);
+        return st.display !== "none" && st.visibility !== "hidden";
+    };
+
+    for (const sel of selectors) {
+        for (const node of document.querySelectorAll(sel)) {
+            if (!isPresent(node)) continue;
+            return { found: true, active: isActive(node) };
+        }
+    }
+    return { found: false };
+})()
+""".replace("__SELECTORS__", selectors_js) \
+   .replace("__CLS_KW__",   cls_kw_js) \
+   .replace("__TEXT_KW__",  text_kw_js)
+
+        state = self._evaluate(state_script)
+        if not isinstance(state, dict) or not state.get("found"):
+            raise CDPError("Failed to set note action state: action_button_not_found")
+
+        state_before = bool(state.get("active"))
+        if state_before == desired_active:
+            return {
+                "ok": True,
+                "changed": False,
+                "state_before": state_before,
+                "state_after":  state_before,
+            }
+
+        # --- Step 2: find click coordinates via DOM.getBoxModel ---
+        coords = None
+        for sel in selectors:
+            coords = self._get_element_center_cdp(sel)
+            if coords:
+                break
+        if not coords:
+            raise CDPError("Failed to set note action state: action_button_not_found")
+
+        # --- Step 3: real mouse click ---
+        self._mouse_click(coords[0], coords[1])
+        self._sleep(1.5, minimum_seconds=1.0)
+
+        # --- Step 4: verify state changed ---
+        state_after_raw = self._evaluate(state_script)
+        state_after = bool(state_after_raw.get("active")) if isinstance(state_after_raw, dict) else state_before
+
+        return {
+            "ok": True,
+            "changed": state_after != state_before,
+            "state_before": state_before,
+            "state_after":  state_after,
+        }
+
+    def _wait_engage_bar(self, max_polls: int = 10) -> bool:
+        """Poll until the note modal is open.
+
+        Considers the modal open if EITHER:
+          • .engage-bar-container is visible  (normal note)
+          • the URL contains /explore/{feed-id}  (any overlay type incl. video)
+
+        Returns True on success.
+        """
+        for _ in range(max_polls):
+            try:
+                ready = self._evaluate(
+                    "(function(){"
+                    "var eb=document.querySelector('.engage-bar-container');"
+                    "if (eb && eb.offsetParent !== null) return true;"
+                    "return /\\/explore\\/[a-f0-9]{16,}/.test(location.href);"
+                    "})()"
+                )
+            except Exception:
+                try:
+                    self._reconnect()
+                except Exception:
+                    pass
+                self._sleep(0.8, minimum_seconds=0.6)
+                continue
+            if ready:
+                return True
+            self._sleep(0.8, minimum_seconds=0.6)
+        return False
+
+    def _bootstrap_explore_modal(self):
+        """Ensure the SPA overlay context is active by clicking the first visible
+        note card on the /explore feed list.
+
+        XHS's /explore page uses a Vue Router SPA.  Page.navigate to
+        /explore/{id} is intercepted by the navigation guard when no overlay is
+        open, causing the URL to revert to /explore.  Opening *any* note via a
+        real mouse-click establishes the overlay context so that subsequent
+        Page.navigate calls can switch between notes normally.
+        """
+        # Make sure we are on the explore feed list first
+        cur_url = self._evaluate("location.href") or ""
+        if "xiaohongshu.com/explore" not in cur_url:
+            self._navigate("https://www.xiaohongshu.com/explore")
+            self._sleep(2, minimum_seconds=1.5)
+
+        # Find the first note card and compute its centre using offset* properties
+        # (getBoundingClientRect returns zeros for background tabs).
+        rect = self._evaluate("""
+(function() {
+    var link = document.querySelector(
+        ".note-item a[href*='/explore/'], a.note-item[href*='/explore/']"
+    );
+    if (!link) {
+        // fallback: first note-item itself
+        link = document.querySelector(".note-item");
+    }
+    if (!link) return null;
+    // Walk up to find an element with non-zero offset dimensions
+    var el = link;
+    while (el && (el.offsetWidth === 0 || el.offsetHeight === 0)) {
+        el = el.parentElement;
+        if (!el || el === document.body) break;
+    }
+    if (!el || el.offsetWidth === 0) return null;
+    // Accumulate offset position
+    var top = 0, left = 0, cur = el;
+    while (cur && cur !== document.body) {
+        top  += cur.offsetTop  || 0;
+        left += cur.offsetLeft || 0;
+        cur   = cur.offsetParent;
+    }
+    return {
+        x: Math.round(left + el.offsetWidth  / 2),
+        y: Math.round(top  + el.offsetHeight / 2)
+    };
+})()
+""")
+        if not rect or not rect.get("x"):
+            return  # can't find a card to click, proceed anyway
+
+        x, y = rect["x"], rect["y"]
+        self._send("Input.dispatchMouseEvent",
+                   {"type": "mousePressed", "x": x, "y": y,
+                    "button": "left", "clickCount": 1})
+        self._sleep(0.1, minimum_seconds=0.05)
+        self._send("Input.dispatchMouseEvent",
+                   {"type": "mouseReleased", "x": x, "y": y,
+                    "button": "left", "clickCount": 1})
+        # Wait for the modal to open
+        self._wait_engage_bar(max_polls=8)
+
+    def _open_feed_detail(self, feed_id: str, xsec_token: str):
+        """Navigate to feed detail and wait for the engage-bar to appear.
+
+        XHS's note detail is an SPA overlay.  Page.navigate to /explore/{id}
+        only works when an overlay is already open (the Vue Router is in the
+        correct state).  When the tab is on the plain /explore feed list the
+        navigation guard intercepts the request and the URL stays at /explore.
+
+        Strategy:
+          1. Attempt direct navigation.
+          2. If engage-bar is absent (SPA guard fired), bootstrap the overlay
+             context by physically clicking the first card on /explore, then
+             navigate again.
+          3. If still failing, open a fresh tab and navigate there — the fresh
+             tab bypasses any SPA state completely.
+        """
+        detail_url = make_feed_detail_url(feed_id, xsec_token)
+
+        # First attempt: direct navigation (works when overlay is already open)
+        self._navigate(detail_url)
+        self._check_feed_page_accessible()
+        if self._wait_engage_bar(max_polls=6):
+            return  # success
+
+        # Second attempt: bootstrap the overlay by clicking a card, then retry
+        print("[cdp_publish] engage-bar absent — bootstrapping overlay via card click")
+        self._bootstrap_explore_modal()
+
+        self._navigate(detail_url)
+        self._check_feed_page_accessible()
+        if self._wait_engage_bar(max_polls=8):
+            return  # success
+
+        # Third attempt: open a brand-new tab — bypasses any stuck SPA state
+        print("[cdp_publish] engage-bar still absent — opening fresh tab")
+        try:
+            import requests as _req
+            resp = _req.put(
+                f"http://{self.host}:{self.port}/json/new?{detail_url}",
+                timeout=5,
+                proxies={"http": None, "https": None},
+            )
+            if resp.ok:
+                new_ws = resp.json().get("webSocketDebuggerUrl", "")
+                if new_ws:
+                    try:
+                        if self.ws:
+                            self.ws.close()
+                    except Exception:
+                        pass
+                    self._tab_ws_url = new_ws
+                    self.ws = ws_client.connect(new_ws)
+                    self._sleep(PAGE_LOAD_WAIT + 1, minimum_seconds=3.0)
+                    self._check_feed_page_accessible()
+                    self._wait_engage_bar(max_polls=10)
+                    return
+        except Exception as e:
+            print(f"[cdp_publish] fresh-tab attempt failed: {e}")
+
+        # Final: give up gracefully — _set_note_toggle_state will report not found
+
+
+    # ------------------------------------------------------------------
+    # Mouse-only wander helpers (no Page.navigate to /explore/{id})
+    # ------------------------------------------------------------------
+
+    def click_note_card_in_search(self, feed_id: str) -> bool:
+        """Click the note card matching feed_id on the current search_result page.
+
+        Uses the feeds-container transform layout to compute real viewport
+        coordinates without relying on getBoundingClientRect (which returns
+        zeros for background tabs).  Scrolls the card into the viewport via
+        CDP Input.synthesizeScrollGesture if needed, then dispatches a real
+        mouse click.
+
+        Returns True if the engage-bar appeared (modal opened), False otherwise.
+        """
+        # Guard: if a modal is already open (engage-bar visible OR URL is /explore/{id}), close it first
+        modal_open = self._evaluate(
+            "(function(){"
+            "var eb=document.querySelector('.engage-bar-container');"
+            "if (eb && eb.offsetParent !== null) return true;"
+            "return /\\/explore\\/[a-f0-9]{16,}/.test(location.href);"
+            "})()"
         )
-        if not isinstance(result, dict) or not result.get("ok"):
-            reason = "unknown"
-            if isinstance(result, dict):
-                reason = str(result.get("reason", reason))
-            raise CDPError(f"Failed to set note action state: {reason}")
-        return result
+        if modal_open:
+            self.close_note_modal()
+            self._sleep(0.5, minimum_seconds=0.4)
+
+        # Guard: must be on search_result page (close_note_modal should have restored it)
+        cur_url = self._evaluate("location.href") or ""
+        if "search_result" not in cur_url:
+            return False
+
+        # Build card coordinate map from the DOM
+        coords_js = r"""
+(function(targetFeedId) {
+    var container = document.querySelector('.feeds-container');
+    if (!container) return null;
+    var cLeft = container.offsetLeft;
+    var cTop  = container.offsetTop;
+    var sections = Array.from(document.querySelectorAll('section.note-item'));
+    for (var i = 0; i < sections.length; i++) {
+        var sec = sections[i];
+        var a = sec.querySelector('a[href*="/explore/"]');
+        if (!a) continue;
+        var m = a.href.match(/\/explore\/([a-f0-9]{20,})/);
+        if (!m || m[1] !== targetFeedId) continue;
+        var st = sec.style.transform;
+        var tm = st.match(/translate\(([\d.]+)px,\s*([\d.]+)px\)/);
+        var tx = tm ? parseFloat(tm[1]) : 0;
+        var ty = tm ? parseFloat(tm[2]) : 0;
+        return {
+            x: Math.round(cLeft + tx + sec.offsetWidth  / 2),
+            y: Math.round(cTop  + ty + sec.offsetHeight / 2),
+            scroll_y: window.scrollY,
+            view_h: window.innerHeight,
+        };
+    }
+    return null;
+})(__FEED_ID__)
+""".replace("__FEED_ID__", json.dumps(feed_id))
+
+        rect = self._evaluate(coords_js)
+        if not rect or not rect.get("x"):
+            return False
+
+        abs_x    = rect["x"]
+        abs_y    = rect["y"]
+        scroll_y = rect.get("scroll_y", 0)
+        view_h   = rect.get("view_h", 963)
+        vp_y     = abs_y - scroll_y  # y relative to viewport top
+
+        # Scroll card into viewport if needed
+        if not (50 < vp_y < view_h - 50):
+            target_scroll = abs_y - view_h // 2
+            delta = target_scroll - scroll_y
+            self._send("Input.synthesizeScrollGesture", {
+                "x": abs_x, "y": view_h // 2,
+                "yDistance": -delta,
+                "speed": 800,
+            })
+            self._sleep(0.6, minimum_seconds=0.4)
+            scroll_y = self._evaluate("window.scrollY") or 0
+            vp_y = abs_y - scroll_y
+
+        self._mouse_click(abs_x, vp_y)
+        return self._wait_engage_bar(max_polls=12)
+
+    def get_dom_feed_ids_explore(self) -> list[str]:
+        """Return feed_ids of note cards currently rendered on the /explore page."""
+        result = self._evaluate(r"""
+(function(){
+    var sections = Array.from(document.querySelectorAll('section.note-item'));
+    var ids = [];
+    sections.forEach(function(sec){
+        var a = sec.querySelector('a[href*="/explore/"]');
+        if (!a) return;
+        var m = a.href.match(/\/explore\/([a-f0-9]{16,})/);
+        if (m) ids.push(m[1]);
+    });
+    return ids;
+})()
+""")
+        return result if isinstance(result, list) else []
+
+    def click_note_card_in_explore(self, feed_id: str) -> bool:
+        """Click the note card matching feed_id on the /explore page.
+
+        explore cards use normal document flow (no transform layout), so
+        DOM.getBoxModel gives accurate coordinates directly.  Scrolls into
+        viewport if needed, then dispatches a real mouse click.
+
+        Returns True if the modal opened, False otherwise.
+        """
+        # Guard: close any already-open modal first
+        cur_url = self._evaluate("location.href") or ""
+        if "/explore/" in cur_url and "search_result" not in cur_url:
+            self.close_note_modal()
+            self._sleep(0.5, minimum_seconds=0.4)
+
+        # Guard: must be on explore page
+        cur_url = self._evaluate("location.href") or ""
+        if "explore" not in cur_url or "search_result" in cur_url:
+            return False
+
+        # Find the index of the target section among all section.note-item
+        idx_js = json.dumps(feed_id)
+        section_index = self._evaluate(
+            f"(function(){{"
+            f"var secs=Array.from(document.querySelectorAll('section.note-item'));"
+            f"for(var i=0;i<secs.length;i++){{"
+            f"  var a=secs[i].querySelector('a[href*=\"/explore/\"]');"
+            f"  if(a && a.href.indexOf({idx_js})>-1) return i;"
+            f"}}"
+            f"return -1;"
+            f"}})()"
+        )
+        if section_index is None or section_index < 0:
+            return False
+
+        # Use DOM.querySelectorAll + DOM.getBoxModel to get accurate coords
+        try:
+            doc = self._send("DOM.getDocument", {"depth": 0})
+            root_id = doc["root"]["nodeId"]
+            nodes = self._send("DOM.querySelectorAll", {
+                "nodeId": root_id,
+                "selector": "section.note-item",
+            })
+            node_ids = nodes.get("nodeIds", [])
+            if section_index >= len(node_ids):
+                return False
+            node_id = node_ids[section_index]
+            box = self._send("DOM.getBoxModel", {"nodeId": node_id})
+            content = box.get("model", {}).get("content", [])
+            if len(content) < 8:
+                return False
+            abs_x = round((content[0] + content[2] + content[4] + content[6]) / 4)
+            abs_y = round((content[1] + content[3] + content[5] + content[7]) / 4)
+        except Exception:
+            return False
+
+        if abs_x == 0 and abs_y == 0:
+            return False
+
+        scroll_y = self._evaluate("window.scrollY") or 0
+        view_h   = self._evaluate("window.innerHeight") or 963
+        vp_y     = abs_y - scroll_y
+
+        # Scroll into viewport if needed
+        if not (50 < vp_y < view_h - 50):
+            target_scroll = abs_y - view_h // 2
+            delta = target_scroll - scroll_y
+            self._send("Input.synthesizeScrollGesture", {
+                "x": abs_x, "y": view_h // 2,
+                "yDistance": -delta,
+                "speed": 800,
+            })
+            self._sleep(0.6, minimum_seconds=0.4)
+            scroll_y = self._evaluate("window.scrollY") or 0
+            vp_y = abs_y - scroll_y
+
+        self._mouse_click(abs_x, vp_y)
+        return self._wait_engage_bar(max_polls=12)
+
+    def close_note_modal(self):
+        """Close the currently open note detail modal via ESC key.
+
+        Sends ESC twice: the first ESC dismisses any open sub-panel (e.g. the
+        comment input box if it is still focused), the second ESC closes the
+        note overlay itself and restores the search_result URL.
+
+        Guards against sending stray ESC when the modal is already closed.
+        """
+        def _esc():
+            self._send("Input.dispatchKeyEvent", {
+                "type": "keyDown", "key": "Escape", "code": "Escape",
+                "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27,
+            })
+            self._sleep(0.08, minimum_seconds=0.05)
+            self._send("Input.dispatchKeyEvent", {
+                "type": "keyUp", "key": "Escape", "code": "Escape",
+                "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27,
+            })
+
+        def _is_modal_open() -> bool:
+            url = self._evaluate("location.href") or ""
+            # URL is /explore/{hex-id} while modal is open
+            return "/explore/" in url and "search_result" not in url
+
+        # Nothing to do if modal is already closed
+        if not _is_modal_open():
+            return
+
+        # First ESC: dismiss comment input box / any focused sub-panel
+        _esc()
+        self._sleep(0.3, minimum_seconds=0.2)
+
+        # Second ESC: close the note modal overlay (only if still open)
+        if _is_modal_open():
+            _esc()
+            self._sleep(0.6, minimum_seconds=0.4)
+
+        # One more retry if still open
+        if _is_modal_open():
+            _esc()
+            self._sleep(0.6, minimum_seconds=0.4)
+
+        # Wait for URL to settle back to search_result (up to ~2s)
+        for _ in range(8):
+            url = self._evaluate("location.href") or ""
+            if "search_result" in url:
+                break
+            self._sleep(0.25, minimum_seconds=0.2)
+
+    def post_comment_in_modal(self, content: str) -> bool:
+        """Post a top-level comment in the currently open note modal.
+
+        Flow:
+          1. Click comment input box (DOM.getBoxModel for background-tab coords)
+          2. Wait for submit button to become active
+          3. Fill text via Input.insertText
+          4. Click submit button
+
+        Returns True if the comment was submitted successfully.
+        """
+        content = content.strip()
+        if not content:
+            return False
+
+        # Step 1: click input box to activate it
+        input_coords = self._get_element_center_cdp(
+            "div.input-box div.content-edit, div.input-box .content-input"
+        )
+        if not input_coords:
+            return False
+        self._mouse_click(input_coords[0], input_coords[1])
+        self._sleep(0.5, minimum_seconds=0.3)
+
+        # Step 2: fill text — use JS to set content then fire input events,
+        # which is more reliable than key-by-key for CJK text
+        content_js = json.dumps(content, ensure_ascii=False)
+        filled = self._evaluate(f"""
+(function(){{
+    var sel = [
+        "div.input-box div.content-edit p.content-input",
+        "div.input-box div.content-edit [contenteditable='true']",
+        "div.input-box .content-input",
+        "p.content-input",
+    ];
+    var el = null;
+    for (var i=0;i<sel.length;i++){{
+        var n = document.querySelector(sel[i]);
+        if (n && n.offsetParent !== null) {{ el=n; break; }}
+    }}
+    if (!el) return false;
+    el.focus();
+    if (el.tagName.toLowerCase()==='p' || el.isContentEditable){{
+        el.textContent = {content_js};
+    }} else {{
+        el.value = {content_js};
+    }}
+    el.dispatchEvent(new Event('input', {{bubbles:true}}));
+    el.dispatchEvent(new Event('change', {{bubbles:true}}));
+    return el.textContent.trim().length > 0 || (el.value||'').trim().length > 0;
+}})()
+""")
+        if not filled:
+            return False
+        self._sleep(0.4, minimum_seconds=0.2)
+
+        # Step 3: click submit button — it may still be "gray" (disabled visually)
+        # but XHS enables it once content is non-empty; use DOM.getBoxModel
+        submit_coords = self._get_element_center_cdp(
+            "div.bottom button.submit, button.btn.submit, button[class*='submit']"
+        )
+        if not submit_coords:
+            # fallback: find by text
+            btn_info = self._evaluate("""
+(function(){
+    var btns = Array.from(document.querySelectorAll('button'));
+    for (var i=0;i<btns.length;i++){
+        var b=btns[i];
+        var txt=(b.innerText||'').trim();
+        if (['发送','提交','评论'].includes(txt) && b.offsetParent!==null){
+            var r=b.getBoundingClientRect();
+            return {x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2)};
+        }
+    }
+    return null;
+})()
+""")
+            if isinstance(btn_info, dict) and btn_info.get("x"):
+                submit_coords = (btn_info["x"], btn_info["y"])
+
+        if not submit_coords:
+            return False
+
+        self._mouse_click(submit_coords[0], submit_coords[1])
+        self._sleep(1.0, minimum_seconds=0.6)
+        return True
+
+    def toggle_like_in_modal(self, desired: bool) -> dict[str, Any]:
+        """Toggle the like button inside the currently open note modal."""
+        return self._set_note_toggle_state(
+            selectors=[".engage-bar-container .like-wrapper"],
+            desired_active=desired,
+            active_class_keywords=["like-active", "liked", "active"],
+            active_text_keywords=["已赞", "取消赞"],
+        )
+
+    def toggle_bookmark_in_modal(self, desired: bool) -> dict[str, Any]:
+        """Toggle the bookmark button inside the currently open note modal."""
+        return self._set_note_toggle_state(
+            selectors=[".engage-bar-container .collect-wrapper"],
+            desired_active=desired,
+            active_class_keywords=["collect-active", "collected", "active"],
+            active_text_keywords=["已收藏", "取消收藏"],
+        )
 
     def set_note_upvote_state(
         self,
@@ -2613,23 +3188,15 @@ class XiaohongshuPublisher:
         if not xsec_token:
             raise CDPError("xsec_token cannot be empty.")
 
-        detail_url = make_feed_detail_url(feed_id, xsec_token)
-        self._navigate(detail_url)
-        self._sleep(2, minimum_seconds=1.0)
-        self._check_feed_page_accessible()
+        self._open_feed_detail(feed_id, xsec_token)
 
         result = self._set_note_toggle_state(
             selectors=[
-                ".like-button",
-                "button[aria-label*='like']",
-                "button[aria-label*='赞']",
-                "[class*='like']",
-                "[class*='heart']",
-                "[data-testid*='like']",
-                "[data-testid*='heart']",
+                # Scoped to the main engage-bar to avoid comment like buttons
+                ".engage-bar-container .like-wrapper",
             ],
             desired_active=upvoted,
-            active_class_keywords=["liked", "active", "on", "selected"],
+            active_class_keywords=["like-active", "liked", "active", "on", "selected"],
             active_text_keywords=["已赞", "取消赞"],
         )
         return {
@@ -2658,23 +3225,15 @@ class XiaohongshuPublisher:
         if not xsec_token:
             raise CDPError("xsec_token cannot be empty.")
 
-        detail_url = make_feed_detail_url(feed_id, xsec_token)
-        self._navigate(detail_url)
-        self._sleep(2, minimum_seconds=1.0)
-        self._check_feed_page_accessible()
+        self._open_feed_detail(feed_id, xsec_token)
 
         result = self._set_note_toggle_state(
             selectors=[
-                ".collect-button",
-                "button[aria-label*='collect']",
-                "button[aria-label*='收藏']",
-                "[class*='collect']",
-                "[class*='bookmark']",
-                "[data-testid*='collect']",
-                "[data-testid*='bookmark']",
+                # Scoped to the main engage-bar to avoid any stray collect elements
+                ".engage-bar-container .collect-wrapper",
             ],
             desired_active=bookmarked,
-            active_class_keywords=["collected", "bookmarked", "active", "on", "selected"],
+            active_class_keywords=["collect-active", "collected", "bookmarked", "active", "on", "selected"],
             active_text_keywords=["已收藏", "取消收藏"],
         )
         return {
@@ -2845,10 +3404,7 @@ class XiaohongshuPublisher:
         if not content:
             raise CDPError("content cannot be empty.")
 
-        detail_url = make_feed_detail_url(feed_id, xsec_token)
-        self._navigate(detail_url)
-        self._sleep(2, minimum_seconds=1.0)
-        self._check_feed_page_accessible()
+        self._open_feed_detail(feed_id, xsec_token)
 
         input_rect_js = """
             (function() {
