@@ -39,7 +39,7 @@ NOTION_HEADERS = {
 }
 
 CACHE_DIR = Path.home() / ".cache" / "xhs_images"
-MAX_IMAGES = 9
+MAX_IMAGES = 20
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
 # 已知图集站点及对应图片容器 CSS selector（空串表示用通用逻辑）
@@ -60,14 +60,16 @@ GALLERY_SITES: dict[str, str] = {
     "mantan-web.jp":        ".photo-area, article",
     "inside-games.jp":      "article, body",
     "thetv.jp":             ".newsimage",
+    "efight.jp":            ".attachment img, article img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
-                         "chunichi.co.jp", "mantan-web.jp", "inside-games.jp"}
+                         "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
+                         "efight.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
-GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide"]
+GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
 
 
 # ============ Notion ============
@@ -389,40 +391,201 @@ def _mantan_to_jpeg(src: str) -> str:
 
 
 def _scrape_mantan(gallery_url: str) -> list[str]:
-    """mantan-web.jp 图集：第一页已包含全部图片的导航列表（photo__photolist-item），
-    直接从导航列表一次性提取，无需逐页请求。URL 转换为 w=1200,f=jpg 大图 JPEG。"""
+    """mantan-web.jp 图集：支持两种页面结构。
+
+    旧版：photo__photolist-item 导航列表一次性获取全部图片（_size 路径）。
+    新版：每页仅含一张当前图，通过遍历 photopage/001..999 页面抓取。
+    URL 格式：storage.mantan-web.jp/w=W,f=F/images/... 或 storage.mantan-web.jp/.../_size...
+    统一转换为 w=1200,f=jpg 大图 JPEG。
+    """
+    import re
     headers = {**HEADERS, "Referer": "https://gravure.mantan-web.jp/"}
-    images = []
+
+    # 找 photopage 基础路径：去掉末尾 photopage/XXX.html
+    base_url = re.sub(r'/photopage/\d+\.html.*$', '', gallery_url)
+    if not base_url.endswith('/'):
+        base_url += '/'
+
+    images: list[str] = []
 
     try:
         r = requests.get(gallery_url, headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
-        # photo__photolist-item 是导航缩略图列表，每项对应一张图，
-        # src 已经是大图 URL（与各 photopage 主图相同）
+        # 新格式：直接取当前页的大图
+        for img in s.find_all("img"):
+            src = img.get("src", "")
+            if "storage.mantan-web.jp" in src:
+                src = _mantan_to_jpeg(src)
+                if not any(k in src for k in ("logo", "icon", "banner")):
+                    if images:
+                        # 已有一张则跳过（当前页主图）
+                        continue
+                    images.append(src)
+
+        # 旧格式：photolist 导航
         for a in s.find_all("a", class_="photo__photolist-item"):
             img = a.find("img")
             if not img:
                 continue
             src = img.get("src", "")
-            if "storage.mantan-web.jp" in src and "_size" in src:
+            if "storage.mantan-web.jp" in src:
                 src = _mantan_to_jpeg(src)
                 if src not in images:
                     images.append(src)
             if len(images) >= MAX_IMAGES:
-                break
+                return images
 
-        # fallback：若导航列表为空（页面结构变更），退回到只取主图（第一个非导航 img）
-        if not images:
-            for img in s.find_all("img"):
-                src = img.get("src", "")
-                if "storage.mantan-web.jp" in src and "_size" in src:
-                    parent_classes = img.parent.get("class", [])
-                    if "photo__photolist-item" not in parent_classes:
-                        images.append(_mantan_to_jpeg(src))
-                        break
+        # 新版无 photolist：遍历分页 2..MAX_IMAGES
+        if len(images) == 1:
+            m = re.search(r'/photopage/(\d+)\.html', gallery_url)
+            start = int(m.group(1)) if m else 1
+            end = min(20, start + MAX_IMAGES)
+            for p in range(start + 1, end + 1):
+                page_url = f"{base_url}photopage/{p:03d}.html"
+                try:
+                    rp = requests.get(page_url, headers=headers, timeout=15)
+                    sp = BeautifulSoup(rp.text, "html.parser")
+                    for img in sp.find_all("img"):
+                        src = img.get("src", "")
+                        if "storage.mantan-web.jp" in src:
+                            src = _mantan_to_jpeg(src)
+                            if not any(k in src for k in ("logo", "icon", "banner")):
+                                if src not in images:
+                                    images.append(src)
+                                break
+                except Exception as e:
+                    print(f"  ⚠️ mantan page {p:03d} 失败: {e}")
+                time.sleep(0.3)
+                if len(images) >= MAX_IMAGES:
+                    break
     except Exception as e:
         print(f"  ⚠️ mantan-web 抓取失败: {e}")
+
+    return images
+
+
+def _scrape_thetv(gallery_url: str) -> list[str]:
+    """thetv.jp 图集：每张图一个页面 /detail/{article_id}/{image_id}/。
+    从当前页解析所有分页链接，逐页抓取并统一输出 ?w=2560 大图。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://thetv.jp/"}
+
+    # --- 收集分页 ---
+    resp = requests.get(gallery_url, headers=headers, timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    article_m = re.search(r'/detail/(\d+)/', p.path)
+    if not article_m:
+        return []
+    article_id = article_m.group(1)
+    detail_re = re.compile(rf'/detail/{article_id}/(\d+)/')
+
+    pages: list[tuple[int, str]] = []
+    seen: set[int] = set()
+    for a_tag in soup.find_all("a", href=True):
+        m = detail_re.search(a_tag["href"])
+        if not m:
+            continue
+        img_num = int(m.group(1))
+        if img_num in seen:
+            continue
+        seen.add(img_num)
+        href = a_tag["href"]
+        full = href if href.startswith("http") else f"{base}{href}"
+        full = re.sub(r'/landing/?$', '/', full)
+        pages.append((img_num, full))
+
+    if not pages:
+        return []
+
+    pages.sort(key=lambda x: x[0])
+
+    # --- 逐页抓取 ---
+    images: list[str] = []
+    for img_num, page_url in pages[:MAX_IMAGES]:
+        try:
+            r = requests.get(page_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+            # 精准匹配：/i/nw/{article_id}/{img_num}.jpg
+            target = re.escape(f"/i/nw/{article_id}/{img_num}")
+            src = None
+            for img in s.find_all("img"):
+                candidate = img.get("data-src") or img.get("src") or ""
+                if target in candidate:
+                    src = candidate
+                    break
+            if not src:
+                continue
+            if src.startswith("//"):
+                src = "https:" + src
+            elif src.startswith("/"):
+                src = f"{base}{src}"
+            src = re.sub(r'\?w=\d+', '', src)
+            src = f"{src}?w=2560"
+            if src not in images:
+                images.append(src)
+        except Exception as e:
+            print(f"  ⚠️ thetv page {page_url} 失败: {e}")
+        time.sleep(0.3)
+
+    return images
+
+
+def _scrape_efight(gallery_url: str) -> list[str]:
+    """efight.jp 图集：从文章页提取所有 /attachment/* 链接，逐页抓取原图。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://efight.jp/"}
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    attachments: set[str] = set()
+    # 扫描当前页 + 可能的 /2 /3 分页
+    article_slug = re.sub(r'/\d+/?$', '', gallery_url.rstrip('/'))
+    for pn in range(1, 6):
+        p_url = f"{article_slug}/{pn}" if pn > 1 else article_slug
+        try:
+            r = requests.get(p_url, headers=headers, timeout=15)
+            sp = BeautifulSoup(r.text, "html.parser")
+            for a_tag in sp.find_all("a", href=True):
+                href = a_tag["href"]
+                if "/attachment/" in href:
+                    full = href if href.startswith("http") else f"{base}{href}"
+                    attachments.add(full)
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+    if not attachments:
+        return []
+
+    images: list[str] = []
+    for att_url in list(attachments)[:MAX_IMAGES]:
+        try:
+            r = requests.get(att_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+            imgs = s.select("div.attachment img") or s.select("article img, .entry img")
+            for img in imgs:
+                src = (img.get("data-src") or img.get("src") or "")
+                if "wp-content/uploads/" in src and any(e in src.lower() for e in [".jpg", ".jpeg", ".png"]):
+                    src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    elif src.startswith("/"):
+                        src = f"{base}{src}"
+                    if src not in images:
+                        images.append(src)
+                    break
+        except Exception as e:
+            print(f"  ⚠️ efight {att_url} 失败: {e}")
+        time.sleep(0.3)
 
     return images
 
@@ -590,6 +753,14 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "inside-games.jp" in domain:
         images = _scrape_inside_games(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "thetv.jp" in domain:
+        images = _scrape_thetv(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "efight.jp" in domain:
+        images = _scrape_efight(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")

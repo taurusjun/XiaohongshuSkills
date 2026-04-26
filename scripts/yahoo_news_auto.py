@@ -740,13 +740,20 @@ def push_to_notion(news: Dict) -> bool:
 
 # 默认搜索关键词配置：(关键词, 每次抓取数量, 是否开启中国相关过滤)
 DEFAULT_KEYWORDS = [
-    ("中国",  3, True),
-    ("AKB48", 3, False),
-    ("美人",  3, False),
+    # ("中国",  3, True),
+    ("AKB", 10, False),
+    ("乃木坂", 5, False),
+    ("欅坂", 3, False),
+    ("コスプレ", 3, False),
+    # ("美人",  3, False),
     ("原神", 3, False),
     ("鳴潮", 3, False),
-    ("コスプレ", 3, False),
 ]
+
+# 关键词到发布标签的映射
+KEYWORD_TAG_MAP = {
+    "AKB": ["AKB48", "akb48"],
+}
 
 
 def process_keyword(keyword: str, max_results: int, china_filter: bool, no_translate: bool, existing_keys: set = None, push: bool = False) -> List[Dict]:
@@ -785,8 +792,12 @@ def process_keyword(keyword: str, max_results: int, china_filter: bool, no_trans
             news['vocab'] = ""
 
         category, tags = auto_classify(news['title_ja'], news.get('content', ''), keyword=keyword)
-        # 非中国关键词时，将关键词本身加入标签
-        if keyword != '中国' and keyword not in tags:
+        # 关键词映射到标签
+        if keyword in KEYWORD_TAG_MAP:
+            for t in KEYWORD_TAG_MAP[keyword]:
+                if t not in tags:
+                    tags.append(t)
+        elif keyword != '中国' and keyword not in tags:
             tags.append(keyword)
         news['category'] = category
         news['tags'] = tags
