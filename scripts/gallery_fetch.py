@@ -62,12 +62,13 @@ GALLERY_SITES: dict[str, str] = {
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
     "maidonanews.jp":       ".photo, article",
+    "encount.press":        ".article-image, article",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
-                         "efight.jp", "thetv.jp", "maidonanews.jp"}
+                         "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -134,6 +135,18 @@ def _is_valid_gallery_url(url: str) -> bool:
     # 路径为空或只有一级且很短（如 /news）也排除
     parts = [p for p in path.split("/") if p]
     return len(parts) >= 2
+
+
+def is_gallery_url(gallery_url: str) -> bool:
+    """判断URL是否为有效的图集URL（用于验证）"""
+    if not gallery_url:
+        return False
+    domain = _domain_of(gallery_url)
+    # 检查是否在支持的站点列表中
+    if not any(site in domain for site in GALLERY_SITES):
+        return False
+    # 检查URL路径是否有效
+    return _is_valid_gallery_url(gallery_url)
 
 
 def detect_gallery_link(article_url: str) -> str:
@@ -649,6 +662,49 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
         return []
 
 
+def _scrape_encount(gallery_url: str) -> list[str]:
+    """encount.press 图集：过滤掉主题占位符图片，只保留 wp-content/uploads 的内容图片。"""
+    headers = {**HEADERS, "Referer": "https://encount.press/"}
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        images: list[str] = []
+        seen: set[str] = set()
+
+        for img in s.find_all("img"):
+            src = (img.get("data-src") or img.get("src") or "")
+            # 过滤规则：
+            # 1. 必须包含 wp-content/uploads/（真实内容图片）
+            # 2. 排除主题文件（wp-content/themes/）
+            # 3. 排除特定占位符文件
+            if ("wp-content/uploads/" in src and 
+                src.endswith(('.jpg', '.jpeg', '.png', '.webp')) and
+                "hatena_white.png" not in src and
+                "logo.svg" not in src and
+                "icon_" not in src):
+                
+                # 标准化URL
+                if src.startswith("//"):
+                    src = "https:" + src
+                elif src.startswith("/"):
+                    src = "https://encount.press" + src
+                
+                src = src.split('?')[0]  # 去掉查询参数
+                
+                if src not in seen:
+                    seen.add(src)
+                    images.append(src)
+                    if len(images) >= MAX_IMAGES:
+                        break
+
+        return images
+    except Exception as e:
+        print(f"  ⚠️ encount.press 抓取失败: {e}")
+        return []
+
+
 def _scrape_chunichi(gallery_url: str) -> list[str]:
     """chunichi.co.jp 文章页：只提取正文图（/article/size1/），排除推荐缩略图和 UI 素材"""
     from urllib.parse import urlparse, urlunparse
@@ -827,6 +883,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "maidonanews.jp" in domain:
         images = _scrape_maidonanews(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "encount.press" in domain:
+        images = _scrape_encount(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
