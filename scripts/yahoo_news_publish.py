@@ -400,7 +400,7 @@ def main():
         # 标签规范化映射（日文/繁体 → 中文）
         TAG_NORMALIZE = {
             "コスプレ": "cosplay", "コスプ": "cosplay",
-            "AKB48": "AKB", "乃木坂46": "乃木坂", "欅坂46": "欅坂",
+            # 不再转换 AKB48/乃木坂46/欅坂46，保留完整形式
             "鳴潮": "鸣潮", "原神": "原神", "崩壊": "崩坏", "スターレイル": "星穹铁道",
             "アニメ": "动漫", "マンガ": "漫画", "ゲーム": "游戏",
             "中東": "中东", "政治": "时政",
@@ -410,11 +410,39 @@ def main():
             "ビューティー": "护肤分享", "トレンド": "日本潮流",
         }
 
+        # 关键词到发布标签的映射（与 yahoo_news_auto.py 保持一致）
+        KEYWORD_TAG_MAP = {
+            "AKB": ["AKB48", "akb48"],
+            "乃木坂": ["乃木坂", "乃木坂46"],
+            "欅坂": ["欅坂", "欅坂46", "樱坂", "樱坂46"],
+        }
+
         def normalize_tag(t: str) -> str:
             return TAG_NORMALIZE.get(t, t)
 
-        # 从 Notion 标签 + 必选标签 + 随机1-2个热门标签
-        all_tags = [normalize_tag(t) for t in info.get("tags", [])]
+        # 从 Notion 标签开始
+        raw_tags = info.get("tags", [])
+        all_tags: list[str] = []
+
+        # 先展开 KEYWORD_TAG_MAP 映射
+        for t in raw_tags:
+            if t in KEYWORD_TAG_MAP:
+                for mapped in KEYWORD_TAG_MAP[t]:
+                    if mapped not in all_tags:
+                        all_tags.append(mapped)
+            else:
+                if t not in all_tags:
+                    all_tags.append(t)
+
+        # 规范化并去重
+        all_tags = [normalize_tag(t) for t in all_tags]
+        seen = set()
+        unique_tags: list[str] = []
+        for t in all_tags:
+            if t not in seen:
+                seen.add(t)
+                unique_tags.append(t)
+        all_tags = unique_tags
         if must_tag not in all_tags:
             all_tags.append(must_tag)
         random_hot = random.sample(hot_tags, min(2, len(hot_tags)))
