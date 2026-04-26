@@ -710,12 +710,48 @@ def _scrape_inside_games(gallery_url: str) -> list[str]:
 
 def _to_large_url(src: str, domain: str) -> str:
     """将缩略图 URL 转换为大图 URL（站点专用规则）"""
+    import re
     if "oricon.co.jp" in domain:
         return src.replace("_p_s_", "_p_o_")
     if "crank-in.net" in domain:
-        import re
         return re.sub(r'_\d+\.jpg', '_1200.jpg', src)
+    if "mdpr.jp" in domain:
+        # 去掉 width/crop/upscale 参数，保留 quality=80
+        src = re.sub(r'\?.*$', '', src)
+        return f"{src}?width=1520&auto=webp&quality=80"
     return src
+
+
+def _scrape_mdpr(gallery_url: str) -> list[str]:
+    """mdpr.jp 图集：从页面提取所有 article 图片 URL，统一转换为 width=1520 大图。"""
+    import re
+    headers = {**HEADERS, "Referer": "https://mdpr.jp/"}
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        images: list[str] = []
+        seen: set[str] = set()
+
+        for img in s.find_all("img"):
+            src = (img.get("data-src") or img.get("src") or "")
+            if "img-mdpr.freetls.fastly.net/article/" not in src:
+                continue
+            # 去掉查询参数，统一加 width=1520
+            base = re.sub(r'\?.*$', '', src)
+            if base in seen:
+                continue
+            seen.add(base)
+            large = f"{base}?width=1520&auto=webp&quality=80"
+            images.append(large)
+            if len(images) >= MAX_IMAGES:
+                break
+
+        return images
+    except Exception as e:
+        print(f"  ⚠️ mdpr.jp 抓取失败: {e}")
+        return []
 
 
 def scrape_gallery_images(gallery_url: str) -> list[str]:
@@ -723,6 +759,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
     domain = _domain_of(gallery_url)
 
     # 站点专用抓取器（分页图集）
+    if "mdpr.jp" in domain:
+        images = _scrape_mdpr(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "oricon.co.jp" in domain:
         images = _scrape_oricon(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
