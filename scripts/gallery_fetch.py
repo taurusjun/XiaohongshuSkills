@@ -61,12 +61,13 @@ GALLERY_SITES: dict[str, str] = {
     "inside-games.jp":      "article, body",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
+    "maidonanews.jp":       ".photo, article",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
-                         "efight.jp"}
+                         "efight.jp", "thetv.jp", "maidonanews.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -152,6 +153,13 @@ def detect_gallery_link(article_url: str) -> str:
                 continue
             # 必须有实际路径深度
             if not _is_valid_gallery_url(href):
+                continue
+            # 排除导航/广告/功能链接
+            from urllib.parse import urlparse
+            path = urlparse(href).path.lower()
+            exclude_paths = ["/feature/", "/news/", "/movie/", "/video/", "/special/", 
+                           "/tieup", "/campaign", "/program", "/column", "/interview"]
+            if any(ex in path for ex in exclude_paths):
                 continue
             # 无需关键词的站点直接返回
             if any(site in domain for site in GALLERY_NO_HINT_SITES):
@@ -590,6 +598,57 @@ def _scrape_efight(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_maidonanews(gallery_url: str) -> list[str]:
+    """maidonanews.jp 图集：从 potaufeu.asahi.com CDN 提取图片，生成 640px 版本。"""
+    import re
+    headers = {**HEADERS, "Referer": "https://maidonanews.jp/"}
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        images: list[str] = []
+        seen: set[str] = set()
+
+        for img in s.find_all("img"):
+            src = (img.get("data-src") or img.get("src") or "")
+            # 检查是否是 potaufeu 图片（可能是协议相对 URL）
+            if ("potaufeu.asahi.com" in src and "/picture/" in src):
+                
+                # 标准化为完整 URL
+                if src.startswith("//"):
+                    src = "https:" + src
+                elif src.startswith("/"):
+                    src = "https://p.potaufeu.asahi.com" + src
+                
+                # 去掉查询参数
+                src = re.sub(r'\?.*$', '', src)
+                
+                # 提取图片路径和尺寸，生成 640px URL
+                # 支持 _px.jpg, _square.jpg 格式
+                match = re.search(r'(/picture/\w+/\w+)_\d+(px|square)\.jpg$', src)
+                if match:
+                    # 保留完整域名和路径前缀
+                    domain_part = src.split('/picture/')[0]
+                    path_part = match.group(1)
+                    # square 图直接改为 640px
+                    large = f"{domain_part}{path_part}_640px.jpg"
+                    if large not in seen:
+                        seen.add(large)
+                        images.append(large)
+                        if len(images) >= MAX_IMAGES:
+                            break
+                # 如果已经是 640px，直接添加
+                elif "_640px.jpg" in src and src not in seen:
+                    seen.add(src)
+                    images.append(src)
+
+        return images
+    except Exception as e:
+        print(f"  ⚠️ maidonanews.jp 抓取失败: {e}")
+        return []
+
+
 def _scrape_chunichi(gallery_url: str) -> list[str]:
     """chunichi.co.jp 文章页：只提取正文图（/article/size1/），排除推荐缩略图和 UI 素材"""
     from urllib.parse import urlparse, urlunparse
@@ -719,6 +778,9 @@ def _to_large_url(src: str, domain: str) -> str:
         # 去掉 width/crop/upscale 参数，保留 quality=80
         src = re.sub(r'\?.*$', '', src)
         return f"{src}?width=1520&auto=webp&quality=80"
+    if "maidonanews.jp" in domain:
+        # 替换图片尺寸后缀: 120px/200px → 640px
+        return re.sub(r'_(\d+)px\.jpg$', '_640px.jpg', src)
     return src
 
 
@@ -758,9 +820,13 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
 
-    # 站点专用抓取器（分页图集）
+# 站点专用抓取器（分页图集）
     if "mdpr.jp" in domain:
         images = _scrape_mdpr(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "maidonanews.jp" in domain:
+        images = _scrape_maidonanews(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
