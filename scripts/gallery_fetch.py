@@ -1051,19 +1051,227 @@ def _scrape_mdpr(gallery_url: str) -> list[str]:
         return []
 
 
-def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
-    """thefirsttimes.jp 图集：从文章页收集所有 /attachment/slug/ 链接，
-    对每个 slug 构造大图 URL（wp-content/uploads/YYYY/MM/slug.jpg）。
+def _cdp_navigate(url: str, wait_seconds: float = 3.0) -> bool:
+    """用 CDP 导航到 url，等待 loadEventFired 后断开连接。
+    返回是否成功导航（Chrome CDP 是否可用）。
+    """
+    try:
+        import websocket
+    except ImportError:
+        return False
 
-    入口 URL 格式：
-      /news/{article_id}/attachment/{slug}/       ← 图片版（支持）
-      /news/{article_id}/attachment-sns/{n}/     ← Instagram embed，自动回溯文章页找图片版
+    try:
+        resp = requests.get("http://127.0.0.1:9222/json", timeout=5)
+        if resp.status_code != 200:
+            return False
+        tabs = resp.json()
+    except Exception:
+        return False
+
+    ws_url = next(
+        (t.get("webSocketDebuggerUrl", "") for t in tabs if t.get("type") == "page"),
+        ""
+    )
+    if not ws_url:
+        return False
+
+    try:
+        ws = websocket.create_connection(ws_url, timeout=15)
+        ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+        ws.recv()
+        ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
+        start = time.time()
+        while time.time() - start < 20:
+            try:
+                msg = json.loads(ws.recv())
+                if msg.get("method") == "Page.loadEventFired":
+                    break
+            except Exception:
+                break
+        ws.close()
+        time.sleep(wait_seconds)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ CDP 导航失败: {e}")
+        return False
+
+
+def _cdp_read_instagram_iframe(post_url_fragment: str) -> list[str]:
+    """从 CDP target 列表中找匹配 post_url_fragment 的 Instagram embed iframe，
+    直接连接并读取其 outerHTML，提取 cdninstagram.com 最大图片 URL。
+    post_url_fragment 如 '/p/DXgG89Nk0BA/' 或 '/reel/DXlzkAJCZJh/'。
+    """
+    try:
+        import websocket
+    except ImportError:
+        return []
+
+    try:
+        resp = requests.get("http://127.0.0.1:9222/json", timeout=5)
+        tabs = resp.json()
+    except Exception:
+        return []
+
+    # 找匹配的 Instagram iframe target
+    ig_tab = next(
+        (t for t in tabs
+         if "instagram.com" in t.get("url", "")
+         and "embed" in t.get("url", "")
+         and post_url_fragment in t.get("url", "")),
+        None
+    )
+    if not ig_tab:
+        return []
+
+    ws_url = ig_tab.get("webSocketDebuggerUrl", "")
+    if not ws_url:
+        return []
+
+    try:
+        ws = websocket.create_connection(ws_url, timeout=15)
+        ws.send(json.dumps({
+            "id": 1, "method": "Runtime.evaluate",
+            "params": {"expression": "document.documentElement.outerHTML"},
+        }))
+        html = ""
+        while True:
+            msg = json.loads(ws.recv())
+            if msg.get("id") == 1:
+                html = msg.get("result", {}).get("result", {}).get("value", "")
+                break
+        ws.close()
+        return _extract_instagram_images(html)
+    except Exception as e:
+        print(f"  ⚠️ 读 Instagram iframe 失败: {e}")
+        return []
+
+
+def _extract_instagram_images(html: str) -> list[str]:
+    """从已渲染的 HTML 中提取 scontent-*.cdninstagram.com 最大尺寸图片 URL。
+    优先取 srcset 中最大 w 的项（1080w），去重后返回。
+    """
+    import re
+    soup = BeautifulSoup(html, "html.parser")
+    images: list[str] = []
+    seen: set[str] = set()
+
+    for img in soup.find_all("img"):
+        # 只取 Instagram CDN 图片
+        src = img.get("src", "")
+        if "cdninstagram.com" not in src:
+            continue
+
+        # 从 srcset 取最大 w
+        best_url, best_w = src, 0
+        srcset = img.get("srcset", "")
+        if srcset:
+            for part in srcset.split(","):
+                tokens = part.strip().split()
+                if not tokens:
+                    continue
+                u = tokens[0]
+                w = 0
+                if len(tokens) >= 2:
+                    try:
+                        w = int(tokens[1].rstrip("w"))
+                    except ValueError:
+                        pass
+                if w > best_w:
+                    best_w, best_url = w, u
+
+        # 去掉会过期的 oh=/oe= 参数可能导致下载失败，保留原 URL
+        if best_url not in seen:
+            seen.add(best_url)
+            images.append(best_url)
+
+    return images
+
+
+def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
+    """通过 CDP 逐页处理 thefirsttimes.jp /attachment-sns/ 页面：
+    1. 导航到每个分页（loadEventFired 后断开）
+    2. 等待 Instagram embed iframe 渲染
+    3. 直接连接 Instagram iframe 的 CDP target 读取图片
+    """
+    import re
+    from urllib.parse import urlparse
+
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+    article_id_m = re.search(r'/news/(\d+)/', p.path)
+    if not article_id_m:
+        return []
+    article_id = article_id_m.group(1)
+
+    # 获取总页数
+    headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
+    base_sns = f"{base}/news/{article_id}/attachment-sns"
+    page_infos: list[tuple[str, str]] = []  # (page_url, instagram_post_id)
+    try:
+        r = requests.get(f"{base_sns}/1/", headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        max_page = 1
+        for a in soup.find_all("a", href=True):
+            m = re.search(r'/attachment-sns/(\d+)/?$', a["href"])
+            if m:
+                max_page = max(max_page, int(m.group(1)))
+    except Exception as e:
+        print(f"  ⚠️ 获取 SNS 页数失败: {e}")
+        max_page = 1
+
+    # 收集每页的 Instagram post URL
+    for i in range(1, min(max_page, MAX_IMAGES) + 1):
+        page_url = f"{base_sns}/{i}/"
+        try:
+            r = requests.get(page_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+            bq = s.find("blockquote", class_="instagram-media")
+            if bq:
+                permalink = bq.get("data-instgrm-permalink", "")
+                # 提取 /p/SHORTCODE/ 或 /reel/SHORTCODE/
+                m2 = re.search(r'/(p|reel)/([A-Za-z0-9_-]+)/', permalink)
+                if m2:
+                    post_frag = f"/{m2.group(1)}/{m2.group(2)}/"
+                    page_infos.append((page_url, post_frag))
+        except Exception:
+            pass
+
+    if not page_infos:
+        return []
+
+    print(f"  📄 共 {len(page_infos)} 页 SNS embed，通过 CDP 逐页读取 Instagram iframe...")
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    for i, (page_url, post_frag) in enumerate(page_infos, 1):
+        print(f"    [{i}/{len(page_infos)}] 导航到: {page_url}")
+        # 导航 + 等待 embed 加载
+        _cdp_navigate(page_url, wait_seconds=6.0)
+        # 读 Instagram iframe target
+        page_imgs = _cdp_read_instagram_iframe(post_frag)
+        print(f"    找到 {len(page_imgs)} 张图片")
+        for u in page_imgs:
+            if u not in seen:
+                seen.add(u)
+                images.append(u)
+        if len(images) >= MAX_IMAGES:
+            break
+
+    return images[:MAX_IMAGES]
+
+
+def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
+    """thefirsttimes.jp 图集分两种类型：
+
+    /attachment/{slug}/     → 图片版，直接抓 wp-content/uploads 大图
+    /attachment-sns/{n}/   → Instagram embed，通过 CDP 渲染后提取图片
+                             若无 Chrome/CDP，回溯文章页找图片版兜底
     """
     import re
     from urllib.parse import urlparse
 
     headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
-
     p = urlparse(gallery_url)
     m_article = re.search(r'/news/(\d+)/', p.path)
     if not m_article:
@@ -1071,9 +1279,26 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
     article_id = m_article.group(1)
     article_url = f"{p.scheme}://{p.netloc}/news/{article_id}/"
 
-    # SNS embed 页面：直接回文章页找图片版 attachment 入口
+    # ── SNS embed 路径 ────────────────────────────────────
     if "attachment-sns" in gallery_url:
-        print("  ⚠️ thefirsttimes.jp SNS embed，回溯文章页寻找图片版图集...")
+        # 先检查 Chrome CDP 是否可用
+        cdp_ok = False
+        try:
+            r = requests.get("http://127.0.0.1:9222/json", timeout=3)
+            cdp_ok = r.status_code == 200 and bool(r.json())
+        except Exception:
+            pass
+
+        if cdp_ok:
+            print("  🌐 通过 CDP 渲染 Instagram embed...")
+            imgs = _scrape_thefirsttimes_sns(gallery_url)
+            if imgs:
+                return imgs
+            print("  ⚠️ CDP 渲染未抓到图片，回溯图片版兜底...")
+        else:
+            print("  ⚠️ Chrome CDP 不可用，回溯文章页寻找图片版图集...")
+
+        # 兜底：回文章页找图片版 attachment 入口
         try:
             r = requests.get(article_url, headers=headers, timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
@@ -1089,9 +1314,10 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
                     return _scrape_thefirsttimes(real_url)
         except Exception as e:
             print(f"  ⚠️ 回溯文章页失败: {e}")
-        print("  — 文章页无图片版图集")
+        print("  — 文章页也无图片版图集")
         return []
 
+    # ── 图片版路径 ────────────────────────────────────────
     try:
         r = requests.get(article_url, headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
@@ -1099,7 +1325,6 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
         print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e}")
         return []
 
-    # 收集所有 /attachment/slug/（排除 -sns）
     slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
     slugs: list[str] = []
     seen: set[str] = set()
@@ -1115,10 +1340,8 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
                 slugs.append(slug)
 
     if not slugs:
-        # fallback：直接从当前页抓图
         return _scrape_thefirsttimes_page(gallery_url, headers)
 
-    # 2. 对每个 slug 抓取对应页，从 wp-content/uploads 提取大图
     images: list[str] = []
     base = f"{p.scheme}://{p.netloc}"
     for slug in slugs[:MAX_IMAGES]:
