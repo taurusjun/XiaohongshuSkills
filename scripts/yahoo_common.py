@@ -121,11 +121,11 @@ def translate_title(title_ja: str) -> str:
     return title_ja
 
 
-def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str, str, str, str]:
-    """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇
-    
+def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str, str, str, str, list]:
+    """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
+
     Returns:
-        (seo_title, summary, content, comment, vocab)
+        (seo_title, summary, content, comment, vocab, topic_tags)
     """
     prompt = f"""你是小红书内容运营专家兼日语教学专家。请根据新闻标题，严格按照下方格式输出全部6个字段。
 
@@ -173,10 +173,11 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
 
     result = call_litellm(prompt, max_tokens=4000)
     if not result:
-        return title_zh, "", f"• {title_zh}", "暂无解读", ""
+        return title_zh, "", f"• {title_zh}", "暂无解读", "", []
 
     seo_title = title_zh
     summary = content = comment = vocab = ""
+    topic_tags: list[str] = []
 
     sections = re.split(r'【(SEO标题|总结|新闻要点|我的解读|N1/N2词汇|话题标签)】', result)
     for i, sec in enumerate(sections):
@@ -191,8 +192,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
             comment = nxt.strip()
         elif sec == "N1/N2词汇":
             vocab = nxt.strip()
+        elif sec == "话题标签":
+            # 从 "#标签1 #标签2 ..." 格式中提取标签名（去掉 #）
+            raw = nxt.strip().split('\n')[0].strip()
+            topic_tags = [t.lstrip('#').strip() for t in re.findall(r'#\S+', raw) if t.lstrip('#').strip()]
 
-    return seo_title, summary, content, comment, vocab
+    return seo_title, summary, content, comment, vocab, topic_tags
 
 
 # ============ 分类 ============
@@ -363,7 +368,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         print("    翻译...")
         news['title_zh'] = translate_title(news['title_ja'])
         print("    生成内容...")
-        seo_title, summary, content, comment, vocab = generate_content_and_comment(
+        seo_title, summary, content, comment, vocab, topic_tags = generate_content_and_comment(
             news['title_ja'], news['title_zh']
         )
         news['title_zh'] = seo_title
@@ -376,9 +381,13 @@ def process_news_item(news: dict, no_translate: bool = False,
         news.setdefault('content', f"• {news['title_ja']}")
         news.setdefault('comment', "")
         news.setdefault('vocab', "")
+        topic_tags: list[str] = []
 
-    # 2. 分类 + 标签
+    # 2. 分类 + 标签（auto_classify + extra_tags + AI话题标签）
     category, tags = auto_classify(news['title_ja'], news.get('content', ''), keyword=keyword)
+    for t in topic_tags:
+        if t not in tags:
+            tags.append(t)
     if extra_tags:
         for t in extra_tags:
             if t not in tags:
@@ -386,7 +395,8 @@ def process_news_item(news: dict, no_translate: bool = False,
     news['category'] = category
     news['tags']     = tags
     news['source']   = news.get('source', 'Yahoo Japan')
-    news['pub_time'] = news.get('pub_time') or datetime.now().strftime('%Y.%m.%d')
+    # pub_time：强制统一为 YYYY.MM.DD，忽略来源页的日文时间格式
+    news['pub_time'] = datetime.now().strftime('%Y.%m.%d')
     if keyword:
         news['keyword'] = keyword
 
