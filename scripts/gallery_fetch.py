@@ -1057,26 +1057,40 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
     入口 URL 格式：
       /news/{article_id}/attachment/{slug}/       ← 图片版（支持）
-      /news/{article_id}/attachment-sns/{n}/     ← Instagram embed（跳过）
+      /news/{article_id}/attachment-sns/{n}/     ← Instagram embed，自动回溯文章页找图片版
     """
     import re
     from urllib.parse import urlparse
 
-    # SNS embed 页面无法直接抓取，跳过
-    if "attachment-sns" in gallery_url:
-        print("  ⚠️ thefirsttimes.jp SNS embed 页面，无法直接抓取图片")
-        return []
-
     headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
 
-    # 1. 从文章页（去掉 attachment/slug 后缀）收集所有 attachment 链接
     p = urlparse(gallery_url)
-    # 提取 article_id
     m_article = re.search(r'/news/(\d+)/', p.path)
     if not m_article:
         return []
     article_id = m_article.group(1)
     article_url = f"{p.scheme}://{p.netloc}/news/{article_id}/"
+
+    # SNS embed 页面：直接回文章页找图片版 attachment 入口
+    if "attachment-sns" in gallery_url:
+        print("  ⚠️ thefirsttimes.jp SNS embed，回溯文章页寻找图片版图集...")
+        try:
+            r = requests.get(article_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+            slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+            for a in s.find_all("a", href=True):
+                if "attachment-sns" in a["href"]:
+                    continue
+                m = slug_pattern.search(a["href"])
+                if m:
+                    first_slug = m.group(1)
+                    real_url = f"{p.scheme}://{p.netloc}/news/{article_id}/attachment/{first_slug}/"
+                    print(f"  🔄 找到图片版入口: {real_url}")
+                    return _scrape_thefirsttimes(real_url)
+        except Exception as e:
+            print(f"  ⚠️ 回溯文章页失败: {e}")
+        print("  — 文章页无图片版图集")
+        return []
 
     try:
         r = requests.get(article_url, headers=headers, timeout=15)
