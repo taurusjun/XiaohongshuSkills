@@ -64,13 +64,14 @@ GALLERY_SITES: dict[str, str] = {
     "maidonanews.jp":       ".photo, article",
     "encount.press":        ".article-image, article",
     "nishispo.nishinippon.co.jp": "article, .contents",
+    "thefirsttimes.jp":          "article, .m-gallery-list",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
-                         "nishispo.nishinippon.co.jp"}
+                         "nishispo.nishinippon.co.jp", "thefirsttimes.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -169,12 +170,15 @@ def detect_gallery_link(article_url: str) -> str:
             # 必须有实际路径深度
             if not _is_valid_gallery_url(href):
                 continue
-            # 排除导航/广告/功能链接
+            # 排除导航/广告/功能链接（只排除顶级路径，不误杀文章子路径）
             from urllib.parse import urlparse
             path = urlparse(href).path.lower()
-            exclude_paths = ["/feature/", "/news/", "/movie/", "/video/", "/special/", 
+            # 只排除路径深度 ≤ 2 的纯导航页（如 /news/、/feature/）
+            # 路径有 3 层以上（如 /news/0000802151/attachment/）属于文章子页，保留
+            path_parts = [p for p in path.split("/") if p]
+            exclude_top = ["/feature", "/movie", "/video", "/special",
                            "/tieup", "/campaign", "/program", "/column", "/interview"]
-            if any(ex in path for ex in exclude_paths):
+            if len(path_parts) <= 1 and any(path.startswith(ex) for ex in exclude_top + ["/news"]):
                 continue
             # 无需关键词的站点直接返回
             if any(site in domain for site in GALLERY_NO_HINT_SITES):
@@ -948,6 +952,73 @@ def _to_large_url(src: str, domain: str) -> str:
     return src
 
 
+def _scrape_nikkansports(gallery_url: str) -> list[str]:
+    """nikkansports.com 图集：序号导航模式，逐页抓取所有图片。
+    
+    URL 格式：photonews_nsInc_{news_id}-{seq}.html
+    图片格式：/entertainment/news/img/{news_id}-w1300_{seq}.jpg
+    """
+    import re
+    from urllib.parse import urlparse
+    headers = {**HEADERS, "Referer": "https://www.nikkansports.com/"}
+
+    # 从URL中提取新闻ID和序号
+    m = re.search(r'photonews_nsInc_(\d+)-(\d+)\.html', gallery_url)
+    if not m:
+        return []
+    
+    news_id = m.group(1)
+    start_seq = int(m.group(2))
+    
+    images: list[str] = []
+    valid_seqs = {start_seq}  # 只保存确认存在的序号
+    
+    # 尝试向下遍历更多序列（更大的序号）
+    for seq in range(start_seq + 1, start_seq + 25):  # 最多尝试25张
+        try:
+            test_url = f"https://www.nikkansports.com/entertainment/photonews/photonews_nsInc_{news_id}-{seq}.html"
+            resp = requests.head(test_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                valid_seqs.add(seq)
+            else:
+                # 遇到404就停止，说明图集结束
+                break
+        except Exception as e:
+            # 网络错误时也停止
+            break
+        # 避免过于频繁的请求
+        time.sleep(0.1)
+    
+    # 尝试获取更小的序号（包括0）
+    for seq in range(start_seq - 1, max(-1, start_seq - 25), -1):  # 向上找最多25个
+        try:
+            test_url = f"https://www.nikkansports.com/entertainment/photonews/photonews_nsInc_{news_id}-{seq}.html"
+            resp = requests.head(test_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                valid_seqs.add(seq)
+            else:
+                # 404就停止
+                break
+        except Exception as e:
+            # 网络错误时也停止
+            break
+        time.sleep(0.1)
+    
+    # 只为确认存在的序号生成图片URL
+    for seq in sorted(valid_seqs):
+        img_url = f"https://www.nikkansports.com/entertainment/news/img/{news_id}-w1300_{seq}.jpg"
+        # 验证图片URL是否真的存在
+        try:
+            img_resp = requests.head(img_url, headers=headers, timeout=10)
+            if img_resp.status_code == 200:
+                images.append(img_url)
+        except:
+            # 图片URL不存在则跳过
+            continue
+    
+    return images[:MAX_IMAGES]
+
+
 def _scrape_mdpr(gallery_url: str) -> list[str]:
     """mdpr.jp 图集：从页面提取所有 article 图片 URL，统一转换为 width=1520 大图。"""
     import re
@@ -980,11 +1051,109 @@ def _scrape_mdpr(gallery_url: str) -> list[str]:
         return []
 
 
+def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
+    """thefirsttimes.jp 图集：从文章页收集所有 /attachment/slug/ 链接，
+    对每个 slug 构造大图 URL（wp-content/uploads/YYYY/MM/slug.jpg）。
+
+    入口 URL 格式：
+      /news/{article_id}/attachment/{slug}/       ← 图片版（支持）
+      /news/{article_id}/attachment-sns/{n}/     ← Instagram embed（跳过）
+    """
+    import re
+    from urllib.parse import urlparse
+
+    # SNS embed 页面无法直接抓取，跳过
+    if "attachment-sns" in gallery_url:
+        print("  ⚠️ thefirsttimes.jp SNS embed 页面，无法直接抓取图片")
+        return []
+
+    headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
+
+    # 1. 从文章页（去掉 attachment/slug 后缀）收集所有 attachment 链接
+    p = urlparse(gallery_url)
+    # 提取 article_id
+    m_article = re.search(r'/news/(\d+)/', p.path)
+    if not m_article:
+        return []
+    article_id = m_article.group(1)
+    article_url = f"{p.scheme}://{p.netloc}/news/{article_id}/"
+
+    try:
+        r = requests.get(article_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e}")
+        return []
+
+    # 收集所有 /attachment/slug/（排除 -sns）
+    slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+    slugs: list[str] = []
+    seen: set[str] = set()
+    for a in s.find_all("a", href=True):
+        href = a["href"]
+        if "attachment-sns" in href:
+            continue
+        m = slug_pattern.search(href)
+        if m:
+            slug = m.group(1)
+            if slug not in seen:
+                seen.add(slug)
+                slugs.append(slug)
+
+    if not slugs:
+        # fallback：直接从当前页抓图
+        return _scrape_thefirsttimes_page(gallery_url, headers)
+
+    # 2. 对每个 slug 抓取对应页，从 wp-content/uploads 提取大图
+    images: list[str] = []
+    base = f"{p.scheme}://{p.netloc}"
+    for slug in slugs[:MAX_IMAGES]:
+        page_url = f"{base}/news/{article_id}/attachment/{slug}/"
+        imgs = _scrape_thefirsttimes_page(page_url, headers)
+        images.extend(imgs)
+        if len(images) >= MAX_IMAGES:
+            break
+        time.sleep(0.2)
+
+    return images[:MAX_IMAGES]
+
+
+def _scrape_thefirsttimes_page(page_url: str, headers: dict) -> list[str]:
+    """抓取单个 thefirsttimes attachment 页的大图 URL"""
+    import re
+    try:
+        r = requests.get(page_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+        images = []
+        seen: set[str] = set()
+        for img in s.find_all("img"):
+            src = img.get("src", "") or img.get("data-src", "")
+            if not src:
+                continue
+            if "wp-content/uploads" not in src:
+                continue
+            if "themes" in src or "footer" in src or "icon" in src.lower():
+                continue
+            # 去掉尺寸后缀（-WxH），保留大图
+            clean = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+            if clean not in seen:
+                seen.add(clean)
+                images.append(clean)
+        return images
+    except Exception as e:
+        print(f"  ⚠️ thefirsttimes 页面抓取失败 {page_url}: {e}")
+        return []
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
 
 # 站点专用抓取器（分页图集）
+    if "nikkansports.com" in domain:
+        images = _scrape_nikkansports(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "mdpr.jp" in domain:
         images = _scrape_mdpr(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
@@ -1035,6 +1204,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "efight.jp" in domain:
         images = _scrape_efight(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "thefirsttimes.jp" in domain:
+        images = _scrape_thefirsttimes(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
