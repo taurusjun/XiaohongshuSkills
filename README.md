@@ -276,15 +276,46 @@ python scripts/xhs_news_pipeline.py --skip-gallery --auto
 
 #### Step 1：抓取新闻
 
+有两种抓取方式，处理流程完全一致（翻译 → AI内容生成 → 分类打标 → 封面图 → Notion）：
+
+**方式 A：关键词搜索（`yahoo_news_auto.py`）**
+
 ```bash
-# 抓取并推送到 Notion（含图集链接检测）
+# 按默认关键词列表批量抓取并推送
 python scripts/yahoo_news_auto.py --push
 
-# 指定关键词
+# 指定单个关键词
 python scripts/yahoo_news_auto.py --keyword 乃木坂 --push
 
-# 指定关键词 + 抓取数量
+# 指定关键词 + 数量限制
 python scripts/yahoo_news_auto.py --keyword AKB48 --max 5 --push
+
+# 跳过翻译（仅分类推送）
+python scripts/yahoo_news_auto.py --push --no-translate
+```
+
+**方式 B：个性化推荐（`yahoo_recommendations.py`）**
+
+读取已登录 Chrome 的 Yahoo 首页「あなたにおすすめ」推荐流，无需指定关键词：
+
+```bash
+# 前置：确保 Chrome 已启动且已登录 Yahoo Japan
+python scripts/chrome_launcher.py
+
+# 抓取推荐流并推送（默认按中国相关性过滤）
+python scripts/yahoo_recommendations.py --push
+
+# 不过滤，全量推送
+python scripts/yahoo_recommendations.py --push --no-filter
+
+# 限制条数
+python scripts/yahoo_recommendations.py --push --max 10
+
+# 跳过翻译
+python scripts/yahoo_recommendations.py --push --no-translate
+
+# 仅预览，不推送（结果输出到文件）
+python scripts/yahoo_recommendations.py --no-filter --output tmp/rec.json
 ```
 
 执行后 Notion 中每条文章会自动填入`图集链接`（如有）。
@@ -465,6 +496,39 @@ python scripts/chrome_launcher.py --restart
 # 关闭 Chrome
 python scripts/chrome_launcher.py --kill
 ```
+
+### yahoo_news_auto.py
+
+通过 CDP 搜索关键词抓取 Yahoo Japan 新闻，AI 处理后推送 Notion。
+
+```bash
+python scripts/yahoo_news_auto.py [选项]
+
+选项:
+  --push, -p           推送到 Notion
+  --max, -m N          每个关键词最大抓取数量
+  --keyword, -k TEXT   指定单个搜索关键词（省略则按默认列表批量执行）
+  --no-filter          关闭中国相关性过滤
+  --no-translate       跳过 AI 翻译与内容生成
+```
+
+### yahoo_recommendations.py
+
+读取已登录 Chrome 的 Yahoo 首页「あなたにおすすめ」个性化推荐流，AI 处理后推送 Notion。
+后续处理流程与 `yahoo_news_auto.py` 完全一致（依赖 `yahoo_common.py` 共享模块）。
+
+```bash
+python scripts/yahoo_recommendations.py [选项]
+
+选项:
+  --push, -p           推送到 Notion
+  --max, -m N          最大抓取数量（默认 20）
+  --no-filter          关闭中国相关性过滤（默认按中国相关性筛选）
+  --no-translate       跳过 AI 翻译与内容生成
+  --output, -o FILE    将结果保存到 JSON 文件
+```
+
+> **前置条件**：需先通过 `python scripts/chrome_launcher.py` 启动 Chrome 并手动登录 Yahoo Japan，脚本才能读取到个性化推荐内容。
 
 ## 支持各种 Skill 工具
 

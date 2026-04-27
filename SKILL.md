@@ -300,6 +300,34 @@ python scripts/cdp_publish.py notes-from-profile --user-id USER_ID --limit 20 --
 
 补充：更完整的背景说明、安装说明与面向人工阅读的示例可参考 `README.md`，但本文件中的命令样例应优先作为 agent 执行基线。
 
+### 10) Yahoo 新闻抓取 → Notion（yahoo_news_auto / yahoo_recommendations）
+
+两个脚本共用 `yahoo_common.py` 模块，后续处理流程（翻译→AI生成→分类→封面图→Notion 推送）完全一致。
+
+**关键词搜索模式**（需 Chrome CDP 可用）：
+```bash
+python scripts/yahoo_news_auto.py --push                        # 按默认关键词列表批量抓取
+python scripts/yahoo_news_auto.py --keyword 乃木坂 --push       # 指定关键词
+python scripts/yahoo_news_auto.py --keyword AKB48 --max 5 --push
+python scripts/yahoo_news_auto.py --push --no-translate         # 跳过 AI 翻译
+python scripts/yahoo_news_auto.py --push --no-filter            # 关闭中国相关过滤
+```
+
+**个性化推荐模式**（需已登录 Yahoo Japan 的 Chrome）：
+```bash
+# 前置：启动 Chrome 并登录 Yahoo Japan
+python scripts/chrome_launcher.py
+
+python scripts/yahoo_recommendations.py --push                  # 按中国相关性过滤后推送
+python scripts/yahoo_recommendations.py --push --no-filter      # 全量推送
+python scripts/yahoo_recommendations.py --push --max 10         # 限制条数
+python scripts/yahoo_recommendations.py --push --no-translate   # 跳过翻译
+python scripts/yahoo_recommendations.py --no-filter --output tmp/rec.json  # 仅预览存文件
+```
+
+说明：`yahoo_recommendations.py` 读取 Yahoo 首页「あなたにおすすめ」个性化推荐，需要已登录账号的 Chrome Tab 才能获取到个性化内容。
+说明：两个脚本均依赖 `yahoo_common.py`，其中包含所有共享逻辑（配置、AI、Notion、分类等）。
+
 ## 失败处理
 
 - 登录失败：提示用户重新扫码登录并重试；若用户需要远程展示二维码，可改用 `get-login-qrcode`。
