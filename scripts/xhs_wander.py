@@ -376,11 +376,27 @@ def wander_explore(
             stats["skip"] += 1
             continue
 
-        # explore 模式没有 API 标题，从 modal 内读取
+        # explore 模式没有 API 标题和作者信息，从 modal 内读取
         title = pub._evaluate(
             "(function(){ var t=document.querySelector('.note-container .title, .note-detail .title, #detail-title'); "
             "return t ? t.innerText.trim() : ''; })()"
         ) or feed_id
+
+        # 检查是否为自己的帖子
+        if MY_USER_ID:
+            author_id = pub._evaluate(
+                "(function(){ var a=document.querySelector('.note-container a[href*=\"/user/profile/\"], "
+                ".note-detail a[href*=\"/user/profile/\"], .author-container a[href*=\"/user/profile/\"]'); "
+                "var m = a ? a.href.match(/\\/user\\/profile\\/([a-f0-9]+)/) : null; "
+                "return m ? m[1] : ''; })()"
+            ) or ""
+            if author_id == MY_USER_ID:
+                print("  ⏭  自己的帖子，跳过")
+                stats["skip"] += 1
+                pub.close_note_modal()
+                if i < len(selected_ids):
+                    human_sleep(*DEFAULT_NOTE_DELAY, "下一条")
+                continue
 
         risk = process_note_in_modal(pub, title, like_prob, bookmark_prob, comment_prob, stats, dry_run=False)
         if risk:

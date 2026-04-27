@@ -65,13 +65,18 @@ GALLERY_SITES: dict[str, str] = {
     "encount.press":        ".article-image, article",
     "nishispo.nishinippon.co.jp": "article, .contents",
     "thefirsttimes.jp":          "article, .m-gallery-list",
+    "kstyle.com":           "article, body",
+    "yorozoonews.jp":       "article, .article-body",
+    "nikkan-spa.jp":        "article, .post-content",
+    "animeanime.jp":        "article, body",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
-                         "nishispo.nishinippon.co.jp", "thefirsttimes.jp"}
+                         "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
+                         "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -134,10 +139,17 @@ def _domain_of(url: str) -> str:
 def _is_valid_gallery_url(url: str) -> bool:
     """URL 必须有实际路径（排除首页、纯域名链接）"""
     from urllib.parse import urlparse
-    path = urlparse(url).path.rstrip("/")
-    # 路径为空或只有一级且很短（如 /news）也排除
+    p = urlparse(url)
+    path = p.path.rstrip("/")
     parts = [p for p in path.split("/") if p]
-    return len(parts) >= 2
+    # kstyle.com 通过 query param 标识文章（如 ?articleNo=2278474），路径只有 /article.ksn
+    if len(parts) >= 2:
+        return True
+    if "kstyle.com" in p.netloc and "articleNo" in p.query:
+        return True
+    if "nikkan-spa.jp" in p.netloc and "attachment_id" in p.query:
+        return True
+    return False
 
 
 def is_gallery_url(gallery_url: str) -> bool:
@@ -1382,6 +1394,277 @@ def _scrape_thefirsttimes_page(page_url: str, headers: dict) -> list[str]:
         return []
 
 
+def _scrape_kstyle(gallery_url: str) -> list[str]:
+    """kstyle.com 图集：文章内嵌 cdn.livedoor.jp/kstyle/ 图片，排除 _WI.jpg 缩略图，
+    去掉 /r.WxH resize 后缀取原图。"""
+    import re
+    headers = {**HEADERS, "Referer": "https://kstyle.com/"}
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+
+        images: list[str] = []
+        seen: set[str] = set()
+
+        for img in s.find_all("img"):
+            src = (img.get("data-src") or img.get("src") or "")
+            if "cdn.livedoor.jp/kstyle/" not in src:
+                continue
+            if src.startswith("//"):
+                src = "https:" + src
+
+            # 排除 _WI.jpg 缩略图（相关推荐文章）
+            if "_WI.jpg" in src or "_WI." in src:
+                continue
+
+            # 去掉 /r.WxH resize 后缀取原图
+            src = re.sub(r'/r\.\d+x\d+$', '', src)
+
+            if src in seen:
+                continue
+            seen.add(src)
+            images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+
+        return images
+    except Exception as e:
+        print(f"  ⚠️ kstyle 抓取失败: {e}")
+        return []
+
+
+def _scrape_yorozoonews(gallery_url: str) -> list[str]:
+    """yorozoonews.jp 图集：p.potaufeu.asahi.com CDN 图片，query param ?p= 分页。
+    每页展示一张主图，遍历分页收集。优先取 _640px 大图，跳过 _200px 缩略图和作者头像。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://yorozoonews.jp/"}
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    images: list[str] = []
+    seen: set[str] = set()
+    visited_urls: set[str] = set()
+    current_url = gallery_url
+
+    for _ in range(MAX_IMAGES):
+        if current_url in visited_urls:
+            break
+        visited_urls.add(current_url)
+
+        try:
+            r = requests.get(current_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+
+            large_img = ""
+            thumb_candidates: list[str] = []
+            for img in s.find_all("img"):
+                src = (img.get("data-src") or img.get("src") or "")
+                if "p.potaufeu.asahi.com" not in src or "/picture/" not in src:
+                    continue
+                if src.startswith("//"):
+                    src = "https:" + src
+                src = re.sub(r'\?.*$', '', src)
+                # 排除作者头像等非正文图片路径
+                if any(p in src for p in ["/8a08-p/", "/317d-p/", "/7df7-p/"]):
+                    continue
+                # 优先 _640px 大图
+                if "_640px.jpg" in src:
+                    if src not in seen:
+                        large_img = src
+                        break
+                elif "_200px.jpg" in src:
+                    thumb_candidates.append(src)
+
+            if large_img:
+                if large_img not in seen:
+                    seen.add(large_img)
+                    images.append(large_img)
+            elif thumb_candidates:
+                # fallback: 用 _200px 缩略图转 _640px
+                src = re.sub(r'_\d+px\.jpg$', '_640px.jpg', thumb_candidates[0])
+                if src not in seen:
+                    seen.add(src)
+                    images.append(src)
+
+            # 找下一个分页
+            next_url = ""
+            for a in s.find_all("a", href=True):
+                text = a.get_text(strip=True).lower()
+                if any(kw in text for kw in ["次の写真", "次へ", "next"]):
+                    href = a["href"]
+                    if "?p=" in href:
+                        if href.startswith("/"):
+                            href = base + href
+                        elif not href.startswith("http"):
+                            continue
+                        next_url = href
+                        break
+            if not next_url:
+                break
+            current_url = next_url
+
+        except Exception as e:
+            print(f"  ⚠️ yorozoonews 分页抓取失败 {current_url}: {e}")
+            break
+
+    return images
+
+
+def _scrape_nikkan_spa(gallery_url: str) -> list[str]:
+    """nikkan-spa.jp 图集：wp-content/uploads 图片，线性翻页（"次へ" 链接）。
+    每页一张大图，沿着 next 链接遍历收集所有图片。
+    只取正文容器（article / .entry-content）内的无缩略图后缀原图。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://nikkan-spa.jp/"}
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    images: list[str] = []
+    seen: set[str] = set()
+    visited_urls: set[str] = set()
+    current_url = gallery_url
+
+    # 正文容器 selector（仅从这些容器内取图）
+    CONTENT_SELECTOR = "article, .entry-content, .post-content, .attachment-content, .single-content, .main-content"
+
+    for _ in range(MAX_IMAGES):
+        if current_url in visited_urls:
+            break
+        visited_urls.add(current_url)
+
+        try:
+            r = requests.get(current_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+
+            # 只在正文容器内找图片
+            containers = s.select(CONTENT_SELECTOR) or [s]
+
+            for container in containers:
+                for img in container.find_all("img"):
+                    src = (img.get("data-src") or img.get("src") or "")
+                    if "wp-content/uploads/" not in src:
+                        continue
+                    # 排除缩略图（-WxH 后缀，如 -125x207）
+                    if re.search(r'-\d+x\d+(\.\w+)$', src):
+                        continue
+                    # 排除 _lg 后缀的 banner/特集图
+                    if re.search(r'_lg\.(jpg|jpeg|png|webp)$', src):
+                        continue
+                    # 排除 banner/icon/logo 等关键词
+                    src_lower = src.lower()
+                    if any(k in src_lower for k in ["logo", "banner", "icon", "noimage",
+                                                       "hatena_white", "sns_", "footer",
+                                                       "prezent", "backnumber"]):
+                        continue
+                    if src.startswith("/"):
+                        src = base + src
+                    elif src.startswith("//"):
+                        src = "https:" + src
+                    src = src.split("?")[0]
+                    if src in seen:
+                        continue
+                    seen.add(src)
+                    images.append(src)
+                    break  # 每页 1 张正文大图
+                if len(images) > len(seen) - 1:  # 本页已找到，跳出容器循环
+                    pass
+
+            # 找下一个分页链接（"次へ" 文本链接）
+            next_url = ""
+            for a in s.find_all("a", href=True):
+                text = a.get_text(strip=True)
+                if any(kw in text for kw in ["次へ", "次の写真", "次"]):
+                    href = a["href"]
+                    if href.startswith("/"):
+                        href = base + href
+                    elif not href.startswith("http"):
+                        continue
+                    if href != current_url:
+                        next_url = href
+                    break
+            if not next_url:
+                break
+            current_url = next_url
+
+        except Exception as e:
+            print(f"  ⚠️ nikkan-spa 分页抓取失败 {current_url}: {e}")
+            break
+
+    return images
+
+
+def _scrape_animeanime(gallery_url: str) -> list[str]:
+    """animeanime.jp 图集：/article/img/YYYY/MM/DD/article_id/img_id.html，
+    从缩略图导航条提取所有图片 ID，转换为 /imgs/zoom/{id}.jpg 大图 URL。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://animeanime.jp/"}
+    images: list[str] = []
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+        p = urlparse(gallery_url)
+        base = f"{p.scheme}://{p.netloc}"
+
+        m_article = re.search(r"/article/img/\d+/\d+/\d+/(\d+)/", p.path)
+        article_id = m_article.group(1) if m_article else None
+
+        seen_ids: set[str] = set()
+        img_ids: list[str] = []
+
+        if article_id:
+            # 精准模式：只取 href 指向同一 article_id 的图片页链接
+            article_img_pattern = re.compile(
+                rf"/article/img/\d+/\d+/\d+/{re.escape(article_id)}/(\d+)\.html"
+            )
+            for a in s.find_all("a", href=True):
+                href = a["href"]
+                m = article_img_pattern.search(href)
+                if not m:
+                    continue
+                img_id = m.group(1)
+                if img_id not in seen_ids:
+                    seen_ids.add(img_id)
+                    img_ids.append(img_id)
+        else:
+            # fallback：从 /imgs/zoom/ 提取
+            for img in s.find_all("img"):
+                src = img.get("src", "")
+                m = re.search(r"/imgs/zoom/(\d+)\.jpg", src)
+                if m:
+                    img_id = m.group(1)
+                    if img_id not in seen_ids:
+                        seen_ids.add(img_id)
+                        img_ids.append(img_id)
+
+        if not img_ids:
+            # last-resort：取当前页大图
+            for img in s.find_all("img"):
+                src = img.get("src", "")
+                if "/imgs/zoom/" in src:
+                    if src.startswith("/"):
+                        src = base + src
+                    if src not in images:
+                        images.append(src)
+                    if len(images) >= MAX_IMAGES:
+                        break
+        else:
+            for img_id in img_ids[:MAX_IMAGES]:
+                images.append(f"{base}/imgs/zoom/{img_id}.jpg")
+
+    except Exception as e:
+        print(f"  ⚠️ animeanime 抓取失败: {e}")
+
+    return images
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
@@ -1445,6 +1728,22 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "thefirsttimes.jp" in domain:
         images = _scrape_thefirsttimes(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "kstyle.com" in domain:
+        images = _scrape_kstyle(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "yorozoonews.jp" in domain:
+        images = _scrape_yorozoonews(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "nikkan-spa.jp" in domain:
+        images = _scrape_nikkan_spa(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "animeanime.jp" in domain:
+        images = _scrape_animeanime(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")

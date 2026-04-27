@@ -31,75 +31,56 @@ from yahoo_common import (
 # ============ CDP 抓取「あなたにおすすめ」============
 
 def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
-    """通过 CDP 读取已登录 Chrome 中 Yahoo 首页的个性化推荐。
-
-    策略：
-      1. 如果已有 Yahoo 首页 tab → 直接读取 HTML
-      2. 否则导航到首页，断线后重连再读取
-    """
+    """通过 CDP 强制导航到 Yahoo 首页并读取个性化推荐。"""
     try:
         import websocket
     except ImportError:
         print("❌ 需要安装: pip install websocket-client")
         return []
 
-    ws_url, already_on_yahoo = get_yahoo_tab_ws_url()
+    ws_url, _ = get_yahoo_tab_ws_url()
     if not ws_url:
         print("❌ 找不到可用的 page tab")
         return []
 
     html = ""
     try:
-        if already_on_yahoo:
-            print("  ✅ 已在 Yahoo 首页，直接读取内容")
-            ws = websocket.create_connection(ws_url)
-            ws.send(json.dumps({
-                "id": 1, "method": "Runtime.evaluate",
-                "params": {"expression": "document.documentElement.outerHTML"},
-            }))
-            while True:
+        # 始终导航到首页
+        ws = websocket.create_connection(ws_url)
+        ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+        ws.recv()
+        ws.send(json.dumps({
+            "id": 2, "method": "Page.navigate",
+            "params": {"url": YAHOO_HOME_URL},
+        }))
+        print("  导航到 Yahoo 首页...")
+        start = time.time()
+        while time.time() - start < 20:
+            try:
                 msg = json.loads(ws.recv())
-                if msg.get("id") == 1:
-                    html = msg.get("result", {}).get("result", {}).get("value", "")
+                if msg.get("method") == "Page.loadEventFired":
                     break
-            ws.close()
-        else:
-            # 导航到首页，连接可能因页面跳转而断开
-            ws = websocket.create_connection(ws_url)
-            ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-            ws.recv()
-            ws.send(json.dumps({
-                "id": 2, "method": "Page.navigate",
-                "params": {"url": YAHOO_HOME_URL},
-            }))
-            print("等待页面加载...")
-            start = time.time()
-            while time.time() - start < 20:
-                try:
-                    msg = json.loads(ws.recv())
-                    if msg.get("method") == "Page.loadEventFired":
-                        break
-                except Exception:
-                    break
-            ws.close()
+            except Exception:
+                break
+        ws.close()
 
-            # 等待个性化内容渲染，然后重连读取
-            time.sleep(4)
-            ws_url2, _ = get_yahoo_tab_ws_url()
-            if not ws_url2:
-                print("❌ 无法重新获取 WebSocket URL")
-                return []
-            ws2 = websocket.create_connection(ws_url2)
-            ws2.send(json.dumps({
-                "id": 1, "method": "Runtime.evaluate",
-                "params": {"expression": "document.documentElement.outerHTML"},
-            }))
-            while True:
-                msg = json.loads(ws2.recv())
-                if msg.get("id") == 1:
-                    html = msg.get("result", {}).get("result", {}).get("value", "")
-                    break
-            ws2.close()
+        # 等待个性化内容渲染，然后重连读取
+        time.sleep(4)
+        ws_url2, _ = get_yahoo_tab_ws_url()
+        if not ws_url2:
+            print("❌ 无法重新获取 WebSocket URL")
+            return []
+        ws2 = websocket.create_connection(ws_url2)
+        ws2.send(json.dumps({
+            "id": 1, "method": "Runtime.evaluate",
+            "params": {"expression": "document.documentElement.outerHTML"},
+        }))
+        while True:
+            msg = json.loads(ws2.recv())
+            if msg.get("id") == 1:
+                html = msg.get("result", {}).get("result", {}).get("value", "")
+                break
+        ws2.close()
 
     except Exception as e:
         print(f"抓取出错: {e}")
