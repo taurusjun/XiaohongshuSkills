@@ -284,10 +284,15 @@ def get_yahoo_tab_ws_url() -> Tuple[str, bool]:
     except Exception:
         return "", False
 
-    # 优先找已打开 Yahoo 新闻的 tab
+    # 优先找已打开 Yahoo 新闻首页的 tab（搜索/文章页没有 #newsFeed）
     for tab in tabs:
         if tab.get("type") == "page" and "news.yahoo.co.jp" in tab.get("url", ""):
-            return tab.get("webSocketDebuggerUrl", ""), True
+            url = tab.get("url", "")
+            # 只有首页才有 #newsFeed 容器（URL 不含 /search /articles 等子路径）
+            from urllib.parse import urlparse
+            path = urlparse(url).path.rstrip("/")
+            if path in ("", "/"):
+                return tab.get("webSocketDebuggerUrl", ""), True
 
     # 退而求其次：任意普通 page tab（用于导航）
     for tab in tabs:
