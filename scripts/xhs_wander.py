@@ -79,7 +79,7 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
         prompt = (
             f"请为以下小红书帖子写一条简短自然的中文评论（10-20字，口语化，不要emoji太多）：\n"
             f"标题：{title}\n"
-            f"内容片段：{content_snippet[:100] if content_snippet else '（无）'}"
+            f"正文：{content_snippet[:200] if content_snippet else '（无）'}"
         )
         resp = _req.post(
             f"{LITELLM_URL}/chat/completions",
@@ -87,14 +87,18 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
             json={
                 "model": LITELLM_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 60,
+                "max_tokens": 1024,
             },
-            timeout=15,
+            timeout=30,
         )
         if resp.status_code == 200:
-            content = resp.json()["choices"][0]["message"].get("content") or ""
+            msg = resp.json()["choices"][0]["message"]
+            # GLM-5 等推理模型可能把内容放 reasoning_content，content 为 null
+            content = msg.get("content") or msg.get("reasoning_content") or ""
             if content.strip():
                 return content.strip()
+        else:
+            print(f"  ⚠️ LiteLLM 返回 {resp.status_code}: {resp.text[:150]}")
     except Exception as e:
         print(f"  ⚠️ LiteLLM 评论生成失败: {e}")
     return random.choice(COMMENT_TEMPLATES)
@@ -210,7 +214,12 @@ def process_note_in_modal(
 
     # 评论
     if random.random() < comment_prob:
-        comment_text = generate_comment(title)
+        # 从 modal 中读取帖子正文，供 AI 生成更精准的评论
+        desc = pub._evaluate(
+            "(function(){ var e=document.querySelector('.note-scroller .desc, #detail-desc, .note-text, .note-content'); "
+            "return e ? e.innerText.trim() : ''; })()"
+        ) or ""
+        comment_text = generate_comment(title, desc)
         try:
             ok = pub.post_comment_in_modal(comment_text)
             print(f"  💬 评论「{comment_text}」: {'✅' if ok else '❌'}")
