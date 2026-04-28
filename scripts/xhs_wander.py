@@ -93,8 +93,7 @@ def generate_comment(title: str, content_snippet: str = "") -> str:
         )
         if resp.status_code == 200:
             msg = resp.json()["choices"][0]["message"]
-            # GLM-5 等推理模型可能把内容放 reasoning_content，content 为 null
-            content = msg.get("content") or msg.get("reasoning_content") or ""
+            content = msg.get("content") or ""
             if content.strip():
                 return content.strip()
         else:
