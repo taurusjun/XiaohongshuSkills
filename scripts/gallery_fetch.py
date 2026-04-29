@@ -72,6 +72,7 @@ GALLERY_SITES: dict[str, str] = {
     "mainichikirei.jp":     "article, .article-body",
     "deview.co.jp":         "article, #main_image",
     "qjweb.jp":             "article, .gallery-main",
+    "pinzuba.news":         "article, main",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -80,7 +81,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
-                         "mainichikirei.jp", "deview.co.jp", "qjweb.jp"}
+                         "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -1909,6 +1910,61 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_pinzuba(gallery_url: str) -> list[str]:
+    """pinzuba.news /articles/-/ID?page=N 图集：ismcdn 大图（640wm/660w），多页翻页。"""
+    import re
+    from urllib.parse import urlparse, urljoin, urlencode, parse_qs, urlunparse
+
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+    headers = {**HEADERS, "Referer": "https://pinzuba.news/"}
+
+    # 收集总页数（先抓第1页）
+    try:
+        resp = requests.get(base_url + "?page=1", headers=headers, timeout=15)
+        resp.raise_for_status()
+        html = resp.text
+    except Exception as e:
+        print(f"  ⚠️ pinzuba 首页失败: {e}")
+        return []
+
+    # 从分页链接推断最大页码
+    page_nums = [int(m) for m in re.findall(r'[?&]page=(\d+)', html)]
+    total_pages = max(page_nums) if page_nums else 1
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    for page in range(1, total_pages + 1):
+        try:
+            if page == 1:
+                page_html = html
+            else:
+                r = requests.get(f"{base_url}?page={page}", headers=headers, timeout=15)
+                r.raise_for_status()
+                page_html = r.text
+            soup = BeautifulSoup(page_html, "html.parser")
+            # Main article images only: look inside article tag, data-src with large size code
+            art = soup.select_one("article, main")
+            scope = art if art else soup
+            for img in scope.find_all("img"):
+                src = img.get("data-src") or img.get("src") or ""
+                if "ismcdn.jp" not in src:
+                    continue
+                if any(x in src for x in ["icon", ".svg", "/common/", "32wm", "80w", "60wm", "300w"]):
+                    continue
+                if src.endswith(".png") and "mwimgs" in src:
+                    continue  # logo/badge PNGs
+                # Upgrade to largest available: replace size code with 1200wm
+                large = re.sub(r'/mwimgs/([^/]+)/([^/]+)/[^/]+/', r'/mwimgs/\1/\2/1200wm/', src)
+                if large not in seen:
+                    seen.add(large)
+                    images.append(large)
+        except Exception as e:
+            print(f"  ⚠️ pinzuba page={page} 失败: {e}")
+    return images
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
@@ -2004,6 +2060,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "qjweb.jp" in domain:
         images = _scrape_qjweb(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "pinzuba.news" in domain:
+        images = _scrape_pinzuba(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
