@@ -117,10 +117,17 @@ def get_page_content(page_id: str) -> tuple:
     in_original = False
     title_captured = False
 
+    summary_lines = []
     for block in blocks:
         btype = block.get("type")
         rich = block.get(btype, {}).get("rich_text", [])
         text = "".join(r.get("plain_text", "") for r in rich)
+
+        # 提取 callout 作为引流摘要
+        if btype == "callout":
+            if text:
+                summary_lines.append(text)
+            continue
 
         # 遇到原文链接部分，停止
         if "原文链接" in text:
@@ -158,7 +165,8 @@ def get_page_content(page_id: str) -> tuple:
         elif btype == "divider":
             lines.append("")
 
-    return "\n".join(lines).strip(), "\n".join(vocab_lines).strip(), original_title, ja_summary
+    summary = summary_lines[0] if summary_lines else ""
+    return "\n".join(lines).strip(), "\n".join(vocab_lines).strip(), original_title, ja_summary, summary
 
 
 def mark_as_published(page_id: str):
@@ -312,21 +320,21 @@ def main():
         print(f"来源: {info['source']} | 分类: {info['category']}")
 
         # 获取正文和词汇
-        content, vocab, original_title, ja_summary = get_page_content(page["id"])
+        content, vocab, original_title, ja_summary, summary = get_page_content(page["id"])
         if not content:
             print("⚠️ 正文为空，跳过\n")
             continue
 
         # 拼装发布内容
         full_title = info['title']
-        short_title = full_title[:20]
 
         # 构建小红书正文
         parts = []
 
-        # 标题
-        parts.append(f"📰 {full_title}")
-        parts.append("")
+        # 引流摘要（如有）作为开头
+        if summary:
+            parts.append(summary)
+            parts.append("")
 
         # 新闻要点
         parts.append(content)
@@ -505,6 +513,12 @@ def main():
             if u not in all_images:
                 all_images.append(u)
         all_images = all_images[:18]
+
+        # 标题：多图时加 [多图] 前缀，总长限 16 字
+        if len(all_images) > 1:
+            short_title = ("[多图]" + full_title)[:16]
+        else:
+            short_title = full_title[:16]
 
         # 发布
         print("📤 发布中...")
