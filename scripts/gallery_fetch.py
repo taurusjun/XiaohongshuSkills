@@ -73,6 +73,7 @@ GALLERY_SITES: dict[str, str] = {
     "deview.co.jp":         "article, #main_image",
     "qjweb.jp":             "article, .gallery-main",
     "pinzuba.news":         "article, main",
+    "friday.kodansha.co.jp": "article, main",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -81,7 +82,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
-                         "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news"}
+                         "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
+                         "friday.kodansha.co.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -1910,6 +1912,33 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
+    """friday.kodansha.co.jp /article/ID/photo/HASH — 从 __NEXT_DATA__ 提取所有图片。
+    页面302重定向到第一张，所有图片已在 photo_gallery.photos 数组中。"""
+    import json, re
+
+    headers = {
+        **HEADERS,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja-JP,ja;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://news.yahoo.co.jp/",
+    }
+    try:
+        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', resp.text, re.S)
+        if not m:
+            return []
+        data = json.loads(m.group(1))
+        photos = (data.get("props", {}).get("pageProps", {})
+                      .get("data", {}).get("photo_gallery", {}).get("photos", []))
+        return [p["src"] for p in photos if p.get("src")]
+    except Exception as e:
+        print(f"  ⚠️ friday.kodansha 失败: {e}")
+        return []
+
+
 def _scrape_pinzuba(gallery_url: str) -> list[str]:
     """pinzuba.news /articles/-/ID?page=N 图集：ismcdn 大图（640wm/660w），多页翻页。"""
     import re
@@ -2064,6 +2093,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "pinzuba.news" in domain:
         images = _scrape_pinzuba(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "friday.kodansha.co.jp" in domain:
+        images = _scrape_friday_kodansha(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
