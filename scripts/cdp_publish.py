@@ -4068,11 +4068,11 @@ class XiaohongshuPublisher:
 
     def _click_tab(self, tab_selector: str, tab_text: str):
         """Click a publish-mode tab by selector and text content.
-        使用 Input.dispatchMouseEvent 发送真实鼠标事件，避免 Vue SPA event.click() 无效。"""
+        使用 Input.dispatchMouseEvent 发送真实鼠标事件，避免 Vue SPA event.click() 无效。
+        只在视口内可见的元素中查找，避免命中离屏（移动端）隐藏副本。"""
         print(f"[cdp_publish] Clicking '{tab_text}' tab...")
         tab_text_literal = json.dumps(tab_text)
 
-        # 1. 查找目标元素并获取其 box model 坐标
         pos = self._evaluate(f"""
             (function() {{
                 var targetText = {tab_text_literal};
@@ -4098,16 +4098,14 @@ class XiaohongshuPublisher:
                     'div.creator-tab, .creator-tab, [class*=\"creator-tab\"], [role=\"tab\"]'
                 );
                 for (var i = 0; i < candidates.length; i++) {{
-                    if (matches(candidates[i].textContent)) {{
-                        var r = candidates[i].getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0) {{
-                            return JSON.stringify({{
-                                x: Math.round(r.left + r.width/2),
-                                y: Math.round(r.top + r.height/2),
-                                w: r.width,
-                                h: r.height
-                            }});
-                        }}
+                    if (!matches(candidates[i].textContent)) continue;
+                    var r = candidates[i].getBoundingClientRect();
+                    // 只在视口可见范围内（排除离屏的移动端隐藏副本）
+                    if (r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0) {{
+                        return JSON.stringify({{
+                            x: Math.round(r.left + r.width/2),
+                            y: Math.round(r.top + r.height/2)
+                        }});
                     }}
                 }}
                 return '';
@@ -4123,14 +4121,13 @@ class XiaohongshuPublisher:
                 print("[cdp_publish] Tab not found but upload input is ready. Continuing...")
                 return
             raise CDPError(
-                f"Could not find '{tab_text}' tab. The page structure may have changed."
+                f"Could not find visible '{tab_text}' tab. The page structure may have changed."
             )
 
         coords = json.loads(pos)
         x, y = coords["x"], coords["y"]
-        print(f"[cdp_publish] Found tab at ({x}, {y}), dispatching mouse click...")
+        print(f"[cdp_publish] Found visible tab at ({x}, {y}), dispatching mouse click...")
 
-        # 2. 发送真实鼠标事件序列（Vue 组件需要完整 mousePressed → mouseReleased）
         self._send("Input.dispatchMouseEvent", {
             "type": "mousePressed", "x": x, "y": y,
             "button": "left", "clickCount": 1
