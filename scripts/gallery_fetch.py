@@ -74,6 +74,7 @@ GALLERY_SITES: dict[str, str] = {
     "qjweb.jp":             "article, .gallery-main",
     "pinzuba.news":         "article, main",
     "friday.kodansha.co.jp": "article, main",
+    "shueisha.online":       ".article-photo",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -83,7 +84,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
-                         "friday.kodansha.co.jp"}
+                         "friday.kodansha.co.jp", "shueisha.online"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -1912,6 +1913,50 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_shueisha_online(gallery_url: str) -> list[str]:
+    """shueisha.online /articles/-/ID — 图片在 ?disp=paging&page=N 中，
+    class=article-photo 容器，ismcdn 大图，升级到 1200mw。"""
+    import re
+    from urllib.parse import urlparse, urlunparse
+
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+    headers = {**HEADERS, "Accept-Encoding": "gzip, deflate, br",
+               "Referer": "https://news.yahoo.co.jp/"}
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    page = 1
+    while True:
+        try:
+            r = requests.get(f"{base_url}?disp=paging&page={page}",
+                             headers=headers, timeout=15)
+            if r.status_code == 404:
+                break
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+            found = False
+            for div in soup.find_all(class_="article-photo"):
+                for img in div.find_all("img"):
+                    src = img.get("data-src") or img.get("src", "")
+                    if "ismcdn" not in src or "common" in src:
+                        continue
+                    large = re.sub(r"/(\d+[a-z]+w?)/", "/1200mw/", src)
+                    if large not in seen:
+                        seen.add(large)
+                        images.append(large)
+                    found = True
+            if not found:
+                break
+            page += 1
+        except Exception as e:
+            print(f"  ⚠️ shueisha.online page={page} 失败: {e}")
+            break
+
+    return images
+
+
 def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
     """friday.kodansha.co.jp /article/ID/photo/HASH — 从 __NEXT_DATA__ 提取所有图片。
     页面302重定向到第一张，所有图片已在 photo_gallery.photos 数组中。"""
@@ -2097,6 +2142,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "friday.kodansha.co.jp" in domain:
         images = _scrape_friday_kodansha(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "shueisha.online" in domain:
+        images = _scrape_shueisha_online(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
