@@ -70,6 +70,8 @@ GALLERY_SITES: dict[str, str] = {
     "nikkan-spa.jp":        "article, .post-content",
     "animeanime.jp":        "article, body",
     "mainichikirei.jp":     "article, .article-body",
+    "deview.co.jp":         "article, #main_image",
+    "qjweb.jp":             "article, .gallery-main",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -78,7 +80,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
-                         "mainichikirei.jp"}
+                         "mainichikirei.jp", "deview.co.jp", "qjweb.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -150,6 +152,8 @@ def _is_valid_gallery_url(url: str) -> bool:
     if "kstyle.com" in p.netloc and "articleNo" in p.query:
         return True
     if "nikkan-spa.jp" in p.netloc and "attachment_id" in p.query:
+        return True
+    if "deview.co.jp" in p.netloc and "am_article_id" in p.query:
         return True
     return False
 
@@ -1653,6 +1657,72 @@ def _scrape_animeanime(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_deview(gallery_url: str) -> list[str]:
+    """deview.co.jp 图集：NewsImage?am_article_id=&am_image_no= 分页。
+    cdn.deview.co.jp/imgs/news/ 目录下大图，缩略图为 news_image.img.php 代理。
+    逐页访问收集主图 URL。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://deview.co.jp/"}
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    # 收集所有图片编号
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.content, "html.parser", from_encoding="shift_jis")
+    except Exception as e:
+        print(f"  ⚠️ deview 获取页面失败: {e}")
+        return []
+
+    img_nos: set[int] = set()
+    m_aid = re.search(r'am_article_id=(\d+)', p.query)
+    article_id = m_aid.group(1) if m_aid else ""
+    m_img = re.search(r'am_image_no=(\d+)', p.query)
+    if m_img:
+        img_nos.add(int(m_img.group(1)))
+
+    for a in s.find_all("a", href=True):
+        href = a["href"]
+        if article_id and article_id in href:
+            m2 = re.search(r'am_image_no=(\d+)', href)
+            if m2:
+                img_nos.add(int(m2.group(1)))
+
+    # 逐页取大图
+    images: list[str] = []
+    seen: set[str] = set()
+    for img_no in sorted(img_nos)[:MAX_IMAGES]:
+        try:
+            page_url = f"{base}/NewsImage?am_article_id={article_id}&am_image_no={img_no}"
+            r = requests.get(page_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.content, "html.parser", from_encoding="shift_jis")
+
+            for img in s.find_all("img"):
+                src = (img.get("data-src") or img.get("src") or "")
+                # 主图：cdn.deview.co.jp/imgs/news/X/Y/Z/hash.jpg（非 .img.php 代理）
+                if "cdn.deview.co.jp/imgs/news/" not in src:
+                    continue
+                if ".img.php" in src or "/assets/" in src or "/contents/" in src:
+                    continue
+                # 补全协议
+                if src.startswith("//"):
+                    src = "https:" + src
+                elif src.startswith("http://"):
+                    src = src.replace("http://", "https://")
+                if src in seen:
+                    continue
+                seen.add(src)
+                images.append(src)
+                break
+
+        except Exception as e:
+            print(f"  ⚠️ deview image_no={img_no} 失败: {e}")
+
+    return images
+
+
 def _scrape_mainichikirei(gallery_url: str) -> list[str]:
     """mainichikirei.jp 图集：storage.mainichikirei.jp CDN 图片，?photo= 参数分页。
     主图是 JS 渲染的（HTTP 直抓拿不到），因此从页面提取总页数后直接构造 CDN URL。"""
@@ -1767,6 +1837,78 @@ def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_qjweb(gallery_url: str) -> list[str]:
+    """qjweb.jp /article-gallery/ 图集：wp-content/uploads 大图，"次の画像" 翻页。
+    每页一张主图，沿着 next 链接遍历。URL 带 -WxH 后缀的去掉取原图。"""
+    import re
+    from urllib.parse import urlparse
+
+    headers = {**HEADERS, "Referer": "https://qjweb.jp/"}
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+
+    images: list[str] = []
+    seen: set[str] = set()
+    visited_urls: set[str] = set()
+    current_url = gallery_url
+
+    for _ in range(MAX_IMAGES):
+        if current_url in visited_urls:
+            break
+        visited_urls.add(current_url)
+
+        try:
+            r = requests.get(current_url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+
+            found = False
+            for img in s.find_all("img"):
+                src = (img.get("data-src") or img.get("src") or "")
+                if "/wp-content/uploads/" not in src:
+                    continue
+                # 排除 icon/logo/banner/theme 等
+                if any(k in src.lower() for k in ["/icon", "/logo", "/banner", "/theme", "/assets/"]):
+                    continue
+                if "/cdn-cgi/" in src:
+                    continue
+                # 补全协议
+                if src.startswith("//"):
+                    src = "https:" + src
+                # 去掉 -WxH 缩略图后缀取原图
+                clean = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+                if clean in seen:
+                    continue
+                seen.add(clean)
+                images.append(clean)
+                found = True
+                break
+
+            if not found:
+                break
+
+            # 找 "次の画像" 链接
+            next_url = ""
+            for a in s.find_all("a", href=True):
+                text = a.get_text(strip=True)
+                if "次の画像" in text:
+                    href = a["href"]
+                    if href.startswith("/"):
+                        href = base + href
+                    elif not href.startswith("http"):
+                        continue
+                    next_url = href
+                    break
+            if not next_url:
+                break
+            current_url = next_url
+
+        except Exception as e:
+            print(f"  ⚠️ qjweb {current_url} 失败: {e}")
+            break
+
+    return images
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
@@ -1854,6 +1996,14 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "mainichikirei.jp" in domain:
         images = _scrape_mainichikirei(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "deview.co.jp" in domain:
+        images = _scrape_deview(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "qjweb.jp" in domain:
+        images = _scrape_qjweb(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
