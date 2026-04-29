@@ -4067,15 +4067,13 @@ class XiaohongshuPublisher:
         )
 
     def _click_tab(self, tab_selector: str, tab_text: str):
-        """Click a publish-mode tab by selector and text content."""
+        """Click a publish-mode tab by selector and text content.
+        使用 Input.dispatchMouseEvent 发送真实鼠标事件，避免 Vue SPA event.click() 无效。"""
         print(f"[cdp_publish] Clicking '{tab_text}' tab...")
-        selector_alt = (
-            "div.creator-tab, .creator-tab, [class*='creator-tab'], [role='tab'], button, div"
-        )
-        selector_alt_literal = json.dumps(selector_alt)
         tab_text_literal = json.dumps(tab_text)
 
-        clicked = self._evaluate(f"""
+        # 1. 查找目标元素并获取其 box model 坐标
+        pos = self._evaluate(f"""
             (function() {{
                 var targetText = {tab_text_literal};
                 var fuzzyKeywords = [targetText];
@@ -4091,57 +4089,78 @@ class XiaohongshuPublisher:
                     if (!t) return false;
                     if (t === targetText) return true;
                     for (var i = 0; i < fuzzyKeywords.length; i++) {{
-                        var keyword = fuzzyKeywords[i];
-                        if (keyword && t.indexOf(keyword) !== -1) {{
-                            return true;
-                        }}
+                        if (t.indexOf(fuzzyKeywords[i]) !== -1) return true;
                     }}
                     return false;
                 }}
 
-                var tabs = document.querySelectorAll('{tab_selector}');
-                for (var i = 0; i < tabs.length; i++) {{
-                    if (matches(tabs[i].textContent)) {{
-                        tabs[i].click();
-                        return true;
+                var candidates = document.querySelectorAll(
+                    'div.creator-tab, .creator-tab, [class*=\"creator-tab\"], [role=\"tab\"]'
+                );
+                for (var i = 0; i < candidates.length; i++) {{
+                    if (matches(candidates[i].textContent)) {{
+                        var r = candidates[i].getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {{
+                            return JSON.stringify({{
+                                x: Math.round(r.left + r.width/2),
+                                y: Math.round(r.top + r.height/2),
+                                w: r.width,
+                                h: r.height
+                            }});
+                        }}
                     }}
                 }}
-
-                var allTabs = document.querySelectorAll({selector_alt_literal});
-                for (var j = 0; j < allTabs.length; j++) {{
-                    if (matches(allTabs[j].textContent)) {{
-                        allTabs[j].click();
-                        return true;
-                    }}
-                }}
-                return false;
-            }})();
+                return '';
+            }})()
         """)
 
-        if not clicked:
-            if "图文" in tab_text:
-                upload_ready = self._evaluate(
-                    f"!!document.querySelector('{SELECTORS['upload_input']}') || "
-                    f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
-                )
-                if upload_ready:
-                    print(
-                        "[cdp_publish] '上传图文' tab not found, but upload input is ready. "
-                        "Continuing..."
-                    )
-                    return
-
-            raise CDPError(
-                f"Could not find '{tab_text}' tab. "
-                "The page structure may have changed."
+        if not pos or not isinstance(pos, str) or not pos.strip():
+            upload_ready = self._evaluate(
+                f"!!document.querySelector('{SELECTORS['upload_input']}') || "
+                f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
             )
+            if "图文" in tab_text and upload_ready:
+                print("[cdp_publish] Tab not found but upload input is ready. Continuing...")
+                return
+            raise CDPError(
+                f"Could not find '{tab_text}' tab. The page structure may have changed."
+            )
+
+        coords = json.loads(pos)
+        x, y = coords["x"], coords["y"]
+        print(f"[cdp_publish] Found tab at ({x}, {y}), dispatching mouse click...")
+
+        # 2. 发送真实鼠标事件序列（Vue 组件需要完整 mousePressed → mouseReleased）
+        self._send("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": x, "y": y,
+            "button": "left", "clickCount": 1
+        })
+        time.sleep(0.08)
+        self._send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": x, "y": y,
+            "button": "left", "clickCount": 1
+        })
 
         print(f"[cdp_publish] Tab '{tab_text}' clicked, waiting for upload area...")
         self._sleep(TAB_CLICK_WAIT, minimum_seconds=0.8)
 
     def _click_image_text_tab(self):
-        """Click the '上传图文' tab to switch to image+text publish mode."""
+        """Click the '上传图文' tab to switch to image+text publish mode.
+        XHS 默认打开"上传视频"tab，需要点击切换为图文模式。
+        使用 Input.dispatchMouseEvent 发送真实鼠标事件以触发 Vue 组件切换。"""
         self._click_tab(SELECTORS["image_text_tab"], SELECTORS["image_text_tab_text"])
+
+        # 验证切换是否成功
+        upload_ready = self._evaluate(
+            f"!!document.querySelector('{SELECTORS['upload_input']}') || "
+            f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
+        )
+        if not upload_ready:
+            raise CDPError(
+                f"Failed to switch to '{SELECTORS['image_text_tab_text']}' tab — "
+                "upload input not found after click."
+            )
+        print("[cdp_publish] Image+text tab activated, upload input ready.")
 
     def _click_video_tab(self):
         """Click the '上传视频' tab to switch to video publish mode."""
