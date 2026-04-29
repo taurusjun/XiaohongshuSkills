@@ -127,7 +127,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
     Returns:
         (seo_title, summary, content, comment, vocab, topic_tags)
     """
-    prompt = f"""你是小红书内容运营专家兼日语教学专家。请根据新闻标题，严格按照下方格式输出全部6个字段。
+    prompt = f"""你是小红书日语学习博主。请根据新闻标题，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
 日文原文：{title_ja}
@@ -135,17 +135,19 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
-（严格控制在20字符以内！参考小红书热门标题风格，优先选择以下写法之一：
-1. 数字开头：「3天」「第1次」「10年」「20岁」
-2. 直接点名：「XX道歉」「XX官宣」「XX退社」
-3. 情绪共鸣：「太…了」「终于」「谁懂啊」「真的」
-4. 悬念感：「竟然」「没想到」「原来」
-5. 时间节点：「今天」「本月」「2024年」
-禁止使用：震惊/破防/慌了/炸裂/绷不住/绝了/笑死/哭死 等浮夸词。
-标题要口语化、有信息量，让人一看就想点。）
+（严格控制在16字以内！模仿小红书爆款标题风格，参考以下写法：
+1. 对话感：「谁懂啊」「姐妹们」「我不允许没人知道」
+2. 情绪共鸣：「看完哭了」「这谁能不心动」「笑着笑着沉默了」
+3. 悬念好奇：「竟然是他」「没想到结局是这样」「原因太真实了」
+4. 利益承诺：「学日语必看」「看完日语提升一个level」
+5. 身份标签：「AKB粉丝集合」「日语人狂喜」「N1党泪目」
+禁止使用：震惊/破防/慌了/炸裂/绝了/笑死/哭死/天花板 等浮夸词）
 
-【总结】
-（15-25字，概括新闻核心，吸引读者继续看）
+【引流摘要】
+（15-25字，与标题形成语义互动，制造对话感。示例：
+标题"enako与猫猫合影" → 摘要"猫猫：今天被美少女捡到啦～～"
+标题"XX官宣退社" → 摘要"粉丝：等这一天等太久了"
+模式：用拟人/粉丝/路人视角接住标题，制造情绪共鸣）
 
 【新闻要点】
 • （要点1，一句话说清楚）
@@ -179,12 +181,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
     summary = content = comment = vocab = ""
     topic_tags: list[str] = []
 
-    sections = re.split(r'【(SEO标题|总结|新闻要点|我的解读|N1/N2词汇|话题标签)】', result)
+    sections = re.split(r'【(SEO标题|引流摘要|新闻要点|我的解读|N1/N2词汇|话题标签)】', result)
     for i, sec in enumerate(sections):
         nxt = sections[i + 1] if i + 1 < len(sections) else ""
         if sec == "SEO标题":
-            seo_title = nxt.strip().split('\n')[0].strip()[:20]
-        elif sec == "总结":
+            seo_title = nxt.strip().split('\n')[0].strip()[:16]
+        elif sec == "引流摘要":
             summary = nxt.strip().split('\n')[0].strip()
         elif sec == "新闻要点":
             content = nxt.strip()
@@ -575,7 +577,7 @@ def push_to_notion(news: Dict) -> str:
     orig_img  = news.get("original_image_url", "")
 
     props: dict = {
-        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])[:100]}}]},
+        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])[:16]}}]},
         "key":      {"rich_text": [{"text": {"content": key}}]},
         "分类":     {"select":    {"name": news.get("category", "经济")}},
         "标签":     {"multi_select": [{"name": t} for t in news.get("tags", [])]},
