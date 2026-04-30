@@ -75,6 +75,7 @@ GALLERY_SITES: dict[str, str] = {
     "pinzuba.news":         "article, main",
     "friday.kodansha.co.jp": "article, main",
     "shueisha.online":       ".article-photo",
+    "entamenext.com":        ".articleGalleryImg",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -84,7 +85,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
-                         "friday.kodansha.co.jp", "shueisha.online"}
+                         "friday.kodansha.co.jp", "shueisha.online", "entamenext.com"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -1913,6 +1914,43 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_entamenext(gallery_url: str) -> list[str]:
+    """entamenext.com /articles/gallery/ID/PHOTO_ID — 全部缩略图已在首页 background-image 中，
+    提取 articles_photos 路径，替换尺寸为 ORG 取原图。"""
+    import re
+    from urllib.parse import urlparse, urlunparse
+
+    p = urlparse(gallery_url)
+    # Extract article ID from path /articles/gallery/{article_id}/{photo_id}
+    m = re.match(r"/articles/gallery/(\d+)", p.path)
+    if not m:
+        return []
+    article_id = m.group(1)
+    base_url = urlunparse((p.scheme, p.netloc, f"/articles/gallery/{article_id}/1", "", "", ""))
+    headers = {**HEADERS, "Referer": "https://entamenext.com/"}
+
+    try:
+        r = requests.get(base_url, headers=headers, timeout=15)
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        print(f"  ⚠️ entamenext 失败: {e}")
+        return []
+
+    seen: set[str] = set()
+    images: list[str] = []
+    pattern = (r"background-image:\s*url\("
+               r"(https://images\.entamenext\.com/articles_photos/\d+/"
+               + re.escape(article_id) + r"/[^)]+)\)")
+    for src in re.findall(pattern, html):
+        org = re.sub(r"/[^/]+/([\w]+\.jpg)$", r"/ORG/\1", src)
+        fname = org.rsplit("/", 1)[-1]
+        if fname not in seen:
+            seen.add(fname)
+            images.append(org)
+    return images
+
+
 def _scrape_shueisha_online(gallery_url: str) -> list[str]:
     """shueisha.online /articles/-/ID — 图片在 ?disp=paging&page=N 中，
     class=article-photo 容器，ismcdn 大图，升级到 1200mw。"""
@@ -2142,6 +2180,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "friday.kodansha.co.jp" in domain:
         images = _scrape_friday_kodansha(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "entamenext.com" in domain:
+        images = _scrape_entamenext(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "shueisha.online" in domain:
