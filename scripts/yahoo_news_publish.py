@@ -456,7 +456,7 @@ def main():
         for t in random_hot:
             add_tag(all_tags, seen_set, t)
 
-        tags_str = " ".join(f"#{t}" for t in all_tags)
+        tags_str = " ".join(f"#{t}" for t in all_tags[:10])
         xhs_content = f"{xhs_content}\n{tags_str}"
 
         print(f"正文预览: {content[:80]}...")
