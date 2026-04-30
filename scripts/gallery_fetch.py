@@ -94,12 +94,19 @@ GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slid
 # ============ Notion ============
 
 def get_notion_pages(limit: int = 20) -> list:
-    """获取勾选了「图集下载」的条目"""
+    """获取勾选了「图集下载」且发布时间为今天的条目"""
+    from datetime import date
+    today_str = date.today().isoformat()
     resp = requests.post(
         f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
         headers=NOTION_HEADERS,
         json={
-            "filter": {"property": "图集下载", "checkbox": {"equals": True}},
+            "filter": {
+                "and": [
+                    {"property": "图集下载", "checkbox": {"equals": True}},
+                    {"property": "发布时间", "date": {"equals": today_str}},
+                ]
+            },
             "page_size": limit,
             "sorts": [{"property": "发布时间", "direction": "descending"}],
         },
