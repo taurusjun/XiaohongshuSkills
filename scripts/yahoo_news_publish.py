@@ -424,6 +424,7 @@ def main():
             "乃木坂": ["乃木坂", "乃木坂46"],
             "欅坂": ["欅坂", "欅坂46", "樱坂", "樱坂46"],
             "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
+            "えなこ": ["えなこ", "enako"],
         }
 
         def normalize_tag(t: str) -> str:
@@ -514,11 +515,7 @@ def main():
                 all_images.append(u)
         all_images = all_images[:18]
 
-        # 标题：多图时加 [多图] 前缀，总长限 16 字
-        if len(all_images) > 1:
-            short_title = ("[多图]" + full_title)[:16]
-        else:
-            short_title = full_title[:16]
+        short_title = full_title[:20]
 
         # 发布
         print("📤 发布中...")

@@ -185,7 +185,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
     for i, sec in enumerate(sections):
         nxt = sections[i + 1] if i + 1 < len(sections) else ""
         if sec == "SEO标题":
-            seo_title = nxt.strip().split('\n')[0].strip()[:16]
+            seo_title = nxt.strip().split('\n')[0].strip()[:20]
         elif sec == "引流摘要":
             summary = nxt.strip().split('\n')[0].strip()
         elif sec == "新闻要点":
@@ -577,7 +577,7 @@ def push_to_notion(news: Dict) -> str:
     orig_img  = news.get("original_image_url", "")
 
     props: dict = {
-        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])[:16]}}]},
+        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])[:20]}}]},
         "key":      {"rich_text": [{"text": {"content": key}}]},
         "分类":     {"select":    {"name": news.get("category", "经济")}},
         "标签":     {"multi_select": [{"name": t} for t in news.get("tags", [])]},
