@@ -430,36 +430,33 @@ def main():
         def normalize_tag(t: str) -> str:
             return TAG_NORMALIZE.get(t, t)
 
-        # 从 Notion 标签开始
-        raw_tags = info.get("tags", [])
+        def add_tag(lst: list[str], seen_set: set[str], tag: str):
+            tag = tag.lstrip("#")
+            if tag not in seen_set:
+                seen_set.add(tag)
+                lst.append(tag)
+
+        seen_set: set[str] = set()
         all_tags: list[str] = []
 
-        # 先展开 KEYWORD_TAG_MAP 映射
+        # 1. KEYWORD_TAG_MAP 展开（最高优先级）
+        raw_tags = info.get("tags", [])
         for t in raw_tags:
             if t in KEYWORD_TAG_MAP:
                 for mapped in KEYWORD_TAG_MAP[t]:
-                    if mapped not in all_tags:
-                        all_tags.append(mapped)
+                    add_tag(all_tags, seen_set, normalize_tag(mapped))
             else:
-                if t not in all_tags:
-                    all_tags.append(t)
+                add_tag(all_tags, seen_set, normalize_tag(t))
 
-        # 规范化并去重
-        all_tags = [normalize_tag(t) for t in all_tags]
-        seen = set()
-        unique_tags: list[str] = []
-        for t in all_tags:
-            if t not in seen:
-                seen.add(t)
-                unique_tags.append(t)
-        all_tags = unique_tags
-        if must_tag not in all_tags:
-            all_tags.append(must_tag)
-        random_hot = random.sample(hot_tags, min(2, len(hot_tags)))
+        # 2. 必选标签
+        add_tag(all_tags, seen_set, must_tag)
+
+        # 3. 随机热门标签（补足）
+        random_hot = random.sample(hot_tags, min(4, len(hot_tags)))
         for t in random_hot:
-            if t not in all_tags:
-                all_tags.append(t)
-        tags_str = " ".join(f"#{tag}" if not tag.startswith("#") else tag for tag in all_tags[:8])
+            add_tag(all_tags, seen_set, t)
+
+        tags_str = " ".join(f"#{t}" for t in all_tags)
         xhs_content = f"{xhs_content}\n{tags_str}"
 
         print(f"正文预览: {content[:80]}...")
