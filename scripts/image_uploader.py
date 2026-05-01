@@ -42,15 +42,22 @@ def upload_to_cloudinary(image_url: str, cloud_name: Optional[str] = None,
         params = f"timestamp={timestamp}{api_secret}"
         signature = hashlib.sha1(params.encode()).hexdigest()
 
+        # Download image locally first — avoids Cloudinary fetching expired URLs
+        img_resp = requests.get(image_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        if img_resp.status_code != 200:
+            print(f"[cloudinary] Failed to download image: {img_resp.status_code} {image_url}")
+            return None
+        img_bytes = img_resp.content
+
         resp = requests.post(
             f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload",
             data={
-                "file": image_url,
                 "api_key": api_key,
                 "timestamp": timestamp,
                 "signature": signature,
             },
-            timeout=30
+            files={"file": ("image.jpg", img_bytes, "image/jpeg")},
+            timeout=60
         )
 
         if resp.status_code == 200:
