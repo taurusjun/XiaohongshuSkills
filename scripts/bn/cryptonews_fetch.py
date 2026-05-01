@@ -93,7 +93,7 @@ NOTION_DATABASE_ID = "34aaaa31a0aa806aa20bdd5f9a6d53e8"
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_MODEL = os.environ.get("LITELLM_MODEL", "bedrock-claude-4-6-sonnet")
+LITELLM_MODEL = os.environ.get("LITELLM_MODEL", "GLM-5")
 
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
@@ -194,7 +194,7 @@ def summarize_zh(title: str, body: str) -> tuple[str, str]:
             f"{LITELLM_URL}/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
             json={
-                "model": "bedrock-claude-4-6-sonnet",  # 比 GLM-5 快，适合摘要任务
+                "model": LITELLM_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 1000,
             },
