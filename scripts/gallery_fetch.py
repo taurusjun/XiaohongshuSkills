@@ -523,7 +523,8 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
 
 
 def _scrape_thetv(gallery_url: str) -> list[str]:
-    """thetv.jp 图集：每张图一个页面 /detail/{article_id}/{image_id}/。
+    """thetv.jp 图集：/news/detail/{article_id}/pN/ 或 /detail/{article_id}/pN/
+    每张图一个页面 /news/detail/{article_id}/{image_id}/。
     从当前页解析所有分页链接，逐页抓取并统一输出 ?w=2560 大图。"""
     import re
     from urllib.parse import urlparse
@@ -532,16 +533,18 @@ def _scrape_thetv(gallery_url: str) -> list[str]:
 
     # --- 收集分页 ---
     resp = requests.get(gallery_url, headers=headers, timeout=15)
+    if not resp.text:
+        return []
     soup = BeautifulSoup(resp.text, "html.parser")
 
     p = urlparse(gallery_url)
     base = f"{p.scheme}://{p.netloc}"
 
-    article_m = re.search(r'/detail/(\d+)/', p.path)
+    article_m = re.search(r'/(?:news/)?detail/(\d+)/', p.path)
     if not article_m:
         return []
     article_id = article_m.group(1)
-    detail_re = re.compile(rf'/detail/{article_id}/(\d+)/')
+    detail_re = re.compile(rf'/(?:news/)?detail/{article_id}/(\d+)/')
 
     pages: list[tuple[int, str]] = []
     seen: set[int] = set()
