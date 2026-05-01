@@ -135,51 +135,48 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
-（严格控制在20字以内。按新闻类型选择对应策略：
+（严格 ≤20 字（含标点）。
 
-▸ 艺能/追星类 → 情绪词放句末，前段具体描述事件：
-  「木村拓哉最新采访，看完沉默了」「二宫和也的这个细节，上头了」
-  「他退社的消息，粉丝一句话没说」「乃木坂这张合照，太绝了」
+第一步：判断新闻类型，选对应公式——
 
-▸ 学习/语言类 → 结果导向 + 具体数字/场景：
-  「备考N2快崩了，这方法救了我」「用日剧学日语3个月，能追番了」
-  「日语听力烂？你可能没做这件事」「这5个日语句型够用80%场合」
+▸ 艺能/追星类 → 「社会证明」或「认知冲突」：
+  公式A（社会证明反转）：「[具体事件]，[情绪反应]」← 结果+反差，不说答案
+  公式B（认知冲突）：「[大家以为的] vs [实际是]」← 打破预期
+  示例：「他退社那一刻，粉丝群沉默了」「拓哉这次回应，意料之外」
 
-▸ 社会/时事类 → 信息差 + 个人视角：
-  「日本这个新政策，影响所有在日华人」「看完这条新闻，对日本改观了」
-  「日元跌到这个数，说说我的真实感受」「日本年轻人的这个趋势，细品」
+▸ 学习/语言类 → 「结果承诺」或「数字锚定」：
+  公式C（结果承诺）：「[不需要X]，[时间内]达到[结果]」
+  公式D（数字锚定）：「N个[具体场景]的[关键词]」
+  示例：「不背单词，3个月能追番了」「这10个N1词，外国人全栽在这」
 
-结构要求：
-- 前7字必须出现具体信息或情绪词，不能以泛泛的"日本""日语"打头
-- 禁止套用固定模板如「XX粉丝集合」「日语人必看」「N1党狂喜」
-- 禁止堆砌：震惊/绝了/炸裂/天花板/笑死/哭死/破防/绷不住
-- 每次生成必须根据当前新闻内容重新构思，不得复用上次模式）
+▸ 时事/社会类 → 「好奇缺口」或「身份代入」：
+  公式E（好奇缺口）：「[结果]，令人意想不到的秘密」
+  公式F（身份代入）：「给每个[在日华人/日语学习者]的[忠告]」
+  示例：「新制度影响数十万人，真相是这样」「在日华人必须知道的这个变化」
+
+第二步：铁律检查
+- 标题留悬念，不说答案（看完标题还想点进来？）
+- 前7字出现具体信息，不以「日本」「日语」泛泛打头
+- ≤20字（含标点），超了必须砍
+- 不用：震惊/绝了/炸裂/天花板/粉丝集合/必看/N1党狂喜）
 
 【引流摘要】
-（15-30字，在卡片展示区内完整呈现。与标题形成配合而非重复。
-按新闻类型选择对应写法——
+（15-30字。开头公式 = 话题 + Hook + 悬念，不给答案。
 
-艺能/追星类 → 场景还原 或 第三方视角（粉丝/评论区反应）：
-  「他退社消息公布的瞬间，粉丝群三分钟没有一条消息」
-  「合照里这个表情，粉了三年的我看了很久」
+按类型——
+艺能/追星 → 场景细节还原，制造画面感，不直接说结论：
+  好：「消息公布那一刻，我看了评论区整整五分钟没说话」
+  差：「木村拓哉回应粉丝担忧，感动了很多人」（直接给结论）
 
-学习干货类 → 结果前置 或 数字锚定：
-  「备考45天N2过线，最关键的是这三件事」
-  「这5个句型够应对80%的日常日语场合」
+学习干货 → 数字/结果前置，后接悬念：
+  好：「3个月从听不懂到能追番，关键不是单词量」
+  差：「分享一下我学日语的方法，希望对大家有帮助」
 
-时事/新闻类 → 信息差 或 问句/悬念：
-  「同一件事，日文报道和中文报道省略的内容不一样」
-  「为什么这条新闻在日本几乎没水花，中文圈却炸了？」
+时事社会 → 信息差或反问制造悬念：
+  好：「同样一件事，日文报道和中文报道省了不一样的东西」
+  差：「日本政府宣布修改制度，影响很多外国人」（复述标题）
 
-情感/生活类 → 场景还原 或 情绪代入：
-  「在东京地铁上无意看到这则报道，发了好一会儿呆」
-  「看到这条消息的时候我沉默了，不知道说什么好」
-
-禁止写法：
-- 「今天给大家分享」「大家好我是」「话不多说」「宝子们！」
-- 「干货预警」「含金量超高」「建议收藏」
-- 拟人套话：「猫猫：今天被捡到啦」「粉丝：等太久了」（太刻意）
-- 堆砌情绪词：绝了/震惊/破防/裂开/笑死/绷不住）
+禁止：「今天给大家分享」「宝子们！」「干货预警」「建议收藏」「话不多说」）
 
 【新闻要点】
 • （要点1，一句话说清楚）
@@ -213,23 +210,38 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
     summary = content = comment = vocab = ""
     topic_tags: list[str] = []
 
-    sections = re.split(r'【(SEO标题|引流摘要|新闻要点|我的解读|N1/N2词汇|话题标签)】', result)
-    for i, sec in enumerate(sections):
-        nxt = sections[i + 1] if i + 1 < len(sections) else ""
-        if sec == "SEO标题":
-            seo_title = nxt.strip().split('\n')[0].strip()[:20]
-        elif sec == "引流摘要":
-            summary = nxt.strip().split('\n')[0].strip()
-        elif sec == "新闻要点":
-            content = nxt.strip()
-        elif sec == "我的解读":
-            comment = nxt.strip()
-        elif sec == "N1/N2词汇":
-            vocab = nxt.strip()
-        elif sec == "话题标签":
-            # 从 "#标签1 #标签2 ..." 格式中提取标签名（去掉 #）
-            raw = nxt.strip().split('\n')[0].strip()
-            topic_tags = [t.lstrip('#').strip() for t in re.findall(r'#\S+', raw) if t.lstrip('#').strip()]
+    # GLM-5 may repeat field headers during its analysis phase — use the last occurrence of each
+    def last_section(field: str) -> str:
+        parts = re.split(rf'【{field}】', result)
+        if len(parts) < 2:
+            return ""
+        return parts[-1].strip()
+
+    raw_seo = last_section("SEO标题")
+    if raw_seo:
+        seo_title = raw_seo.split('\n')[0].strip()[:20]
+
+    raw_summary = last_section("引流摘要")
+    if raw_summary:
+        summary = raw_summary.split('\n')[0].strip()
+
+    raw_content = last_section("新闻要点")
+    if raw_content:
+        # strip everything after the next 【 field header
+        content = re.split(r'【[^】]+】', raw_content)[0].strip()
+
+    raw_comment = last_section("我的解读")
+    if raw_comment:
+        comment = re.split(r'【[^】]+】', raw_comment)[0].strip()
+
+    raw_vocab = last_section("N1/N2词汇")
+    if raw_vocab:
+        vocab = re.split(r'【[^】]+】', raw_vocab)[0].strip()
+
+    raw_tags = last_section("话题标签")
+    if raw_tags:
+        tag_line = re.split(r'【[^】]+】', raw_tags)[0].strip().split('\n')[0].strip()
+        topic_tags = [t.lstrip('#').strip() for t in re.findall(r'#\S+', tag_line) if t.lstrip('#').strip()]
 
     return seo_title, summary, content, comment, vocab, topic_tags
 
