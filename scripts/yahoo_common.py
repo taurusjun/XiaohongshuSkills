@@ -235,7 +235,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = ""
 
     result = call_litellm(prompt, max_tokens=4000)
     if not result:
-        return title_zh, "", f"• {title_zh}", "暂无解读", "", []
+        return None  # LLM 调用失败，由调用方决定是否跳过
 
     seo_title = title_zh
     summary = content = comment = vocab = ""
@@ -462,9 +462,14 @@ def process_news_item(news: dict, no_translate: bool = False,
         print("    翻译...")
         news['title_zh'] = translate_title(news['title_ja'])
         print("    生成内容...")
-        seo_title, summary, content, comment, vocab, topic_tags = generate_content_and_comment(
+        generated = generate_content_and_comment(
             news['title_ja'], news['title_zh'], keyword=keyword
         )
+        if generated is None:
+            print("    ⚠️ LLM 调用失败，跳过此条新闻")
+            news['_skip'] = True
+            return news
+        seo_title, summary, content, comment, vocab, topic_tags = generated
         news['title_zh'] = seo_title
         news['summary']  = summary
         news['content']  = content

@@ -182,6 +182,8 @@ def process_keyword(keyword: str, max_results: int, china_filter: bool,
         print(f"  [{i}/{len(news_list)}] {news['title_ja'][:45]}...")
         process_news_item(news, no_translate=no_translate,
                           extra_tags=extra_tags, keyword=keyword)
+        if news.get('_skip'):
+            continue
         processed.append(news)
 
         if push:
