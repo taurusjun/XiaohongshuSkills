@@ -59,6 +59,7 @@ GALLERY_SITES: dict[str, str] = {
     "smart-flash.jp":       ".imageArea, article",
     "mantan-web.jp":        ".photo-area, article",
     "inside-games.jp":      "article, body",
+    "bookbang.jp":          "article",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
     "maidonanews.jp":       ".photo, article",
@@ -2005,6 +2006,63 @@ def _scrape_shueisha_online(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_bookbang(gallery_url: str) -> list[str]:
+    """bookbang.jp /article/{id} — 分页格式 /article/{id} (p1) + ?page=N (p2+)
+    每页一张主图在 article 标签内 wp-content/uploads 路径。"""
+    import re
+    from urllib.parse import urlparse, urlunparse
+
+    p = urlparse(gallery_url)
+    # 标准化为第1页 URL（去掉 ?page= 参数）
+    base_url = urlunparse((p.scheme, p.netloc, p.path.rstrip("/"), "", "", ""))
+    # 提取 article id（路径末尾数字）
+    m = re.search(r'/article/(\d+)', p.path)
+    if not m:
+        return []
+
+    headers = {**HEADERS, "Referer": "https://www.bookbang.jp/"}
+    images: list[str] = []
+    seen: set[str] = set()
+
+    # 先抓第1页，同时解析总页数
+    try:
+        r = requests.get(base_url, headers=headers, timeout=15)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ bookbang 第1页失败: {e}")
+        return []
+
+    def _extract_image(soup: "BeautifulSoup") -> None:
+        for img in soup.select("article img"):
+            src = img.get("src") or img.get("data-src", "")
+            if "wp-content/uploads" in src and src not in seen:
+                seen.add(src)
+                images.append(src)
+
+    _extract_image(soup)
+
+    # 解析总页数：找分页链接中最大的 ?page=N
+    max_page = 1
+    for a in soup.find_all("a", href=True):
+        pm = re.search(r'\?page=(\d+)', a["href"])
+        if pm:
+            max_page = max(max_page, int(pm.group(1)))
+
+    for page in range(2, max_page + 1):
+        try:
+            r = requests.get(f"{base_url}?page={page}", headers=headers, timeout=15)
+            if r.status_code == 404:
+                break
+            r.raise_for_status()
+            _extract_image(BeautifulSoup(r.text, "html.parser"))
+        except Exception as e:
+            print(f"  ⚠️ bookbang page={page} 失败: {e}")
+            break
+
+    return images
+
+
 def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
     """friday.kodansha.co.jp /article/ID/photo/HASH — 从 __NEXT_DATA__ 提取所有图片。
     页面302重定向到第一张，所有图片已在 photo_gallery.photos 数组中。"""
@@ -2198,6 +2256,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "shueisha.online" in domain:
         images = _scrape_shueisha_online(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "bookbang.jp" in domain:
+        images = _scrape_bookbang(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
