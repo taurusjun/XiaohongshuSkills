@@ -201,6 +201,7 @@ def main():
     parser.add_argument('--keyword', '-k', type=str, default=None, help='指定单个搜索关键词')
     parser.add_argument('--no-filter', action='store_true', help='关闭中国相关性过滤')
     parser.add_argument('--no-translate', action='store_true', help='跳过翻译')
+    parser.add_argument('--preview', action='store_true', help='预览模式：先显示标题列表，勾选后再处理')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -225,11 +226,67 @@ def main():
 
     existing_keys = load_today_keys() if args.push else set()
 
-    all_processed: list[dict] = []
-    for keyword, max_results, china_filter in tasks:
-        results = process_keyword(keyword, max_results, china_filter,
-                                  args.no_translate, existing_keys, args.push)
-        all_processed.extend(results)
+    # ── 预览模式：先拉标题，让用户勾选 ──────────────────────────
+    if args.preview:
+        all_candidates: list[dict] = []
+        for keyword, max_results, china_filter in tasks:
+            print(f"\n🔍 关键词: 【{keyword}】")
+            candidates = fetch_news_via_cdp(keyword, max_results, china_filter, existing_keys)
+            for news in candidates:
+                news['keyword'] = keyword
+            all_candidates.extend(candidates)
+
+        if not all_candidates:
+            print("\n❌ 未找到任何新闻")
+            return
+
+        print(f"\n{'─' * 60}")
+        print(f"📋 共找到 {len(all_candidates)} 条新闻，请选择要处理的编号：")
+        print(f"{'─' * 60}")
+        for i, news in enumerate(all_candidates, 1):
+            print(f"  [{i:2d}] [{news.get('keyword','')}] {news['title_ja'][:50]}")
+        print(f"{'─' * 60}")
+        print("输入编号（逗号分隔，如 1,3,5），输入 all 选全部，回车取消：")
+
+        raw = input("> ").strip()
+        if not raw:
+            print("已取消")
+            return
+        if raw.lower() == 'all':
+            selected = all_candidates
+        else:
+            try:
+                indices = [int(x.strip()) - 1 for x in raw.split(',')]
+                selected = [all_candidates[i] for i in indices if 0 <= i < len(all_candidates)]
+            except ValueError:
+                print("❌ 输入格式有误")
+                return
+
+        if not selected:
+            print("未选择任何条目")
+            return
+
+        print(f"\n✅ 已选 {len(selected)} 条，开始处理...\n")
+        all_processed: list[dict] = []
+        for news in selected:
+            kw = news.get('keyword', '')
+            extra_tags = KEYWORD_TAG_MAP.get(kw, [kw] if kw and kw != '中国' else [])
+            print(f"  处理: {news['title_ja'][:50]}...")
+            process_news_item(news, no_translate=args.no_translate,
+                              extra_tags=extra_tags, keyword=kw)
+            if news.get('_skip'):
+                continue
+            all_processed.append(news)
+            if args.push:
+                push_with_gallery(news, existing_keys)
+
+    # ── 正常模式 ─────────────────────────────────────────────────
+    else:
+        all_processed: list[dict] = []
+        for keyword, max_results, china_filter in tasks:
+            results = process_keyword(keyword, max_results, china_filter,
+                                      args.no_translate, existing_keys, args.push)
+            all_processed.extend(results)
 
     if not all_processed:
         print("\n❌ 所有关键词均未找到新闻")
