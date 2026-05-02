@@ -35,9 +35,10 @@ except ImportError:
 NOTION_API_KEY    = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
-LITELLM_URL   = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
-LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_MODEL = os.environ.get("LITELLM_MODEL", "GLM-5")
+LITELLM_URL       = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
+LITELLM_API_KEY   = os.environ.get("LITELLM_API_KEY", "")
+LITELLM_MODEL     = os.environ.get("LITELLM_MODEL", "GLM-5")
+LITELLM_MAX_TOKENS = int(os.environ.get("LITELLM_MAX_TOKENS", "4000"))
 
 CDP_HOST = "127.0.0.1"
 CDP_PORT = 9222
@@ -80,7 +81,7 @@ def is_china_related(title: str) -> bool:
 
 # ============ LiteLLM / AI ============
 
-print(f"🤖 LLM: {LITELLM_MODEL}  ({LITELLM_URL})")
+print(f"🤖 LLM: {LITELLM_MODEL}  max_tokens={LITELLM_MAX_TOKENS}  ({LITELLM_URL})")
 
 
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -> str:
@@ -233,7 +234,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = ""
 美妆护肤类（内容涉及化妆/护肤时用）：#日系妆容 #日本化妆 #日本美妆 #日本护肤 #护肤分享
 再根据内容补充行业相关标签）"""
 
-    result = call_litellm(prompt, max_tokens=4000)
+    result = call_litellm(prompt, max_tokens=LITELLM_MAX_TOKENS)
     if not result:
         return None  # LLM 调用失败，由调用方决定是否跳过
 
