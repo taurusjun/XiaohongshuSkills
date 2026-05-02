@@ -460,7 +460,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['title_zh'] = translate_title(news['title_ja'])
         print("    生成内容...")
         seo_title, summary, content, comment, vocab, topic_tags = generate_content_and_comment(
-            news['title_ja'], news['title_zh'], keyword=news.get('keyword', '')
+            news['title_ja'], news['title_zh'], keyword=keyword
         )
         news['title_zh'] = seo_title
         news['summary']  = summary
