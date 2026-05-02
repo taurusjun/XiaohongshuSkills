@@ -85,7 +85,6 @@ def is_china_related(title: str) -> bool:
 
 # ============ LiteLLM / AI ============
 
-print(f"🤖 LLM: {LITELLM_MODEL}  max_tokens={LITELLM_MAX_TOKENS}  ({LITELLM_URL})")
 
 
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -> str:

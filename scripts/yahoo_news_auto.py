@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 
 # 公共模块（配置、AI、Notion、工具函数全在这里）
 from yahoo_common import (
-    LITELLM_API_KEY, NOTION_DATABASE_ID,
+    LITELLM_API_KEY, LITELLM_MODEL, LITELLM_MAX_TOKENS, NOTION_DATABASE_ID,
     CDP_HOST, CDP_PORT,
     YAHOO_SEARCH_URL, YAHOO_BASE_URL,
     is_sensitive, is_china_related, extract_key_from_url,
@@ -208,7 +208,10 @@ def main():
     print("=" * 60)
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}\n")
 
-    print("✅ LiteLLM 已配置" if LITELLM_API_KEY else "⚠️ LiteLLM 未配置，将跳过翻译和评论生成")
+    if LITELLM_API_KEY:
+        print(f"✅ LiteLLM 已配置  模型: {LITELLM_MODEL}  max_tokens: {LITELLM_MAX_TOKENS}")
+    else:
+        print("⚠️ LiteLLM 未配置，将跳过翻译和评论生成")
     print("📡 检查 Chrome CDP...")
     if not check_chrome_cdp():
         return
