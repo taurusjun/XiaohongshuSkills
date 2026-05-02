@@ -114,13 +114,15 @@ def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
 
 
 def get_page_content(page_id: str) -> tuple:
-    """获取页面正文内容，返回 (正文, 词汇部分, 日文原标题, 日文摘要)"""
+    """获取页面正文内容。
+    返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 视频配文)
+    """
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
     )
     if resp.status_code != 200:
-        return "", "", "", ""
+        return "", "", "", "", "", ""
 
     blocks = resp.json().get("results", [])
     lines = []
@@ -129,41 +131,59 @@ def get_page_content(page_id: str) -> tuple:
     ja_summary = ""
     in_vocab = False
     in_original = False
+    in_video_caption = False
     title_captured = False
 
     summary_lines = []
+    video_caption = ""
+
     for block in blocks:
         btype = block.get("type")
         rich = block.get(btype, {}).get("rich_text", [])
         text = "".join(r.get("plain_text", "") for r in rich)
 
-        # 提取 callout 作为引流摘要
+        # heading_3 决定当前区域
+        if btype == "heading_3":
+            if "视频配文" in text:
+                in_video_caption = True
+                in_vocab = False
+                in_original = False
+            elif "词汇" in text:
+                in_video_caption = False
+                in_vocab = True
+                in_original = False
+                vocab_lines.append(f"\n{text}")
+            elif "原文" in text:
+                in_video_caption = False
+                in_vocab = False
+                in_original = True
+            else:
+                in_video_caption = False
+                in_vocab = False
+                in_original = False
+                lines.append(f"\n{text}")
+            continue
+
+        # callout：视频配文区域内的是视频配文，否则是引流摘要
         if btype == "callout":
             if text:
-                summary_lines.append(text)
+                if in_video_caption:
+                    video_caption = text
+                else:
+                    summary_lines.append(text)
             continue
 
         # 遇到原文链接部分，停止
         if "原文链接" in text:
             break
 
-        if btype == "heading_3":
-            if "词汇" in text:
-                in_vocab = True
-                in_original = False
-                vocab_lines.append(f"\n{text}")
-            elif "原文" in text:
-                in_vocab = False
-                in_original = True
-            else:
-                in_vocab = False
-                in_original = False
-                lines.append(f"\n{text}")
+        if btype == "divider":
+            in_video_caption = False
+            lines.append("")
         elif btype == "bulleted_list_item":
             target = vocab_lines if in_vocab else lines
             target.append(f"• {text}")
         elif btype == "quote":
-            # 例句是 quote 类型
             target = vocab_lines if in_vocab else lines
             target.append(f"   💬 {text}")
         elif btype == "paragraph" and text:
@@ -173,14 +193,19 @@ def get_page_content(page_id: str) -> tuple:
                     title_captured = True
                 else:
                     ja_summary = text
-            else:
+            elif not in_video_caption:
                 target = vocab_lines if in_vocab else lines
                 target.append(text)
-        elif btype == "divider":
-            lines.append("")
 
     summary = summary_lines[0] if summary_lines else ""
-    return "\n".join(lines).strip(), "\n".join(vocab_lines).strip(), original_title, ja_summary, summary
+    return (
+        "\n".join(lines).strip(),
+        "\n".join(vocab_lines).strip(),
+        original_title,
+        ja_summary,
+        summary,
+        video_caption,
+    )
 
 
 def mark_as_published(page_id: str):
@@ -341,7 +366,7 @@ def main():
         print(f"来源: {info['source']} | 分类: {info['category']}")
 
         # 获取正文和词汇
-        content, vocab, original_title, ja_summary, summary = get_page_content(page["id"])
+        content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"])
         if not content:
             print("⚠️ 正文为空，跳过\n")
             continue
@@ -541,6 +566,13 @@ def main():
 
         # 视频优先：有视频时忽略图集图片走视频模式
         video_url = gallery_videos[0] if gallery_videos else ""
+
+        # 视频模式：用视频配文替换普通正文（更简洁）
+        if video_url and video_caption:
+            xhs_content = video_caption
+            print(f"  🎬 视频配文: {video_caption[:60]}...")
+        elif video_url and not video_caption:
+            print(f"  ⚠️ 无视频配文，使用普通正文")
 
         # 发布
         print("📤 发布中...")

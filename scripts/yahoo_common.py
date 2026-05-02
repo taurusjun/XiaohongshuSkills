@@ -112,6 +112,34 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
     return ""
 
 
+def generate_video_caption(title_zh: str, summary: str, content: str, tags: list) -> str:
+    """为视频发布生成简洁配文（80-120字）。
+    结构：悬念/共鸣句 + 1-2句补充上下文 + 互动召唤 + tags
+    """
+    tags_str = " ".join(f"#{t}" for t in tags[:10]) if tags else ""
+    prompt = f"""你是小红书视频博主。根据新闻内容，写一段视频配文。
+
+新闻标题：{title_zh}
+新闻要点：{content[:300]}
+
+要求：
+1. 第一句：悬念或共鸣句，15字以内，不说答案，让人想看视频
+2. 第二、三句：补充视频里看不到的背景信息，总计30-40字
+3. 最后一句：互动召唤，10字以内（"你怎么看？""你见过吗？"之类，不要"宝子""干货"）
+4. 总字数80-120字（不含tags）
+5. 语气口语化，像朋友发的视频说明，不要新闻腔
+
+只输出配文正文，不加任何标题或说明。"""
+
+    result = call_litellm(prompt, max_tokens=300)
+    if not result:
+        return ""
+    caption = result.strip()
+    if tags_str:
+        caption = f"{caption}\n{tags_str}"
+    return caption
+
+
 def translate_title(title_ja: str) -> str:
     """将日文标题翻译为中文（用 Google Translate，快速准确，仅用于预览）"""
     try:
@@ -475,6 +503,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['content']  = content
         news['comment']  = comment
         news['vocab']    = vocab
+        news['video_caption'] = ""  # 先占位，tags 确定后再填
     else:
         news.setdefault('title_zh', news['title_ja'])
         news.setdefault('content', f"• {news['title_ja']}")
@@ -494,6 +523,14 @@ def process_news_item(news: dict, no_translate: bool = False,
     news['category'] = category
     news['tags']     = tags
     news['source']   = news.get('source', 'Yahoo Japan')
+
+    # 视频配文（tags 确定后生成）
+    if LITELLM_API_KEY and not no_translate and 'video_caption' in news:
+        print("    生成视频配文...")
+        news['video_caption'] = generate_video_caption(
+            news['title_zh'], news.get('summary', ''),
+            news.get('content', ''), tags,
+        )
     # pub_time：强制统一为 YYYY.MM.DD，忽略来源页的日文时间格式
     news['pub_time'] = datetime.now().strftime('%Y.%m.%d')
     if keyword:
@@ -602,6 +639,16 @@ def push_to_notion(news: Dict) -> str:
 
     # ── 内容块 ──────────────────────────────────────────
     blocks: list[dict] = []
+
+    if news.get("video_caption"):
+        blocks.append({"object": "block", "type": "heading_3", "heading_3": {
+            "rich_text": [{"type": "text", "text": {"content": "🎬 视频配文"}}]
+        }})
+        blocks.append({"object": "block", "type": "callout", "callout": {
+            "icon": {"type": "emoji", "emoji": "🎬"},
+            "rich_text": [{"type": "text", "text": {"content": news["video_caption"][:500]}}],
+        }})
+        blocks.append({"object": "block", "type": "divider", "divider": {}})
 
     if news.get("summary"):
         blocks.append({"object": "block", "type": "callout", "callout": {
