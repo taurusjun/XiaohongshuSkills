@@ -80,6 +80,9 @@ def is_china_related(title: str) -> bool:
 
 # ============ LiteLLM / AI ============
 
+print(f"🤖 LLM: {LITELLM_MODEL}  ({LITELLM_URL})")
+
+
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -> str:
     """调用 LiteLLM API，返回文本；未配置或失败时返回空字符串"""
     if not LITELLM_API_KEY:
