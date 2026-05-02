@@ -2165,6 +2165,106 @@ def _scrape_pinzuba(gallery_url: str) -> list[str]:
     return images
 
 
+def _extract_youtube_video_id(html_text: str) -> str:
+    """从页面 HTML 提取 YouTube 嵌入视频 ID（youtube.com/embed/VIDEO_ID）"""
+    import re
+    m = re.search(r'youtube\.com/embed/([A-Za-z0-9_-]{11})', html_text)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def _download_youtube_video(video_id: str, article_dir: Path) -> str:
+    """用 CDP cookies + yt-dlp 下载 YouTube 视频到 article_dir，返回本地文件名（失败返回空串）"""
+    import json as _json
+    import subprocess
+    import tempfile
+
+    try:
+        import websocket
+    except ImportError:
+        print("  ⚠️ 需要安装: pip install websocket-client")
+        return ""
+
+    # 提取 YouTube/Google cookies 写成 Netscape 格式
+    cookie_file = Path(tempfile.mktemp(suffix=".txt"))
+    try:
+        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+        page_tab = next((t for t in tabs if t.get("type") == "page"), None)
+        if page_tab:
+            ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=10)
+            ws.send(_json.dumps({"id": 1, "method": "Network.getAllCookies"}))
+            while True:
+                msg = _json.loads(ws.recv())
+                if msg.get("id") == 1:
+                    all_cookies = msg.get("result", {}).get("cookies", [])
+                    break
+            ws.close()
+            yt_cookies = [c for c in all_cookies
+                          if "youtube.com" in c.get("domain", "") or "google.com" in c.get("domain", "")]
+            lines = ["# Netscape HTTP Cookie File"]
+            for c in yt_cookies:
+                domain = c["domain"]
+                flag = "TRUE" if domain.startswith(".") else "FALSE"
+                expires = int(c.get("expires", 0))
+                if expires < 0:
+                    expires = 0
+                lines.append(f"{domain}\t{flag}\t{c.get('path','/')}\t"
+                              f"{'TRUE' if c.get('secure') else 'FALSE'}\t{expires}\t"
+                              f"{c['name']}\t{c['value']}")
+            cookie_file.write_text("\n".join(lines))
+    except Exception as e:
+        print(f"  ⚠️ 提取 YouTube cookies 失败: {e}")
+
+    article_dir.mkdir(parents=True, exist_ok=True)
+    out_tmpl = str(article_dir / "%(title).50s.%(ext)s")
+    cmd = [
+        "yt-dlp",
+        f"https://www.youtube.com/watch?v={video_id}",
+        "-o", out_tmpl,
+        "--no-playlist",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
+    ]
+    if cookie_file.exists() and cookie_file.stat().st_size > 30:
+        cmd += ["--cookies", str(cookie_file)]
+
+    print(f"  ▶ yt-dlp 下载: {video_id}")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            print(f"  ❌ yt-dlp 失败: {result.stderr[-300:]}")
+            return ""
+    except subprocess.TimeoutExpired:
+        print("  ❌ yt-dlp 超时")
+        return ""
+    finally:
+        if cookie_file.exists():
+            cookie_file.unlink()
+
+    # 找下载的 mp4 文件
+    mp4_files = sorted(article_dir.glob("*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not mp4_files:
+        # yt-dlp 可能下了 webm/mkv，重命名最新文件
+        all_videos = sorted(
+            [f for f in article_dir.iterdir() if f.suffix in (".webm", ".mkv", ".m4v")],
+            key=lambda f: f.stat().st_mtime, reverse=True,
+        )
+        if all_videos:
+            new_name = article_dir / (all_videos[0].stem + ".mp4")
+            all_videos[0].rename(new_name)
+            mp4_files = [new_name]
+
+    if not mp4_files:
+        print("  ❌ 未找到下载的视频文件")
+        return ""
+
+    fname = mp4_files[0].name
+    size_mb = mp4_files[0].stat().st_size // (1024 * 1024)
+    print(f"  ✅ YouTube 视频已保存: {fname} ({size_mb} MB)")
+    return fname
+
+
 def _get_instagram_cookies_from_cdp() -> dict:
     """从 Chrome CDP 提取 instagram.com 的 cookies，返回 {name: value} 字典。"""
     import json as _json
@@ -2681,19 +2781,31 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     print(f"  📸 图集: {gallery_url}")
 
-    # 若 gallery_url 不是 Instagram 直链，先抓页面检测是否嵌入了 Instagram 帖子
-    if "instagram.com/p/" not in gallery_url:
+    # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
+    _youtube_video_id = ""
+    if "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             _shortcode = _extract_instagram_shortcode(_page_resp.text)
             if _shortcode:
                 gallery_url = f"https://www.instagram.com/p/{_shortcode}/"
                 print(f"  📱 检测到 Instagram 嵌入，切换到: {gallery_url}")
+            else:
+                _youtube_video_id = _extract_youtube_video_id(_page_resp.text)
+                if _youtube_video_id:
+                    print(f"  🎬 检测到 YouTube 嵌入: {_youtube_video_id}")
         except Exception as _e:
-            print(f"  ⚠️ Instagram 嵌入检测失败: {_e}")
+            print(f"  ⚠️ 嵌入内容检测失败: {_e}")
 
-    # Instagram 帖子：instaloader 直接下载到 article_dir，不走 HTTP scrape
-    if "instagram.com/p/" in gallery_url:
+    # YouTube 视频：仅本地下载，不上传 Cloudinary
+    if _youtube_video_id:
+        fname = _download_youtube_video(_youtube_video_id, article_dir)
+        if not fname:
+            print(f"  — YouTube 下载失败")
+            return False
+        local_files = [fname]
+    # Instagram 帖子
+    elif "instagram.com/p/" in gallery_url:
         local_files = _scrape_instagram(gallery_url, article_dir)
         if not local_files:
             print(f"  — Instagram 下载失败")
@@ -2718,6 +2830,9 @@ def process_page(page: dict, redownload: bool = False) -> bool:
         "gallery_url": gallery_url,
         "images": local_files,
     }
+    if _youtube_video_id:
+        meta_data["youtube_video_id"] = _youtube_video_id
+        meta_data["youtube_local_only"] = True
     with open(article_dir / "meta.json", "w") as f:
         json.dump(meta_data, f, ensure_ascii=False, indent=2)
 

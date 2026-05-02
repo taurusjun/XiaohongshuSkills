@@ -94,6 +94,14 @@ def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
                 url = vid.get("external", {}).get("url") or vid.get("file", {}).get("url", "")
                 if url:
                     video_urls.append(url)
+            elif next_block.get("type") == "code":
+                # YouTube 本地视频路径（绝对路径存在 code block 中）
+                path = "".join(
+                    r.get("plain_text", "")
+                    for r in next_block.get("code", {}).get("rich_text", [])
+                ).strip()
+                if path and path.startswith("/"):
+                    video_urls.append(path)
     else:
         for block in blocks:
             if block.get("type") == "image":
