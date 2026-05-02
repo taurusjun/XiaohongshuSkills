@@ -208,10 +208,10 @@ def main():
     print("=" * 60)
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}\n")
 
-    if LITELLM_API_KEY:
-        print(f"✅ LiteLLM 已配置  模型: {LITELLM_MODEL}  max_tokens: {LITELLM_MAX_TOKENS}")
-    else:
-        print("⚠️ LiteLLM 未配置，将跳过翻译和评论生成")
+    if not LITELLM_API_KEY:
+        print("❌ LiteLLM 未配置，请在 scripts/.env 中设置 LITELLM_API_KEY")
+        return
+    print(f"✅ LiteLLM 已配置  模型: {LITELLM_MODEL}  max_tokens: {LITELLM_MAX_TOKENS}")
     print("📡 检查 Chrome CDP...")
     if not check_chrome_cdp():
         return
