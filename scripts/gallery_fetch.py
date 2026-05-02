@@ -41,6 +41,8 @@ NOTION_HEADERS = {
 CACHE_DIR = Path.home() / ".cache" / "xhs_images"
 MAX_IMAGES = 20
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
+CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
 
 # 已知图集站点及对应图片容器 CSS selector（空串表示用通用逻辑）
 GALLERY_SITES: dict[str, str] = {
@@ -183,6 +185,16 @@ def is_gallery_url(gallery_url: str) -> bool:
     return _is_valid_gallery_url(gallery_url)
 
 
+def _extract_instagram_shortcode(html_text: str) -> str:
+    """从页面 HTML 提取 Instagram 帖子 shortcode（支持 blockquote embed 和 iframe）"""
+    import re
+    # blockquote embed: data-instgrm-permalink="https://www.instagram.com/p/SHORTCODE/..."
+    m = re.search(r'instagram\.com/p/([A-Za-z0-9_-]+)/', html_text)
+    if m:
+        return m.group(1)
+    return ""
+
+
 def detect_gallery_link(article_url: str) -> str:
     """从 Yahoo 文章页找已知图集站点的外链，URL 必须含图集关键词且有实际路径"""
     if not article_url:
@@ -190,6 +202,14 @@ def detect_gallery_link(article_url: str) -> str:
     try:
         resp = requests.get(article_url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Instagram embed（blockquote / iframe）— 优先检测
+        shortcode = _extract_instagram_shortcode(resp.text)
+        if shortcode:
+            ig_url = f"https://www.instagram.com/p/{shortcode}/"
+            print(f"  🔗 找到 Instagram 嵌入: {ig_url}")
+            return ig_url
+
         for a in soup.find_all("a", href=True):
             href = a["href"]
             if not href.startswith("http"):
@@ -2145,6 +2165,206 @@ def _scrape_pinzuba(gallery_url: str) -> list[str]:
     return images
 
 
+def _get_instagram_cookies_from_cdp() -> dict:
+    """从 Chrome CDP 提取 instagram.com 的 cookies，返回 {name: value} 字典。"""
+    import json as _json
+    try:
+        import websocket
+    except ImportError:
+        return {}
+
+    try:
+        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+    except Exception:
+        return {}
+
+    page_tab = next((t for t in tabs if t.get("type") == "page"), None)
+    if not page_tab:
+        return {}
+
+    cookies = {}
+    try:
+        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=10)
+        ws.send(_json.dumps({"id": 1, "method": "Network.getAllCookies"}))
+        while True:
+            msg = _json.loads(ws.recv())
+            if msg.get("id") == 1:
+                for c in msg.get("result", {}).get("cookies", []):
+                    if "instagram.com" in c.get("domain", ""):
+                        cookies[c["name"]] = c["value"]
+                break
+        ws.close()
+    except Exception as e:
+        print(f"  ⚠️ 获取 CDP cookies 失败: {e}")
+
+    return cookies
+
+
+def _scrape_instagram(gallery_url: str, article_dir: Path) -> list[str]:
+    """用 CDP 导航到 Instagram 帖子，从页面 JSON 数据精准提取媒体 URL 后下载。
+    图片按 001.jpg 命名，视频按 NNN_video.mp4 命名。"""
+    import json as _json
+    import re
+    import time as _time
+
+    try:
+        import websocket
+    except ImportError:
+        print("  ⚠️ 需要安装: pip install websocket-client")
+        return []
+
+    m = re.search(r'/p/([A-Za-z0-9_-]+)/', gallery_url)
+    if not m:
+        print(f"  ⚠️ 无法解析 Instagram shortcode: {gallery_url}")
+        return []
+    shortcode = m.group(1)
+
+    # JS: 解析 script[application/json]，用 code 字段定位帖子，提取 carousel_media
+    JS_TEMPLATE = r"""
+(function(){
+    var code = '__SHORTCODE__';
+    var seen = {};
+    var results = [];
+
+    function bestImg(obj) {
+        if (!obj.image_versions2) return '';
+        var cands = obj.image_versions2.candidates || [];
+        var best = cands.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, cands[0]||{});
+        return best.url || '';
+    }
+    function bestVid(obj) {
+        if (obj.video_url) return obj.video_url;
+        var vers = obj.video_versions || [];
+        return vers.length ? vers[0].url : '';
+    }
+    function addMedia(obj) {
+        var url = bestVid(obj) || bestImg(obj);
+        if (!url || seen[url]) return;
+        // 用 URL 里的数字 ID 去重（同一媒体在多个 script 标签出现）
+        var idMatch = url.match(/\/(\d{5,})_/);
+        var deduKey = idMatch ? idMatch[1] : url;
+        if (seen[deduKey]) return;
+        seen[deduKey] = 1;
+        results.push({url: url, type: bestVid(obj) ? 'video' : 'img'});
+    }
+    function walk(obj, depth) {
+        if (!obj || typeof obj !== 'object' || depth > 20) return;
+        if (obj.code === code) {
+            addMedia(obj);
+            (obj.carousel_media || []).forEach(addMedia);
+            return;
+        }
+        if (Array.isArray(obj)) { obj.forEach(function(i){ walk(i, depth+1); }); }
+        else { Object.values(obj).forEach(function(v){ walk(v, depth+1); }); }
+    }
+    document.querySelectorAll('script[type="application/json"]').forEach(function(s){
+        if (s.textContent.indexOf(code) === -1) return;
+        try { walk(JSON.parse(s.textContent), 0); } catch(e){}
+    });
+    return JSON.stringify(results);
+})()
+"""
+    JS_EXTRACT = JS_TEMPLATE.replace("__SHORTCODE__", shortcode)
+
+    # ── 获取 CDP tab ──────────────────────────────────────────────
+    try:
+        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+    except Exception as e:
+        print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
+        return []
+
+    def _get_ig_tab(tab_list):
+        t = next((t for t in tab_list
+                  if t.get("type") == "page" and "instagram.com" in t.get("url", "")), None)
+        return t or next((t for t in tab_list if t.get("type") == "page"), None)
+
+    page_tab = _get_ig_tab(tabs)
+    if not page_tab:
+        print("  ⚠️ 找不到可用的 Chrome tab")
+        return []
+
+    # ── Phase 1: 导航（导航后 ws 断开属正常，重连读取）────────────
+    try:
+        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=15)
+        ws.send(_json.dumps({"id": 1, "method": "Page.enable"}))
+        ws.recv()
+        ws.send(_json.dumps({"id": 2, "method": "Page.navigate",
+                             "params": {"url": gallery_url}}))
+        print(f"  🌐 导航到 Instagram: {gallery_url}")
+        start = _time.time()
+        while _time.time() - start < 20:
+            try:
+                msg = _json.loads(ws.recv())
+                if msg.get("method") == "Page.loadEventFired":
+                    break
+            except Exception:
+                break
+        try:
+            ws.close()
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"  ⚠️ CDP 导航失败: {e}")
+        return []
+
+    # ── Phase 2: 重连，等待 JS 渲染，提取媒体数据 ─────────────────
+    _time.sleep(3)
+    try:
+        tabs2 = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+        tab2 = _get_ig_tab(tabs2)
+        if not tab2:
+            print("  ⚠️ 导航后找不到 tab")
+            return []
+
+        ws2 = websocket.create_connection(tab2["webSocketDebuggerUrl"], timeout=15)
+        ws2.send(_json.dumps({"id": 1, "method": "Runtime.evaluate",
+                              "params": {"expression": JS_EXTRACT}}))
+        media_items = []
+        while True:
+            msg = _json.loads(ws2.recv())
+            if msg.get("id") == 1:
+                val = msg.get("result", {}).get("result", {}).get("value", "[]")
+                media_items = _json.loads(val) if val else []
+                break
+        ws2.close()
+    except Exception as e:
+        print(f"  ⚠️ CDP 提取失败: {e}")
+        return []
+
+    if not media_items:
+        print("  ⚠️ 未找到媒体（页面未完全渲染？尝试刷新后重试）")
+        return []
+
+    n_img = sum(1 for x in media_items if x["type"] == "img")
+    n_vid = sum(1 for x in media_items if x["type"] == "video")
+    print(f"  📦 找到 {n_img} 张图 + {n_vid} 个视频")
+
+    # ── 下载 ─────────────────────────────────────────────────────
+    article_dir.mkdir(parents=True, exist_ok=True)
+    ig_cookies = _get_instagram_cookies_from_cdp()
+    dl_headers = {**HEADERS,
+                  "Cookie": "; ".join(f"{k}={v}" for k, v in ig_cookies.items()),
+                  "Referer": "https://www.instagram.com/"}
+
+    saved: list[str] = []
+    img_idx = 1
+    for item in media_items:
+        url, mtype = item["url"], item["type"]
+        try:
+            resp = requests.get(url, headers=dl_headers, timeout=30)
+            resp.raise_for_status()
+            fname = f"{img_idx:03d}_video.mp4" if mtype == "video" else f"{img_idx:03d}.jpg"
+            (article_dir / fname).write_bytes(resp.content)
+            print(f"    ✓ {fname}  ({len(resp.content) // 1024} KB)")
+            saved.append(fname)
+            img_idx += 1
+        except Exception as e:
+            print(f"    ✗ 下载失败: {e}")
+        _time.sleep(0.2)
+
+    return saved
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
@@ -2460,13 +2680,32 @@ def process_page(page: dict, redownload: bool = False) -> bool:
             return False
 
     print(f"  📸 图集: {gallery_url}")
-    image_urls = scrape_gallery_images(gallery_url)
-    if not image_urls:
-        print(f"  — 图集为空")
-        return False
 
-    print(f"  下载 {len(image_urls)} 张图片...")
-    local_files = download_images(image_urls, article_dir, gallery_url=gallery_url)
+    # 若 gallery_url 不是 Instagram 直链，先抓页面检测是否嵌入了 Instagram 帖子
+    if "instagram.com/p/" not in gallery_url:
+        try:
+            _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
+            _shortcode = _extract_instagram_shortcode(_page_resp.text)
+            if _shortcode:
+                gallery_url = f"https://www.instagram.com/p/{_shortcode}/"
+                print(f"  📱 检测到 Instagram 嵌入，切换到: {gallery_url}")
+        except Exception as _e:
+            print(f"  ⚠️ Instagram 嵌入检测失败: {_e}")
+
+    # Instagram 帖子：instaloader 直接下载到 article_dir，不走 HTTP scrape
+    if "instagram.com/p/" in gallery_url:
+        local_files = _scrape_instagram(gallery_url, article_dir)
+        if not local_files:
+            print(f"  — Instagram 下载失败")
+            return False
+    else:
+        image_urls = scrape_gallery_images(gallery_url)
+        if not image_urls:
+            print(f"  — 图集为空")
+            return False
+        print(f"  下载 {len(image_urls)} 张图片...")
+        local_files = download_images(image_urls, article_dir, gallery_url=gallery_url)
+
     if not local_files:
         return False
 

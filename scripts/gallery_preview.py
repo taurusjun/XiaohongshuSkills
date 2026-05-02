@@ -43,7 +43,7 @@ HTML = """<!DOCTYPE html>
                      border: 1px solid #ccc; border-radius: 4px; background: #fff; }
   .grid { display: flex; flex-wrap: wrap; gap: 8px; }
   .thumb { position: relative; width: 160px; }
-  .thumb img { width: 160px; height: 120px; object-fit: cover; border-radius: 4px;
+  .thumb img, .thumb video { width: 160px; height: 120px; object-fit: cover; border-radius: 4px;
                border: 3px solid transparent; cursor: pointer; display: block; }
   .thumb input[type=checkbox] { position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; cursor: pointer; }
   .thumb.selected img { border-color: #1677ff; }
@@ -72,7 +72,11 @@ HTML = """<!DOCTYPE html>
   <div class="grid">
     {% for img in art.images %}
     <div class="thumb" id="thumb-{{ art.key }}-{{ loop.index0 }}" onclick="toggle('{{ art.key }}', {{ loop.index0 }})">
+      {% if img.endswith('.mp4') %}
+      <video src="/img/{{ art.key }}/{{ img }}" muted playsinline preload="metadata"></video>
+      {% else %}
       <img src="/img/{{ art.key }}/{{ img }}" alt="{{ img }}">
+      {% endif %}
       <input type="checkbox" id="cb-{{ art.key }}-{{ loop.index0 }}" data-key="{{ art.key }}" data-img="{{ img }}"
              onclick="event.stopPropagation(); syncThumb('{{ art.key }}', {{ loop.index0 }})">
       <div class="count">{{ img }}</div>
@@ -152,7 +156,7 @@ def load_pending_articles() -> list[dict]:
         with open(meta_path) as f:
             meta = json.load(f)
         images = [f for f in sorted(article_dir.iterdir())
-                  if f.suffix in (".jpg", ".jpeg", ".png", ".webp")]
+                  if f.suffix in (".jpg", ".jpeg", ".png", ".webp", ".mp4")]
         meta["images"] = [img.name for img in images]
         articles.append(meta)
     return articles

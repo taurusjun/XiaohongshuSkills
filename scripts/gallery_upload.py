@@ -77,6 +77,37 @@ def upload_local_jpeg(file_path: Path) -> str:
     return ""
 
 
+def upload_local_video(file_path: Path) -> str:
+    """将本地视频上传到 Cloudinary，返回 CDN URL"""
+    cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    api_key = os.environ.get("CLOUDINARY_API_KEY")
+    api_secret = os.environ.get("CLOUDINARY_API_SECRET")
+    if not all([cloud_name, api_key, api_secret]):
+        print("  ❌ 缺少 Cloudinary 配置")
+        return ""
+
+    timestamp = int(time.time())
+    params_str = f"timestamp={timestamp}{api_secret}"
+    signature = hashlib.sha1(params_str.encode()).hexdigest()
+
+    try:
+        with open(file_path, "rb") as f:
+            resp = requests.post(
+                f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload",
+                files={"file": (file_path.name, f, "video/mp4")},
+                data={"api_key": api_key, "timestamp": timestamp, "signature": signature},
+                timeout=120,
+            )
+        if resp.status_code == 200:
+            url = resp.json().get("secure_url", "")
+            if url:
+                return url
+        print(f"  ❌ Cloudinary 视频上传失败: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        print(f"  ❌ 视频上传异常: {e}")
+    return ""
+
+
 # ============ Notion ============
 
 def append_image_blocks(page_id: str, cloudinary_urls: list[str]):
@@ -108,16 +139,32 @@ def append_image_blocks(page_id: str, cloudinary_urls: list[str]):
     return resp.status_code == 200
 
 
+def append_video_blocks(page_id: str, video_urls: list[str]):
+    """在 Notion 页面末尾追加视频 blocks（to_do + video 成对）"""
+    children = []
+    for i, url in enumerate(video_urls):
+        children.append({
+            "type": "to_do",
+            "to_do": {
+                "rich_text": [{"type": "text", "text": {"content": f"视频 {i + 1:02d}"}}],
+                "checked": False,
+            },
+        })
+        children.append({
+            "type": "video",
+            "video": {"type": "external", "external": {"url": url}},
+        })
+    resp = requests.patch(
+        f"https://api.notion.com/v1/blocks/{page_id}/children",
+        headers=NOTION_HEADERS,
+        json={"children": children},
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
 def update_notion_image_urls(page_id: str, urls: list[str]):
     """将第一张图设为封面图属性（可选），其余写入 blocks"""
-    # 如果需要更新封面图属性，取消注释：
-    # if urls:
-    #     requests.patch(
-    #         f"https://api.notion.com/v1/pages/{page_id}",
-    #         headers=NOTION_HEADERS,
-    #         json={"properties": {"封面图": {"url": urls[0]}}},
-    #         timeout=10,
-    #     )
     return append_image_blocks(page_id, urls)
 
 
@@ -150,34 +197,50 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
         print("  [dry-run] 跳过上传")
         return True
 
-    cloudinary_urls = []
+    image_urls = []
+    video_urls = []
+
     for fname in selected:
         fpath = article_dir / fname
         if not fpath.exists():
             print(f"  ⚠️ 文件不存在: {fname}")
             continue
         print(f"  上传 {fname}...")
-        url = upload_local_jpeg(fpath)
-        if url:
-            cloudinary_urls.append(url)
-            print(f"    → {url[:70]}")
+        if fpath.suffix.lower() == ".mp4":
+            url = upload_local_video(fpath)
+            if url:
+                video_urls.append(url)
+                print(f"    → [video] {url[:70]}")
+        else:
+            url = upload_local_jpeg(fpath)
+            if url:
+                image_urls.append(url)
+                print(f"    → {url[:70]}")
         time.sleep(0.5)
 
-    if not cloudinary_urls:
+    if not image_urls and not video_urls:
         print("  ❌ 全部上传失败")
         return False
 
     notion_id = meta.get("notion_page_id")
     if notion_id:
-        ok = update_notion_image_urls(notion_id, cloudinary_urls)
-        if ok:
-            print(f"  ✅ 已写入 Notion blocks ({len(cloudinary_urls)} 张)")
-        else:
-            print(f"  ⚠️ Notion 写入失败")
+        if image_urls:
+            ok = update_notion_image_urls(notion_id, image_urls)
+            if ok:
+                print(f"  ✅ 已写入 Notion image blocks ({len(image_urls)} 张)")
+            else:
+                print(f"  ⚠️ Notion image 写入失败")
+        if video_urls:
+            ok = append_video_blocks(notion_id, video_urls)
+            if ok:
+                print(f"  ✅ 已写入 Notion video blocks ({len(video_urls)} 个)")
+            else:
+                print(f"  ⚠️ Notion video 写入失败")
 
     # 保存上传结果
     with open(article_dir / "uploaded.json", "w") as f:
-        json.dump({"cloudinary_urls": cloudinary_urls}, f, ensure_ascii=False, indent=2)
+        json.dump({"image_urls": image_urls, "video_urls": video_urls},
+                  f, ensure_ascii=False, indent=2)
     uploaded_flag.touch()
     return True
 
