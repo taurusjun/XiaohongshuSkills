@@ -115,26 +115,45 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
 def generate_video_caption(title_zh: str, summary: str, content: str, tags: list) -> str:
     """为视频发布生成简洁配文（80-120字）。
     结构：悬念/共鸣句 + 1-2句补充上下文 + 互动召唤 + tags
+
+    使用【视频配文】标记提取，与 GLM-5 推理模式兼容。
     """
     tags_str = " ".join(f"#{t}" for t in tags[:10]) if tags else ""
-    prompt = f"""你是小红书视频博主。根据新闻内容，写一段视频配文。
+    prompt = f"""你是小红书视频博主。根据新闻写一段视频配文，严格按格式输出。
 
 新闻标题：{title_zh}
 新闻要点：{content[:300]}
 
-要求：
-1. 第一句：悬念或共鸣句，15字以内，不说答案，让人想看视频
-2. 第二、三句：补充视频里看不到的背景信息，总计30-40字
-3. 最后一句：互动召唤，10字以内（"你怎么看？""你见过吗？"之类，不要"宝子""干货"）
-4. 总字数80-120字（不含tags）
-5. 语气口语化，像朋友发的视频说明，不要新闻腔
+【视频配文】
+（直接写配文正文。第一句悬念/共鸣≤15字不说答案，中间2-3句补充背景共40-60字，最后一句互动召唤≤10字。全文80-120字，口语化。）"""
 
-只输出配文正文，不加任何标题或说明。"""
-
-    result = call_litellm(prompt, max_tokens=300)
+    result = call_litellm(prompt, max_tokens=3000)
     if not result:
         return ""
-    caption = result.strip()
+
+    import re as _re
+
+    # 情况1：模型输出了 【视频配文】 标记 → 取最后一个标记后的内容
+    parts = result.split("【视频配文】")
+    if len(parts) >= 2:
+        raw = parts[-1].strip()
+        # 去掉括号说明（模型有时把格式说明也输出）
+        raw = _re.sub(r'^[（(][^）)]{0,200}[）)]', '', raw).strip()
+        caption = _re.split(r'【[^】]+】', raw)[0].strip()
+    else:
+        # 情况2：模型直接输出配文（无标记）→ 清理分析行后直接使用
+        lines = result.strip().splitlines()
+        clean = []
+        skip = _re.compile(r'^\s*(\d+\.\s|\*\s|[-•▸]\s|【|分析|要求|角色|任务|草稿|字数检查)')
+        for line in lines:
+            line = _re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', line.strip())
+            if not line or skip.match(line):
+                continue
+            clean.append(line)
+        caption = "\n".join(clean).strip()
+
+    if not caption:
+        return ""
     if tags_str:
         caption = f"{caption}\n{tags_str}"
     return caption
