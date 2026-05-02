@@ -264,9 +264,6 @@ def auto_classify(title: str, content: str = "", keyword: str = "") -> Tuple[str
     tags: list[str] = []
     text_all = title + " " + content
 
-    if any(k in text_all for k in CHINA_KEYWORDS):
-        tags.append("中国相关")
-
     text = text_all.lower()
 
     if any(k in text for k in ["ev", "电动车", "汽车", "日産", "本田", "丰田", "比亚迪", "特斯拉", "サクラ", "インサイト", "byd", "吉利"]):
