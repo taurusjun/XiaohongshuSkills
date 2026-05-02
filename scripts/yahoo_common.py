@@ -135,7 +135,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
-（严格 ≤20 字（含标点）。按新闻类型选对应策略：
+（字数规则：最大20字。汉字/日语/标点各算1字，英文字母2个算1字（如「AKB48」算2.5字）。按新闻类型选对应策略：
 
 ▸ 艺能/追星类 → 社会证明 + 情绪反差，事件具体，情绪词放句末，不说答案：
   「他退社那一刻，粉丝群沉默了」「拓哉这次回应，和大家想的不一样」
@@ -152,7 +152,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
 铁律（每次生成后自检）：
 - 标题留悬念，不说答案，看完还想点进来
 - 前7字出现具体信息，不以「日本」「日语」泛泛打头
-- ≤20字（含标点），超了必须砍
+- 字数上限20：汉字/日语/标点各1字，英文字母2个=1字，超了必须砍
 - 禁用套话：震惊/绝了/炸裂/天花板/粉丝集合/必看/N1党狂喜
 - 禁用重复句式：评论区画风突变/粉丝沸了/网友坐不住了/看完沉默了 ← 这类句末模板已被滥用，必须换表达
 - 每次根据当前新闻内容重新构思，句末情绪词不得与上次相同）
@@ -215,9 +215,21 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
             return ""
         return parts[-1].strip()
 
+    def _title_weight(s: str) -> float:
+        """汉字/日语/标点各1，英文字母2个=1（权重0.5）"""
+        return sum(0.5 if ch.isascii() and ch.isalpha() else 1 for ch in s)
+
+    def _truncate_title(s: str, max_w: float = 20) -> str:
+        total = 0.0
+        for i, ch in enumerate(s):
+            total += 0.5 if ch.isascii() and ch.isalpha() else 1
+            if total > max_w:
+                return s[:i]
+        return s
+
     raw_seo = last_section("SEO标题")
     if raw_seo:
-        seo_title = raw_seo.split('\n')[0].strip()[:20]
+        seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
 
     raw_summary = last_section("引流摘要")
     if raw_summary:
