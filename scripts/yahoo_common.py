@@ -121,16 +121,46 @@ def translate_title(title_ja: str) -> str:
     return title_ja
 
 
-def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str, str, str, str, list]:
+# 搜索引流关键词 → 标题中必须出现的中文名称
+# 格式：搜索词 → 标题中使用的标准中文名
+SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
+    "AKB":      "AKB48",
+    "乃木坂":   "乃木坂46",
+    "日向坂":   "日向坂46",
+    "欅坂":     "樱坂46",
+    "櫻坂":     "樱坂46",
+    "樱坂":     "樱坂46",
+    "坂道":     "坂道",
+    "SKE":      "SKE48",
+    "NMB":      "NMB48",
+    "HKT":      "HKT48",
+    "STU":      "STU48",
+    "NGT":      "NGT48",
+    "モーニング娘": "早安少女组",
+    "ハロプロ":  "Hello！Project",
+}
+
+
+def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = "") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
+
+    Args:
+        keyword: 搜索关键词，非空时标题中必须包含对应中文名（引流用）
 
     Returns:
         (seo_title, summary, content, comment, vocab, topic_tags)
     """
+    # 确定标题中必须出现的关键词（用于引流）
+    required_kw = SEARCH_KEYWORD_TITLE_MAP.get(keyword, keyword) if keyword else ""
+
+    kw_instruction = ""
+    if required_kw:
+        kw_instruction = f"\n引流要求：标题中必须出现「{required_kw}」，这是搜索引流关键词，不可省略。\n"
+
     prompt = f"""你是小红书日语学习博主。请根据新闻标题，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}
+日文原文：{title_ja}{kw_instruction}
 
 输出格式（必须包含全部6个字段）：
 
@@ -230,6 +260,9 @@ def generate_content_and_comment(title_ja: str, title_zh: str) -> Tuple[str, str
     raw_seo = last_section("SEO标题")
     if raw_seo:
         seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
+        # 兜底：关键词未出现时强制插入到标题开头
+        if required_kw and required_kw not in seo_title:
+            seo_title = _truncate_title(f"{required_kw}{seo_title}")
 
     raw_summary = last_section("引流摘要")
     if raw_summary:
@@ -427,7 +460,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['title_zh'] = translate_title(news['title_ja'])
         print("    生成内容...")
         seo_title, summary, content, comment, vocab, topic_tags = generate_content_and_comment(
-            news['title_ja'], news['title_zh']
+            news['title_ja'], news['title_zh'], keyword=news.get('keyword', '')
         )
         news['title_zh'] = seo_title
         news['summary']  = summary
