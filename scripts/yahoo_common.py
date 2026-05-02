@@ -35,10 +35,14 @@ except ImportError:
 NOTION_API_KEY    = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
-LITELLM_URL       = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
-LITELLM_API_KEY   = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_MODEL     = os.environ.get("LITELLM_MODEL", "GLM-5")
+LITELLM_URL        = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
+LITELLM_API_KEY    = os.environ.get("LITELLM_API_KEY", "")
+LITELLM_MODEL      = os.environ.get("LITELLM_MODEL", "")
 LITELLM_MAX_TOKENS = int(os.environ.get("LITELLM_MAX_TOKENS", "4000"))
+
+if not LITELLM_MODEL:
+    print("❌ 未配置 LITELLM_MODEL，请在 scripts/.env 中设置后重试")
+    sys.exit(1)
 
 CDP_HOST = "127.0.0.1"
 CDP_PORT = 9222
