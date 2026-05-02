@@ -79,6 +79,7 @@ GALLERY_SITES: dict[str, str] = {
     "friday.kodansha.co.jp": "article, main",
     "shueisha.online":       ".article-photo",
     "entamenext.com":        ".articleGalleryImg",
+    "musicvoice.jp":         "article, .entry-content",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -88,7 +89,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
-                         "friday.kodansha.co.jp", "shueisha.online", "entamenext.com"}
+                         "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
+                         "musicvoice.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -209,6 +211,13 @@ def detect_gallery_link(article_url: str) -> str:
             ig_url = f"https://www.instagram.com/p/{shortcode}/"
             print(f"  🔗 找到 Instagram 嵌入: {ig_url}")
             return ig_url
+
+        # YouTube embed — 次优先
+        yt_id = _extract_youtube_video_id(resp.text)
+        if yt_id:
+            yt_url = f"https://www.youtube.com/watch?v={yt_id}"
+            print(f"  🎬 找到 YouTube 嵌入: {yt_url}")
+            return yt_url
 
         for a in soup.find_all("a", href=True):
             href = a["href"]
@@ -2781,9 +2790,16 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     print(f"  📸 图集: {gallery_url}")
 
-    # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
+    # 若 gallery_url 已是 YouTube 直链，直接提取 video ID
     _youtube_video_id = ""
-    if "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
+    import re as _re
+    _yt_direct = _re.search(r'(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})', gallery_url)
+    if _yt_direct:
+        _youtube_video_id = _yt_direct.group(1)
+        print(f"  🎬 YouTube 直链: {_youtube_video_id}")
+
+    # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
+    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             _shortcode = _extract_instagram_shortcode(_page_resp.text)
