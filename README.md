@@ -332,6 +332,11 @@ python scripts/gallery_download.py
 python scripts/gallery_download.py --max-images 4
 ```
 
+`gallery_download.py` 会自动识别文章中嵌入的 Instagram 帖子和 YouTube 视频：
+
+- **Instagram**：通过 CDP 两阶段抓取，精准提取 carousel 图片和视频并下载
+- **YouTube**：通过 CDP 提取浏览器 cookies，用 `yt-dlp` 下载到本地；视频**不上传 Cloudinary**，本地路径直接写入 Notion（code block），发布时直接读取本地文件
+
 也可分步执行（便于调试或跳过某一步）：
 
 ```bash
@@ -346,6 +351,28 @@ python scripts/gallery_upload.py
 ```
 
 浏览器会打开预览页，勾选需要上传的图片后点「确认上传」，自动完成上传并将图片 URL 写入 Notion 页面 blocks。
+
+#### 独立媒体下载（media_download.py）
+
+无需经过 Notion 流程，直接从任意 URL 下载 Instagram / YouTube 媒体到本地：
+
+```bash
+# Instagram 帖子（图片 + 视频）
+python scripts/media_download.py https://www.instagram.com/p/DXzWr8Hk33j/
+
+# YouTube 视频
+python scripts/media_download.py https://www.youtube.com/watch?v=fzyu07Qa8AM
+
+# 文章页（自动检测嵌入的 Instagram / YouTube）
+python scripts/media_download.py https://encount.press/archives/989668/2/
+
+# 指定下载目录
+python scripts/media_download.py https://www.instagram.com/p/DXzWr8Hk33j/ --dir /tmp/output
+```
+
+前置条件：Chrome 需已通过 CDP 启动，并已登录对应平台（Instagram / YouTube）。默认 CDP 地址 `127.0.0.1:9222`，可在 `.env` 中通过 `CDP_HOST` / `CDP_PORT` 修改。
+
+下载结果保存在 `~/.cache/xhs_media_download/<hash>/`（未指定 `--dir` 时）。
 
 #### Step 3：发布到小红书
 

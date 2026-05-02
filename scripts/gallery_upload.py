@@ -163,6 +163,33 @@ def append_video_blocks(page_id: str, video_urls: list[str]):
     return resp.status_code == 200
 
 
+def append_local_video_blocks(page_id: str, local_paths: list[str]):
+    """YouTube 本地视频：写 to_do + code block，code block 存绝对路径供发布脚本读取"""
+    children = []
+    for i, path in enumerate(local_paths):
+        children.append({
+            "type": "to_do",
+            "to_do": {
+                "rich_text": [{"type": "text", "text": {"content": f"本地视频 {i + 1:02d}"}}],
+                "checked": False,
+            },
+        })
+        children.append({
+            "type": "code",
+            "code": {
+                "rich_text": [{"type": "text", "text": {"content": path}}],
+                "language": "plain text",
+            },
+        })
+    resp = requests.patch(
+        f"https://api.notion.com/v1/blocks/{page_id}/children",
+        headers=NOTION_HEADERS,
+        json={"children": children},
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
 def update_notion_image_urls(page_id: str, urls: list[str]):
     """将第一张图设为封面图属性（可选），其余写入 blocks"""
     return append_image_blocks(page_id, urls)
@@ -199,24 +226,33 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
 
     image_urls = []
     video_urls = []
+    youtube_local_only = meta.get("youtube_local_only", False)
 
     for fname in selected:
         fpath = article_dir / fname
         if not fpath.exists():
             print(f"  ⚠️ 文件不存在: {fname}")
             continue
-        print(f"  上传 {fname}...")
         if fpath.suffix.lower() == ".mp4":
-            url = upload_local_video(fpath)
-            if url:
-                video_urls.append(url)
-                print(f"    → [video] {url[:70]}")
+            if youtube_local_only:
+                # YouTube 视频仅保留本地，不上传 Cloudinary，写绝对路径到 Notion
+                local_path = str(fpath.resolve())
+                video_urls.append(local_path)
+                print(f"  📁 YouTube 视频保留本地: {local_path}")
+            else:
+                print(f"  上传 {fname}...")
+                url = upload_local_video(fpath)
+                if url:
+                    video_urls.append(url)
+                    print(f"    → [video] {url[:70]}")
+                time.sleep(0.5)
         else:
+            print(f"  上传 {fname}...")
             url = upload_local_jpeg(fpath)
             if url:
                 image_urls.append(url)
                 print(f"    → {url[:70]}")
-        time.sleep(0.5)
+            time.sleep(0.5)
 
     if not image_urls and not video_urls:
         print("  ❌ 全部上传失败")
@@ -231,11 +267,18 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
             else:
                 print(f"  ⚠️ Notion image 写入失败")
         if video_urls:
-            ok = append_video_blocks(notion_id, video_urls)
-            if ok:
-                print(f"  ✅ 已写入 Notion video blocks ({len(video_urls)} 个)")
+            if youtube_local_only:
+                ok = append_local_video_blocks(notion_id, video_urls)
+                if ok:
+                    print(f"  ✅ 已写入 Notion 本地视频路径 ({len(video_urls)} 个)")
+                else:
+                    print(f"  ⚠️ Notion 本地视频路径写入失败")
             else:
-                print(f"  ⚠️ Notion video 写入失败")
+                ok = append_video_blocks(notion_id, video_urls)
+                if ok:
+                    print(f"  ✅ 已写入 Notion video blocks ({len(video_urls)} 个)")
+                else:
+                    print(f"  ⚠️ Notion video 写入失败")
 
     # 保存上传结果
     with open(article_dir / "uploaded.json", "w") as f:
