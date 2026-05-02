@@ -137,7 +137,7 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
     "STU":      "STU",
     "NGT":      "NGT",
     "モーニング娘": "早安少女",
-    "ハロプロ":  "ハロプロ",
+    "ハロプロ":  "HelloProject",
 }
 
 
