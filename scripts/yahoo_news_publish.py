@@ -55,48 +55,54 @@ def get_pending_pages() -> list:
     return []
 
 
-def get_page_image_blocks(page_id: str) -> list[str]:
-    """获取页面中图集图片 URL 列表。
+def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
+    """获取页面中图片和视频 URL。
     识别两种写法：
-    1. 新格式（to_do + image 成对）：只取 checked=True 的 to_do 后面紧跟的 image URL
+    1. 新格式（to_do + image/video 成对）：只取 checked=True 的 to_do 后面紧跟的 block
     2. 旧格式（裸 image block）：直接取所有 image URL（兼容旧数据）
+    返回 (image_urls, video_urls)
     """
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
     )
     if resp.status_code != 200:
-        return []
+        return [], []
 
     blocks = resp.json().get("results", [])
-    urls = []
+    image_urls = []
+    video_urls = []
 
-    # 判断是否是新格式（含 to_do block）
     has_todo = any(b.get("type") == "to_do" for b in blocks)
 
     if has_todo:
-        # 新格式：to_do(checked) 后面紧跟的 image 才取
         for i, block in enumerate(blocks):
             if block.get("type") != "to_do":
                 continue
             if not block.get("to_do", {}).get("checked", False):
                 continue
-            # 找紧跟其后的 image block
-            if i + 1 < len(blocks) and blocks[i + 1].get("type") == "image":
-                img = blocks[i + 1].get("image", {})
+            if i + 1 >= len(blocks):
+                continue
+            next_block = blocks[i + 1]
+            if next_block.get("type") == "image":
+                img = next_block.get("image", {})
                 url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
                 if url:
-                    urls.append(url)
+                    image_urls.append(url)
+            elif next_block.get("type") == "video":
+                vid = next_block.get("video", {})
+                url = vid.get("external", {}).get("url") or vid.get("file", {}).get("url", "")
+                if url:
+                    video_urls.append(url)
     else:
-        # 旧格式：直接取所有 image block（兼容旧数据）
         for block in blocks:
             if block.get("type") == "image":
                 img = block.get("image", {})
                 url = img.get("external", {}).get("url") or img.get("file", {}).get("url", "")
                 if url:
-                    urls.append(url)
+                    image_urls.append(url)
 
-    return urls
+    return image_urls, video_urls
 
 
 def get_page_content(page_id: str) -> tuple:
@@ -234,8 +240,11 @@ def fetch_article_image(url: str) -> str:
 
 # ============ XHS 发布 ============
 
-def publish_to_xhs(title: str, content: str, image_urls: list[str] = None, article_url: str = "") -> bool:
-    """调用 publish_pipeline.py 发布到小红书，image_urls 支持多张（封面图 + 图集）"""
+def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
+                   article_url: str = "", video_url: str = "") -> bool:
+    """调用 publish_pipeline.py 发布到小红书。
+    有 video_url 时走视频模式（--video-url），否则走图文模式（--image-urls）。
+    """
     import subprocess
     if image_urls is None:
         image_urls = []
@@ -250,22 +259,26 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None, artic
         "--headless"
     ]
 
-    # XHS 最多 18 张
-    effective_urls = image_urls[:18]
-    if effective_urls:
-        cmd += ["--image-urls"] + effective_urls
-        print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
+    if video_url:
+        cmd += ["--video-url", video_url]
+        print(f"  视频模式: {video_url[:70]}")
     else:
-        print(f"  ⚠️ 未找到封面图，发布可能失败")
+        # XHS 最多 18 张
+        effective_urls = image_urls[:18]
+        if effective_urls:
+            cmd += ["--image-urls"] + effective_urls
+            print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
+        else:
+            print(f"  ⚠️ 未找到封面图，发布可能失败")
 
     print(f"  执行发布命令...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
     if result.returncode == 0:
         return True
 
-    # 如果图片下载失败，尝试重新抓取封面图
-    if "All image downloads failed" in result.stderr and article_url:
+    # 图片 URL 过期时降级重抓封面图（仅图文模式）
+    if not video_url and "All image downloads failed" in result.stderr and article_url:
         print("  ⚠️ 图片URL已过期，重新抓取...")
         new_image_url = fetch_article_image(article_url)
         if new_image_url:
@@ -487,13 +500,15 @@ def main():
             print("  封面图不在 Notion，重新抓取...")
             image_url = fetch_article_image(info["link"])
 
-        # 图集图片（gallery_upload 写入的 image blocks）
-        gallery_urls = get_page_image_blocks(page["id"])
+        # 图集图片 / 视频（gallery_upload 写入的 blocks）
+        gallery_urls, gallery_videos = get_page_media_blocks(page["id"])
         if gallery_urls:
             print(f"  图集图片: {len(gallery_urls)} 张")
+        if gallery_videos:
+            print(f"  图集视频: {len(gallery_videos)} 个")
 
-        # 有图集链接但图片未下载 → 提醒
-        if info.get("gallery_url") and not gallery_urls and not args.force:
+        # 有图集链接但图片/视频未下载 → 提醒
+        if info.get("gallery_url") and not gallery_urls and not gallery_videos and not args.force:
             print(f"  ⚠️  此文章有图集链接但图片尚未下载：")
             print(f"      {info['gallery_url']}")
             print(f"  先运行 gallery_download.py 下载图集，或加 --force 强制发布")
@@ -516,9 +531,12 @@ def main():
 
         short_title = full_title[:20]
 
+        # 视频优先：有视频时忽略图集图片走视频模式
+        video_url = gallery_videos[0] if gallery_videos else ""
+
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(short_title, xhs_content, all_images, info["link"]):
+        if publish_to_xhs(short_title, xhs_content, all_images, info["link"], video_url=video_url):
             if mark_as_published(page["id"]):
                 print(f"✅ 发布成功，已记录时间\n")
             else:

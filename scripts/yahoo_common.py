@@ -113,18 +113,14 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
 
 
 def translate_title(title_ja: str) -> str:
-    """将日文标题翻译为中文"""
-    result = call_litellm(
-        f"请将以下日文新闻标题翻译成简洁的中文。\n\n要求：\n1. 只输出翻译结果\n2. 不要添加任何解释\n3. 保持简洁\n\n日文标题：{title_ja}\n\n中文翻译：",
-        max_tokens=200,
-    )
-    if result:
-        for line in reversed(result.strip().split('\n')):
-            line = line.strip()
-            if line and not line.startswith(('分析', '翻译', '1.', '2.', '3.', '*', '**', '-', '源文本', '目标')):
-                line = line.replace('中文翻译：', '').replace('翻译结果：', '').strip()
-                if 3 < len(line) < 150:
-                    return line
+    """将日文标题翻译为中文（用 Google Translate，快速准确，仅用于预览）"""
+    try:
+        from deep_translator import GoogleTranslator
+        result = GoogleTranslator(source='ja', target='zh-CN').translate(title_ja)
+        if result and len(result) > 2:
+            return result
+    except Exception as e:
+        print(f"    [translate] Google Translate 失败: {e}，使用原文")
     return title_ja
 
 
@@ -724,6 +720,41 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
             print("    — 未检测到图集外链")
     except Exception as e:
         print(f"    ⚠️ 图集检测失败: {e}")
+    return True
+
+
+def push_stub_to_notion(news: dict, existing_keys: set | None = None) -> bool:
+    """推送最小化存根到 Notion（仅用于去重记录：翻译标题 + 原地址 + key）"""
+    if not NOTION_API_KEY or not NOTION_DATABASE_ID:
+        return False
+    key = extract_key_from_url(news["link"])
+    if existing_keys and key in existing_keys:
+        return False
+    headers = {
+        "Authorization": f"Bearer {NOTION_API_KEY}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    title = news.get("title_zh") or news.get("title_ja", "")
+    props: dict = {
+        "Name":     {"title":     [{"text": {"content": title[:20]}}]},
+        "key":      {"rich_text": [{"text": {"content": key}}]},
+        "分类":     {"select":    {"name": "存档"}},
+        "原文链接": {"url": news["link"]},
+        "来源":     {"rich_text": [{"text": {"content": news.get("source", "Yahoo Japan")}}]},
+        "发布时间": {"rich_text": [{"text": {"content": news.get("pub_time", datetime.now().strftime('%Y.%m.%d'))}}]},
+    }
+    blocks = [
+        {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
+            {"type": "text", "text": {"content": "🔗 原文链接：", "link": {"url": news["link"]}}}
+        ]}}
+    ]
+    payload = {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": props, "children": blocks}
+    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    if resp.status_code != 200:
+        return False
+    if existing_keys is not None:
+        existing_keys.add(key)
     return True
 
 
