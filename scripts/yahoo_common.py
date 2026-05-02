@@ -119,13 +119,17 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
     使用【视频配文】标记提取，与 GLM-5 推理模式兼容。
     """
     tags_str = " ".join(f"#{t}" for t in tags[:10]) if tags else ""
-    prompt = f"""你是小红书视频博主。根据新闻写一段视频配文，严格按格式输出。
+    prompt = f"""你是小红书日本新闻博主。根据新闻写一段简短解说，严格按格式输出。
 
 新闻标题：{title_zh}
 新闻要点：{content[:300]}
 
 【视频配文】
-（直接写配文正文。第一句悬念/共鸣≤15字不说答案，中间2-3句补充背景共40-60字，最后一句互动召唤≤10字。全文80-120字，口语化。）"""
+（直接写解说正文，不提"视频""MV"等媒体形式。
+第一句：悬念或共鸣，≤15字，不说答案。
+中间2-3句：补充新闻背景或值得关注的细节，共40-60字。
+最后一句：互动召唤，≤10字，如"你怎么看？""你知道吗？"。
+全文80-120字，口语化，不要新闻腔。）"""
 
     result = call_litellm(prompt, max_tokens=3000)
     if not result:
@@ -133,13 +137,26 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 
     import re as _re
 
+    def _trim_reasoning(text: str) -> str:
+        """截断推理文本：遇到空行+星号行、或星号开头行即停止"""
+        lines = text.splitlines()
+        out = []
+        for line in lines:
+            stripped = line.strip()
+            # 推理标志：*开头、数字列表、「等等」「字数」「草稿」
+            if _re.match(r'^\s*(\*|等等|字数|草稿|\d+\.\s)', stripped):
+                break
+            out.append(line)
+        return "\n".join(out).rstrip()
+
     # 情况1：模型输出了 【视频配文】 标记 → 取最后一个标记后的内容
     parts = result.split("【视频配文】")
     if len(parts) >= 2:
         raw = parts[-1].strip()
         # 去掉括号说明（模型有时把格式说明也输出）
         raw = _re.sub(r'^[（(][^）)]{0,200}[）)]', '', raw).strip()
-        caption = _re.split(r'【[^】]+】', raw)[0].strip()
+        raw = _re.split(r'【[^】]+】', raw)[0].strip()
+        caption = _trim_reasoning(raw)
     else:
         # 情况2：模型直接输出配文（无标记）→ 清理分析行后直接使用
         lines = result.strip().splitlines()
