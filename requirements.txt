@@ -1,2 +1,24 @@
+# HTTP 请求
 requests>=2.28.0
-websockets>=12.0
+
+# CDP WebSocket 通信
+websocket-client>=1.9.0
+
+# Instagram 图集下载
+instaloader>=4.15.0
+
+# YouTube 视频下载
+yt-dlp>=2026.3.0
+
+# 图片处理
+Pillow>=10.0.0
+
+# 日文 → 中文翻译（标题预览）
+deep-translator>=1.11.0
+
+# 环境变量加载
+python-dotenv>=1.0.0
+
+# 系统依赖（pip 外，需单独安装）
+# ffmpeg（含 libass）：brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+# Node.js：brew install node（yt-dlp signature 解析依赖）
