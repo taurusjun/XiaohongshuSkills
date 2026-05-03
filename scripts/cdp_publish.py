@@ -4295,6 +4295,7 @@ class XiaohongshuPublisher:
                         var nativeSetter = Object.getOwnPropertyDescriptor(
                             window.HTMLInputElement.prototype, 'value'
                         ).set;
+                        el.removeAttribute('maxlength');
                         el.focus();
                         nativeSetter.call(el, {escaped_title});
                         el.dispatchEvent(new Event('input', {{ bubbles: true }}));

@@ -81,6 +81,7 @@ GALLERY_SITES: dict[str, str] = {
     "shueisha.online":       ".article-photo",
     "entamenext.com":        ".articleGalleryImg",
     "musicvoice.jp":         "article, .entry-content",
+    "daily.co.jp":           "article.detailContent",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -91,7 +92,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
-                         "musicvoice.jp"}
+                         "musicvoice.jp", "daily.co.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -2190,6 +2191,47 @@ def _scrape_pinzuba(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
+    """daily.co.jp 图集：?ph=N 参数触发图集模式，所有图都在同一页里。
+    article.detailContent > div.photoContent > div.thumb 是文章图，
+    ul.figureLists 是关联推荐区需排除。b_ 缩略图升级为 f_ 大图。"""
+    headers = {**HEADERS, "Referer": "https://www.daily.co.jp/"}
+    # 确保带 ph=1 触发图集模式（?ph=N 中任意一个都能获取全部图）
+    from urllib.parse import urlparse, urlunparse, urlencode, parse_qs
+    p = urlparse(gallery_url)
+    qs = parse_qs(p.query)
+    if "ph" not in qs:
+        qs["ph"] = ["1"]
+    fetch_url = urlunparse((p.scheme, p.netloc, p.path, "", urlencode({k: v[0] for k, v in qs.items()}), ""))
+
+    try:
+        resp = requests.get(fetch_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ daily.co.jp 抓取失败: {e}")
+        return []
+
+    art = soup.select_one("article.detailContent")
+    if not art:
+        return []
+
+    images: list[str] = []
+    seen: set[str] = set()
+    for img in art.select("div.photoContent div.thumb img"):
+        src = img.get("src", "")
+        if not src:
+            continue
+        if src.startswith("//"):
+            src = "https:" + src
+        # b_ 缩略图 → f_ 大图
+        src = src.replace("/Images/b_", "/Images/f_")
+        if src not in seen:
+            seen.add(src)
+            images.append(src)
+    return images
+
+
 def _extract_youtube_video_id(html_text: str) -> str:
     """从页面 HTML 提取 YouTube 嵌入视频 ID（youtube.com/embed/VIDEO_ID）"""
     import re
@@ -2730,6 +2772,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         images = _scrape_bookbang(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
+    if "daily.co.jp" in domain:
+        images = _scrape_daily_co_jp(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
     referer = f"https://{domain}/"
 
@@ -2938,7 +2984,9 @@ def process_page(page: dict, redownload: bool = False) -> bool:
         print(f"  🎬 YouTube 直链: {_youtube_video_id}")
 
     # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
-    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
+    # 已知图片图集域名（crank-in、mdpr 等）本身就是图片页，无需检测嵌入视频
+    _is_known_photo_gallery = any(d in gallery_url for d in GALLERY_SITES)
+    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url and not _is_known_photo_gallery:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             _shortcode = _extract_instagram_shortcode(_page_resp.text)
