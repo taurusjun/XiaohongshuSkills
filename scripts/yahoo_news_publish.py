@@ -273,6 +273,16 @@ def fetch_article_image(url: str) -> str:
 
 # ============ XHS 发布 ============
 
+def _xhs_title_truncate(title: str, max_units: int = 20) -> str:
+    """按小红书字数规则截断标题：英文字母/数字 2 个算 1 字，其余字符各算 1 字。"""
+    units = 0.0
+    for i, ch in enumerate(title):
+        units += 0.5 if (ch.isascii() and (ch.isalpha() or ch.isdigit())) else 1.0
+        if units > max_units:
+            return title[:i]
+    return title
+
+
 def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
                    article_url: str = "", video_url: str = "") -> bool:
     """调用 publish_pipeline.py 发布到小红书。
@@ -282,12 +292,14 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     if image_urls is None:
         image_urls = []
 
+    title = _xhs_title_truncate(title)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     pipeline = os.path.join(script_dir, "publish_pipeline.py")
 
     cmd = [
         sys.executable, pipeline,
-        "--title", title[:20],
+        "--title", title,
         "--content", content,
         "--headless"
     ]
@@ -322,7 +334,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             print(f"  新配图: {new_image_url[:60]}...")
             cmd = [
                 sys.executable, pipeline,
-                "--title", title[:20],
+                "--title", title,
                 "--content", content,
                 "--headless",
                 "--image-urls", new_image_url
@@ -477,6 +489,7 @@ def main():
             "えなこ": ["えなこ", "enako"],
             "アークナイツ": ["明日方舟"],
             "辻野かなみ": ["超心宣", "超ときめき宣伝部", "超とき宣", "辻野かなみ"],
+            "≠ME": ["notequalme","指原系","符号系"],
         }
 
         def normalize_tag(t: str) -> str:
@@ -566,8 +579,6 @@ def main():
                 all_images.append(u)
         all_images = all_images[:18]
 
-        short_title = full_title[:20]
-
         # 视频优先：有视频时忽略图集图片走视频模式
         video_url = gallery_videos[0] if gallery_videos else ""
 
@@ -580,7 +591,7 @@ def main():
 
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(short_title, xhs_content, all_images, info["link"], video_url=video_url):
+        if publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url):
             if mark_as_published(page["id"]):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
