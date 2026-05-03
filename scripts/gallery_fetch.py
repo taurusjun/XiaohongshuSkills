@@ -299,7 +299,8 @@ def _scrape_oricon(gallery_url: str) -> list[str]:
 
 
 def _scrape_crank_in(gallery_url: str) -> list[str]:
-    """crank-in.net 每张图独立分页，遍历所有页抓主图"""
+    """crank-in.net 每张图独立分页，遍历所有页抓主图。
+    以第1页 figcaption 为基准，过滤掉 crank-in 追加的 archive 无关图片。"""
     import re
     from urllib.parse import urlparse, urlunparse
     headers = {**HEADERS, "Referer": "https://www.crank-in.net/"}
@@ -309,7 +310,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     clean_url = urlunparse(p._replace(query="", fragment="")).rstrip("/")
     base = re.sub(r'/\d+$', '', clean_url)
 
-    # 先取第一页获取总页数
+    # 先取第一页：获取总页数 + 参考 figcaption
     resp = requests.get(f"{base}/1", headers=headers, timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
     num_el = soup.select_one(".photo-link-num")
@@ -319,13 +320,28 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
         if m:
             total = int(m.group(1))
 
+    ref_fig = soup.select_one("figcaption")
+    ref_caption = ref_fig.get_text().strip() if ref_fig else None
+
     total = min(total, MAX_IMAGES)
     images = []
 
     for page in range(1, total + 1):
         try:
-            r = requests.get(f"{base}/{page}", headers=headers, timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            if page == 1:
+                s = soup
+            else:
+                r = requests.get(f"{base}/{page}", headers=headers, timeout=15)
+                s = BeautifulSoup(r.text, "html.parser")
+
+            # figcaption が page 1 と異なる → crank-in が追加した archive 写真なのでスキップ
+            if ref_caption is not None:
+                fig = s.select_one("figcaption")
+                cap = fig.get_text().strip() if fig else None
+                if cap != ref_caption:
+                    print(f"  ℹ️ p{page} はアーカイブ写真のためスキップ（figcaption 不一致）")
+                    continue
+
             img = s.select_one(".photo-link-img img")
             if img:
                 src = img.get("src", "")
@@ -333,9 +349,8 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
                     if src.startswith("//"):
                         src = "https:" + src
                     elif src.startswith("/"):
-                        p = urlparse(gallery_url)
-                        src = f"{p.scheme}://{p.netloc}{src}"
-                    # 转大图
+                        pp = urlparse(gallery_url)
+                        src = f"{pp.scheme}://{pp.netloc}{src}"
                     src = re.sub(r'_\d+\.jpg', '_1200.jpg', src)
                     images.append(src)
         except Exception as e:
