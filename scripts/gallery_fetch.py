@@ -40,6 +40,7 @@ NOTION_HEADERS = {
 
 CACHE_DIR = Path.home() / ".cache" / "xhs_images"
 MAX_IMAGES = 20
+BURN_SUBTITLES = True  # 可通过 --no-subtitles 关闭
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
@@ -2183,6 +2184,120 @@ def _extract_youtube_video_id(html_text: str) -> str:
     return ""
 
 
+def _trim_black_start(fpath: Path) -> tuple[Path, float]:
+    """用 ffmpeg blackdetect 检测开头黑屏并裁掉，原地覆盖。
+    返回 (文件路径, 裁剪秒数)，供字幕时间轴偏移使用。"""
+    import subprocess
+    import re as _re
+    detect = subprocess.run(
+        ["ffmpeg", "-i", str(fpath), "-vf", "blackdetect=d=0.1:pix_th=0.10", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    m = _re.search(r"black_end:([\d.]+)", detect.stderr)
+    if not m:
+        return fpath, 0.0
+    black_end = float(m.group(1))
+    if black_end < 0.5:
+        return fpath, 0.0
+    print(f"  ✂️ 裁剪开头黑屏 {black_end:.1f}s")
+    tmp = fpath.with_suffix(".trimmed.mp4")
+    r = subprocess.run(
+        ["ffmpeg", "-ss", str(black_end), "-i", str(fpath), "-c", "copy", str(tmp), "-y"],
+        capture_output=True,
+    )
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        fpath.unlink()
+        tmp.rename(fpath)
+    elif tmp.exists():
+        tmp.unlink()
+    return fpath, black_end
+
+
+def _shift_vtt(src: Path, dst: Path, offset_sec: float) -> None:
+    """将 VTT 字幕的所有时间戳向前移 offset_sec 秒（负值则截断到 0）。"""
+    import re as _re
+
+    def _shift_ts(ts: str, delta: float) -> str:
+        parts = ts.strip().replace(",", ".").split(":")
+        if len(parts) == 2:
+            h, ms = 0, float(parts[0]) * 60 + float(parts[1])
+        else:
+            h, ms = int(parts[0]), float(parts[1]) * 60 + float(parts[2])
+        total = max(0.0, h * 3600 + ms - delta)
+        hh = int(total // 3600)
+        mm = int((total % 3600) // 60)
+        ss = total % 60
+        return f"{hh:02d}:{mm:02d}:{ss:06.3f}"
+
+    text = src.read_text(encoding="utf-8", errors="replace")
+    def _replace(m):
+        return f"{_shift_ts(m.group(1), offset_sec)} --> {_shift_ts(m.group(2), offset_sec)}"
+    text = _re.sub(r"([\d:,.]+)\s*-->\s*([\d:,.]+)", _replace, text)
+    dst.write_text(text, encoding="utf-8")
+
+
+def _burn_bilingual_subtitles(fpath: Path, article_dir: Path, trim_offset: float = 0.0) -> Path:
+    """将 article_dir 中的 ja/zh-Hans 字幕烧录进视频（中文下方、日文上方）。
+    trim_offset: 裁黑屏秒数，用于校正字幕时间轴。"""
+    import subprocess
+
+    ja_files = sorted(article_dir.glob("*.ja.vtt")) + sorted(article_dir.glob("*.ja-orig.vtt"))
+    zh_files = sorted(article_dir.glob("*.zh-Hans.vtt")) + sorted(article_dir.glob("*.zh_Hans.vtt"))
+
+    if not ja_files and not zh_files:
+        print("  ⚠️ 未找到字幕文件，跳过烧录")
+        return fpath
+
+    labels = []
+    if ja_files: labels.append("ja")
+    if zh_files: labels.append("zh")
+    print(f"  📝 烧录字幕: {'+'.join(labels)}" + (f"（时间轴偏移 -{trim_offset:.1f}s）" if trim_offset else ""))
+
+    import shutil, tempfile
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_zh = tmp_dir / "sub_zh.vtt"
+    tmp_ja = tmp_dir / "sub_ja.vtt"
+    if zh_files:
+        if trim_offset > 0:
+            _shift_vtt(zh_files[0], tmp_zh, trim_offset)
+        else:
+            shutil.copy(zh_files[0], tmp_zh)
+    if ja_files:
+        if trim_offset > 0:
+            _shift_vtt(ja_files[0], tmp_ja, trim_offset)
+        else:
+            shutil.copy(ja_files[0], tmp_ja)
+
+    # 中文底部（MarginV=20），日文在中文上方（MarginV=60）
+    base = "FontSize=18,BorderStyle=3,Outline=1,Shadow=0,Bold=1"
+    vf_parts = []
+    if zh_files:
+        vf_parts.append(f"subtitles=filename={tmp_zh}:force_style='{base},PrimaryColour=&H00ffff,OutlineColour=&H40000000,Alignment=2,MarginV=20'")
+    if ja_files:
+        vf_parts.append(f"subtitles=filename={tmp_ja}:force_style='{base},PrimaryColour=&Hffffff,OutlineColour=&H40000000,Alignment=2,MarginV=60'")
+
+    out_path = fpath.with_suffix(".subbed.mp4")
+    r = subprocess.run(
+        ["ffmpeg", "-i", str(fpath),
+         "-vf", ",".join(vf_parts),
+         "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+         "-c:a", "copy", str(out_path), "-y"],
+        capture_output=True, timeout=900,
+    )
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    if r.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
+        fpath.unlink()
+        out_path.rename(fpath)
+        print("  ✅ 字幕烧录完成")
+        for f in ja_files + zh_files:
+            try: f.unlink()
+            except: pass
+    else:
+        if out_path.exists(): out_path.unlink()
+        print(f"  ⚠️ 字幕烧录失败，保留原视频\n{r.stderr[-300:].decode(errors='ignore') if r.stderr else ''}")
+    return fpath
+
+
 def _download_youtube_video(video_id: str, article_dir: Path) -> str:
     """用 CDP cookies + yt-dlp 下载 YouTube 视频到 article_dir，返回本地文件名（失败返回空串）"""
     import json as _json
@@ -2232,6 +2347,11 @@ def _download_youtube_video(video_id: str, article_dir: Path) -> str:
         f"https://www.youtube.com/watch?v={video_id}",
         "-o", out_tmpl,
         "--no-playlist",
+        # 优先 H.264+AAC，保证 QuickTime/iOS 兼容；-S 是排序偏好不是硬过滤
+        "-S", "vcodec:h264,acodec:aac,ext:mp4,res:1080",
+        "--merge-output-format", "mp4",
+        "--recode-video", "mp4",
+        *( ["--write-auto-sub", "--sub-langs", "ja,zh-Hans", "--sub-format", "vtt/best"] if BURN_SUBTITLES else []),
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
     ]
@@ -2268,8 +2388,12 @@ def _download_youtube_video(video_id: str, article_dir: Path) -> str:
         print("  ❌ 未找到下载的视频文件")
         return ""
 
-    fname = mp4_files[0].name
-    size_mb = mp4_files[0].stat().st_size // (1024 * 1024)
+    fpath = mp4_files[0]
+    fpath, trim_offset = _trim_black_start(fpath)
+    if BURN_SUBTITLES:
+        fpath = _burn_bilingual_subtitles(fpath, article_dir, trim_offset=trim_offset)
+    fname = fpath.name
+    size_mb = fpath.stat().st_size // (1024 * 1024)
     print(f"  ✅ YouTube 视频已保存: {fname} ({size_mb} MB)")
     return fname
 
@@ -2865,11 +2989,17 @@ def main():
     parser.add_argument("--notion-id", help="指定单条 Notion 页面 ID")
     parser.add_argument("--redownload", action="store_true",
                         help="强制重新下载已缓存的条目（会清除旧图片）")
+    parser.add_argument("--no-subtitles", action="store_true",
+                        help="跳过 YouTube 视频字幕下载和烧录")
     args = parser.parse_args()
 
     if args.max_images:
         global MAX_IMAGES
         MAX_IMAGES = args.max_images
+
+    if args.no_subtitles:
+        global BURN_SUBTITLES
+        BURN_SUBTITLES = False
 
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
         print("❌ NOTION_API_KEY / NOTION_DATABASE_ID 未设置")

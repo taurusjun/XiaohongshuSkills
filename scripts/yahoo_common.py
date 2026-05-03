@@ -118,7 +118,6 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 
     使用【视频配文】标记提取，与 GLM-5 推理模式兼容。
     """
-    tags_str = " ".join(f"#{t}" for t in tags[:10]) if tags else ""
     prompt = f"""你是小红书日本新闻博主。根据新闻写一段简短解说，严格按格式输出。
 
 新闻标题：{title_zh}
@@ -126,6 +125,7 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 
 【视频配文】
 （直接写解说正文，不提"视频""MV"等媒体形式。
+每句话单独一行，句与句之间空一行。
 第一句：悬念或共鸣，≤15字，不说答案。
 中间2-3句：补充新闻背景或值得关注的细节，共40-60字。
 最后一句：互动召唤，≤10字，如"你怎么看？""你知道吗？"。
@@ -169,10 +169,11 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
             clean.append(line)
         caption = "\n".join(clean).strip()
 
-    if not caption:
-        return ""
-    if tags_str:
-        caption = f"{caption}\n{tags_str}"
+    # 兜底：若整段没有换行，按句末标点自动断行
+    if caption and "\n" not in caption:
+        import re as _re2
+        caption = _re2.sub(r'([。？！~～]+)', r'\1\n', caption).strip()
+
     return caption
 
 

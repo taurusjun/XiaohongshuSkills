@@ -31,13 +31,26 @@
 
 - Python 3.10+
 - Google Chrome 浏览器
-- Windows 操作系统（目前仅测试 Windows）
+- macOS / Windows（Windows 未测试视频下载功能）
 
 ### 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
+
+**系统级依赖（macOS）：**
+
+```bash
+# ffmpeg（含 libass 字幕渲染，标准 Homebrew 版本不含 libass）
+brew tap homebrew-ffmpeg/ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+
+# Node.js（yt-dlp 解析 YouTube 签名依赖）
+brew install node
+```
+
+> Windows 用户：请从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载含 libass 的预编译版本，并将 `ffmpeg.exe` 加入 PATH；yt-dlp 从 [yt-dlp.org](https://github.com/yt-dlp/yt-dlp/releases) 下载。
 
 ## 快速开始
 
@@ -343,6 +356,9 @@ python scripts/gallery_download.py --max-images 4
 # 仅下载图集
 python scripts/gallery_fetch.py --limit 20
 
+# 跳过 YouTube 字幕下载和烧录
+python scripts/gallery_fetch.py --no-subtitles
+
 # 仅预览选图（确认后自动上传）
 python scripts/gallery_preview.py
 
@@ -369,6 +385,21 @@ python scripts/media_download.py https://encount.press/archives/989668/2/
 # 指定下载目录
 python scripts/media_download.py https://www.instagram.com/p/DXzWr8Hk33j/ --dir /tmp/output
 ```
+
+**支持平台说明：**
+
+| 平台 | 识别方式 | 输出 |
+|------|----------|------|
+| Instagram 直链 | `instagram.com/p/` | 图片 + 视频（carousel 全部） |
+| YouTube 直链 | `youtube.com/watch?v=` / `youtu.be/` | mp4（H.264+AAC） |
+| 文章页 | 自动检测页面中的嵌入 iframe | 同上 |
+
+**YouTube 下载说明：**
+
+- 通过 CDP 提取浏览器已登录的 YouTube/Google cookies，传给 `yt-dlp` 避免人机验证
+- 自动裁剪开头黑屏（ffmpeg `blackdetect`）
+- 默认烧录中日双语硬字幕（中文青色在下、日文白色在上）；通过 `gallery_fetch.py --no-subtitles` 可关闭
+- 视频格式优先选 H.264 + AAC，确保 QuickTime / iOS 原生兼容
 
 前置条件：Chrome 需已通过 CDP 启动，并已登录对应平台（Instagram / YouTube）。默认 CDP 地址 `127.0.0.1:9222`，可在 `.env` 中通过 `CDP_HOST` / `CDP_PORT` 修改。
 

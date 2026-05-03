@@ -293,8 +293,12 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     ]
 
     if video_url:
-        cmd += ["--video-url", video_url]
-        print(f"  视频模式: {video_url[:70]}")
+        if video_url.startswith("/"):
+            cmd += ["--video", video_url]
+            print(f"  视频模式(本地): {video_url[:70]}")
+        else:
+            cmd += ["--video-url", video_url]
+            print(f"  视频模式(URL): {video_url[:70]}")
     else:
         # XHS 最多 18 张
         effective_urls = image_urls[:18]
@@ -567,9 +571,9 @@ def main():
         # 视频优先：有视频时忽略图集图片走视频模式
         video_url = gallery_videos[0] if gallery_videos else ""
 
-        # 视频模式：用视频配文替换普通正文（更简洁）
+        # 视频模式：用视频配文替换正文，保留同一批 tags
         if video_url and video_caption:
-            xhs_content = video_caption
+            xhs_content = f"{video_caption}\n{tags_str}"
             print(f"  🎬 视频配文: {video_caption[:60]}...")
         elif video_url and not video_caption:
             print(f"  ⚠️ 无视频配文，使用普通正文")
