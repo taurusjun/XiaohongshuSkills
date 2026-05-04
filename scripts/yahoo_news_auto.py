@@ -56,101 +56,107 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
 
 def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        china_filter: bool = True,
-                       existing_keys: set | None = None) -> List[Dict]:
+                       existing_keys: set | None = None,
+                       max_retries: int = 2) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
-    news_list: list[dict] = []
+    import websocket as _ws_module
 
-    try:
-        resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=10)
-        if resp.status_code != 200:
-            print("❌ 无法连接 Chrome")
-            return []
-        tabs = resp.json()
-        if not tabs:
-            return []
-        ws_url = tabs[0].get("webSocketDebuggerUrl", "")
-        if not ws_url:
-            return []
-
-        try:
-            import websocket
-        except ImportError:
-            print("❌ 需要安装: pip install websocket-client")
-            return []
-
-        ws = websocket.create_connection(ws_url)
-        try:
-            ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-            ws.recv()
-
-            url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
-            ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
-
-            print("等待页面加载...")
-            start = time.time()
-            while time.time() - start < 15:
-                msg = json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
-                    break
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print(f"  🔄 重试 ({attempt}/{max_retries})...")
             time.sleep(3)
+        try:
+            resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=10)
+            if resp.status_code != 200:
+                print("❌ 无法连接 Chrome")
+                return []
+            tabs = resp.json()
+            if not tabs:
+                return []
+            ws_url = tabs[0].get("webSocketDebuggerUrl", "")
+            if not ws_url:
+                return []
 
-            ws.send(json.dumps({
-                "id": 3,
-                "method": "Runtime.evaluate",
-                "params": {"expression": "document.documentElement.outerHTML"},
-            }))
-            html = ""
-            while True:
-                msg = json.loads(ws.recv())
-                if msg.get("id") == 3:
-                    html = msg.get("result", {}).get("result", {}).get("value", "")
-                    break
-        finally:
-            ws.close()
+            ws = _ws_module.create_connection(ws_url, timeout=15)
+            try:
+                ws.settimeout(15)
+                ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+                ws.recv()
 
-        if not html:
-            return []
+                url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
+                ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
 
-        soup = BeautifulSoup(html, "html.parser")
-        seen: set[str] = set()
-
-        for link in soup.find_all('a'):
-            if len(news_list) >= max_results * 2:
-                break
-            href = link.get("href", "")
-            if "/articles/" not in href or href in seen:
-                continue
-            seen.add(href)
-
-            title = link.get_text(strip=True)
-            if len(title) < 15:
-                continue
-            if china_filter and not is_china_related(title):
-                continue
-            if is_sensitive(title):
-                continue
-
-            full_link = href if href.startswith("http") else YAHOO_BASE_URL + href
-            if existing_keys and extract_key_from_url(full_link) in existing_keys:
-                continue
-
-            # 来源：从父 li 文本中启发式提取
-            source = "Yahoo Japan"
-            li = link.find_parent("li")
-            if li:
-                date_re = re.compile(r'\d+/\d+|^\d+:\d+|^20\d\d')
-                for t in reversed([t.strip() for t in li.stripped_strings if t.strip()]):
-                    if (2 < len(t) < 30 and not date_re.search(t)
-                            and t not in title[:30] and '…' not in t and '。' not in t):
-                        source = t
+                print("等待页面加载...")
+                start = time.time()
+                while time.time() - start < 20:
+                    msg = json.loads(ws.recv())
+                    if msg.get("method") == "Page.loadEventFired":
                         break
+                time.sleep(3)
 
-            news_list.append({"title_ja": title, "link": full_link, "source": source})
+                ws.send(json.dumps({
+                    "id": 3,
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": "document.documentElement.outerHTML"},
+                }))
+                html = ""
+                while True:
+                    msg = json.loads(ws.recv())
+                    if msg.get("id") == 3:
+                        html = msg.get("result", {}).get("result", {}).get("value", "")
+                        break
+            finally:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
 
-    except Exception as e:
-        print(f"抓取出错: {e}")
+            if not html:
+                continue
 
-    return news_list[:max_results]
+            soup = BeautifulSoup(html, "html.parser")
+            news_list: list[dict] = []
+            seen: set[str] = set()
+
+            for link in soup.find_all('a'):
+                if len(news_list) >= max_results * 2:
+                    break
+                href = link.get("href", "")
+                if "/articles/" not in href or href in seen:
+                    continue
+                seen.add(href)
+
+                title = link.get_text(strip=True)
+                if len(title) < 15:
+                    continue
+                if china_filter and not is_china_related(title):
+                    continue
+                if is_sensitive(title):
+                    continue
+
+                full_link = href if href.startswith("http") else YAHOO_BASE_URL + href
+                if existing_keys and extract_key_from_url(full_link) in existing_keys:
+                    continue
+
+                source = "Yahoo Japan"
+                li = link.find_parent("li")
+                if li:
+                    date_re = re.compile(r'\d+/\d+|^\d+:\d+|^20\d\d')
+                    for t in reversed([t.strip() for t in li.stripped_strings if t.strip()]):
+                        if (2 < len(t) < 30 and not date_re.search(t)
+                                and t not in title[:30] and '…' not in t and '。' not in t):
+                            source = t
+                            break
+
+                news_list.append({"title_ja": title, "link": full_link, "source": source})
+
+            return news_list[:max_results]
+
+        except Exception as e:
+            print(f"抓取出错: {e}")
+            if attempt == max_retries:
+                return []
+    return []
 
 
 # ============ 主处理流程 ============

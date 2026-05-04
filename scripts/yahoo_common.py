@@ -116,14 +116,14 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
     """为视频发布生成简洁配文（80-120字）。
     结构：悬念/共鸣句 + 1-2句补充上下文 + 互动召唤 + tags
 
-    使用【视频配文】标记提取，与 GLM-5 推理模式兼容。
+    使用【短配文】标记提取，与 GLM-5 推理模式兼容。
     """
     prompt = f"""你是小红书日本新闻博主。根据新闻写一段简短解说，严格按格式输出。
 
 新闻标题：{title_zh}
 新闻要点：{content[:300]}
 
-【视频配文】
+【短配文】
 （直接写解说正文，不提"视频""MV"等媒体形式。
 每句话单独一行，句与句之间空一行。
 第一句：悬念或共鸣，≤15字，不说答案。
@@ -149,8 +149,8 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
             out.append(line)
         return "\n".join(out).rstrip()
 
-    # 情况1：模型输出了 【视频配文】 标记 → 取最后一个标记后的内容
-    parts = result.split("【视频配文】")
+    # 情况1：模型输出了 【短配文】 标记 → 取最后一个标记后的内容
+    parts = result.split("【短配文】")
     if len(parts) >= 2:
         raw = parts[-1].strip()
         # 去掉括号说明（模型有时把格式说明也输出）
@@ -561,9 +561,9 @@ def process_news_item(news: dict, no_translate: bool = False,
     news['tags']     = tags
     news['source']   = news.get('source', 'Yahoo Japan')
 
-    # 视频配文（tags 确定后生成）
+    # 短配文（tags 确定后生成）
     if LITELLM_API_KEY and not no_translate and 'video_caption' in news:
-        print("    生成视频配文...")
+        print("    生成短配文...")
         news['video_caption'] = generate_video_caption(
             news['title_zh'], news.get('summary', ''),
             news.get('content', ''), tags,
@@ -679,7 +679,7 @@ def push_to_notion(news: Dict) -> str:
 
     if news.get("video_caption"):
         blocks.append({"object": "block", "type": "heading_3", "heading_3": {
-            "rich_text": [{"type": "text", "text": {"content": "🎬 视频配文"}}]
+            "rich_text": [{"type": "text", "text": {"content": "🎬 短配文"}}]
         }})
         blocks.append({"object": "block", "type": "callout", "callout": {
             "icon": {"type": "emoji", "emoji": "🎬"},
@@ -753,7 +753,7 @@ def push_to_notion(news: Dict) -> str:
     orig_img  = news.get("original_image_url", "")
 
     props: dict = {
-        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])[:20]}}]},
+        "Name":     {"title":     [{"text": {"content": news.get("title_zh", news["title_ja"])}}]},
         "key":      {"rich_text": [{"text": {"content": key}}]},
         "分类":     {"select":    {"name": news.get("category", "经济")}},
         "标签":     {"multi_select": [{"name": t} for t in news.get("tags", [])]},

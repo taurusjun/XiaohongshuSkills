@@ -115,7 +115,7 @@ def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
 
 def get_page_content(page_id: str) -> tuple:
     """获取页面正文内容。
-    返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 视频配文)
+    返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 短配文)
     """
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
@@ -144,7 +144,7 @@ def get_page_content(page_id: str) -> tuple:
 
         # heading_3 决定当前区域
         if btype == "heading_3":
-            if "视频配文" in text:
+            if "短配文" in text:
                 in_video_caption = True
                 in_vocab = False
                 in_original = False
@@ -164,7 +164,7 @@ def get_page_content(page_id: str) -> tuple:
                 lines.append(f"\n{text}")
             continue
 
-        # callout：视频配文区域内的是视频配文，否则是引流摘要
+        # callout：短配文区域内的是短配文，否则是引流摘要
         if btype == "callout":
             if text:
                 if in_video_caption:
@@ -490,6 +490,8 @@ def main():
             "アークナイツ": ["明日方舟"],
             "辻野かなみ": ["超心宣", "超ときめき宣伝部", "超とき宣", "辻野かなみ"],
             "≠ME": ["notequalme","指原系","符号系"],
+            "柏木由纪": ["柏木由纪"],
+            "指原莉乃": ["指原莉乃"],
         }
 
         def normalize_tag(t: str) -> str:
@@ -504,14 +506,22 @@ def main():
         seen_set: set[str] = set()
         all_tags: list[str] = []
 
-        # 1. KEYWORD_TAG_MAP 展开（最高优先级）
+        # 1. 先收集 KEYWORD_TAG_MAP 匹配的标签，优先展开（避免去重后优先级丢失）
         raw_tags = info.get("tags", [])
+        mapped_tags: list[str] = []
+        other_tags: list[str] = []
         for t in raw_tags:
             if t in KEYWORD_TAG_MAP:
-                for mapped in KEYWORD_TAG_MAP[t]:
-                    add_tag(all_tags, seen_set, normalize_tag(mapped))
+                mapped_tags.append(t)
             else:
-                add_tag(all_tags, seen_set, normalize_tag(t))
+                other_tags.append(t)
+
+        for t in mapped_tags:
+            for mapped in KEYWORD_TAG_MAP[t]:
+                add_tag(all_tags, seen_set, normalize_tag(mapped))
+
+        for t in other_tags:
+            add_tag(all_tags, seen_set, normalize_tag(t))
 
         # 2. 必选标签
         add_tag(all_tags, seen_set, must_tag)
@@ -582,12 +592,12 @@ def main():
         # 视频优先：有视频时忽略图集图片走视频模式
         video_url = gallery_videos[0] if gallery_videos else ""
 
-        # 视频模式：用视频配文替换正文，保留同一批 tags
+        # 视频模式：用短配文替换正文，保留同一批 tags
         if video_url and video_caption:
             xhs_content = f"{video_caption}\n{tags_str}"
-            print(f"  🎬 视频配文: {video_caption[:60]}...")
+            print(f"  🎬 短配文: {video_caption[:60]}...")
         elif video_url and not video_caption:
-            print(f"  ⚠️ 无视频配文，使用普通正文")
+            print(f"  ⚠️ 无短配文，使用普通正文")
 
         # 发布
         print("📤 发布中...")
