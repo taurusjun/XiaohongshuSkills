@@ -101,7 +101,7 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
             f"{LITELLM_URL}/chat/completions",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_API_KEY}"},
             json={"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7},
-            timeout=60,
+            timeout=(30, 600),
         )
         if resp.status_code == 200:
             msg = resp.json().get("choices", [{}])[0].get("message", {})
@@ -634,8 +634,14 @@ def load_today_keys() -> set:
             break
         data = resp.json()
         for page in data.get("results", []):
-            rich = page.get("properties", {}).get("key", {}).get("rich_text", [])
-            key = "".join(r.get("plain_text", "") for r in rich)
+            # 兼容两种去重逻辑：
+            # 1. key 字段已存在 → 直接收集
+            # 2. 没有 key 字段但有原文链接 → 从 URL 提取 key
+            key_prop = page.get("properties", {}).get("key", {}).get("rich_text", [])
+            key = "".join(r.get("plain_text", "") for r in key_prop)
+            if not key:
+                url = page.get("properties", {}).get("原文链接", {}).get("url", "")
+                key = extract_key_from_url(url) if url else ""
             if key:
                 keys.add(key)
         has_more = data.get("has_more", False)
