@@ -750,7 +750,7 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
 
 
 def _scrape_encount(gallery_url: str) -> list[str]:
-    """encount.press 图集：包含Twitter embed，支持动态渲染的Twitter内容图片。"""
+    """encount.press 图集：包含Twitter embed，只取 article body 内图片和 x.com 推文图片。"""
     import re
     headers = {**HEADERS, "Referer": "https://encount.press/"}
 
@@ -758,11 +758,17 @@ def _scrape_encount(gallery_url: str) -> list[str]:
         r = requests.get(gallery_url, headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
+        # 限定 article body 容器
+        body = s.find(class_="single__content__txt")
+        if not body:
+            body = s
+
         images: list[str] = []
         seen: set[str] = set()
 
-        # 1. 首先提取wp-content/uploads的常规内容图片
-        for img in s.find_all("img"):
+        # 1. 提取 article body 内的 wp-content/uploads 图片，过滤 banner/recruit
+        banner_kw = ["banner", "recruit", "_SP_", "600x200"]
+        for img in body.find_all("img"):
             src = (img.get("data-src") or img.get("src") or "")
             if ("wp-content/uploads/" in src and
                 src.endswith(('.jpg', '.jpeg', '.png', '.webp')) and
@@ -777,15 +783,19 @@ def _scrape_encount(gallery_url: str) -> list[str]:
 
                 src = src.split('?')[0]
 
+                if any(kw in src for kw in banner_kw):
+                    continue
+
                 if src not in seen:
                     seen.add(src)
                     images.append(src)
                     if len(images) >= MAX_IMAGES:
                         break
 
-        # 2. 处理 x.com 图片链接（blockquote embed + 直接链接 + div style background-image）
-        # 2a. pbs.twimg.com 图片直抓（从页面任何位置提取 twitter 图片 URL）
-        for m in re.finditer(r'pbs\.twimg\.com/media/([A-Za-z0-9]+)', r.text):
+        # 2. 提取 article body 内的 Twitter 推文图片
+        # 2a. pbs.twimg.com media 直抓（CDP 渲染后可能出现）
+        body_html = str(body)
+        for m in re.finditer(r'pbs\.twimg\.com/media/([A-Za-z0-9]+)', body_html):
             img_key = m.group(1)
             img_url = f"https://pbs.twimg.com/media/{img_key}?format=jpg&name=large"
             if img_url not in seen:
@@ -795,23 +805,20 @@ def _scrape_encount(gallery_url: str) -> list[str]:
                 if len(images) >= MAX_IMAGES:
                     break
 
-        # 2b. 提取所有 x.com 推文链接中的 tweet_id
-        tweet_ids: set[str] = set()
-        for a in s.find_all("a", href=True):
-            href = a["href"]
-            m = re.search(r'(?:twitter\.com|x\.com)/\w+/status/(\d+)', href)
-            if m:
-                tweet_ids.add(m.group(1))
-
-        for tweet_id in tweet_ids:
-            print(f"    🔗 发现Twitter embed: {tweet_id}")
-            twitter_images = _get_twitter_images_for_encount(tweet_id)
-            for img_url in twitter_images:
-                if img_url not in seen:
-                    seen.add(img_url)
-                    images.append(img_url)
-                    if len(images) >= MAX_IMAGES:
-                        break
+        # 2b. blockquote.twitter-tweet 内的 tweet_id（静态 HTML）
+        for bq in body.find_all("blockquote", class_="twitter-tweet"):
+            for a in bq.find_all("a", href=True):
+                m = re.search(r'(?:twitter\.com|x\.com)/\w+/status/(\d+)', a["href"])
+                if m:
+                    tweet_id = m.group(1)
+                    print(f"    🔗 发现Twitter embed: {tweet_id}")
+                    twitter_images = _get_twitter_images_for_encount(tweet_id)
+                    for img_url in twitter_images:
+                        if img_url not in seen:
+                            seen.add(img_url)
+                            images.append(img_url)
+                            if len(images) >= MAX_IMAGES:
+                                break
 
         return images
     except Exception as e:
