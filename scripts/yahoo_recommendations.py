@@ -32,11 +32,7 @@ from yahoo_common import (
 
 def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
     """通过 CDP 强制导航到 Yahoo 首页并读取个性化推荐。"""
-    try:
-        import websocket
-    except ImportError:
-        print("❌ 需要安装: pip install websocket-client")
-        return []
+    import websocket as _ws_module
 
     ws_url, _ = get_yahoo_tab_ws_url()
     if not ws_url:
@@ -46,7 +42,8 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
     html = ""
     try:
         # 始终导航到首页
-        ws = websocket.create_connection(ws_url)
+        ws = _ws_module.create_connection(ws_url, timeout=15)
+        ws.settimeout(15)
         ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
         ws.recv()
         ws.send(json.dumps({
@@ -56,11 +53,8 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
         print("  导航到 Yahoo 首页...")
         start = time.time()
         while time.time() - start < 20:
-            try:
-                msg = json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
-                    break
-            except Exception:
+            msg = json.loads(ws.recv())
+            if msg.get("method") == "Page.loadEventFired":
                 break
         ws.close()
 
@@ -70,7 +64,8 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
         if not ws_url2:
             print("❌ 无法重新获取 WebSocket URL")
             return []
-        ws2 = websocket.create_connection(ws_url2)
+        ws2 = _ws_module.create_connection(ws_url2, timeout=15)
+        ws2.settimeout(15)
         ws2.send(json.dumps({
             "id": 1, "method": "Runtime.evaluate",
             "params": {"expression": "document.documentElement.outerHTML"},
@@ -124,9 +119,8 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
         source_el = li.find("span", class_=re.compile(r"XhYZV"))
         source = source_el.get_text(strip=True) if source_el else "Yahoo Japan"
 
-        # 时间
-        time_el = li.find("time")
-        pub_time = time_el.get_text(strip=True) if time_el else ""
+        # 时间：统一为 YYYY.MM.DD，不用 Yahoo 原始格式如 "5/5(火) 21:00"
+        pub_time = datetime.now().strftime('%Y.%m.%d')
 
         # 缩略图（取 jpeg srcset 首个 URL）
         img_src = ""
@@ -192,8 +186,7 @@ def fetch_recommendations_fallback() -> List[Dict]:
 
             source_el = li.find("span", class_=re.compile(r"XhYZV"))
             source   = source_el.get_text(strip=True) if source_el else "Yahoo Japan"
-            time_el  = li.find("time")
-            pub_time = time_el.get_text(strip=True) if time_el else ""
+            pub_time = datetime.now().strftime('%Y.%m.%d')
 
             img_src = ""
             pic_source = li.find("source", attrs={"type": "image/jpeg"})
