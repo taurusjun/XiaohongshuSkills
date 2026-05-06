@@ -82,6 +82,7 @@ GALLERY_SITES: dict[str, str] = {
     "entamenext.com":        ".articleGalleryImg",
     "musicvoice.jp":         "article, .entry-content",
     "daily.co.jp":           "article.detailContent",
+    "vivi.tv":               "article, .gallery",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -92,7 +93,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
-                         "musicvoice.jp", "daily.co.jp"}
+                         "musicvoice.jp", "daily.co.jp", "vivi.tv"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -752,13 +753,6 @@ def _scrape_encount(gallery_url: str) -> list[str]:
     """encount.press 图集：包含Twitter embed，支持动态渲染的Twitter内容图片。"""
     import re
     headers = {**HEADERS, "Referer": "https://encount.press/"}
-    
-    # 额外的headers用于获取Twitter嵌入
-    twitter_headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.5,en;q=0.3",
-    }
 
     try:
         r = requests.get(gallery_url, headers=headers, timeout=15)
@@ -770,53 +764,53 @@ def _scrape_encount(gallery_url: str) -> list[str]:
         # 1. 首先提取wp-content/uploads的常规内容图片
         for img in s.find_all("img"):
             src = (img.get("data-src") or img.get("src") or "")
-            # 过滤规则：
-            # 1. 必须包含 wp-content/uploads/（真实内容图片）
-            # 2. 排除主题文件（wp-content/themes/）
-            # 3. 排除特定占位符文件
-            if ("wp-content/uploads/" in src and 
+            if ("wp-content/uploads/" in src and
                 src.endswith(('.jpg', '.jpeg', '.png', '.webp')) and
                 "hatena_white.png" not in src and
                 "logo.svg" not in src and
                 "icon_" not in src):
-                
-                # 标准化URL
+
                 if src.startswith("//"):
                     src = "https:" + src
                 elif src.startswith("/"):
                     src = "https://encount.press" + src
-                
-                src = src.split('?')[0]  # 去掉查询参数
-                
+
+                src = src.split('?')[0]
+
                 if src not in seen:
                     seen.add(src)
                     images.append(src)
                     if len(images) >= MAX_IMAGES:
                         break
 
-        # 2. 处理Twitter embed
-        twitter_embeds = s.find_all("blockquote", class_="twitter-tweet")
-        for embed in twitter_embeds:
-            # 提取tweet_id
-            tweet_links = embed.find_all("a", href=True)
-            for link in tweet_links:
-                href = link.get("href", "")
-                if "/status/" in href:
-                    # 提取tweet_id: /status/2045287615637922190
-                    tweet_id_match = re.search(r'/status/(\d+)', href)
-                    if tweet_id_match:
-                        tweet_id = tweet_id_match.group(1)
-                        print(f"    🔗 发现Twitter embed: {tweet_id}")
-                        
-                        # 特殊处理：对于已知的推文，使用硬编码的媒体URL
-                        twitter_images = _get_twitter_images_for_encount(tweet_id)
-                        
-                        for img_url in twitter_images:
-                            if img_url not in seen:
-                                seen.add(img_url)
-                                images.append(img_url)
-                                if len(images) >= MAX_IMAGES:
-                                    break
+        # 2. 处理 x.com 图片链接（blockquote embed + 直接链接 + div style background-image）
+        # 2a. pbs.twimg.com 图片直抓（从页面任何位置提取 twitter 图片 URL）
+        for m in re.finditer(r'pbs\.twimg\.com/media/([A-Za-z0-9]+)', r.text):
+            img_key = m.group(1)
+            img_url = f"https://pbs.twimg.com/media/{img_key}?format=jpg&name=large"
+            if img_url not in seen:
+                seen.add(img_url)
+                images.append(img_url)
+                print(f"    🖼️ 抓取Twitter图片: {img_key}")
+                if len(images) >= MAX_IMAGES:
+                    break
+
+        # 2b. 提取所有 x.com 推文链接中的 tweet_id
+        tweet_ids: set[str] = set()
+        for a in s.find_all("a", href=True):
+            href = a["href"]
+            m = re.search(r'(?:twitter\.com|x\.com)/\w+/status/(\d+)', href)
+            if m:
+                tweet_ids.add(m.group(1))
+
+        for tweet_id in tweet_ids:
+            print(f"    🔗 发现Twitter embed: {tweet_id}")
+            twitter_images = _get_twitter_images_for_encount(tweet_id)
+            for img_url in twitter_images:
+                if img_url not in seen:
+                    seen.add(img_url)
+                    images.append(img_url)
+                    if len(images) >= MAX_IMAGES:
                         break
 
         return images
@@ -826,75 +820,58 @@ def _scrape_encount(gallery_url: str) -> list[str]:
 
 
 def _get_twitter_images_for_encount(tweet_id: str) -> list[str]:
-    """为encount.press获取特定推文的Twitter图片URL"""
-    
-    # 硬编码已知的推文到媒体URL映射
-    twitter_media_mapping = {
-        "2045287615637922190": [
-            "https://pbs.twimg.com/media/HGJSPlpbYAAo4u5?format=jpg&name=large",
-            "https://pbs.twimg.com/media/HGJSPlpbYAAo4u5.jpg?name=large"
-        ]
+    """为encount.press获取推文图片（通过 fxtwitter API）"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
-    
-    if tweet_id in twitter_media_mapping:
-        print(f"    🎯 使用已知的媒体URL映射: {tweet_id}")
-        return twitter_media_mapping[tweet_id]
-    else:
-        print(f"    ⚠️ 未找到媒体映射，尝试通用API: {tweet_id}")
-        # 如果没有映射，尝试通用方法
-        twitter_headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        }
-        return _get_twitter_images_from_embed(tweet_id, twitter_headers)
+    return _get_twitter_images_from_embed(tweet_id, headers)
 
 
 def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
-    """从Twitter embed中获取图片URL"""
+    """从Twitter embed获取图片URL（优先 fxtwitter API，回退 syndication）"""
+    images: list[str] = []
+
+    # 方法1：fxtwitter API（无需认证，返回完整 media 信息）
     try:
-        # 尝试获取Twitter API数据
+        r = requests.get(
+            f"https://api.fxtwitter.com/twitter/status/{tweet_id}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            media_all = data.get("tweet", {}).get("media", {}).get("all", [])
+            for m in media_all:
+                url = m.get("direct_url") or m.get("url", "")
+                if url and "pbs.twimg.com" in url:
+                    images.append(url)
+            if images:
+                print(f"    ✅ fxtwitter 获取 {len(images)} 张图片")
+                return images
+    except Exception as e:
+        print(f"    ⚠️ fxtwitter API 失败: {e}")
+
+    # 方法2：syndication API（部分推文可能不可用）
+    try:
         api_url = f"https://cdn.syndication.twimg.com/widgets/tweet?url=https%3A%2F%2Ftwitter.com%2Fuser%2Fstatus%2F{tweet_id}"
-        
         r = requests.get(api_url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
-            
-            # 提取图片
-            images = []
-            
-            # 方法1：从extended_entities获取
-            if 'extended_entities' in data and 'media' in data['extended_entities']:
-                for media in data['extended_entities']['media']:
-                    if 'media_url_https' in media:
-                        img_url = media['media_url_https'] + ':large'
-                        images.append(img_url)
-                        
-            # 方法2：从entities获取
-            elif 'entities' in data and 'media' in data['entities']:
-                for media in data['entities']['media']:
-                    if 'media_url_https' in media:
-                        img_url = media['media_url_https'] + ':large'
-                        images.append(img_url)
-                        
-            # 方法3：从text中提取pic.twitter.com链接并构造URL
-            elif 'text' in data and 'pic.twitter.com' in data['text']:
-                # 如果推文包含pic.twitter.com链接，尝试构造URL
-                # Twitter的pic.twitter.com链接通常指向原始推文页面
-                twitter_url = f"https://pbs.twimg.com/media/{tweet_id}?format=jpg&name=large"
-                images.append(twitter_url)
-            
-            return images
-            
+            if "extended_entities" in data and "media" in data["extended_entities"]:
+                for media in data["extended_entities"]["media"]:
+                    if "media_url_https" in media:
+                        images.append(media["media_url_https"] + ":large")
+            elif "entities" in data and "media" in data["entities"]:
+                for media in data["entities"]["media"]:
+                    if "media_url_https" in media:
+                        images.append(media["media_url_https"] + ":large")
+            if images:
+                print(f"    ✅ syndication 获取 {len(images)} 张图片")
+                return images
     except Exception as e:
-        print(f"    ⚠️ Twitter API获取失败: {e}")
-        
-    # 回退方案：尝试构造图片URL
-    fallback_urls = [
-        f"https://pbs.twimg.com/media/{tweet_id}?format=jpg&name=large",
-        f"https://pbs.twimg.com/media/{tweet_id}.jpg?name=large",
-    ]
-    
-    print(f"    🔄 使用回退URL构造")
-    return fallback_urls
+        print(f"    ⚠️ syndication API 失败: {e}")
+
+    print(f"    ❌ 无法获取推文图片: {tweet_id}")
+    return []
 
 
 def _scrape_chunichi(gallery_url: str) -> list[str]:
@@ -2232,6 +2209,44 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_vivi_tv(gallery_url: str) -> list[str]:
+    """vivi.tv 图集：图片通过 Cloudinary CDN 代理，从 URL 提取原始 wp-content/uploads 图片。"""
+    import re
+    from urllib.parse import unquote
+
+    headers = {**HEADERS, "Referer": "https://www.vivi.tv/"}
+    try:
+        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ vivi.tv 抓取失败: {e}")
+        return []
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or img.get("data-lazy-src") or ""
+        # Cloudinary proxy: https://res.cloudinary.com/vivimedia/image/fetch/.../<orig_url>
+        # 或直连: https://www.vivi.tv/wp-content/uploads/...
+        orig = ""
+        if "cloudinary" in src and "wp-content/uploads" in unquote(src):
+            m = re.search(r'https://www\.vivi\.tv/wp-content/uploads/[^&\s]+\.(?:jpg|jpeg|png|webp)', unquote(src))
+            if m:
+                orig = m.group(0)
+        elif "vivi.tv/wp-content/uploads/" in src and src.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            orig = src
+
+        if orig:
+            orig = orig.split("?")[0]
+            if orig not in seen:
+                seen.add(orig)
+                images.append(orig)
+
+    return images
+
+
 def _extract_youtube_video_id(html_text: str) -> str:
     """从页面 HTML 提取 YouTube 嵌入视频 ID（youtube.com/embed/VIDEO_ID）"""
     import re
@@ -2774,6 +2789,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "daily.co.jp" in domain:
         images = _scrape_daily_co_jp(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "vivi.tv" in domain:
+        images = _scrape_vivi_tv(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
