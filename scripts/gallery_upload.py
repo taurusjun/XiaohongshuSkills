@@ -226,7 +226,7 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
 
     image_urls = []
     video_urls = []
-    youtube_local_only = meta.get("youtube_local_only", False)
+    videos_local_only = meta.get("videos_local_only", False) or meta.get("youtube_local_only", False)
 
     for fname in selected:
         fpath = article_dir / fname
@@ -234,11 +234,11 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
             print(f"  ⚠️ 文件不存在: {fname}")
             continue
         if fpath.suffix.lower() == ".mp4":
-            if youtube_local_only:
-                # YouTube 视频仅保留本地，不上传 Cloudinary，写绝对路径到 Notion
+            if videos_local_only:
+                # 视频仅保留本地，不上传 Cloudinary，写绝对路径到 Notion
                 local_path = str(fpath.resolve())
                 video_urls.append(local_path)
-                print(f"  📁 YouTube 视频保留本地: {local_path}")
+                print(f"  📁 视频保留本地: {local_path}")
             else:
                 print(f"  上传 {fname}...")
                 url = upload_local_video(fpath)
@@ -267,7 +267,7 @@ def process_article(article_dir: Path, dry_run: bool) -> bool:
             else:
                 print(f"  ⚠️ Notion image 写入失败")
         if video_urls:
-            if youtube_local_only:
+            if videos_local_only:
                 ok = append_local_video_blocks(notion_id, video_urls)
                 if ok:
                     print(f"  ✅ 已写入 Notion 本地视频路径 ({len(video_urls)} 个)")

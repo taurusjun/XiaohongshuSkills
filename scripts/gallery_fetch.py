@@ -3126,7 +3126,9 @@ def process_page(page: dict, redownload: bool = False) -> bool:
     }
     if _youtube_video_id:
         meta_data["youtube_video_id"] = _youtube_video_id
-        meta_data["youtube_local_only"] = True
+    # 所有视频文件仅本地保存，不上传 Cloudinary（YouTube / Instagram / Twitter 一致）
+    if _youtube_video_id or any(f.endswith("_video.mp4") for f in local_files):
+        meta_data["videos_local_only"] = True
     with open(article_dir / "meta.json", "w") as f:
         json.dump(meta_data, f, ensure_ascii=False, indent=2)
 
