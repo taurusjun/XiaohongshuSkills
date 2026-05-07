@@ -24,6 +24,12 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+import sys as _sys
+_scripts_dir = os.path.dirname(os.path.abspath(__file__))
+if _scripts_dir not in _sys.path:
+    _sys.path.insert(0, _scripts_dir)
+from unified_media_downloader import download_youtube, download_instagram, download_twitter
+
 try:
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -2269,420 +2275,6 @@ def _extract_youtube_video_id(html_text: str) -> str:
     return ""
 
 
-def _trim_black_start(fpath: Path) -> tuple[Path, float]:
-    """用 ffmpeg blackdetect 检测开头黑屏并裁掉，原地覆盖。
-    返回 (文件路径, 裁剪秒数)，供字幕时间轴偏移使用。"""
-    import subprocess
-    import re as _re
-    detect = subprocess.run(
-        ["ffmpeg", "-i", str(fpath), "-vf", "blackdetect=d=0.1:pix_th=0.10", "-f", "null", "-"],
-        capture_output=True, text=True,
-    )
-    m = _re.search(r"black_end:([\d.]+)", detect.stderr)
-    if not m:
-        return fpath, 0.0
-    black_end = float(m.group(1))
-    if black_end < 0.5:
-        return fpath, 0.0
-    print(f"  ✂️ 裁剪开头黑屏 {black_end:.1f}s")
-    tmp = fpath.with_suffix(".trimmed.mp4")
-    r = subprocess.run(
-        ["ffmpeg", "-ss", str(black_end), "-i", str(fpath), "-c", "copy", str(tmp), "-y"],
-        capture_output=True,
-    )
-    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
-        fpath.unlink()
-        tmp.rename(fpath)
-    elif tmp.exists():
-        tmp.unlink()
-    return fpath, black_end
-
-
-def _shift_vtt(src: Path, dst: Path, offset_sec: float) -> None:
-    """将 VTT 字幕的所有时间戳向前移 offset_sec 秒（负值则截断到 0）。"""
-    import re as _re
-
-    def _shift_ts(ts: str, delta: float) -> str:
-        parts = ts.strip().replace(",", ".").split(":")
-        if len(parts) == 2:
-            h, ms = 0, float(parts[0]) * 60 + float(parts[1])
-        else:
-            h, ms = int(parts[0]), float(parts[1]) * 60 + float(parts[2])
-        total = max(0.0, h * 3600 + ms - delta)
-        hh = int(total // 3600)
-        mm = int((total % 3600) // 60)
-        ss = total % 60
-        return f"{hh:02d}:{mm:02d}:{ss:06.3f}"
-
-    text = src.read_text(encoding="utf-8", errors="replace")
-    def _replace(m):
-        return f"{_shift_ts(m.group(1), offset_sec)} --> {_shift_ts(m.group(2), offset_sec)}"
-    text = _re.sub(r"([\d:,.]+)\s*-->\s*([\d:,.]+)", _replace, text)
-    dst.write_text(text, encoding="utf-8")
-
-
-def _burn_bilingual_subtitles(fpath: Path, article_dir: Path, trim_offset: float = 0.0) -> Path:
-    """将 article_dir 中的 ja/zh-Hans 字幕烧录进视频（中文下方、日文上方）。
-    trim_offset: 裁黑屏秒数，用于校正字幕时间轴。"""
-    import subprocess
-
-    ja_files = sorted(article_dir.glob("*.ja.vtt")) + sorted(article_dir.glob("*.ja-orig.vtt"))
-    zh_files = sorted(article_dir.glob("*.zh-Hans.vtt")) + sorted(article_dir.glob("*.zh_Hans.vtt"))
-
-    if not ja_files and not zh_files:
-        print("  ⚠️ 未找到字幕文件，跳过烧录")
-        return fpath
-
-    labels = []
-    if ja_files: labels.append("ja")
-    if zh_files: labels.append("zh")
-    print(f"  📝 烧录字幕: {'+'.join(labels)}" + (f"（时间轴偏移 -{trim_offset:.1f}s）" if trim_offset else ""))
-
-    import shutil, tempfile
-    tmp_dir = Path(tempfile.mkdtemp())
-    tmp_zh = tmp_dir / "sub_zh.vtt"
-    tmp_ja = tmp_dir / "sub_ja.vtt"
-    if zh_files:
-        if trim_offset > 0:
-            _shift_vtt(zh_files[0], tmp_zh, trim_offset)
-        else:
-            shutil.copy(zh_files[0], tmp_zh)
-    if ja_files:
-        if trim_offset > 0:
-            _shift_vtt(ja_files[0], tmp_ja, trim_offset)
-        else:
-            shutil.copy(ja_files[0], tmp_ja)
-
-    # 中文底部（MarginV=20），日文在中文上方（MarginV=60）
-    base = "FontSize=18,BorderStyle=3,Outline=1,Shadow=0,Bold=1"
-    vf_parts = []
-    if zh_files:
-        vf_parts.append(f"subtitles=filename={tmp_zh}:force_style='{base},PrimaryColour=&H00ffff,OutlineColour=&H40000000,Alignment=2,MarginV=20'")
-    if ja_files:
-        vf_parts.append(f"subtitles=filename={tmp_ja}:force_style='{base},PrimaryColour=&Hffffff,OutlineColour=&H40000000,Alignment=2,MarginV=60'")
-
-    out_path = fpath.with_suffix(".subbed.mp4")
-    r = subprocess.run(
-        ["ffmpeg", "-i", str(fpath),
-         "-vf", ",".join(vf_parts),
-         "-c:v", "libx264", "-crf", "23", "-preset", "fast",
-         "-c:a", "copy", str(out_path), "-y"],
-        capture_output=True, timeout=900,
-    )
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    if r.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
-        fpath.unlink()
-        out_path.rename(fpath)
-        print("  ✅ 字幕烧录完成")
-        for f in ja_files + zh_files:
-            try: f.unlink()
-            except: pass
-    else:
-        if out_path.exists(): out_path.unlink()
-        print(f"  ⚠️ 字幕烧录失败，保留原视频\n{r.stderr[-300:].decode(errors='ignore') if r.stderr else ''}")
-    return fpath
-
-
-def _download_youtube_video(video_id: str, article_dir: Path) -> str:
-    """用 CDP cookies + yt-dlp 下载 YouTube 视频到 article_dir，返回本地文件名（失败返回空串）"""
-    import json as _json
-    import subprocess
-    import tempfile
-
-    try:
-        import websocket
-    except ImportError:
-        print("  ⚠️ 需要安装: pip install websocket-client")
-        return ""
-
-    # 提取 YouTube/Google cookies 写成 Netscape 格式
-    cookie_file = Path(tempfile.mktemp(suffix=".txt"))
-    try:
-        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-        page_tab = next((t for t in tabs if t.get("type") == "page"), None)
-        if page_tab:
-            ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=10)
-            ws.send(_json.dumps({"id": 1, "method": "Network.getAllCookies"}))
-            while True:
-                msg = _json.loads(ws.recv())
-                if msg.get("id") == 1:
-                    all_cookies = msg.get("result", {}).get("cookies", [])
-                    break
-            ws.close()
-            yt_cookies = [c for c in all_cookies
-                          if "youtube.com" in c.get("domain", "") or "google.com" in c.get("domain", "")]
-            lines = ["# Netscape HTTP Cookie File"]
-            for c in yt_cookies:
-                domain = c["domain"]
-                flag = "TRUE" if domain.startswith(".") else "FALSE"
-                expires = int(c.get("expires", 0))
-                if expires < 0:
-                    expires = 0
-                lines.append(f"{domain}\t{flag}\t{c.get('path','/')}\t"
-                              f"{'TRUE' if c.get('secure') else 'FALSE'}\t{expires}\t"
-                              f"{c['name']}\t{c['value']}")
-            cookie_file.write_text("\n".join(lines))
-    except Exception as e:
-        print(f"  ⚠️ 提取 YouTube cookies 失败: {e}")
-
-    article_dir.mkdir(parents=True, exist_ok=True)
-    out_tmpl = str(article_dir / "%(title).50s.%(ext)s")
-    cmd = [
-        "yt-dlp",
-        f"https://www.youtube.com/watch?v={video_id}",
-        "-o", out_tmpl,
-        "--no-playlist",
-        # 优先 H.264+AAC，保证 QuickTime/iOS 兼容；-S 是排序偏好不是硬过滤
-        "-S", "vcodec:h264,acodec:aac,ext:mp4,res:1080",
-        "--merge-output-format", "mp4",
-        "--recode-video", "mp4",
-        *( ["--write-auto-sub", "--sub-langs", "ja,zh-Hans", "--sub-format", "vtt/best"] if BURN_SUBTITLES else []),
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
-    ]
-    if cookie_file.exists() and cookie_file.stat().st_size > 30:
-        cmd += ["--cookies", str(cookie_file)]
-
-    print(f"  ▶ yt-dlp 下载: {video_id}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            print(f"  ❌ yt-dlp 失败: {result.stderr[-300:]}")
-            return ""
-    except subprocess.TimeoutExpired:
-        print("  ❌ yt-dlp 超时")
-        return ""
-    finally:
-        if cookie_file.exists():
-            cookie_file.unlink()
-
-    # 找下载的 mp4 文件
-    mp4_files = sorted(article_dir.glob("*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
-    if not mp4_files:
-        # yt-dlp 可能下了 webm/mkv，重命名最新文件
-        all_videos = sorted(
-            [f for f in article_dir.iterdir() if f.suffix in (".webm", ".mkv", ".m4v")],
-            key=lambda f: f.stat().st_mtime, reverse=True,
-        )
-        if all_videos:
-            new_name = article_dir / (all_videos[0].stem + ".mp4")
-            all_videos[0].rename(new_name)
-            mp4_files = [new_name]
-
-    if not mp4_files:
-        print("  ❌ 未找到下载的视频文件")
-        return ""
-
-    fpath = mp4_files[0]
-    fpath, trim_offset = _trim_black_start(fpath)
-    if BURN_SUBTITLES:
-        fpath = _burn_bilingual_subtitles(fpath, article_dir, trim_offset=trim_offset)
-    fname = fpath.name
-    size_mb = fpath.stat().st_size // (1024 * 1024)
-    print(f"  ✅ YouTube 视频已保存: {fname} ({size_mb} MB)")
-    return fname
-
-
-def _get_instagram_cookies_from_cdp() -> dict:
-    """从 Chrome CDP 提取 instagram.com 的 cookies，返回 {name: value} 字典。"""
-    import json as _json
-    try:
-        import websocket
-    except ImportError:
-        return {}
-
-    try:
-        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-    except Exception:
-        return {}
-
-    page_tab = next((t for t in tabs if t.get("type") == "page"), None)
-    if not page_tab:
-        return {}
-
-    cookies = {}
-    try:
-        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=10)
-        ws.send(_json.dumps({"id": 1, "method": "Network.getAllCookies"}))
-        while True:
-            msg = _json.loads(ws.recv())
-            if msg.get("id") == 1:
-                for c in msg.get("result", {}).get("cookies", []):
-                    if "instagram.com" in c.get("domain", ""):
-                        cookies[c["name"]] = c["value"]
-                break
-        ws.close()
-    except Exception as e:
-        print(f"  ⚠️ 获取 CDP cookies 失败: {e}")
-
-    return cookies
-
-
-def _scrape_instagram(gallery_url: str, article_dir: Path) -> list[str]:
-    """用 CDP 导航到 Instagram 帖子，从页面 JSON 数据精准提取媒体 URL 后下载。
-    图片按 001.jpg 命名，视频按 NNN_video.mp4 命名。"""
-    import json as _json
-    import re
-    import time as _time
-
-    try:
-        import websocket
-    except ImportError:
-        print("  ⚠️ 需要安装: pip install websocket-client")
-        return []
-
-    m = re.search(r'/p/([A-Za-z0-9_-]+)/', gallery_url)
-    if not m:
-        print(f"  ⚠️ 无法解析 Instagram shortcode: {gallery_url}")
-        return []
-    shortcode = m.group(1)
-
-    # JS: 解析 script[application/json]，用 code 字段定位帖子，提取 carousel_media
-    JS_TEMPLATE = r"""
-(function(){
-    var code = '__SHORTCODE__';
-    var seen = {};
-    var results = [];
-
-    function bestImg(obj) {
-        if (!obj.image_versions2) return '';
-        var cands = obj.image_versions2.candidates || [];
-        var best = cands.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, cands[0]||{});
-        return best.url || '';
-    }
-    function bestVid(obj) {
-        if (obj.video_url) return obj.video_url;
-        var vers = obj.video_versions || [];
-        return vers.length ? vers[0].url : '';
-    }
-    function addMedia(obj) {
-        var url = bestVid(obj) || bestImg(obj);
-        if (!url || seen[url]) return;
-        // 用 URL 里的数字 ID 去重（同一媒体在多个 script 标签出现）
-        var idMatch = url.match(/\/(\d{5,})_/);
-        var deduKey = idMatch ? idMatch[1] : url;
-        if (seen[deduKey]) return;
-        seen[deduKey] = 1;
-        results.push({url: url, type: bestVid(obj) ? 'video' : 'img'});
-    }
-    function walk(obj, depth) {
-        if (!obj || typeof obj !== 'object' || depth > 20) return;
-        if (obj.code === code) {
-            addMedia(obj);
-            (obj.carousel_media || []).forEach(addMedia);
-            return;
-        }
-        if (Array.isArray(obj)) { obj.forEach(function(i){ walk(i, depth+1); }); }
-        else { Object.values(obj).forEach(function(v){ walk(v, depth+1); }); }
-    }
-    document.querySelectorAll('script[type="application/json"]').forEach(function(s){
-        if (s.textContent.indexOf(code) === -1) return;
-        try { walk(JSON.parse(s.textContent), 0); } catch(e){}
-    });
-    return JSON.stringify(results);
-})()
-"""
-    JS_EXTRACT = JS_TEMPLATE.replace("__SHORTCODE__", shortcode)
-
-    # ── 获取 CDP tab ──────────────────────────────────────────────
-    try:
-        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-    except Exception as e:
-        print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
-        return []
-
-    def _get_ig_tab(tab_list):
-        t = next((t for t in tab_list
-                  if t.get("type") == "page" and "instagram.com" in t.get("url", "")), None)
-        return t or next((t for t in tab_list if t.get("type") == "page"), None)
-
-    page_tab = _get_ig_tab(tabs)
-    if not page_tab:
-        print("  ⚠️ 找不到可用的 Chrome tab")
-        return []
-
-    # ── Phase 1: 导航（导航后 ws 断开属正常，重连读取）────────────
-    try:
-        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=15)
-        ws.send(_json.dumps({"id": 1, "method": "Page.enable"}))
-        ws.recv()
-        ws.send(_json.dumps({"id": 2, "method": "Page.navigate",
-                             "params": {"url": gallery_url}}))
-        print(f"  🌐 导航到 Instagram: {gallery_url}")
-        start = _time.time()
-        while _time.time() - start < 20:
-            try:
-                msg = _json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
-                    break
-            except Exception:
-                break
-        try:
-            ws.close()
-        except Exception:
-            pass
-    except Exception as e:
-        print(f"  ⚠️ CDP 导航失败: {e}")
-        return []
-
-    # ── Phase 2: 重连，等待 JS 渲染，提取媒体数据 ─────────────────
-    _time.sleep(3)
-    try:
-        tabs2 = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-        tab2 = _get_ig_tab(tabs2)
-        if not tab2:
-            print("  ⚠️ 导航后找不到 tab")
-            return []
-
-        ws2 = websocket.create_connection(tab2["webSocketDebuggerUrl"], timeout=15)
-        ws2.send(_json.dumps({"id": 1, "method": "Runtime.evaluate",
-                              "params": {"expression": JS_EXTRACT}}))
-        media_items = []
-        while True:
-            msg = _json.loads(ws2.recv())
-            if msg.get("id") == 1:
-                val = msg.get("result", {}).get("result", {}).get("value", "[]")
-                media_items = _json.loads(val) if val else []
-                break
-        ws2.close()
-    except Exception as e:
-        print(f"  ⚠️ CDP 提取失败: {e}")
-        return []
-
-    if not media_items:
-        print("  ⚠️ 未找到媒体（页面未完全渲染？尝试刷新后重试）")
-        return []
-
-    n_img = sum(1 for x in media_items if x["type"] == "img")
-    n_vid = sum(1 for x in media_items if x["type"] == "video")
-    print(f"  📦 找到 {n_img} 张图 + {n_vid} 个视频")
-
-    # ── 下载 ─────────────────────────────────────────────────────
-    article_dir.mkdir(parents=True, exist_ok=True)
-    ig_cookies = _get_instagram_cookies_from_cdp()
-    dl_headers = {**HEADERS,
-                  "Cookie": "; ".join(f"{k}={v}" for k, v in ig_cookies.items()),
-                  "Referer": "https://www.instagram.com/"}
-
-    saved: list[str] = []
-    img_idx = 1
-    for item in media_items:
-        url, mtype = item["url"], item["type"]
-        try:
-            resp = requests.get(url, headers=dl_headers, timeout=30)
-            resp.raise_for_status()
-            fname = f"{img_idx:03d}_video.mp4" if mtype == "video" else f"{img_idx:03d}.jpg"
-            (article_dir / fname).write_bytes(resp.content)
-            print(f"    ✓ {fname}  ({len(resp.content) // 1024} KB)")
-            saved.append(fname)
-            img_idx += 1
-        except Exception as e:
-            print(f"    ✗ 下载失败: {e}")
-        _time.sleep(0.2)
-
-    return saved
-
-
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     domain = _domain_of(gallery_url)
@@ -2953,17 +2545,51 @@ def _referer_for(image_url: str, gallery_url: str = "") -> str:
 def download_images(image_urls: list[str], article_dir: Path,
                     gallery_url: str = "") -> list[str]:
     """下载图片/视频到目录，返回成功的文件名列表。x.com 推文用 yt-dlp 下载。"""
+    import subprocess
+    import shutil
+
+    ytdlp_bin = shutil.which("yt-dlp") or "/opt/homebrew/bin/yt-dlp"
     article_dir.mkdir(parents=True, exist_ok=True)
     local_files = []
     for i, url in enumerate(image_urls):
         try:
-            # x.com 推文链接 → yt-dlp 下载（视频/图片均可）
+            # x.com 推文链接 → yt-dlp 下载
             if "x.com/" in url and "/status/" in url:
-                fname = _download_tweet_video(url, article_dir, i + 1)
-                if fname:
-                    local_files.append(fname)
+                out_tmpl = str(article_dir / f"{i + 1:03d}.%(ext)s")
+                cmd = [
+                    ytdlp_bin, url,
+                    "-o", out_tmpl,
+                    "--no-playlist",
+                    "-S", "vcodec:h264,acodec:aac,ext:mp4,res:1080",
+                    "--merge-output-format", "mp4",
+                    "--recode-video", "mp4",
+                    "--js-runtimes", "node",
+                    "--remote-components", "ejs:github",
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    mp4_files = sorted(article_dir.glob(f"{i + 1:03d}*.mp4"),
+                                       key=lambda f: f.stat().st_mtime, reverse=True)
+                    jpg_files = sorted(article_dir.glob(f"{i + 1:03d}*.jpg"),
+                                       key=lambda f: f.stat().st_mtime, reverse=True)
+                    if mp4_files:
+                        f = mp4_files[0]
+                        target = article_dir / f"{i + 1:03d}_video.mp4"
+                        if f != target:
+                            f.rename(target)
+                        size = target.stat().st_size // 1024
+                        unit = "KB" if size < 1024 else "MB"
+                        print(f"    ✓ {target.name}  ({size if size < 1024 else size // 1024} {unit})  yt-dlp")
+                        local_files.append(target.name)
+                    elif jpg_files:
+                        f = jpg_files[0]
+                        target = article_dir / f"{i + 1:03d}.jpg"
+                        if f != target:
+                            f.rename(target)
+                        print(f"    ✓ {target.name}  ({target.stat().st_size // 1024} KB)  yt-dlp")
+                        local_files.append(target.name)
                 else:
-                    print(f"    ✗ 推文下载失败")
+                    print(f"    ✗ 推文下载失败: {result.stderr[-200:]}")
                 continue
 
             referer = _referer_for(url, gallery_url)
@@ -2983,52 +2609,6 @@ def download_images(image_urls: list[str], article_dir: Path,
             print(f"    ✗ 下载失败: {e}")
         time.sleep(0.3)
     return local_files
-
-
-def _download_tweet_video(tweet_url: str, article_dir: Path, idx: int) -> str:
-    """用 yt-dlp 下载 x.com 推文的视频/图片。返回文件名。"""
-    import subprocess
-
-    out_tmpl = str(article_dir / f"{idx:03d}.%(ext)s")
-    cmd = [
-        "yt-dlp", tweet_url,
-        "-o", out_tmpl,
-        "--no-playlist",
-        "-S", "vcodec:h264,acodec:aac,ext:mp4,res:1080",
-        "--merge-output-format", "mp4",
-        "--recode-video", "mp4",
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, timeout=300)
-        if result.returncode == 0:
-            # 找到下载的文件
-            mp4_files = sorted(article_dir.glob(f"{idx:03d}*.mp4"),
-                               key=lambda f: f.stat().st_mtime, reverse=True)
-            jpg_files = sorted(article_dir.glob(f"{idx:03d}*.jpg"),
-                               key=lambda f: f.stat().st_mtime, reverse=True)
-            if mp4_files:
-                f = mp4_files[0]
-                target = article_dir / f"{idx:03d}_video.mp4"
-                if f != target:
-                    f.rename(target)
-                size = target.stat().st_size // 1024
-                unit = "KB" if size < 1024 else "MB"
-                print(f"    ✓ {target.name}  ({size if size < 1024 else size//1024} {unit})  yt-dlp")
-                return target.name
-            if jpg_files:
-                f = jpg_files[0]
-                target = article_dir / f"{idx:03d}.jpg"
-                if f != target:
-                    f.rename(target)
-                print(f"    ✓ {target.name}  ({target.stat().st_size // 1024} KB)  yt-dlp")
-                return target.name
-        print(f"    ⚠️ yt-dlp 失败: {result.stderr[-200:].decode(errors='ignore')}")
-    except subprocess.TimeoutExpired:
-        print(f"    ✗ yt-dlp 超时")
-
-    return ""
 
 
 # ============ Main ============
@@ -3093,14 +2673,14 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     # YouTube 视频：仅本地下载，不上传 Cloudinary
     if _youtube_video_id:
-        fname = _download_youtube_video(_youtube_video_id, article_dir)
-        if not fname:
+        local_files = download_youtube(_youtube_video_id, article_dir,
+                                       burn_subtitles=BURN_SUBTITLES)
+        if not local_files:
             print(f"  — YouTube 下载失败")
             return False
-        local_files = [fname]
     # Instagram 帖子
     elif "instagram.com/p/" in gallery_url:
-        local_files = _scrape_instagram(gallery_url, article_dir)
+        local_files = download_instagram(gallery_url, article_dir)
         if not local_files:
             print(f"  — Instagram 下载失败")
             return False
