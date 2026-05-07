@@ -868,7 +868,10 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
             if "/common/images/" in full_src:
                 continue
             seen.add(img_id)
-            full_url = re.sub(r'/mwimgs/\w/\w/\d+w/', f'/mwimgs/{img_id[:1]}/{img_id[1:2]}/1200w/', full_src)
+            # 从原始 URL 提取 hash 的前2字符作为路径（如 mwimgs/1/2/1200w/...）
+            hash_start = img_id.index("_") + 1
+            a, b = img_id[hash_start], img_id[hash_start + 1]
+            full_url = re.sub(r'/mwimgs/\w/\w/\d+w/', f'/mwimgs/{a}/{b}/1200w/', full_src)
             result.append(full_url)
         return result
 
