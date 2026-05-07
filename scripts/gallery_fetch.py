@@ -854,13 +854,21 @@ def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
                     if url and "pbs.twimg.com" in url:
                         images.append(url)
                 elif mtype in ("video", "animated_gif"):
-                    thumb = m.get("thumbnail_url", "")
-                    if thumb and "pbs.twimg.com" in thumb:
-                        images.append(thumb)
+                    # 取最高码率 mp4
+                    best_url = ""
+                    best_br = 0
+                    for fmt in m.get("formats", []):
+                        if fmt.get("container") == "mp4" and fmt.get("bitrate", 0) > best_br:
+                            best_br = fmt["bitrate"]
+                            best_url = fmt["url"]
+                    if not best_url:
+                        best_url = m.get("url", "")
+                    if best_url:
+                        images.append(best_url)
             if images:
-                print(f"    ✅ fxtwitter 获取 {len(images)} 张图片")
+                print(f"    ✅ fxtwitter 获取 {len(images)} 张图片/视频")
                 return images
-            print(f"    ⚠️ 推文无图片（可能是视频），跳过")
+            print(f"    ⚠️ 推文无媒体内容，跳过")
     except Exception as e:
         print(f"    ⚠️ fxtwitter API 失败: {e}")
 
@@ -2953,20 +2961,24 @@ def _referer_for(image_url: str, gallery_url: str = "") -> str:
 
 def download_images(image_urls: list[str], article_dir: Path,
                     gallery_url: str = "") -> list[str]:
-    """下载图片到目录，返回成功的文件名列表"""
+    """下载图片/视频到目录，返回成功的文件名列表。视频识别 .mp4/slug 使用 _video.mp4 命名。"""
     article_dir.mkdir(parents=True, exist_ok=True)
     local_files = []
     for i, url in enumerate(image_urls):
         try:
             referer = _referer_for(url, gallery_url)
-            resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=15)
+            is_video = url.endswith(".mp4") or ".mp4?" in url or "amplify_video" in url
+            timeout = 120 if is_video else 15
+            resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout)
             resp.raise_for_status()
-            fname = f"{i + 1:03d}.jpg"
+            fname = f"{i + 1:03d}_video.mp4" if is_video else f"{i + 1:03d}.jpg"
             fpath = article_dir / fname
             with open(fpath, "wb") as f:
                 f.write(resp.content)
             local_files.append(fname)
-            print(f"    ✓ {fname}  ({len(resp.content) // 1024} KB)  {url[:70]}")
+            size = len(resp.content) // 1024
+            unit = "KB" if size < 1024 else "MB"
+            print(f"    ✓ {fname}  ({size if size < 1024 else size//1024} {unit})  {url[:70]}")
         except Exception as e:
             print(f"    ✗ 下载失败: {e}")
         time.sleep(0.3)
