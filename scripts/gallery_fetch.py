@@ -278,7 +278,6 @@ def _scrape_oricon(gallery_url: str) -> list[str]:
             page_nums.add(int(m.group(1)))
 
     total = max(page_nums) if page_nums else 1
-    total = min(total, MAX_IMAGES)
     images = []
 
     for page in range(1, total + 1):
@@ -854,17 +853,9 @@ def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
                     if url and "pbs.twimg.com" in url:
                         images.append(url)
                 elif mtype in ("video", "animated_gif"):
-                    # 取最高码率 mp4
-                    best_url = ""
-                    best_br = 0
-                    for fmt in m.get("formats", []):
-                        if fmt.get("container") == "mp4" and fmt.get("bitrate", 0) > best_br:
-                            best_br = fmt["bitrate"]
-                            best_url = fmt["url"]
-                    if not best_url:
-                        best_url = m.get("url", "")
-                    if best_url:
-                        images.append(best_url)
+                    # 推文视频用 yt-dlp 下载（直链 403），传推文链接
+                    author = data.get("tweet", {}).get("author", {}).get("screen_name", "user")
+                    images.append(f"https://x.com/{author}/status/{tweet_id}")
             if images:
                 print(f"    ✅ fxtwitter 获取 {len(images)} 张图片/视频")
                 return images
@@ -2961,13 +2952,22 @@ def _referer_for(image_url: str, gallery_url: str = "") -> str:
 
 def download_images(image_urls: list[str], article_dir: Path,
                     gallery_url: str = "") -> list[str]:
-    """下载图片/视频到目录，返回成功的文件名列表。视频识别 .mp4/slug 使用 _video.mp4 命名。"""
+    """下载图片/视频到目录，返回成功的文件名列表。x.com 推文用 yt-dlp 下载。"""
     article_dir.mkdir(parents=True, exist_ok=True)
     local_files = []
     for i, url in enumerate(image_urls):
         try:
+            # x.com 推文链接 → yt-dlp 下载（视频/图片均可）
+            if "x.com/" in url and "/status/" in url:
+                fname = _download_tweet_video(url, article_dir, i + 1)
+                if fname:
+                    local_files.append(fname)
+                else:
+                    print(f"    ✗ 推文下载失败")
+                continue
+
             referer = _referer_for(url, gallery_url)
-            is_video = url.endswith(".mp4") or ".mp4?" in url or "amplify_video" in url
+            is_video = url.endswith(".mp4") or ".mp4?" in url
             timeout = 120 if is_video else 15
             resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout)
             resp.raise_for_status()
@@ -2983,6 +2983,52 @@ def download_images(image_urls: list[str], article_dir: Path,
             print(f"    ✗ 下载失败: {e}")
         time.sleep(0.3)
     return local_files
+
+
+def _download_tweet_video(tweet_url: str, article_dir: Path, idx: int) -> str:
+    """用 yt-dlp 下载 x.com 推文的视频/图片。返回文件名。"""
+    import subprocess
+
+    out_tmpl = str(article_dir / f"{idx:03d}.%(ext)s")
+    cmd = [
+        "yt-dlp", tweet_url,
+        "-o", out_tmpl,
+        "--no-playlist",
+        "-S", "vcodec:h264,acodec:aac,ext:mp4,res:1080",
+        "--merge-output-format", "mp4",
+        "--recode-video", "mp4",
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        if result.returncode == 0:
+            # 找到下载的文件
+            mp4_files = sorted(article_dir.glob(f"{idx:03d}*.mp4"),
+                               key=lambda f: f.stat().st_mtime, reverse=True)
+            jpg_files = sorted(article_dir.glob(f"{idx:03d}*.jpg"),
+                               key=lambda f: f.stat().st_mtime, reverse=True)
+            if mp4_files:
+                f = mp4_files[0]
+                target = article_dir / f"{idx:03d}_video.mp4"
+                if f != target:
+                    f.rename(target)
+                size = target.stat().st_size // 1024
+                unit = "KB" if size < 1024 else "MB"
+                print(f"    ✓ {target.name}  ({size if size < 1024 else size//1024} {unit})  yt-dlp")
+                return target.name
+            if jpg_files:
+                f = jpg_files[0]
+                target = article_dir / f"{idx:03d}.jpg"
+                if f != target:
+                    f.rename(target)
+                print(f"    ✓ {target.name}  ({target.stat().st_size // 1024} KB)  yt-dlp")
+                return target.name
+        print(f"    ⚠️ yt-dlp 失败: {result.stderr[-200:].decode(errors='ignore')}")
+    except subprocess.TimeoutExpired:
+        print(f"    ✗ yt-dlp 超时")
+
+    return ""
 
 
 # ============ Main ============
