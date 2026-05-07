@@ -89,6 +89,7 @@ GALLERY_SITES: dict[str, str] = {
     "musicvoice.jp":         "article, .entry-content",
     "daily.co.jp":           "article.detailContent",
     "vivi.tv":               "article, .gallery",
+    "times.abema.tv":        ".article-body",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -99,7 +100,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
-                         "musicvoice.jp", "daily.co.jp", "vivi.tv"}
+                         "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -829,6 +830,80 @@ def _scrape_encount(gallery_url: str) -> list[str]:
     except Exception as e:
         print(f"  ⚠️ encount.press 抓取失败: {e}")
         return []
+
+
+def _scrape_abema_tv(gallery_url: str) -> list[str]:
+    """times.abema.tv 分页文章：从 data-src 提取懒加载图片，转最大分辨率 1200w。"""
+    import re
+    from urllib.parse import urlparse, urlunparse
+
+    headers = {**HEADERS, "Referer": "https://times.abema.tv/"}
+
+    def _images_from_html(html: str, seen: set[str]) -> list[str]:
+        result = []
+        # 限定第一个 article-body（正文内容），排除后面的 article-body（相关文章）
+        m_body = re.search(
+            r'<div class="article-body[^"]*">(.*?)'
+            r'<div class="(?:article-sns|article-bottom|pagination)"',
+            html, re.DOTALL)
+        if not m_body:
+            m_body = re.search(
+                r'<div class="article-body[^"]*">(.*?)'
+                r'<div class="article-body"',
+                html, re.DOTALL)
+        if not m_body:
+            m_body = re.search(
+                r'<div class="article-body[^"]*">(.*?)</div>\s*</div>\s*</article',
+                html, re.DOTALL)
+        body_html = m_body.group(1) if m_body else html
+
+        for m in re.finditer(
+            r'data-src="(https://times-abema\.ismcdn\.jp/mwimgs/\w/\w/\d+w/'
+            r'(img_[a-f0-9]+\.(?:jpg|jpeg|png)))"',
+            body_html, re.I,
+        ):
+            full_src, img_id = m.group(1), m.group(2).lower()
+            if img_id in seen:
+                continue
+            if "/common/images/" in full_src:
+                continue
+            seen.add(img_id)
+            full_url = re.sub(r'/mwimgs/\w/\w/\d+w/', f'/mwimgs/{img_id[:1]}/{img_id[1:2]}/1200w/', full_src)
+            result.append(full_url)
+        return result
+
+    resp = requests.get(gallery_url, headers=headers, timeout=15)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    html0 = resp.text
+
+    # 找最大页码
+    max_page = 1
+    for a in soup.find_all("a", href=True):
+        m = re.search(r'[?&]page=(\d+)', a["href"])
+        if m:
+            max_page = max(max_page, int(m.group(1)))
+
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    for pg in range(1, max_page + 1):
+        if len(images) >= MAX_IMAGES:
+            break
+        try:
+            if pg == 1:
+                pg_html = html0
+            else:
+                r = requests.get(f"{base_url}?page={pg}", headers=headers, timeout=15)
+                pg_html = r.text
+            images.extend(_images_from_html(pg_html, seen))
+        except Exception as e:
+            print(f"  ⚠️ abema.tv page {pg} 失败: {e}")
+        time.sleep(0.3)
+
+    return images
 
 
 def _get_twitter_images_for_encount(tweet_id: str) -> list[str]:
@@ -2398,6 +2473,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "vivi.tv" in domain:
         images = _scrape_vivi_tv(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "times.abema.tv" in domain:
+        images = _scrape_abema_tv(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
