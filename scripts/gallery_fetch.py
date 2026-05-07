@@ -848,12 +848,19 @@ def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
             data = r.json()
             media_all = data.get("tweet", {}).get("media", {}).get("all", [])
             for m in media_all:
-                url = m.get("direct_url") or m.get("url", "")
-                if url and "pbs.twimg.com" in url:
-                    images.append(url)
+                mtype = m.get("type", "")
+                if mtype == "photo":
+                    url = m.get("direct_url") or m.get("url", "")
+                    if url and "pbs.twimg.com" in url:
+                        images.append(url)
+                elif mtype in ("video", "animated_gif"):
+                    thumb = m.get("thumbnail_url", "")
+                    if thumb and "pbs.twimg.com" in thumb:
+                        images.append(thumb)
             if images:
                 print(f"    ✅ fxtwitter 获取 {len(images)} 张图片")
                 return images
+            print(f"    ⚠️ 推文无图片（可能是视频），跳过")
     except Exception as e:
         print(f"    ⚠️ fxtwitter API 失败: {e}")
 
