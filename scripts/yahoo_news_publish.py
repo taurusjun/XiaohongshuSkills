@@ -364,6 +364,11 @@ def main():
         print("⚡ 自动模式：跳过确认")
     print()
 
+    # 确保 Chrome 已启动（静默模式，由 CDP_HEADLESS env 控制）
+    from yahoo_common import check_chrome_cdp
+    if not check_chrome_cdp():
+        return
+
     # 查询待发布条目
     print("📡 查询 Notion 待发布内容...")
     pages = get_pending_pages()

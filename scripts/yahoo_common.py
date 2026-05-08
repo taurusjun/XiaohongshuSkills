@@ -105,7 +105,11 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
         )
         if resp.status_code == 200:
             msg = resp.json().get("choices", [{}])[0].get("message", {})
-            return (msg.get("content") or msg.get("reasoning_content", "")).strip()
+            # 优先取 content（最终回答），不存在时才取 reasoning_content
+            content = msg.get("content")
+            if content is None:
+                content = msg.get("reasoning_content", "")
+            return content.strip()
         print(f"    ⚠️ LiteLLM 错误: {resp.status_code}")
     except Exception as e:
         print(f"    ⚠️ LiteLLM 调用失败: {e}")
@@ -178,14 +182,32 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 
 
 def translate_title(title_ja: str) -> str:
-    """将日文标题翻译为中文（用 Google Translate，快速准确，仅用于预览）"""
-    try:
-        from deep_translator import GoogleTranslator
-        result = GoogleTranslator(source='ja', target='zh-CN').translate(title_ja)
-        if result and len(result) > 2:
+    """将日文标题翻译为中文（默认用 LLM，可开关切回 Google）"""
+    use_google = os.environ.get("USE_GOOGLE_TRANSLATE", "").lower() in ("1", "true", "yes")
+
+    if use_google:
+        try:
+            from deep_translator import GoogleTranslator
+            result = GoogleTranslator(source='ja', target='zh-CN').translate(title_ja)
+            if result and len(result) > 2:
+                return result
+        except Exception:
+            pass
+
+    # LLM 翻译（max_tokens 设大到 800，保证推理模型有空间同时输出 reasoning + content）
+    if LITELLM_API_KEY:
+        result = call_litellm(prompt=f"翻译成中文：{title_ja}", max_tokens=800)
+        if result and len(result) > 2 and result != title_ja:
+            result = result.strip()
+            # 洗掉模型偶尔带的格式前缀
+            for prefix in ["以下是中文翻译：", "中文翻译：", "**中文翻译：**", "以下是翻译：", "翻译结果："]:
+                if result.startswith(prefix):
+                    result = result[len(prefix):].strip()
+            # 洗掉 markdown 加粗包裹
+            if result.startswith("**") and "**" in result[2:]:
+                result = result[2:result.index("**", 2)].strip()
             return result
-    except Exception as e:
-        print(f"    [translate] Google Translate 失败: {e}，使用原文")
+
     return title_ja
 
 
@@ -298,7 +320,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = ""
 美妆护肤类（内容涉及化妆/护肤时用）：#日系妆容 #日本化妆 #日本美妆 #日本护肤 #护肤分享
 再根据内容补充行业相关标签）"""
 
-    result = call_litellm(prompt, max_tokens=LITELLM_MAX_TOKENS)
+    result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000))
     if not result:
         return None  # LLM 调用失败，由调用方决定是否跳过
 
@@ -849,13 +871,11 @@ def push_stub_to_notion(news: dict, existing_keys: set | None = None) -> bool:
 
 
 def check_chrome_cdp() -> bool:
-    """检查 Chrome CDP 是否可用，打印状态并返回 bool"""
-    try:
-        resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
-        if resp.status_code == 200:
-            print("✅ Chrome 已就绪")
-            return True
-        print("❌ Chrome 未响应")
-    except Exception:
-        print("❌ Chrome 未运行，请先启动: python scripts/chrome_launcher.py")
+    """检查 Chrome CDP 是否可用，未运行时自动启动，打印状态并返回 bool"""
+    import chrome_launcher
+    headless = os.environ.get("CDP_HEADLESS", "").lower() in ("1", "true", "yes")
+    if chrome_launcher.ensure_chrome(port=CDP_PORT, headless=headless):
+        print("✅ Chrome 已就绪")
+        return True
+    print("❌ Chrome 无法启动")
     return False
