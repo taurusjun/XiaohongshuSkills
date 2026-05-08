@@ -833,78 +833,112 @@ def _scrape_encount(gallery_url: str) -> list[str]:
 
 
 def _scrape_abema_tv(gallery_url: str) -> list[str]:
-    """times.abema.tv 分页文章：从 data-src 提取懒加载图片，转最大分辨率 1200w。"""
+    """times.abema.tv 分页文章：CDP 阻断 widgets.js 后提取 blockquote 中的 tweet_id，
+    通过 fxtwitter API 获取推文图片。"""
     import re
+    import json as _json
     from urllib.parse import urlparse, urlunparse
+
+    try:
+        import websocket
+    except ImportError:
+        print("  ⚠️ 需要安装: pip install websocket-client")
+        return []
 
     headers = {**HEADERS, "Referer": "https://times.abema.tv/"}
 
-    def _images_from_html(html: str, seen: set[str]) -> list[str]:
-        result = []
-        # 限定第一个 article-body（正文内容），排除后面的 article-body（相关文章）
-        m_body = re.search(
-            r'<div class="article-body[^"]*">(.*?)'
-            r'<div class="(?:article-sns|article-bottom|pagination)"',
-            html, re.DOTALL)
-        if not m_body:
-            m_body = re.search(
-                r'<div class="article-body[^"]*">(.*?)'
-                r'<div class="article-body"',
-                html, re.DOTALL)
-        if not m_body:
-            m_body = re.search(
-                r'<div class="article-body[^"]*">(.*?)</div>\s*</div>\s*</article',
-                html, re.DOTALL)
-        body_html = m_body.group(1) if m_body else html
-
-        for m in re.finditer(
-            r'data-src="(https://times-abema\.ismcdn\.jp/mwimgs/\w/\w/\d+w/'
-            r'(img_[a-f0-9]+\.(?:jpg|jpeg|png)))"',
-            body_html, re.I,
-        ):
-            full_src, img_id = m.group(1), m.group(2).lower()
-            if img_id in seen:
-                continue
-            if "/common/images/" in full_src:
-                continue
-            seen.add(img_id)
-            # 从原始 URL 提取 hash 的前2字符作为路径（如 mwimgs/1/2/1200w/...）
-            hash_start = img_id.index("_") + 1
-            a, b = img_id[hash_start], img_id[hash_start + 1]
-            full_url = re.sub(r'/mwimgs/\w/\w/\d+w/', f'/mwimgs/{a}/{b}/1200w/', full_src)
-            result.append(full_url)
-        return result
-
+    # 先获取分页信息
     resp = requests.get(gallery_url, headers=headers, timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
-    html0 = resp.text
-
-    # 找最大页码
     max_page = 1
     for a in soup.find_all("a", href=True):
         m = re.search(r'[?&]page=(\d+)', a["href"])
         if m:
             max_page = max(max_page, int(m.group(1)))
-
     p = urlparse(gallery_url)
     base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
 
-    images: list[str] = []
-    seen: set[str] = set()
+    try:
+        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+        page_tab = next((t for t in tabs if t.get("type") == "page"), None)
+        if not page_tab:
+            print("  ⚠️ 找不到可用的 Chrome tab")
+            return []
+    except Exception as e:
+        print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
+        return []
+
+    if max_page > 1:
+        print(f"  📄 发现 {max_page} 页分页")
+
+    tweet_ids_seen: set[str] = set()
+    tweet_ids: list[str] = []
+
+    ws_url = page_tab["webSocketDebuggerUrl"]
 
     for pg in range(1, max_page + 1):
-        if len(images) >= MAX_IMAGES:
-            break
+        pg_url = gallery_url if pg == 1 else f"{base_url}?page={pg}"
         try:
-            if pg == 1:
-                pg_html = html0
-            else:
-                r = requests.get(f"{base_url}?page={pg}", headers=headers, timeout=15)
-                pg_html = r.text
-            images.extend(_images_from_html(pg_html, seen))
+            ws = websocket.create_connection(ws_url, timeout=15)
+            ws.settimeout(15)
+
+            # 阻断 widgets.js，保留 blockquote.twitter-tweet 原始 HTML
+            ws.send(_json.dumps({"id": 0, "method": "Network.enable"}))
+            ws.recv()
+            ws.send(_json.dumps({"id": 1, "method": "Network.setBlockedURLs",
+                     "params": {"urls": ["platform.twitter.com/widgets.js"]}}))
+            ws.recv()
+
+            ws.send(_json.dumps({"id": 2, "method": "Page.enable"}))
+            ws.recv()
+            ws.send(_json.dumps({"id": 3, "method": "Page.navigate", "params": {"url": pg_url}}))
+
+            import time as _time
+            start = _time.time()
+            while _time.time() - start < 15:
+                msg = _json.loads(ws.recv())
+                if msg.get("method") == "Page.loadEventFired":
+                    break
+            ws.close()
+
+            _time.sleep(1)
+            tabs2 = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
+            pg_tab = next((t for t in tabs2 if t.get("type") == "page"), None)
+            if not pg_tab:
+                continue
+            ws_url = pg_tab["webSocketDebuggerUrl"]
+
+            ws2 = websocket.create_connection(ws_url, timeout=15)
+            ws2.settimeout(15)
+            ws2.send(_json.dumps({"id": 9, "method": "Runtime.evaluate",
+                     "params": {"expression": 'document.querySelector(".article-body").innerHTML'}}))
+            html = ""
+            while True:
+                msg = _json.loads(ws2.recv())
+                if msg.get("id") == 9:
+                    html = msg.get("result", {}).get("result", {}).get("value", "")
+                    break
+            ws2.close()
+
+            for bq in re.findall(
+                r'<blockquote[^>]*twitter-tweet[^>]*>(.*?)</blockquote>', html, re.DOTALL):
+                for m in re.finditer(r'(?:twitter\.com|x\.com)/\w+/status/(\d+)', bq):
+                    tid = m.group(1)
+                    if tid not in tweet_ids_seen:
+                        tweet_ids_seen.add(tid)
+                        tweet_ids.append(tid)
         except Exception as e:
-            print(f"  ⚠️ abema.tv page {pg} 失败: {e}")
-        time.sleep(0.3)
+            print(f"  ⚠️ abema.tv CDP page {pg} 失败: {e}")
+
+    images: list[str] = []
+    if tweet_ids:
+        print(f"  🔗 发现 {len(tweet_ids)} 个 x.com 推文嵌入")
+        tw_headers = {"User-Agent": HEADERS["User-Agent"]}
+        for tid in tweet_ids:
+            imgs = _get_twitter_images_from_embed(tid, tw_headers)
+            images.extend(imgs)
+            if len(images) >= MAX_IMAGES:
+                break
 
     return images
 
