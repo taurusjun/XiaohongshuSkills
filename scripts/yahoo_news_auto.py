@@ -36,8 +36,9 @@ from yahoo_common import (
 DEFAULT_KEYWORDS = [
     # ("中国",  3, True),
     ("AKB",    10, False),
-    ("乃木坂",  5, False),
-    ("欅坂",    3, False),
+    ("乃木坂",  10, False),
+    ("日向坂",  10, False),
+    ("欅坂",    10, False),
     ("コスプレ", 3, False),
     ("原神",    3, False),
     ("鳴潮",    3, False),
@@ -47,6 +48,7 @@ DEFAULT_KEYWORDS = [
 KEYWORD_TAG_MAP: dict[str, list[str]] = {
     "AKB":     ["AKB48", "akb48"],
     "乃木坂":  ["乃木坂", "乃木坂46"],
+    "日向坂":  ["日向坂", "日向坂46"],
     "欅坂":    ["欅坂", "欅坂46", "樱坂", "樱坂46"],
     "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
 }
