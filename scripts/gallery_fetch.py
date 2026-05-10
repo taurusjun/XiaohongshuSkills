@@ -577,20 +577,12 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
 
 
 def _scrape_thetv(gallery_url: str) -> list[str]:
-    """thetv.jp 图集：/news/detail/{article_id}/pN/ 或 /detail/{article_id}/pN/
-    每张图一个页面 /news/detail/{article_id}/{image_id}/。
-    从当前页解析所有分页链接，逐页抓取并统一输出 ?w=2560 大图。"""
+    """thetv.jp 图集：/news/detail/{article_id}/{image_id}/landing/
+    从 news_feed 提取主图 + 遍历分页链接获取所有图片。"""
     import re
     from urllib.parse import urlparse
 
     headers = {**HEADERS, "Referer": "https://thetv.jp/"}
-
-    # --- 收集分页 ---
-    resp = requests.get(gallery_url, headers=headers, timeout=15)
-    if not resp.text:
-        return []
-    soup = BeautifulSoup(resp.text, "html.parser")
-
     p = urlparse(gallery_url)
     base = f"{p.scheme}://{p.netloc}"
 
@@ -598,57 +590,73 @@ def _scrape_thetv(gallery_url: str) -> list[str]:
     if not article_m:
         return []
     article_id = article_m.group(1)
-    detail_re = re.compile(rf'/(?:news/)?detail/{article_id}/(\d+)/')
 
-    pages: list[tuple[int, str]] = []
-    seen: set[int] = set()
+    images: list[str] = []
+    seen_ids: set[int] = set()
+
+    def _add_image(img_id: int, src: str):
+        if img_id in seen_ids:
+            return
+        seen_ids.add(img_id)
+        if src.startswith("//"):
+            src = "https:" + src
+        elif src.startswith("/"):
+            src = f"{base}{src}"
+        src = re.sub(r'\?w=\d+(&h=\d+(&f=\d+)?)?', '', src)
+        src = f"{src}?w=2560"
+        images.append(src)
+
+    # --- 第一页：提取 news_feed 主图 + 收集分页 ---
+    resp = requests.get(gallery_url, headers=headers, timeout=15)
+    if not resp.text:
+        return []
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # 1a. news_feed 中的主图（figure > a > img）
+    feed = soup.find("div", class_="news_feed")
+    if feed:
+        for fig in feed.find_all("figure"):
+            for img in fig.find_all("img"):
+                src = img.get("src") or img.get("data-src") or ""
+                if "/i/nw/" in src and article_id in src:
+                    mid = re.search(r'/i/nw/\d+/(\d+)\.', src)
+                    if mid:
+                        _add_image(int(mid.group(1)), src)
+
+    # 1b. 收集所有分页链接
+    detail_re = re.compile(rf'/(?:news/)?detail/{article_id}/(\d+)/')
+    page_urls: list[tuple[int, str]] = []
+    seen_pages: set[int] = set()
     for a_tag in soup.find_all("a", href=True):
         m = detail_re.search(a_tag["href"])
         if not m:
             continue
         img_num = int(m.group(1))
-        if img_num in seen:
+        if img_num in seen_pages:
             continue
-        seen.add(img_num)
+        seen_pages.add(img_num)
         href = a_tag["href"]
         full = href if href.startswith("http") else f"{base}{href}"
         full = re.sub(r'/landing/?$', '/', full)
-        pages.append((img_num, full))
-
-    if not pages:
-        return []
-
-    pages.sort(key=lambda x: x[0])
+        page_urls.append((img_num, full))
 
     # --- 逐页抓取 ---
-    images: list[str] = []
-    for img_num, page_url in pages[:MAX_IMAGES]:
+    for img_num, page_url in page_urls[:MAX_IMAGES]:
+        if len(images) >= MAX_IMAGES:
+            break
         try:
             r = requests.get(page_url, headers=headers, timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
-            # 精准匹配：/i/nw/{article_id}/{img_num}.jpg
-            target = re.escape(f"/i/nw/{article_id}/{img_num}")
-            src = None
+            target_pat = f"/i/nw/{article_id}/{img_num}"
             for img in s.find_all("img"):
-                candidate = img.get("data-src") or img.get("src") or ""
-                if target in candidate:
-                    src = candidate
+                src = img.get("data-src") or img.get("src") or ""
+                if target_pat in src and ".jpg" in src:
+                    _add_image(img_num, src)
                     break
-            if not src:
-                continue
-            if src.startswith("//"):
-                src = "https:" + src
-            elif src.startswith("/"):
-                src = f"{base}{src}"
-            src = re.sub(r'\?w=\d+', '', src)
-            src = f"{src}?w=2560"
-            if src not in images:
-                images.append(src)
         except Exception as e:
             print(f"  ⚠️ thetv page {page_url} 失败: {e}")
-        time.sleep(0.3)
 
-    return images
+    return images[:MAX_IMAGES]
 
 
 def _scrape_efight(gallery_url: str) -> list[str]:
