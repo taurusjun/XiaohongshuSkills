@@ -284,10 +284,11 @@ def _xhs_title_truncate(title: str, max_units: int = 20) -> str:
 
 
 def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
-                   article_url: str = "", video_url: str = "") -> bool:
-    """调用 publish_pipeline.py 发布到小红书。
-    有 video_url 时走视频模式（--video-url），否则走图文模式（--image-urls）。
-    """
+                   article_url: str = "", video_url: str = "",
+                   preview: bool = False, headless: bool = True,
+                   post_time: str = None, timing_jitter: float = 0.25,
+                   reuse_existing_tab: bool = False) -> bool:
+    """调用 publish_pipeline.py 发布到小红书。"""
     import subprocess
     if image_urls is None:
         image_urls = []
@@ -301,8 +302,17 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
         sys.executable, pipeline,
         "--title", title,
         "--content", content,
-        "--headless"
     ]
+    if headless:
+        cmd.append("--headless")
+    if preview:
+        cmd.append("--preview")
+    if post_time:
+        cmd += ["--post-time", post_time]
+    if timing_jitter != 0.25:
+        cmd += ["--timing-jitter", str(timing_jitter)]
+    if reuse_existing_tab:
+        cmd.append("--reuse-existing-tab")
 
     if video_url:
         if video_url.startswith("/"):
@@ -332,14 +342,12 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
         new_image_url = fetch_article_image(article_url)
         if new_image_url:
             print(f"  新配图: {new_image_url[:60]}...")
-            cmd = [
-                sys.executable, pipeline,
-                "--title", title,
-                "--content", content,
-                "--headless",
-                "--image-urls", new_image_url
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            cmd2 = [sys.executable, pipeline,
+                    "--title", title, "--content", content,
+                    "--image-urls", new_image_url]
+            if headless: cmd2.append("--headless")
+            if preview: cmd2.append("--preview")
+            result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
             if result.returncode == 0:
                 return True
 
@@ -354,6 +362,11 @@ def main():
     parser = argparse.ArgumentParser(description="小红书发布器")
     parser.add_argument("--auto", action="store_true", help="一键发布，跳过逐条确认")
     parser.add_argument("--force", action="store_true", help="忽略图集检查，直接发布")
+    parser.add_argument("--preview", action="store_true", help="仅填充内容不发布（预览模式）")
+    parser.add_argument("--no-headless", action="store_true", help="显示浏览器窗口")
+    parser.add_argument("--post-time", type=str, default=None, help="定时发布时间")
+    parser.add_argument("--timing-jitter", type=float, default=0.25, help="操作延迟系数（默认0.25）")
+    parser.add_argument("--reuse-existing-tab", action="store_true", help="复用已有Chrome tab")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -602,7 +615,10 @@ def main():
 
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url):
+        if publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
+                          preview=args.preview, headless=not args.no_headless,
+                          post_time=args.post_time, timing_jitter=args.timing_jitter,
+                          reuse_existing_tab=args.reuse_existing_tab):
             if mark_as_published(page["id"]):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
