@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 自动定位项目根目录
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$PROJECT_DIR"
+
+echo "=========================================="
+echo "🇯🇵 日本 Yahoo 新闻自动抓取"
+echo "$(date '+%Y.%m.%d %H:%M')"
+echo "=========================================="
+
+source .venv/bin/activate
+exec python scripts/yahoo_news_auto.py --push "$@"

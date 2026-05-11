@@ -3,6 +3,7 @@
 ## 项目结构与模块组织
 本仓库是一个用于小红书自动化的 Python Skill 包。
 - `scripts/` 包含全部可执行逻辑：`publish_pipeline.py`（主流程）、`cdp_publish.py`（CDP 自动化与账号命令）、`chrome_launcher.py`（Chrome 生命周期管理）以及辅助模块（`image_downloader.py`、`account_manager.py`、`run_lock.py`）。
+- `cmd/yahoo/`：Yahoo 新闻流水线快捷命令（`batch_fetch` 抓取，`publish` 发布）。
 - `config/accounts.json.example` 是账号与 Profile 的配置模板。
 - `docs/` 存放集成说明（例如 `docs/claude-code-integration.md`）。
 - `images/publish_temp/` 是临时素材目录占位。
@@ -20,6 +21,10 @@
 - `python scripts/cdp_publish.py check-login`：检查当前登录状态。
 - `python scripts/publish_pipeline.py --headless --title "T" --content "C" --image-urls "https://example.com/a.jpg"`：执行端到端发布流程。
 - `python scripts/chrome_launcher.py --kill`：关闭测试浏览器。
+
+## 快捷命令（cmd/yahoo/）
+- `./cmd/yahoo/batch_fetch [--keyword X] [--max N] [--push]`：抓取 Yahoo 新闻，生成 AI 内容，写入 Notion。
+- `./cmd/yahoo/publish`：从 Notion 读取待发布内容，发布到小红书（headless，自动跳过登录弹窗）。
 
 ## 代码风格与命名规范
 - 遵循 PEP 8，使用 4 空格缩进，并为模块提供清晰 docstring。
