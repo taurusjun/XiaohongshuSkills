@@ -55,6 +55,13 @@ import time
 # Ensure UTF-8 output on Windows consoles
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+    # 加载 .env（兼容直接运行和 subprocess 调用）
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    except ImportError:
+        pass
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -513,7 +520,8 @@ def main():
         logged_in = publisher.check_login()
         if not logged_in:
             publisher.disconnect()
-            if headless:
+            no_fallback = os.environ.get("CDP_NO_LOGIN_FALLBACK", "").lower() in ("1", "true", "yes")
+            if headless and not no_fallback:
                 if local_mode:
                     # Auto-fallback: restart Chrome in headed mode for QR login
                     print("[pipeline] Headless mode: not logged in. Switching to headed mode for login...")
@@ -527,6 +535,8 @@ def main():
                     )
                     publisher.connect(reuse_existing_tab=reuse_existing_tab)
                     publisher.open_login_page()
+            else:
+                print("[pipeline] Headless mode: not logged in. Run without --headless to login first.")
             print("NOT_LOGGED_IN")
             sys.exit(1)
     except CDPError as e:
