@@ -209,7 +209,8 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 }
 
 
-def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = "") -> Tuple[str, str, str, str, str, list]:
+def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
+                                  keyword: str = "") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
@@ -225,10 +226,11 @@ def generate_content_and_comment(title_ja: str, title_zh: str, keyword: str = ""
     if required_kw:
         kw_instruction = f"\n引流要求：标题中必须出现「{required_kw}」，这是搜索引流关键词，不可省略。\n"
 
-    prompt = f"""你是小红书日语学习博主。请根据新闻标题，严格按照下方格式输出全部6个字段。
+    prompt = f"""你是小红书日语学习博主。请根据新闻标题和摘要，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}{kw_instruction}
+日文原文：{title_ja}
+{("新闻摘要：" + ja_summary[:300]) if ja_summary else ""}{kw_instruction}
 
 输出格式（必须包含全部6个字段）：
 
@@ -526,9 +528,19 @@ def process_news_item(news: dict, no_translate: bool = False,
     if LITELLM_API_KEY and not no_translate:
         print("    翻译...")
         news['title_zh'] = translate_title(news['title_ja'])
+
+        # 提前抓取文章摘要，让 LLM 生成「新闻要点」时有足够上下文
+        print("    抓取文章详情（供AI参考）...")
+        details = fetch_article_details(news['link'])
+        news['original_title']     = details.get("original_title", news['title_ja'])
+        news['ja_summary']         = details.get("summary", "")
+        news['original_image_url'] = details.get("image_url", "")
+
         print("    生成内容...")
         generated = generate_content_and_comment(
-            news['title_ja'], news['title_zh'], keyword=keyword
+            news['title_ja'], news['title_zh'],
+            ja_summary=news.get('ja_summary', ''),
+            keyword=keyword,
         )
         if generated is None:
             print("    ⚠️ LLM 调用失败，跳过此条新闻")
@@ -573,12 +585,10 @@ def process_news_item(news: dict, no_translate: bool = False,
     if keyword:
         news['keyword'] = keyword
 
-    # 3. 文章详情（封面图、原标题、日文摘要）
-    print("    抓取文章详情...")
-    details = fetch_article_details(news['link'])
-    news['original_title']     = details.get("original_title", news['title_ja'])
-    news['ja_summary']         = details.get("summary", "")
-    news['original_image_url'] = details.get("image_url", "")
+    # 3. Cloudinary 上传（文章详情已在 AI 生成前抓取）
+    news.setdefault('original_title', news['title_ja'])
+    news.setdefault('ja_summary', '')
+    news.setdefault('original_image_url', '')
 
     # 4. Cloudinary 上传
     if news['original_image_url']:
