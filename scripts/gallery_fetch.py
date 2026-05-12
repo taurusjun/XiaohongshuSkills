@@ -265,50 +265,52 @@ def detect_gallery_link(article_url: str) -> str:
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
-    """oricon.co.jp 分页图集：逐页抓 div.main_photo img"""
+    """oricon.co.jp 分页图集：通过「次の写真」链接逐页遍历，抓 #main_photo img"""
     import re
-    from urllib.parse import urlparse
+    from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://www.oricon.co.jp/"}
 
-    # 从当前页获取所有分页链接，取最大页码
-    resp = requests.get(gallery_url, headers=headers, timeout=15)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    p = urlparse(gallery_url)
-    base_origin = f"{p.scheme}://{p.netloc}"
+    images: list[str] = []
+    seen: set[str] = set()
+    url = gallery_url
 
-    # 用 path（不含 query）找分页
-    base_path = re.sub(r'/photo/\d+/?$', '/photo/', p.path)
-    page_nums = set()
-    for a in soup.find_all("a", href=True):
-        m = re.search(r'/photo/(\d+)/?$', a["href"])
-        if m and base_path.split("/photo/")[0] in a["href"]:
-            page_nums.add(int(m.group(1)))
-
-    total = max(page_nums) if page_nums else 1
-    images = []
-
-    for page in range(1, total + 1):
+    for _ in range(MAX_IMAGES):
         try:
-            url = f"{base_origin}{base_path}{page}/"
             r = requests.get(url, headers=headers, timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
-            img = s.select_one("div.main_photo img, .main_photo_image img")
+
+            img = s.select_one("#main_photo img")
             if img:
                 src = img.get("src", "")
                 if src:
                     if src.startswith("/"):
-                        src = base_origin + src
-                    images.append(src)
+                        src = urljoin("https://www.oricon.co.jp", src)
+                    if src not in seen:
+                        seen.add(src)
+                        images.append(src)
+
+            # 「次の写真」リンクから次ページへ
+            next_a = None
+            for a in s.select("a[href*='/photo/']"):
+                if "次の写真" in a.get_text():
+                    next_a = a
+                    break
+            if not next_a:
+                break
+            next_url = urljoin("https://www.oricon.co.jp", next_a.get("href", ""))
+            if next_url == url:
+                break
+            url = next_url
+            time.sleep(0.3)
         except Exception as e:
-            print(f"  ⚠️ oricon page {page} 失败: {e}")
-        time.sleep(0.3)
+            print(f"  ⚠️ oricon 抓取失败: {e}")
+            break
 
     return images
 
 
 def _scrape_crank_in(gallery_url: str) -> list[str]:
-    """crank-in.net 每张图独立分页，遍历所有页抓主图。
-    以第1页 figcaption 为基准，过滤掉 crank-in 追加的 archive 无关图片。"""
+    """crank-in.net 每张图独立分页，遍历所有页抓主图。"""
     import re
     from urllib.parse import urlparse, urlunparse
     headers = {**HEADERS, "Referer": "https://www.crank-in.net/"}
@@ -318,7 +320,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     clean_url = urlunparse(p._replace(query="", fragment="")).rstrip("/")
     base = re.sub(r'/\d+$', '', clean_url)
 
-    # 先取第一页：获取总页数 + 参考 figcaption
+    # 先取第一页获取总页数
     resp = requests.get(f"{base}/1", headers=headers, timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
     num_el = soup.select_one(".photo-link-num")
@@ -328,27 +330,16 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
         if m:
             total = int(m.group(1))
 
-    ref_fig = soup.select_one("figcaption")
-    ref_caption = ref_fig.get_text().strip() if ref_fig else None
-
     total = min(total, MAX_IMAGES)
     images = []
 
     for page in range(1, total + 1):
         try:
-            if page == 1:
-                s = soup
-            else:
+            if page != 1:
                 r = requests.get(f"{base}/{page}", headers=headers, timeout=15)
                 s = BeautifulSoup(r.text, "html.parser")
-
-            # figcaption が page 1 と異なる → crank-in が追加した archive 写真なのでスキップ
-            if ref_caption is not None:
-                fig = s.select_one("figcaption")
-                cap = fig.get_text().strip() if fig else None
-                if cap != ref_caption:
-                    print(f"  ℹ️ p{page} はアーカイブ写真のためスキップ（figcaption 不一致）")
-                    continue
+            else:
+                s = soup
 
             img = s.select_one(".photo-link-img img")
             if img:
@@ -713,54 +704,55 @@ def _scrape_efight(gallery_url: str) -> list[str]:
 
 
 def _scrape_maidonanews(gallery_url: str) -> list[str]:
-    """maidonanews.jp 图集：从 potaufeu.asahi.com CDN 提取图片，生成 640px 版本。"""
+    """maidonanews.jp 图集：通过 Next/Prev 分页遍历，从 figure.module-article-photo 提取主图。"""
     import re
+    from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://maidonanews.jp/"}
 
-    try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
-        s = BeautifulSoup(r.text, "html.parser")
+    images: list[str] = []
+    seen: set[str] = set()
+    url = gallery_url
 
-        images: list[str] = []
-        seen: set[str] = set()
+    for _ in range(MAX_IMAGES):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
 
-        for img in s.find_all("img"):
-            src = (img.get("data-src") or img.get("src") or "")
-            # 检查是否是 potaufeu 图片（可能是协议相对 URL）
-            if ("potaufeu.asahi.com" in src and "/picture/" in src):
-                
-                # 标准化为完整 URL
-                if src.startswith("//"):
-                    src = "https:" + src
-                elif src.startswith("/"):
-                    src = "https://p.potaufeu.asahi.com" + src
-                
-                # 去掉查询参数
-                src = re.sub(r'\?.*$', '', src)
-                
-                # 提取图片路径和尺寸，生成 640px URL
-                # 支持 _px.jpg, _square.jpg 格式
-                match = re.search(r'(/picture/\w+/\w+)_\d+(px|square)\.jpg$', src)
-                if match:
-                    # 保留完整域名和路径前缀
-                    domain_part = src.split('/picture/')[0]
-                    path_part = match.group(1)
-                    # square 图直接改为 640px
-                    large = f"{domain_part}{path_part}_640px.jpg"
-                    if large not in seen:
-                        seen.add(large)
-                        images.append(large)
-                        if len(images) >= MAX_IMAGES:
-                            break
-                # 如果已经是 640px，直接添加
-                elif "_640px.jpg" in src and src not in seen:
-                    seen.add(src)
-                    images.append(src)
+            # 只取主图区域，避开侧边栏缩略图
+            fig = s.select_one("figure.module-article-photo")
+            if fig:
+                img = fig.select_one("img")
+                src = (img.get("data-src") or img.get("src") or "") if img else ""
+                if src:
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    elif src.startswith("/"):
+                        src = urljoin("https://maidonanews.jp", src)
+                    src = re.sub(r'\?.*$', '', src)
+                    # 统一生成 640px 版本
+                    src = re.sub(r'/picture/(\w+)/(\w+)_\d+(px|square)\.(jpg|png)$',
+                                 r'/picture/\1/\2_640px.\4', src)
+                    if src not in seen:
+                        seen.add(src)
+                        images.append(src)
 
-        return images
-    except Exception as e:
-        print(f"  ⚠️ maidonanews.jp 抓取失败: {e}")
-        return []
+            # 跟随 Next 链接进入下一页
+            next_btn = s.select_one(".module-article-photo-button--next a")
+            if not next_btn:
+                break
+            next_href = next_btn.get("href", "")
+            if not next_href:
+                break
+            next_url = urljoin("https://maidonanews.jp", next_href)
+            if next_url == url:
+                break
+            url = next_url
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"  ⚠️ maidonanews.jp 抓取失败: {e}")
+            break
+
+    return images
 
 
 def _scrape_encount(gallery_url: str) -> list[str]:
@@ -2779,9 +2771,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
         print(f"  🎬 YouTube 直链: {_youtube_video_id}")
 
     # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
-    # 已知图片图集域名（crank-in、mdpr 等）本身就是图片页，无需检测嵌入视频
-    _is_known_photo_gallery = any(d in gallery_url for d in GALLERY_SITES)
-    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url and not _is_known_photo_gallery:
+    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             _shortcode = _extract_instagram_shortcode(_page_resp.text)
