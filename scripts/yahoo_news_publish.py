@@ -420,18 +420,6 @@ def main():
         parts.append(content)
         parts.append("")
 
-        # 原文信息
-        if original_title or ja_summary:
-            parts.append("─" * 15)
-            parts.append("📰 原文")
-            parts.append("")
-            if original_title:
-                parts.append(original_title)
-                parts.append("")  # 添加空行
-            if ja_summary:
-                parts.append(ja_summary)
-                parts.append("")  # 添加空行
-
         xhs_content = "\n".join(parts)
 
         # 添加标签（最后一行 #标签1 #标签2 格式）
