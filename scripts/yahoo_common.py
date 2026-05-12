@@ -17,6 +17,7 @@ import re
 import sys
 import json
 import time
+import random
 
 import requests
 from bs4 import BeautifulSoup
@@ -249,6 +250,26 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     if required_kw:
         kw_instruction = f"\n注意：如果这条新闻确实涉及「{required_kw}」，请在标题中自然地包含它；如果新闻跟「{required_kw}」完全无关，不要强行插入。\n"
 
+    # 傲娇模式：约 1/3 概率启用
+    tsundere_mode = random.random() < 0.33
+    tsundere_instruction = ""
+    if tsundere_mode:
+        tsundere_instruction = """
+本篇文章启用「傲娇语气」。在【我的解读】中融入 1 处傲娇表达（仅 1 处，不要多）。
+
+傲娇核心话术：「否认 + 强硬理由 + 心口不一」
+▸ 关心的傲娇：「真拿你没办法，就帮你一次……别得寸进尺！」「受伤了？笨蛋，下次注意啊！」
+▸ 羞涩的傲娇：「才、才没有一直盯着看呢！」「如果是你的话，也不是不可以啦……」
+▸ 嘴硬心虚：「哼，我又不是特意看的」「我只是顺手点进去了而已」「才不是为了你才发的」
+▸ 委婉认可：「找我帮忙？早了一百年呢……（但也不是不行）」
+
+禁止：不要用动漫腔（笨蛋/八嘎/无路赛），不要整段傲娇，1 处就够了。
+"""
+    else:
+        tsundere_instruction = """
+本篇文章使用正常语气，不要使用傲娇句式。
+"""
+
     # 构建上下文：优先用正文，不够再用摘要
     context = ""
     if body_text:
@@ -259,7 +280,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     prompt = f"""你是小红书日语学习博主。请根据以下新闻内容，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}{context}{kw_instruction}
+日文原文：{title_ja}{context}{kw_instruction}{tsundere_instruction}
 
 输出格式（必须包含全部6个字段）：
 
@@ -317,10 +338,18 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 • （要点4，可选）
 
 【我的解读】
-（80-120字，从中国视角分析这条新闻的意义，语气口语化，像在和朋友聊天。
-必要时自然嵌入1-2个日语关键词并标注读音，例如：
-「这就是典型的"お嬢様学校"（おじょうさまがっこう），偏差值71...」
-不要单独列出词汇表，让单词出现在上下文里。）
+（80-120字。第一人称，像发微信给朋友。必须包含以下3点中的至少2点：
+1. 个人感受 — 从你的角度出发的真实反应（不要用"说实话""讲真""有一说一""咱就是说"开头，太假了）
+2. 信息增量 — 补充一条文章里没有的背景知识
+3. 互动召唤 — 结尾抛一个问题给读者
+
+语气要求：
+- 基础人设：口语化少女博主，自然不做作，像班里那个爱分享八卦的女生
+- 禁止AI套话：我们可以看出/值得关注的是/从XX角度来看/不得不说/无疑/由此可见/综上所述
+- 禁止假人设常用语：说实话/讲真/有一说一/咱就是说/谁懂啊/我直接一个好家伙/谁顶得住/这也太会了吧/反差感拉满/我哭死/杀疯了/第一反应是/我第一眼/看到XX我整个人都
+- 日语词自然嵌入并注音，不要单独列词汇表
+- 语气词适量（每段不超过3处）：吧/嘛/呢/啦/咯/呀/哦/呗/欸
+- 不完美感 > 工整感（"挺""有点""蛮"））
 
 【话题标签】
 （5-8个标签，#开头。优先从以下热门标签中选择合适的：
