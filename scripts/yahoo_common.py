@@ -232,11 +232,12 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 
 
 def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
-                                  keyword: str = "") -> Tuple[str, str, str, str, str, list]:
+                                  keyword: str = "", body_text: str = "") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
         keyword: 搜索关键词，非空时标题中必须包含对应中文名（引流用）
+        body_text: 文章正文内容，提供更多上下文给 LLM
 
     Returns:
         (seo_title, summary, content, comment, vocab, topic_tags)
@@ -246,57 +247,68 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
     kw_instruction = ""
     if required_kw:
-        kw_instruction = f"\n引流要求：标题中必须出现「{required_kw}」，这是搜索引流关键词，不可省略。\n"
+        kw_instruction = f"\n注意：如果这条新闻确实涉及「{required_kw}」，请在标题中自然地包含它；如果新闻跟「{required_kw}」完全无关，不要强行插入。\n"
 
-    prompt = f"""你是小红书日语学习博主。请根据新闻标题和摘要，严格按照下方格式输出全部6个字段。
+    # 构建上下文：优先用正文，不够再用摘要
+    context = ""
+    if body_text:
+        context = f"\n文章正文：\n{body_text[:2000]}\n"
+    elif ja_summary:
+        context = f"\n新闻摘要：{ja_summary[:600]}\n"
+
+    prompt = f"""你是小红书日语学习博主。请根据以下新闻内容，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}
-{("新闻摘要：" + ja_summary[:300]) if ja_summary else ""}{kw_instruction}
+日文原文：{title_ja}{context}{kw_instruction}
 
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
-（字数规则：最大20字。汉字/日语/标点各算1字，英文字母2个算1字（如「AKB48」算2.5字）。按新闻类型选对应策略：
+（20字上限。汉字/日语/标点各1字，英文字母2个算1字。每次从以下4种策略中选一种：
 
-▸ 艺能/追星类 → 社会证明 + 情绪反差，事件具体，情绪词放句末，不说答案：
-  「他退社那一刻，粉丝群沉默了」「拓哉这次回应，和大家想的不一样」
-  「山内铃兰官宣，松井珠理奈的回应亮了」
+▸ 反差提问 → 反常细节 + 问句收尾，不答：
+  「H罩杯钢琴家，演出时弦断了？」「39公斤的她，全网在担心什么？」
 
-▸ 学习/语言类 → 结果前置 + 数字锚定，制造「这方法我也能用」的代入感：
-  「不背单词，3个月能追番了」「这10个N1词，外国人全栽在这」
-  「N1词汇Top10，第一名出乎意料」
+▸ 数字先行 → 数字打头，制造信息差：
+  「半年减28kg，没节食没运动」「40秒一台车，特斯拉上海厂实拍」
 
-▸ 时事/社会类 → 信息差 + 身份代入，暗示「你不知道但应该知道」：
-  「在日华人速看，这个制度要变了」「同一条新闻，日文版多了这几句话」
-  「数十万人受影响，真正的重点在这」
+▸ 身份带入 → 让读者觉得「跟我有关」：
+  「在日华人这张卡别忘了续」「去过东迪的人都不知道的规定」
 
-铁律（每次生成后自检）：
-- 标题留悬念，不说答案，看完还想点进来
-- 前7字出现具体信息，不以「日本」「日语」泛泛打头
-- 字数上限20：汉字/日语/标点各1字，英文字母2个=1字，超了必须砍
-- 禁用套话：震惊/绝了/炸裂/天花板/粉丝集合/必看/N1党狂喜
-- 禁用重复句式：评论区画风突变/粉丝沸了/网友坐不住了/看完沉默了 ← 这类句末模板已被滥用，必须换表达
-- 每次根据当前新闻内容重新构思，句末情绪词不得与上次相同）
+▸ 细节钩子 → 一个小细节引出故事：
+  「退社信只有一行字」「合照少了一个人，粉丝一眼发现」
+
+铁律：
+- 前7字必须出现人物的全名或具体数字，禁止用「乃木坂成员」「AKB偶像」「前女团成员」这类泛称。有人名必须用人名。例如：
+  差：「乃木坂成员，毕业信一句话」← 哪个人？读者没感觉
+  好：「远藤樱毕业信只有一行字」← 具体到人，粉丝立刻认出
+  差：「前女团成员晒大胆照」← 谁？
+  好：「田中美久晒照，评论区风向变了」← 具体
+- 20字上限，超了砍修饰词
+- 标题统一用简体中文，日式汉字必须转为简体中文对应字（如「水島」→ 水岛、「澤」→ 泽、「櫻」→ 樱、「結」→ 结、日语专有名词中的汉字也要转简。日本团体名如「乃木坂」已是中文通用写法，保持不变）
+- 以下50+个词/句式一个都不能出现在标题里（犯规则重写）：
+  破防 / 慌了 / 沉默了 / 画风突变 / 评论区炸了 / 粉丝沸腾了 /
+  网友坐不住 / 看完沉默 / 全网震惊 / 不敢认 /
+  太值了 / 绝了 / 炸裂 / 天花板 / 必看 /
+  不看你亏 / 建议收藏 / 干货 / 话不多说 /
+  下一秒 / 那一刻 / 这一刻 / 所有人 /
+  宝子们 / 姐妹们 / 给大家分享 /
+  太美了吧 / 也太美了 / 美到不敢认 /
+  震惊 / 太 / 超 / 极（夸张副词）
+- 标题不要重复原新闻标题的句式，用自己的话重新表达
+- 不要用「！」，用句号或问号）
 
 【引流摘要】
-（15-30字。这是小红书笔记卡片的副标题，独立于标题单独工作。
-公式：话题（讲什么）+ Hook（为什么看）+ 悬念（不给答案）
+（15-30字。独立于标题，给读者一个点进来看的理由：
 
-按类型写法——
-艺能/追星 → 场景还原，制造画面感，不给结论：
-  好：「消息公布那一刻，我看了评论区整整五分钟没说话」
-  差：「木村拓哉回应粉丝担忧，感动了很多人」（直接给了结论）
+▸ 艺能 → 场景画面 + 情绪悬念：
+  「消息公布那一刻，评论区刷了五分钟没停」
+▸ 学习 → 结果+反常识：
+  「3个月从零到能追番，关键竟然不是背单词」
+▸ 时事 → 信息差：
+  「同一条新闻，日文版比中文版多写了一段」
 
-学习/语言 → 结果或数字前置，后接悬念：
-  好：「3个月从听不懂到能追番，关键不是单词量」
-  差：「分享一下我学日语的方法，希望对大家有帮助」
-
-时事/社会 → 信息差或反问，不复述标题：
-  好：「同样一件事，日文报道和中文报道省了不一样的东西」
-  差：「日本政府宣布修改制度，影响很多外国人」（复述了标题）
-
-禁止：「今天给大家分享」「宝子们！」「干货预警」「建议收藏」「话不多说」）
+禁止：「给大家分享」「宝子们！」「干货预警」「建议收藏」「话不多说」）
 
 【新闻要点】
 • （要点1，一句话说清楚）
@@ -305,12 +317,10 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 • （要点4，可选）
 
 【我的解读】
-（80-120字，从中国视角分析这条新闻的意义，语气口语化，像在和朋友聊天）
-
-【N1/N2词汇】
-（从新闻内容推测可能出现的词汇，提取3个N1或N2级别日语词汇，格式如下）
-1. 单词 (假名) [词性] 中文释义
-   例句：简单的日语例句
+（80-120字，从中国视角分析这条新闻的意义，语气口语化，像在和朋友聊天。
+必要时自然嵌入1-2个日语关键词并标注读音，例如：
+「这就是典型的"お嬢様学校"（おじょうさまがっこう），偏差值71...」
+不要单独列出词汇表，让单词出现在上下文里。）
 
 【话题标签】
 （5-8个标签，#开头。优先从以下热门标签中选择合适的：
@@ -327,7 +337,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
         return None  # LLM 调用失败，由调用方决定是否跳过
 
     seo_title = title_zh
-    summary = content = comment = vocab = ""
+    summary = content = comment = ""
     topic_tags: list[str] = []
 
     # GLM-5 may repeat field headers during its analysis phase — use the last occurrence of each
@@ -352,9 +362,11 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     raw_seo = last_section("SEO标题")
     if raw_seo:
         seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
-        # 兜底：关键词未出现时强制插入到标题开头
+        # 兜底：关键词仅在新闻正文/标题本身含有该词时才强制插入标题
+        # 避免把"乃木坂"塞进纯 AKB48 的新闻
         if required_kw and required_kw not in seo_title:
-            seo_title = _truncate_title(f"{required_kw}{seo_title}")
+            if required_kw in title_ja or required_kw in title_zh or required_kw in body_text:
+                seo_title = _truncate_title(f"{required_kw}{seo_title}")
 
     raw_summary = last_section("引流摘要")
     if raw_summary:
@@ -369,16 +381,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     if raw_comment:
         comment = re.split(r'【[^】]+】', raw_comment)[0].strip()
 
-    raw_vocab = last_section("N1/N2词汇")
-    if raw_vocab:
-        vocab = re.split(r'【[^】]+】', raw_vocab)[0].strip()
-
     raw_tags = last_section("话题标签")
     if raw_tags:
         tag_line = re.split(r'【[^】]+】', raw_tags)[0].strip().split('\n')[0].strip()
         topic_tags = [t.lstrip('#').strip() for t in re.findall(r'#\S+', tag_line) if t.lstrip('#').strip()]
 
-    return seo_title, summary, content, comment, vocab, topic_tags
+    return seo_title, summary, content, comment, "", topic_tags
 
 
 # ============ 分类 ============
@@ -509,6 +517,7 @@ def fetch_article_details(url: str) -> dict:
             if h1:
                 result["original_title"] = h1.get_text(strip=True)
 
+        # 摘要：优先 og:description，否则取正文首段
         og_desc = soup.find("meta", property="og:description")
         if og_desc and og_desc.get("content"):
             result["summary"] = og_desc["content"]
@@ -517,7 +526,20 @@ def fetch_article_details(url: str) -> dict:
             if article:
                 p = article.find("p")
                 if p:
-                    result["summary"] = p.get_text(strip=True)[:300]
+                    result["summary"] = p.get_text(strip=True)[:600]
+
+        # 正文：提取 article 内所有段落，给 LLM 提供更多上下文
+        body_text = ""
+        article = soup.find("article") or soup.find(class_="article")
+        if article:
+            paras = article.find_all("p")
+            body_parts = []
+            for p in paras:
+                t = p.get_text(strip=True)
+                if len(t) > 20:
+                    body_parts.append(t)
+            body_text = "\n".join(body_parts)
+        result["body_text"] = body_text[:2000]
     except Exception as e:
         print(f"    ⚠️ 抓取文章详情失败: {e}")
     return result
@@ -551,35 +573,35 @@ def process_news_item(news: dict, no_translate: bool = False,
         print("    翻译...")
         news['title_zh'] = translate_title(news['title_ja'])
 
-        # 提前抓取文章摘要，让 LLM 生成「新闻要点」时有足够上下文
+        # 提前抓取文章摘要+正文，让 LLM 生成「新闻要点」时有足够上下文
         print("    抓取文章详情（供AI参考）...")
         details = fetch_article_details(news['link'])
         news['original_title']     = details.get("original_title", news['title_ja'])
         news['ja_summary']         = details.get("summary", "")
         news['original_image_url'] = details.get("image_url", "")
+        news['body_text']          = details.get("body_text", "")
 
         print("    生成内容...")
         generated = generate_content_and_comment(
             news['title_ja'], news['title_zh'],
             ja_summary=news.get('ja_summary', ''),
             keyword=keyword,
+            body_text=news.get('body_text', ''),
         )
         if generated is None:
             print("    ⚠️ LLM 调用失败，跳过此条新闻")
             news['_skip'] = True
             return news
-        seo_title, summary, content, comment, vocab, topic_tags = generated
+        seo_title, summary, content, comment, _, topic_tags = generated
         news['title_zh'] = seo_title
         news['summary']  = summary
         news['content']  = content
         news['comment']  = comment
-        news['vocab']    = vocab
         news['video_caption'] = ""  # 先占位，tags 确定后再填
     else:
         news.setdefault('title_zh', news['title_ja'])
         news.setdefault('content', f"• {news['title_ja']}")
         news.setdefault('comment', "")
-        news.setdefault('vocab', "")
         topic_tags: list[str] = []
 
     # 2. 分类 + 标签（auto_classify + extra_tags + AI话题标签）
@@ -754,19 +776,6 @@ def push_to_notion(news: Dict) -> str:
         }})
         blocks.append({"object": "block", "type": "paragraph",
                         "paragraph": {"rich_text": [{"type": "text", "text": {"content": news["comment"][:2000]}}]}})
-
-    if news.get("vocab"):
-        blocks.append({"object": "block", "type": "divider", "divider": {}})
-        blocks.append({"object": "block", "type": "heading_3", "heading_3": {
-            "rich_text": [{"type": "text", "text": {"content": "📝 今日词汇 (N1/N2)"}}]
-        }})
-        for line in news["vocab"].split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            btype = "quote" if line.startswith("例句") else "paragraph"
-            blocks.append({"object": "block", "type": btype,
-                            btype: {"rich_text": [{"type": "text", "text": {"content": line[:500]}}]}})
 
     blocks.append({"object": "block", "type": "divider", "divider": {}})
     blocks.append({"object": "block", "type": "heading_3", "heading_3": {

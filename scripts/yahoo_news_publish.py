@@ -420,26 +420,6 @@ def main():
         parts.append(content)
         parts.append("")
 
-        # 词汇部分
-        if vocab:
-            parts.append("─" * 15)
-            parts.append("📝 今日词汇 (N1/N2)")
-            parts.append("")
-            # 重新格式化词汇
-            vocab_lines = []
-            for line in vocab.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith("📝") or "词汇" in line:
-                    continue  # 跳过标题
-                if line.startswith("例句"):
-                    vocab_lines.append(f"   💬 {line}")
-                else:
-                    vocab_lines.append(line)
-            parts.append("\n".join(vocab_lines))
-            parts.append("")
-
         # 原文信息
         if original_title or ja_summary:
             parts.append("─" * 15)
