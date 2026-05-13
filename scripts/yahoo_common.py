@@ -349,12 +349,14 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 1. 个人感受 — 从你的角度出发的真实反应（不要用"说实话""讲真""有一说一""咱就是说"开头，太假了）
 2. 信息增量 — 补充一条文章里没有的背景知识
 3. 互动召唤 — 结尾抛一个问题给读者
+4. 日语嵌入 — 每篇解读中自然嵌入1个日语关键词，括号注音解释。例如：
+   「台本上只写了"キス（吻）"，具体怎么亲全是现场商量的」
+   让单词出现在上下文里，不要单独列词汇表
 
 语气要求：
 - 基础人设：口语化少女博主，自然不做作，像班里那个爱分享八卦的女生
 - 禁止AI套话：我们可以看出/值得关注的是/从XX角度来看/不得不说/无疑/由此可见/综上所述
 - 禁止假人设常用语：说实话/讲真/有一说一/咱就是说/谁懂啊/我直接一个好家伙/谁顶得住/这也太会了吧/反差感拉满/我哭死/杀疯了/第一反应是/我第一眼/看到XX我整个人都
-- 日语词自然嵌入并注音，不要单独列词汇表
 - 语气词适量（每段不超过3处）：吧/嘛/呢/啦/咯/呀/哦/呗/欸
 - 不完美感 > 工整感（"挺""有点""蛮"））
 
@@ -606,10 +608,7 @@ def process_news_item(news: dict, no_translate: bool = False,
     """
     # 1. 翻译 + AI 生成
     if LITELLM_API_KEY and not no_translate:
-        print("    翻译...")
-        news['title_zh'] = translate_title(news['title_ja'])
-
-        # 提前抓取文章摘要+正文，让 LLM 生成「新闻要点」时有足够上下文
+        # 先抓文章详情，用 og:title 替换 Yahoo 搜索页的拼接/截断标题
         print("    抓取文章详情（供AI参考）...")
         details = fetch_article_details(news['link'])
         news['original_title']     = details.get("original_title", news['title_ja'])
@@ -617,14 +616,16 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['original_image_url'] = details.get("image_url", "")
         news['body_text']          = details.get("body_text", "")
 
-        # Yahoo 搜索页标题常有截断/拼接垃圾，用 og:title 替换
         og_title = details.get("original_title", "")
         if og_title and len(og_title) > 10:
-            # 去掉 " - Yahoo!ニュース" 等来源后缀
             og_title_clean = re.sub(r'\s*[-—|]\s*Yahoo!.*$', '', og_title).strip()
             og_title_clean = re.sub(r'\s*（[^）]*Yahoo[^）]*）\s*$', '', og_title_clean).strip()
-            if len(og_title_clean) > len(news['title_ja']) * 0.5:  # 不比搜索标题短太多才替换
+            if len(og_title_clean) > len(news['title_ja']) * 0.5:
                 news['title_ja'] = og_title_clean
+
+        # 用清洗后的标题翻译
+        print("    翻译...")
+        news['title_zh'] = translate_title(news['title_ja'])
 
         print("    生成内容...")
         generated = generate_content_and_comment(
