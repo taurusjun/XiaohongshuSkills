@@ -90,6 +90,7 @@ GALLERY_SITES: dict[str, str] = {
     "daily.co.jp":           "article.detailContent",
     "vivi.tv":               "article, .gallery",
     "times.abema.tv":        ".article-body",
+    "realsound.jp":          "figure img, .post-content img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -97,6 +98,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
+                         "realsound.jp",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
@@ -750,6 +752,51 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
             time.sleep(0.3)
         except Exception as e:
             print(f"  ⚠️ maidonanews.jp 抓取失败: {e}")
+            break
+
+    return images
+
+
+def _scrape_realsound(gallery_url: str) -> list[str]:
+    """realsound.jp 图集：跟随「次のページ」链抓取 figure img，过滤侧栏缩略图"""
+    import re
+    from urllib.parse import urljoin
+    headers = {**HEADERS, "Referer": "https://realsound.jp/"}
+
+    images: list[str] = []
+    seen: set[str] = set()
+    url = gallery_url
+
+    for _ in range(MAX_IMAGES):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            s = BeautifulSoup(r.text, "html.parser")
+
+            img = s.select_one("figure img")
+            if img:
+                src = img.get("src") or img.get("data-src") or ""
+                if src:
+                    src = urljoin("https://realsound.jp", src)
+                    # 过滤侧栏缩略图（URL 含尺寸如 -329x468）
+                    if not re.search(r'-\d+x\d+\.(jpg|png)$', src) and src not in seen:
+                        seen.add(src)
+                        images.append(src)
+
+            # 跟随「次のページ」
+            next_a = None
+            for a in s.select("a"):
+                if "次のページ" in a.get_text():
+                    next_a = a
+                    break
+            if not next_a:
+                break
+            next_url = urljoin("https://realsound.jp", next_a.get("href", ""))
+            if next_url == url:
+                break
+            url = next_url
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"  ⚠️ realsound 抓取失败: {e}")
             break
 
     return images
@@ -2420,6 +2467,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         images = _scrape_crank_in(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
+    if "realsound.jp" in domain:
+        images = _scrape_realsound(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "limo.media" in domain:
         images = _scrape_limo(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
@@ -2770,8 +2821,22 @@ def process_page(page: dict, redownload: bool = False) -> bool:
         _youtube_video_id = _yt_direct.group(1)
         print(f"  🎬 YouTube 直链: {_youtube_video_id}")
 
+    # 纯图集站（页面不含 YouTube/IG 嵌入，跳过检测避免误判）
+    _pure_photo_domains = {"crank-in.net", "oricon.co.jp", "mdpr.jp", "modelpress.net",
+                           "natalie.mu", "thetv.jp", "mantan-web.jp", "daily.co.jp",
+                           "vivi.tv", "times.abema.tv", "smart-flash.jp", "hochi.news",
+                           "sponichi.co.jp", "nikkansports.com", "chunichi.co.jp",
+                           "billboard-japan.com", "limo.media", "mezamashi.media",
+                           "inside-games.jp", "bookbang.jp", "efight.jp", "encount.press",
+                           "maidonanews.jp", "yorozoonews.jp", "nikkan-spa.jp",
+                           "animeanime.jp", "mainichikirei.jp", "deview.co.jp",
+                           "qjweb.jp", "pinzuba.news", "friday.kodansha.co.jp",
+                           "shueisha.online", "entamenext.com", "realsound.jp"}
+    _is_pure_photo = any(d in gallery_url for d in _pure_photo_domains)
+
     # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
-    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url:
+    # 已知纯图集站跳过检测，避免把侧栏推荐视频误判为内容
+    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url and not _is_pure_photo:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             _shortcode = _extract_instagram_shortcode(_page_resp.text)
