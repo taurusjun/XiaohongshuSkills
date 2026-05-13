@@ -207,7 +207,7 @@ def main():
     parser.add_argument('--push', '-p', action='store_true', help='自动推送到 Notion')
     parser.add_argument('--max', '-m', type=int, default=None, help='每个关键词最大抓取数量')
     parser.add_argument('--keyword', '-k', type=str, default=None, help='指定单个搜索关键词')
-    parser.add_argument('--no-filter', action='store_true', help='关闭中国相关性过滤')
+
     parser.add_argument('--no-translate', action='store_true', help='跳过翻译')
     parser.add_argument('--auto', action='store_true', help='跳过预览，直接处理所有新闻')
     args = parser.parse_args()
@@ -227,7 +227,7 @@ def main():
 
     # 构建任务列表
     if args.keyword:
-        china_filter = not args.no_filter and args.keyword == '中国'
+        china_filter = args.keyword == '中国'
         tasks = [(args.keyword, args.max or 5, china_filter)]
     else:
         tasks = [(kw, args.max or cnt, cf) for kw, cnt, cf in DEFAULT_KEYWORDS]
@@ -269,7 +269,9 @@ def main():
             unselected = []
         else:
             try:
-                indices = {int(x.strip()) - 1 for x in raw.split(',')}
+                # 兼容中文逗号，过滤尾随逗号产生的空串
+                parts = [x.strip() for x in raw.replace('，', ',').split(',') if x.strip()]
+                indices = {int(x) - 1 for x in parts}
                 selected   = [all_candidates[i] for i in sorted(indices) if 0 <= i < len(all_candidates)]
                 unselected = [n for i, n in enumerate(all_candidates) if i not in indices]
             except ValueError:

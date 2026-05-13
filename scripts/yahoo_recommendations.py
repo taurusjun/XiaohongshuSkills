@@ -258,8 +258,6 @@ def main():
     parser = argparse.ArgumentParser(description='Yahoo Japan 推荐内容抓取器')
     parser.add_argument('--push', '-p', action='store_true', help='自动推送到 Notion')
     parser.add_argument('--max', '-m', type=int, default=20, help='最大抓取数量（默认20）')
-    parser.add_argument('--no-filter', action='store_true', default=True, help='关闭中国相关性过滤（默认开启）')
-    parser.add_argument('--filter', action='store_false', dest='no_filter', help='启用中国相关性过滤')
     parser.add_argument('--no-translate', action='store_true', help='跳过翻译')
     parser.add_argument('--output', '-o', type=str, help='结果输出到 JSON 文件')
     parser.add_argument('--auto', action='store_true', help='跳过预览，直接处理所有新闻')
@@ -280,14 +278,13 @@ def main():
 
     existing_keys = load_today_keys()
 
-    filter_desc = "不过滤" if args.no_filter else "筛选中国相关"
     print(f"\n{'━' * 60}")
-    print(f"🔍 推荐内容抓取 | {filter_desc} | 最多 {args.max} 条")
+    print(f"🔍 推荐内容抓取 | 全部抓取 | 最多 {args.max} 条")
     print(f"{'━' * 60}")
 
     candidates = fetch_and_filter(
         max_results=args.max,
-        no_filter=args.no_filter,
+        no_filter=True,
         existing_keys=existing_keys,
     )
 

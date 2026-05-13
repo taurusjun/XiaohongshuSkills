@@ -2835,7 +2835,8 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
     # 已知纯图集站跳过检测，避免把侧栏推荐视频误判为内容
-    if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url and not _is_pure_photo:
+    _is_ig_url = "instagram.com/p/" in gallery_url or "instagram.com/reel/" in gallery_url
+    if not _youtube_video_id and not _is_ig_url and "youtube.com" not in gallery_url and not _is_pure_photo:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             # 限定在文章正文内检测，避免侧栏广告中的 IG 嵌入被误判
@@ -2861,7 +2862,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
             print(f"  — YouTube 下载失败")
             return False
     # Instagram 帖子
-    elif "instagram.com/p/" in gallery_url:
+    elif "instagram.com/p/" in gallery_url or "instagram.com/reel/" in gallery_url:
         local_files = download_instagram(gallery_url, article_dir)
         if not local_files:
             print(f"  — Instagram 下载失败")
@@ -2903,7 +2904,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="抓取 Yahoo 文章图集到本地")
     parser.add_argument("--limit", type=int, default=20, help="扫描最近 N 条")
-    parser.add_argument("--max-images", type=int, default=None, help="每篇最多下载图片数（默认 9）")
+    parser.add_argument("--max-images", type=int, default=None, help="每篇最多下载图片数（默认 20）")
     parser.add_argument("--notion-id", help="指定单条 Notion 页面 ID")
     parser.add_argument("--redownload", action="store_true",
                         help="强制重新下载已缓存的条目（会清除旧图片）")
