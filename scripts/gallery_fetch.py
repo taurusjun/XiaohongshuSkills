@@ -200,10 +200,9 @@ def is_gallery_url(gallery_url: str) -> bool:
 
 
 def _extract_instagram_shortcode(html_text: str) -> str:
-    """从页面 HTML 提取 Instagram 帖子 shortcode（支持 blockquote embed 和 iframe）"""
+    """从页面 HTML 提取 Instagram 帖子 shortcode（支持 /p/ 和 /reel/）"""
     import re
-    # blockquote embed: data-instgrm-permalink="https://www.instagram.com/p/SHORTCODE/..."
-    m = re.search(r'instagram\.com/p/([A-Za-z0-9_-]+)/', html_text)
+    m = re.search(r'instagram\.com/(?:p|reel)/([A-Za-z0-9_-]+)/', html_text)
     if m:
         return m.group(1)
     return ""
@@ -2823,7 +2822,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     # 纯图集站（页面不含 YouTube/IG 嵌入，跳过检测避免误判）
     _pure_photo_domains = {"crank-in.net", "oricon.co.jp", "mdpr.jp", "modelpress.net",
-                           "natalie.mu", "thetv.jp", "mantan-web.jp", "daily.co.jp",
+                           "natalie.mu", "mantan-web.jp", "daily.co.jp",
                            "vivi.tv", "times.abema.tv", "smart-flash.jp", "hochi.news",
                            "sponichi.co.jp", "nikkansports.com", "chunichi.co.jp",
                            "billboard-japan.com", "limo.media", "mezamashi.media",
@@ -2839,12 +2838,16 @@ def process_page(page: dict, redownload: bool = False) -> bool:
     if not _youtube_video_id and "instagram.com/p/" not in gallery_url and "youtube.com" not in gallery_url and not _is_pure_photo:
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
-            _shortcode = _extract_instagram_shortcode(_page_resp.text)
+            # 限定在文章正文内检测，避免侧栏广告中的 IG 嵌入被误判
+            _page_soup = BeautifulSoup(_page_resp.text, "html.parser")
+            _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content")
+            _scan_text = str(_article_body) if _article_body else _page_resp.text
+            _shortcode = _extract_instagram_shortcode(_scan_text)
             if _shortcode:
                 gallery_url = f"https://www.instagram.com/p/{_shortcode}/"
                 print(f"  📱 检测到 Instagram 嵌入，切换到: {gallery_url}")
             else:
-                _youtube_video_id = _extract_youtube_video_id(_page_resp.text)
+                _youtube_video_id = _extract_youtube_video_id(_scan_text)
                 if _youtube_video_id:
                     print(f"  🎬 检测到 YouTube 嵌入: {_youtube_video_id}")
         except Exception as _e:
