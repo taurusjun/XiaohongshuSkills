@@ -305,6 +305,11 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
   好：「远藤樱毕业信只有一行字」← 具体到人，粉丝立刻认出
   差：「前女团成员晒大胆照」← 谁？
   好：「田中美久晒照，评论区风向变了」← 具体
+- 标题要有故事感，不要平铺直叙。给读者一条时间线或一个变化，让标题自己就能讲一个微型故事：
+  差：「梅泽美波朗读剧，牧岛辉是她搭档」← 只说了谁和谁，没故事
+  好：「梅泽美波毕业首次出演朗读剧」← 毕业→转型→新舞台，有叙事线
+  差：「铃木优香晒新写真」← 看了等于没看
+  好：「铃木优香脱下AKB制服，换上蕾丝泳装」← 变化→反差→故事
 - 20字上限，超了砍修饰词
 - 标题统一用简体中文，日式汉字必须转为简体中文对应字（如「水島」→ 水岛、「澤」→ 泽、「櫻」→ 樱、「結」→ 结、日语专有名词中的汉字也要转简。日本团体名如「乃木坂」已是中文通用写法，保持不变）
 - 以下50+个词/句式一个都不能出现在标题里（犯规则重写）：
@@ -320,10 +325,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 - 不要用「！」，用句号或问号）
 
 【引流摘要】
-（15-30字。独立于标题，给读者一个点进来看的理由：
+（15-30字。独立于标题，给读者一个点进来看的理由。
+核心原则：要有故事感，不要复述标题。给读者一个变化、一个转折、或一个你不知道的背景。
 
-▸ 艺能 → 场景画面 + 情绪悬念：
-  「消息公布那一刻，评论区刷了五分钟没停」
+▸ 艺能 → 人物变化 + 时间线（从XX到XX）：
+  好：「从前AKB总监督到首次晒恩爱，中间隔了7年」（有故事线）
+  差：「高桥南晒合照，粉丝感动留言」（复述了标题）
 ▸ 学习 → 结果+反常识：
   「3个月从零到能追番，关键竟然不是背单词」
 ▸ 时事 → 信息差：
@@ -391,10 +398,10 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     raw_seo = last_section("SEO标题")
     if raw_seo:
         seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
-        # 兜底：关键词仅在新闻正文/标题本身含有该词时才强制插入标题
-        # 避免把"乃木坂"塞进纯 AKB48 的新闻
+        # 兜底：关键词仅在标题中自然出现时才强制插入标题
+        # 正文中的偶然提及不算（如"A说了一段AKB相关的段子"≠文章讲AKB）
         if required_kw and required_kw not in seo_title:
-            if required_kw in title_ja or required_kw in title_zh or required_kw in body_text:
+            if required_kw in title_ja or required_kw in title_zh:
                 seo_title = _truncate_title(f"{required_kw}{seo_title}")
 
     raw_summary = last_section("引流摘要")
@@ -609,6 +616,15 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['ja_summary']         = details.get("summary", "")
         news['original_image_url'] = details.get("image_url", "")
         news['body_text']          = details.get("body_text", "")
+
+        # Yahoo 搜索页标题常有截断/拼接垃圾，用 og:title 替换
+        og_title = details.get("original_title", "")
+        if og_title and len(og_title) > 10:
+            # 去掉 " - Yahoo!ニュース" 等来源后缀
+            og_title_clean = re.sub(r'\s*[-—|]\s*Yahoo!.*$', '', og_title).strip()
+            og_title_clean = re.sub(r'\s*（[^）]*Yahoo[^）]*）\s*$', '', og_title_clean).strip()
+            if len(og_title_clean) > len(news['title_ja']) * 0.5:  # 不比搜索标题短太多才替换
+                news['title_ja'] = og_title_clean
 
         print("    生成内容...")
         generated = generate_content_and_comment(
