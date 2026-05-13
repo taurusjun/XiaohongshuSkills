@@ -827,7 +827,7 @@ def push_to_notion(news: Dict) -> str:
     blocks.append({"object": "block", "type": "heading_3", "heading_3": {
         "rich_text": [{"type": "text", "text": {"content": "📰 原文"}}]
     }})
-    original_title = news.get("original_title") or news["title_ja"]
+    original_title = news.get("original_title") or news.get("title_ja", "")
     if original_title:
         blocks.append({"object": "block", "type": "paragraph",
                         "paragraph": {"rich_text": [{"type": "text", "text": {"content": original_title[:500]}}]}})
@@ -841,7 +841,7 @@ def push_to_notion(news: Dict) -> str:
     ]}})
 
     # ── 属性 ─────────────────────────────────────────────
-    key       = extract_key_from_url(news["link"])
+    key       = extract_key_from_url(news.get("link", ""))
     image_url = news.get("image_url", "")
     orig_img  = news.get("original_image_url", "")
 
