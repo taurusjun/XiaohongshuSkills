@@ -377,8 +377,10 @@ def main():
         print("⚡ 自动模式：跳过确认")
     print()
 
-    # 确保 Chrome 已启动（静默模式，由 CDP_HEADLESS env 控制）
-    from yahoo_common import check_chrome_cdp
+    # 代理检测 + Chrome 启动
+    from yahoo_common import check_chrome_cdp, check_proxy
+    if not check_proxy():
+        return
     if not check_chrome_cdp():
         return
 

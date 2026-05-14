@@ -27,7 +27,7 @@ from yahoo_common import (
     translate_title, generate_content_and_comment, auto_classify,
     fetch_article_details, upload_cover_image, process_news_item,
     load_today_keys, push_to_notion, push_with_gallery, push_stub_to_notion,
-    check_chrome_cdp,
+    check_chrome_cdp, check_proxy,
 )
 
 # ============ 默认任务配置 ============
@@ -37,11 +37,12 @@ DEFAULT_KEYWORDS = [
     # ("中国",  3, True),
     ("AKB",    10, False),
     ("乃木坂",  10, False),
-    ("日向坂",  10, False),
-    ("欅坂",    10, False),
-    ("コスプレ", 3, False),
-    ("原神",    3, False),
-    ("鳴潮",    3, False),
+    ("日向坂",  5, False),
+    ("欅坂",    5, False),
+    ("アイドル",    10, False),    
+    # ("コスプレ", 3, False),
+    # ("原神",    3, False),
+    # ("鳴潮",    3, False),
 ]
 
 # 关键词 → 额外发布标签
@@ -222,6 +223,8 @@ def main():
         return
     print(f"✅ LiteLLM 已配置  模型: {LITELLM_MODEL}  max_tokens: {LITELLM_MAX_TOKENS}")
     print("📡 检查 Chrome CDP...")
+    if not check_proxy():
+        return
     if not check_chrome_cdp():
         return
 

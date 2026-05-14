@@ -22,6 +22,10 @@ import random
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+
+# 直连 session：Notion API + DeepSeek API 不走系统代理
+_direct_session = requests.Session()
+_direct_session.trust_env = False
 from typing import List, Dict, Tuple
 
 # ── .env ──────────────────────────────────────────────────
@@ -30,6 +34,64 @@ try:
     load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 except ImportError:
     pass
+
+
+def check_proxy(interactive: bool = True) -> bool:
+    """启动时检测代理是否可用。interactive=True 时代理挂了会询问用户。
+    返回 True 表示继续，False 表示用户选择退出。"""
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
+    if not proxy_url:
+        print("ℹ️ 未配置代理，使用直连")
+        return True
+
+    # 先测代理
+    try:
+        r = requests.get("https://news.yahoo.co.jp/", timeout=8)
+        if r.status_code == 200:
+            print(f"✅ 代理可用 ({proxy_url})")
+            return True
+    except Exception:
+        pass
+
+    # 代理不通，测一下直连是否可行
+    print(f"\n⚠️  代理不可用 ({proxy_url})")
+    direct_ok = False
+    try:
+        r = requests.get("https://news.yahoo.co.jp/",
+                          proxies={"http": None, "https": None}, timeout=8)
+        if r.status_code == 200:
+            direct_ok = True
+    except Exception:
+        pass
+
+    if not interactive:
+        if direct_ok:
+            print("已自动回退直连")
+            _disable_proxy()
+            return True
+        else:
+            print("❌ 代理和直连均不可用")
+            return False
+
+    # 交互模式：问用户
+    if direct_ok:
+        choice = input("是否降级为直连模式继续？[Y/n]: ").strip().lower()
+    else:
+        choice = input("代理和直连均不可用，是否仍继续尝试？[y/N]: ").strip().lower()
+    if choice in ("", "y", "yes"):
+        _disable_proxy()
+        print("已切换直连模式\n")
+        return True
+    else:
+        print("已取消\n")
+        return False
+
+
+def _disable_proxy():
+    """清除代理环境变量"""
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        os.environ.pop(k, None)
+
 
 # ============ 配置 ============
 
@@ -98,7 +160,7 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        resp = requests.post(
+        resp = _direct_session.post(
             f"{LITELLM_URL}/chat/completions",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_API_KEY}"},
             json={"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7},
@@ -248,7 +310,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
     kw_instruction = ""
     if required_kw:
-        kw_instruction = f"\n注意：如果这条新闻确实涉及「{required_kw}」，请在标题中自然地包含它；如果新闻跟「{required_kw}」完全无关，不要强行插入。\n"
+        kw_instruction = f"\n注意：只有当新闻主角确实是「{required_kw}」相关团体/成员时，才在标题中自然包含它。如果只是路人提及、推荐列表中出现、或其他无关新闻，绝对不要插入「{required_kw}」。不确定就不要加。\n"
 
     # 傲娇模式：约 1/3 概率启用
     tsundere_mode = random.random() < 0.33
@@ -362,10 +424,8 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 【话题标签】
 （5-8个标签，#开头。优先从以下热门标签中选择合适的：
-日语学习类：#日语学习 #日语N1 #日语N2 #日语单词
-中日双语类：#中日双语 #中日翻译
 日本资讯类：#日本新闻 #日本资讯 #看新闻学日语
-综合类：#日语学习打卡 #日本文化 #日本生活
+综合类：#日本文化 #日本生活
 时尚穿搭类（内容涉及时尚/穿搭时用）：#日系穿搭 #日本穿搭 #穿搭分享 #今日穿搭 #日系风格
 美妆护肤类（内容涉及化妆/护肤时用）：#日系妆容 #日本化妆 #日本美妆 #日本护肤 #护肤分享
 再根据内容补充行业相关标签）"""
@@ -400,9 +460,9 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     raw_seo = last_section("SEO标题")
     if raw_seo:
         seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
-        # 兜底：关键词仅在标题中自然出现时才强制插入标题
-        # 正文中的偶然提及不算（如"A说了一段AKB相关的段子"≠文章讲AKB）
-        if required_kw and required_kw not in seo_title:
+        # 兜底：关键词仅在文章正文可读 + 标题自然含有关键词时才强制插入
+        # 正文为空（region block）或偶然提及都不能触发
+        if required_kw and required_kw not in seo_title and body_text and len(body_text) > 50:
             if required_kw in title_ja or required_kw in title_zh:
                 seo_title = _truncate_title(f"{required_kw}{seo_title}")
 
@@ -538,7 +598,7 @@ def fetch_article_details(url: str) -> dict:
     """HTTP 请求文章页，抓取封面图、原标题、日文摘要"""
     result = {"image_url": "", "original_title": "", "summary": ""}
     try:
-        resp = requests.get(url, headers={
+        resp = _direct_session.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -622,6 +682,12 @@ def process_news_item(news: dict, no_translate: bool = False,
             og_title_clean = re.sub(r'\s*（[^）]*Yahoo[^）]*）\s*$', '', og_title_clean).strip()
             if len(og_title_clean) > len(news['title_ja']) * 0.5:
                 news['title_ja'] = og_title_clean
+
+        # 文章被 region block 或无法访问时，跳过本条（没有正文没法生成靠谱内容）
+        if not news['body_text'] or len(news['body_text']) < 50:
+            print("    ⚠️ 文章无法完整访问（可能被 region block），跳过本条")
+            news['_skip'] = True
+            return news
 
         # 用清洗后的标题翻译
         print("    翻译...")
@@ -726,7 +792,7 @@ def load_today_keys() -> set:
         }
         if start_cursor:
             query["start_cursor"] = start_cursor
-        resp = requests.post(
+        resp = _direct_session.post(
             f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
             headers=headers, json=query,
         )
@@ -760,7 +826,7 @@ def is_duplicate(key: str) -> bool:
         "Content-Type": "application/json",
         "Notion-Version": "2022-06-28",
     }
-    resp = requests.post(
+    resp = _direct_session.post(
         f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
         headers=headers,
         json={"filter": {"property": "key", "rich_text": {"equals": key}}, "page_size": 1},
@@ -867,7 +933,7 @@ def push_to_notion(news: Dict) -> str:
     if image_url:
         payload["cover"] = {"type": "external", "external": {"url": image_url}}
 
-    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    resp = _direct_session.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
     if resp.status_code != 200:
         print(f"    ⚠️ Notion 错误: {resp.status_code} {resp.text[:200]}")
         return ""
@@ -927,7 +993,7 @@ def push_stub_to_notion(news: dict, existing_keys: set | None = None) -> bool:
         ]}}
     ]
     payload = {"parent": {"database_id": NOTION_DATABASE_ID}, "properties": props, "children": blocks}
-    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    resp = _direct_session.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
     if resp.status_code != 200:
         return False
     if existing_keys is not None:
