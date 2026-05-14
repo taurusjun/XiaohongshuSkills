@@ -451,27 +451,30 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
 
 
 def _scrape_smart_flash(gallery_url: str) -> list[str]:
-    """smart-flash.jp 图集：提取 data.smart-flash.jp 图片"""
+    """smart-flash.jp 图集：限定 .newsBlock，分页是 JS 驱动，所有图已在 HTML 中"""
     import re
-    from urllib.parse import urlparse
+    from urllib.parse import urljoin
 
     headers = {**HEADERS, "Referer": "https://smart-flash.jp/"}
-    images = []
+    images: list[str] = []
+    seen: set[str] = set()
 
     try:
         r = requests.get(gallery_url, headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
+        body = s.select_one(".newsBlock") or s
 
-        # 找所有 data.smart-flash.jp 图片
-        for img in s.find_all("img"):
+        for img in body.select("img"):
             src = img.get("data-src") or img.get("src", "")
-            if "data.smart-flash.jp" in src and any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-                # 跳过缩略图（带尺寸后缀的）
-                if re.search(r'-\d+x\d+\.', src):
-                    # 尝试转大图：去掉尺寸后缀
-                    src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
-                if src not in images:
-                    images.append(src)
+            if not src or "data.smart-flash.jp" not in src:
+                continue
+            if src.startswith("/"):
+                src = urljoin("https://smart-flash.jp", src)
+            # 去缩略图尺寸后缀
+            src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+            if src not in seen:
+                seen.add(src)
+                images.append(src)
             if len(images) >= MAX_IMAGES:
                 break
     except Exception as e:
@@ -2831,7 +2834,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
                            "vivi.tv", "times.abema.tv", "smart-flash.jp", "hochi.news",
                            "sponichi.co.jp", "nikkansports.com", "chunichi.co.jp",
                            "billboard-japan.com", "limo.media", "mezamashi.media",
-                           "inside-games.jp", "bookbang.jp", "efight.jp", "encount.press",
+                           "inside-games.jp", "bookbang.jp", "efight.jp",
                            "maidonanews.jp", "yorozoonews.jp", "nikkan-spa.jp",
                            "animeanime.jp", "mainichikirei.jp", "deview.co.jp",
                            "qjweb.jp", "pinzuba.news", "friday.kodansha.co.jp",
@@ -2848,7 +2851,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             # 限定在文章正文内检测，避免侧栏广告中的 IG 嵌入被误判
             _page_soup = BeautifulSoup(_page_resp.text, "html.parser")
-            _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content, .content-main, .cont-news-embed")
+            _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content, .content-main, .cont-news-embed, .single__content")
             _scan_text = str(_article_body) if (_article_body and len(_article_body.get_text(strip=True)) > 100) else _page_resp.text
             _shortcode = _extract_instagram_shortcode(_scan_text)
             if _shortcode:
