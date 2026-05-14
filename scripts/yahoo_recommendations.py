@@ -24,7 +24,7 @@ from yahoo_common import (
     is_sensitive, is_china_related, extract_key_from_url,
     translate_title, process_news_item,
     load_today_keys, push_with_gallery, push_stub_to_notion,
-    check_chrome_cdp, get_yahoo_tab_ws_url,
+    check_chrome_cdp, check_proxy, get_yahoo_tab_ws_url,
 )
 
 
@@ -268,6 +268,8 @@ def main():
     print("=" * 60)
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}\n")
 
+    if not check_proxy():
+        return
     if not LITELLM_API_KEY or not LITELLM_MODEL:
         print("❌ LiteLLM 未配置，请在 scripts/.env 中设置 LITELLM_API_KEY / LITELLM_MODEL")
         return 1

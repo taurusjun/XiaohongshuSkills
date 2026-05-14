@@ -2761,7 +2761,12 @@ def download_images(image_urls: list[str], article_dir: Path,
             referer = _referer_for(url, gallery_url)
             is_video = url.endswith(".mp4") or ".mp4?" in url
             timeout = 120 if is_video else 15
-            resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout)
+            # 代理失败时回退直连重试
+            try:
+                resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout)
+            except requests.ConnectionError:
+                resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout,
+                                     proxies={"http": None, "https": None})
             resp.raise_for_status()
             fname = f"{i + 1:03d}_video.mp4" if is_video else f"{i + 1:03d}.jpg"
             fpath = article_dir / fname
@@ -2832,17 +2837,19 @@ def process_page(page: dict, redownload: bool = False) -> bool:
                            "qjweb.jp", "pinzuba.news", "friday.kodansha.co.jp",
                            "shueisha.online", "entamenext.com", "realsound.jp"}
     _is_pure_photo = any(d in gallery_url for d in _pure_photo_domains)
+    # /embed/ 页面（如 oricon /embed/photo/）可能嵌入 Instagram，不能跳过检测
+    _is_embed_page = "/embed/" in gallery_url
 
     # 若 gallery_url 不是 Instagram/YouTube 直链，先抓页面检测嵌入内容
     # 已知纯图集站跳过检测，避免把侧栏推荐视频误判为内容
     _is_ig_url = "instagram.com/p/" in gallery_url or "instagram.com/reel/" in gallery_url
-    if not _youtube_video_id and not _is_ig_url and "youtube.com" not in gallery_url and not _is_pure_photo:
+    if not _youtube_video_id and not _is_ig_url and "youtube.com" not in gallery_url and (not _is_pure_photo or _is_embed_page):
         try:
             _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
             # 限定在文章正文内检测，避免侧栏广告中的 IG 嵌入被误判
             _page_soup = BeautifulSoup(_page_resp.text, "html.parser")
-            _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content")
-            _scan_text = str(_article_body) if _article_body else _page_resp.text
+            _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content, .content-main, .cont-news-embed")
+            _scan_text = str(_article_body) if (_article_body and len(_article_body.get_text(strip=True)) > 100) else _page_resp.text
             _shortcode = _extract_instagram_shortcode(_scan_text)
             if _shortcode:
                 gallery_url = f"https://www.instagram.com/p/{_shortcode}/"
