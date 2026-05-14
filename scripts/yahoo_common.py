@@ -305,13 +305,6 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     Returns:
         (seo_title, summary, content, comment, vocab, topic_tags)
     """
-    # 确定标题中必须出现的关键词（用于引流）
-    required_kw = SEARCH_KEYWORD_TITLE_MAP.get(keyword, keyword) if keyword else ""
-
-    kw_instruction = ""
-    if required_kw:
-        kw_instruction = f"\n注意：只有当新闻主角确实是「{required_kw}」相关团体/成员时，才在标题中自然包含它。如果只是路人提及、推荐列表中出现、或其他无关新闻，绝对不要插入「{required_kw}」。不确定就不要加。\n"
-
     # 傲娇模式：约 1/3 概率启用
     tsundere_mode = random.random() < 0.33
     tsundere_instruction = ""
@@ -342,7 +335,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     prompt = f"""你是小红书日语学习博主。请根据以下新闻内容，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}{context}{kw_instruction}{tsundere_instruction}
+日文原文：{title_ja}{context}{tsundere_instruction}
 
 输出格式（必须包含全部6个字段）：
 
@@ -451,20 +444,29 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
     def _truncate_title(s: str, max_w: float = 20) -> str:
         total = 0.0
+        cut = len(s)
         for i, ch in enumerate(s):
             total += 0.5 if ch.isascii() and ch.isalpha() else 1
             if total > max_w:
-                return s[:i]
-        return s
+                cut = i
+                break
+        # 回退到自然边界：不截断在数字/英文中间
+        while cut > 3:
+            prev_ch = s[cut - 1]
+            # 数字结尾 → 回退到前一个字（"主持5" → "主持"）
+            if prev_ch.isdigit():
+                cut -= 1
+                continue
+            # 英文字母结尾 → 回退（"推しメ" → "推し"）
+            if prev_ch.isascii() and prev_ch.isalpha():
+                cut -= 1
+                continue
+            break
+        return s[:cut]
 
     raw_seo = last_section("SEO标题")
     if raw_seo:
         seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
-        # 兜底：关键词仅在文章正文可读 + 标题自然含有关键词时才强制插入
-        # 正文为空（region block）或偶然提及都不能触发
-        if required_kw and required_kw not in seo_title and body_text and len(body_text) > 50:
-            if required_kw in title_ja or required_kw in title_zh:
-                seo_title = _truncate_title(f"{required_kw}{seo_title}")
 
     raw_summary = last_section("引流摘要")
     if raw_summary:
