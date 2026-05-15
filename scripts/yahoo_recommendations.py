@@ -308,25 +308,27 @@ def main():
             print(f"  [{i:2d}] {news.get('title_zh', news['title_ja'])[:45]}")
             print(f"        {news['link']}")
         print(f"{'─' * 60}")
-        print("输入编号（逗号分隔，如 1,3,5），输入 all 选全部，回车取消：")
-        raw = input("> ").strip()
-        if not raw:
-            print("已取消")
-            return 0
-        if raw.lower() == 'all':
-            selected   = candidates
-            unselected = []
-        else:
+        selected: list = []
+        unselected: list = []
+        while True:
+            print("输入编号（逗号分隔，如 1,3,5），输入 all 选全部，回车取消：")
+            raw = input("> ").strip()
+            if not raw:
+                print("已取消")
+                return 0
+            if raw.lower() == 'all':
+                selected = candidates
+                unselected = []
+                break
             try:
                 indices = {int(x.strip()) - 1 for x in raw.split(',')}
                 selected   = [candidates[i] for i in sorted(indices) if 0 <= i < len(candidates)]
                 unselected = [n for i, n in enumerate(candidates) if i not in indices]
+                if selected:
+                    break
+                print("❌ 未选择任何条目，请重新输入")
             except ValueError:
-                print("❌ 输入格式有误")
-                return 1
-        if not selected:
-            print("未选择任何条目")
-            return 0
+                print("❌ 输入格式有误，请重新输入（如 1,3,5）")
 
         # 未选中的新闻推送存根（仅去重用）
         if args.push and unselected:
