@@ -1725,7 +1725,8 @@ def _scrape_yorozoonews(gallery_url: str) -> list[str]:
 
             large_img = ""
             thumb_candidates: list[str] = []
-            for img in s.find_all("img"):
+            body = s.select_one(".module-article-body") or s
+            for img in body.find_all("img"):
                 src = (img.get("data-src") or img.get("src") or "")
                 if "p.potaufeu.asahi.com" not in src or "/picture/" not in src:
                     continue
