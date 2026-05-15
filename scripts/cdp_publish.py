@@ -143,7 +143,7 @@ SELECTORS = {
     "content_placeholder_text": "输入正文描述",
     # Publish button
     "publish_button": "xhs-publish-btn",
-    "publish_button_legacy": ".publish-page-publish-btn button.bg-red",
+    "publish_button_legacy": "button.ce-btn.bg-red, .publish-page-publish-btn button.bg-red",
     "publish_button_text": "发布",
     "schedule_publish_button_text": "定时发布",
     "schedule_switch": ".post-time-wrapper .d-switch",
@@ -4064,6 +4064,20 @@ class XiaohongshuPublisher:
                 return null;
             }})()
         """)
+        if rect is not None:
+            return rect
+        # Fallback: CDP DOM flattener for closed Shadow DOM
+        try:
+            doc = self._send("DOM.getFlattenedDocument", {"depth": -1, "pierce": True})
+            for node in doc.get("nodes", []):
+                if node.get("localName") == "button" and "bg-red" in str(node.get("attributes", [])):
+                    bm = self._send("DOM.getBoxModel", {"nodeId": node["nodeId"]})
+                    c = bm.get("model", {}).get("content", [])
+                    if len(c) >= 4:
+                        return {"x": c[0], "y": c[1], "width": c[2]-c[0], "height": c[5]-c[1]}
+        except Exception:
+            pass
+        return None
 
     def _is_publish_button_ready(self) -> bool:
         """Return True when the publish button is present, visible and not disabled."""
@@ -4092,7 +4106,18 @@ class XiaohongshuPublisher:
                 return false;
             }})()
         """)
-        return bool(ready)
+        if ready:
+            return True
+        # Fallback: CDP DOM flattener for closed Shadow DOM
+        try:
+            doc = self._send("DOM.getFlattenedDocument", {"depth": -1, "pierce": True})
+            for node in doc.get("nodes", []):
+                if node.get("localName") == "button" and "bg-red" in str(node.get("attributes", [])):
+                    if "disabled" not in str(node.get("attributes", [])):
+                        return True
+        except Exception:
+            pass
+        return False
 
     def _wait_for_publish_button_ready(self, timeout_seconds: float = VIDEO_PROCESS_TIMEOUT):
         """Wait until the publish button becomes interactive."""

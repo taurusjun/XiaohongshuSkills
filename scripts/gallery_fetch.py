@@ -91,6 +91,7 @@ GALLERY_SITES: dict[str, str] = {
     "vivi.tv":               "article, .gallery",
     "times.abema.tv":        ".article-body",
     "realsound.jp":          "figure img, .post-content img",
+    "lasisa.net":            "main img, .entry-content img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -98,7 +99,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
-                         "realsound.jp",
+                         "realsound.jp", "lasisa.net",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
@@ -708,55 +709,108 @@ def _scrape_efight(gallery_url: str) -> list[str]:
 
 
 def _scrape_maidonanews(gallery_url: str) -> list[str]:
-    """maidonanews.jp 图集：通过 Next/Prev 分页遍历，从 figure.module-article-photo 提取主图。"""
+    """maidonanews.jp 图集：支持两种页面结构"""
     import re
-    from urllib.parse import urljoin
+    from urllib.parse import urljoin, urlparse, parse_qs
     headers = {**HEADERS, "Referer": "https://maidonanews.jp/"}
 
     images: list[str] = []
     seen: set[str] = set()
-    url = gallery_url
 
-    for _ in range(MAX_IMAGES):
-        try:
-            r = requests.get(url, headers=headers, timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+    def _extract_640px(src: str) -> str:
+        if src.startswith("//"): src = "https:" + src
+        elif src.startswith("/"): src = urljoin("https://maidonanews.jp", src)
+        src = re.sub(r'\?.*$', '', src)
+        return re.sub(r'/picture/(\w+)/(\w+)_\d+(px|square)\.(jpg|png)$',
+                      r'/picture/\1/\2_640px.\4', src)
 
-            # 只取主图区域，避开侧边栏缩略图
-            fig = s.select_one("figure.module-article-photo")
-            if fig:
-                img = fig.select_one("img")
-                src = (img.get("data-src") or img.get("src") or "") if img else ""
-                if src:
-                    if src.startswith("//"):
-                        src = "https:" + src
-                    elif src.startswith("/"):
-                        src = urljoin("https://maidonanews.jp", src)
-                    src = re.sub(r'\?.*$', '', src)
-                    # 统一生成 640px 版本
-                    src = re.sub(r'/picture/(\w+)/(\w+)_\d+(px|square)\.(jpg|png)$',
-                                 r'/picture/\1/\2_640px.\4', src)
-                    if src not in seen:
-                        seen.add(src)
-                        images.append(src)
+    # 先取第一页
+    r = requests.get(gallery_url, headers=headers, timeout=15)
+    s = BeautifulSoup(r.text, "html.parser")
 
-            # 跟随 Next 链接进入下一页
-            next_btn = s.select_one(".module-article-photo-button--next a")
-            if not next_btn:
+    # 结构A：figure.module-article-photo + Next/Prev 分页
+    fig = s.select_one("figure.module-article-photo")
+    if fig:
+        url = gallery_url
+        for _ in range(MAX_IMAGES):
+            try:
+                if url != gallery_url:
+                    r = requests.get(url, headers=headers, timeout=15)
+                    s = BeautifulSoup(r.text, "html.parser")
+                img = s.select_one("figure.module-article-photo img")
+                if img:
+                    src = (img.get("data-src") or img.get("src") or "")
+                    if src:
+                        src = _extract_640px(src)
+                        if src not in seen:
+                            seen.add(src)
+                            images.append(src)
+                next_btn = s.select_one(".module-article-photo-button--next a")
+                if not next_btn: break
+                next_url = urljoin("https://maidonanews.jp", next_btn.get("href", ""))
+                if next_url == url: break
+                url = next_url
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"  ⚠️ maidonanews 结构A 失败: {e}")
                 break
-            next_href = next_btn.get("href", "")
-            if not next_href:
-                break
-            next_url = urljoin("https://maidonanews.jp", next_href)
-            if next_url == url:
-                break
-            url = next_url
-            time.sleep(0.3)
-        except Exception as e:
-            print(f"  ⚠️ maidonanews.jp 抓取失败: {e}")
+        return images
+
+    # 结构B：main.layout-main 内图片 + ?p= 分页
+    main = s.select_one("main.layout-main, #main, .layout-main")
+    if not main:
+        return images
+
+    # 收集本页 main 内的图片（过滤缩略图后缀 120px/200px/square）
+    for img in main.select("img"):
+        src = img.get("data-src") or img.get("src", "")
+        if not src or "potaufeu.asahi.com" not in src or "/picture/" not in src:
+            continue
+        # 跳过缩略图
+        if re.search(r'_\d+(px|square)\.', src) and "_640px" not in src:
+            continue
+        src = _extract_640px(src)
+        if src not in seen:
+            seen.add(src)
+            images.append(src)
+        if len(images) >= MAX_IMAGES:
             break
 
     return images
+
+
+def _scrape_lasisa(gallery_url: str) -> list[str]:
+    """lasisa.net 图集：从 main 取 wp-content uploads，过滤侧栏缩略图"""
+    import re
+    headers = {**HEADERS, "Referer": "https://lasisa.net/"}
+
+    try:
+        r = requests.get(gallery_url, headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+        main = s.select_one("main") or s
+
+        images: list[str] = []
+        seen: set[str] = set()
+        for img in main.select("img"):
+            src = img.get("data-src") or img.get("src", "")
+            if "wp-content/uploads" not in src:
+                continue
+            # 过滤侧栏缩略图（带尺寸后缀的）
+            if re.search(r'-\d+x\d+\.(jpg|png|webp)$', src):
+                continue
+            # 过滤非内容图
+            skip_names = ["favicon", "lasisa_ipnone"]
+            if any(s in src.lower() for s in skip_names):
+                continue
+            if src not in seen:
+                seen.add(src)
+                images.append(src)
+            if len(images) >= MAX_IMAGES:
+                break
+        return images
+    except Exception as e:
+        print(f"  ⚠️ lasisa 抓取失败: {e}")
+        return []
 
 
 def _scrape_realsound(gallery_url: str) -> list[str]:
@@ -2512,6 +2566,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         images = _scrape_realsound(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
+    if "lasisa.net" in domain:
+        images = _scrape_lasisa(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "limo.media" in domain:
         images = _scrape_limo(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
@@ -2881,7 +2939,7 @@ def process_page(page: dict, redownload: bool = False) -> bool:
                            "maidonanews.jp", "yorozoonews.jp", "nikkan-spa.jp",
                            "animeanime.jp", "mainichikirei.jp", "deview.co.jp",
                            "qjweb.jp", "pinzuba.news", "friday.kodansha.co.jp",
-                           "shueisha.online", "entamenext.com", "realsound.jp"}
+                           "shueisha.online", "entamenext.com", "realsound.jp", "lasisa.net"}
     _is_pure_photo = any(d in gallery_url for d in _pure_photo_domains)
     # /embed/ 页面（如 oricon /embed/photo/）可能嵌入 Instagram，不能跳过检测
     _is_embed_page = "/embed/" in gallery_url
