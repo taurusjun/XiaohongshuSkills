@@ -142,10 +142,9 @@ SELECTORS = {
     "content_editor_alt2": "div.ql-editor",
     "content_placeholder_text": "输入正文描述",
     # Publish button
-    "publish_button": ".publish-page-publish-btn button.bg-red",
-    "publish_button_new": ".publish-video .btn-inner",
+    "publish_button": "xhs-publish-btn",
+    "publish_button_legacy": ".publish-page-publish-btn button.bg-red",
     "publish_button_text": "发布",
-    "publish_button_text_alt": "发布笔记",
     "schedule_publish_button_text": "定时发布",
     "schedule_switch": ".post-time-wrapper .d-switch",
     "schedule_datetime_input": ".date-picker-container input",
@@ -3997,23 +3996,23 @@ class XiaohongshuPublisher:
                     return {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }};
                 }};
 
-                // Try selectors in priority order (newest first)
-                const selectors = [
-                    {json.dumps(SELECTORS["publish_button_new"])},
-                    {json.dumps(SELECTORS["publish_button"])},
-                ];
-                for (const sel of selectors) {{
-                    const btn = document.querySelector(sel);
-                    if (visible(btn)) return toRect(btn);
+                // Current: xhs-publish-btn custom element (renders 发布 inside Shadow DOM)
+                const xhsBtn = document.querySelector({json.dumps(SELECTORS["publish_button"])});
+                if (visible(xhsBtn) && xhsBtn.getAttribute("submit-disabled") !== "true") {{
+                    // Click center of the element where 发布 button renders
+                    return toRect(xhsBtn);
                 }}
 
-                // Fallback: text match
+                // Legacy: .publish-page-publish-btn button.bg-red
+                const legacyBtn = document.querySelector({json.dumps(SELECTORS["publish_button_legacy"])});
+                if (visible(legacyBtn)) return toRect(legacyBtn);
+
+                // Fallback: text match on regular DOM buttons
                 const keywords = [
-                    {json.dumps(SELECTORS["publish_button_text_alt"])},
                     {json.dumps(SELECTORS["publish_button_text"])},
                     {json.dumps(SELECTORS["schedule_publish_button_text"])},
                 ];
-                const candidates = document.querySelectorAll("button, [role='button'], .d-button, .btn-inner");
+                const candidates = document.querySelectorAll("button, [role='button'], .d-button");
                 for (const node of candidates) {{
                     if (!visible(node)) continue;
                     const text = (node.innerText || node.textContent || "").trim();
@@ -4027,36 +4026,29 @@ class XiaohongshuPublisher:
         """Return True when the publish button is present, visible and not disabled."""
         ready = self._evaluate(f"""
             (() => {{
-                const selectors = [
-                    {json.dumps(SELECTORS["publish_button_new"])},
-                    {json.dumps(SELECTORS["publish_button"])},
-                    "button.publishBtn",
-                ];
                 const visible = (node) => (
                     node instanceof HTMLElement &&
                     node.offsetParent !== null &&
                     node.getBoundingClientRect().width > 0 &&
                     node.getBoundingClientRect().height > 0
                 );
-                for (const selector of selectors) {{
+
+                // Current: xhs-publish-btn custom element
+                const xhsBtn = document.querySelector({json.dumps(SELECTORS["publish_button"])});
+                if (visible(xhsBtn) && xhsBtn.getAttribute("submit-disabled") !== "true") {{
+                    return true;
+                }}
+
+                // Legacy selectors
+                const legacySelectors = [
+                    {json.dumps(SELECTORS["publish_button_legacy"])},
+                    "button.publishBtn",
+                ];
+                for (const selector of legacySelectors) {{
                     const button = document.querySelector(selector);
                     if (!visible(button)) continue;
                     if (button.hasAttribute("disabled")) continue;
-                    const className = String(button.className || "");
-                    if (className.includes("disabled")) continue;
-                    return true;
-                }}
-                // Also check by text: 发布笔记
-                const keywords = [
-                    {json.dumps(SELECTORS["publish_button_text_alt"])},
-                    {json.dumps(SELECTORS["publish_button_text"])},
-                ];
-                for (const node of document.querySelectorAll(".btn-inner, button, [role=button]")) {{
-                    if (!visible(node)) continue;
-                    const text = (node.innerText || node.textContent || "").trim();
-                    if (!keywords.includes(text)) continue;
-                    if (node.hasAttribute("disabled")) continue;
-                    if (String(node.className || "").includes("disabled")) continue;
+                    if (String(button.className || "").includes("disabled")) continue;
                     return true;
                 }}
                 return false;
