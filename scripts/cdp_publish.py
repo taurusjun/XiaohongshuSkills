@@ -143,7 +143,9 @@ SELECTORS = {
     "content_placeholder_text": "输入正文描述",
     # Publish button
     "publish_button": ".publish-page-publish-btn button.bg-red",
+    "publish_button_new": ".publish-video .btn-inner",
     "publish_button_text": "发布",
+    "publish_button_text_alt": "发布笔记",
     "schedule_publish_button_text": "定时发布",
     "schedule_switch": ".post-time-wrapper .d-switch",
     "schedule_datetime_input": ".date-picker-container input",
@@ -3984,7 +3986,6 @@ class XiaohongshuPublisher:
         """Locate the current publish button using current and legacy selectors."""
         return self._evaluate(f"""
             (() => {{
-                const buttonSelector = {json.dumps(SELECTORS["publish_button"])};
                 const visible = (node) => (
                     node instanceof HTMLElement &&
                     node.offsetParent !== null &&
@@ -3996,24 +3997,27 @@ class XiaohongshuPublisher:
                     return {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }};
                 }};
 
-                const button = document.querySelector(buttonSelector);
-                if (visible(button)) {{
-                    return toRect(button);
+                // Try selectors in priority order (newest first)
+                const selectors = [
+                    {json.dumps(SELECTORS["publish_button_new"])},
+                    {json.dumps(SELECTORS["publish_button"])},
+                ];
+                for (const sel of selectors) {{
+                    const btn = document.querySelector(sel);
+                    if (visible(btn)) return toRect(btn);
                 }}
 
+                // Fallback: text match
                 const keywords = [
+                    {json.dumps(SELECTORS["publish_button_text_alt"])},
                     {json.dumps(SELECTORS["publish_button_text"])},
                     {json.dumps(SELECTORS["schedule_publish_button_text"])},
                 ];
-                const buttons = document.querySelectorAll("button, [role='button'], .d-button");
-                for (const node of buttons) {{
-                    if (!visible(node)) {{
-                        continue;
-                    }}
+                const candidates = document.querySelectorAll("button, [role='button'], .d-button, .btn-inner");
+                for (const node of candidates) {{
+                    if (!visible(node)) continue;
                     const text = (node.innerText || node.textContent || "").trim();
-                    if (keywords.includes(text)) {{
-                        return toRect(node);
-                    }}
+                    if (keywords.includes(text)) return toRect(node);
                 }}
                 return null;
             }})()
@@ -4024,6 +4028,7 @@ class XiaohongshuPublisher:
         ready = self._evaluate(f"""
             (() => {{
                 const selectors = [
+                    {json.dumps(SELECTORS["publish_button_new"])},
                     {json.dumps(SELECTORS["publish_button"])},
                     "button.publishBtn",
                 ];
@@ -4035,16 +4040,23 @@ class XiaohongshuPublisher:
                 );
                 for (const selector of selectors) {{
                     const button = document.querySelector(selector);
-                    if (!visible(button)) {{
-                        continue;
-                    }}
-                    if (button.hasAttribute("disabled")) {{
-                        continue;
-                    }}
+                    if (!visible(button)) continue;
+                    if (button.hasAttribute("disabled")) continue;
                     const className = String(button.className || "");
-                    if (className.includes("disabled")) {{
-                        continue;
-                    }}
+                    if (className.includes("disabled")) continue;
+                    return true;
+                }}
+                // Also check by text: 发布笔记
+                const keywords = [
+                    {json.dumps(SELECTORS["publish_button_text_alt"])},
+                    {json.dumps(SELECTORS["publish_button_text"])},
+                ];
+                for (const node of document.querySelectorAll(".btn-inner, button, [role=button]")) {{
+                    if (!visible(node)) continue;
+                    const text = (node.innerText || node.textContent || "").trim();
+                    if (!keywords.includes(text)) continue;
+                    if (node.hasAttribute("disabled")) continue;
+                    if (String(node.className || "").includes("disabled")) continue;
                     return true;
                 }}
                 return false;
