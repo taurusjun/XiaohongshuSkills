@@ -2209,6 +2209,45 @@ def _scrape_shueisha_online(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_wpb_shueisha(gallery_url: str) -> list[str]:
+    """wpb.shueisha.co.jp /photo/ — 所有图片已静态内嵌在 .carousel-gallery-a__list img
+    中，?page=N 仅控制 JS 展示位置，抓 page=1 即可获取全部。"""
+    from urllib.parse import urlparse, urlunparse, urljoin
+
+    p = urlparse(gallery_url)
+    base = f"{p.scheme}://{p.netloc}"
+    # Strip query so we always fetch page=1
+    clean_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+    headers = {**HEADERS, "Referer": f"{base}/"}
+
+    try:
+        resp = requests.get(clean_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ wpb.shueisha.co.jp 抓取失败: {e}")
+        return []
+
+    # .group-entry-a is the article's own photo grid (most reliable)
+    # Fall back to first .carousel-gallery-a__list if not found
+    container = soup.select_one(".group-entry-a") or soup.select_one(".carousel-gallery-a__list")
+    if not container:
+        return []
+
+    seen: set[str] = set()
+    images: list[str] = []
+    for img in container.find_all("img"):
+        src = img.get("data-src") or img.get("src", "")
+        if not src or src.startswith("data:"):
+            continue
+        full = src if src.startswith("http") else urljoin(base, src)
+        if full not in seen:
+            seen.add(full)
+            images.append(full)
+
+    return images
+
+
 def _scrape_bookbang(gallery_url: str) -> list[str]:
     """bookbang.jp /article/{id} — 分页格式 /article/{id} (p1) + ?page=N (p2+)
     每页一张主图在 article 标签内 wp-content/uploads 路径。"""
@@ -2551,6 +2590,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "shueisha.online" in domain:
         images = _scrape_shueisha_online(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "wpb.shueisha.co.jp" in gallery_url:
+        images = _scrape_wpb_shueisha(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "bookbang.jp" in domain:
