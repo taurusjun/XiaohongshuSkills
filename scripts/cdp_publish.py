@@ -3982,7 +3982,62 @@ class XiaohongshuPublisher:
         return selector if isinstance(selector, str) and selector.strip() else None
 
     def _get_publish_button_rect(self) -> dict[str, Any] | None:
-        """Locate the current publish button using current and legacy selectors."""
+        """Locate the current publish button rect.
+
+        xhs-publish-btn is a Web Component with closed Shadow DOM — querySelector
+        cannot pierce it. Instead we use CDP DOM APIs:
+          DOM.describeNode(pierce=True) → finds the shadow root
+          DOM.querySelectorAll on shadow root → finds .ce-btn.bg-red
+          DOM.getBoxModel → exact pixel coordinates, no ratio guessing
+        """
+        self._send("DOM.enable")
+
+        # Find xhs-publish-btn node
+        doc = self._send("DOM.getDocument", {"depth": 1})
+        root_id = doc["root"]["nodeId"]
+        result = self._send("DOM.querySelectorAll", {
+            "nodeId": root_id,
+            "selector": SELECTORS["publish_button"],
+        })
+        xhs_ids = result.get("nodeIds", [])
+
+        if xhs_ids:
+            # Check submit-disabled via attribute
+            attrs_result = self._send("DOM.getAttributes", {"nodeId": xhs_ids[0]})
+            attrs = attrs_result.get("attributes", [])
+            attr_map = {attrs[i]: attrs[i + 1] for i in range(0, len(attrs) - 1, 2)}
+            if attr_map.get("submit-disabled") == "true":
+                return None
+
+            # Pierce into shadow root to find .ce-btn.bg-red
+            desc = self._send("DOM.describeNode", {
+                "nodeId": xhs_ids[0], "depth": -1, "pierce": True,
+            })
+            shadow_roots = desc["node"].get("shadowRoots", [])
+            if shadow_roots:
+                sr_id = shadow_roots[0]["nodeId"]
+                btn_result = self._send("DOM.querySelectorAll", {
+                    "nodeId": sr_id, "selector": ".ce-btn.bg-red",
+                })
+                btn_ids = btn_result.get("nodeIds", [])
+                if btn_ids:
+                    box = self._send("DOM.getBoxModel", {"nodeId": btn_ids[0]})
+                    content = box.get("model", {}).get("content", [])
+                    if len(content) >= 8:
+                        x1, y1, x2, _, _, y2, _, _ = content
+                        return {
+                            "x": x1, "y": y1,
+                            "width": x2 - x1, "height": y2 - y1,
+                        }
+
+            # shadow root not accessible — fall back to outer element rect
+            box = self._send("DOM.getBoxModel", {"nodeId": xhs_ids[0]})
+            content = box.get("model", {}).get("content", [])
+            if len(content) >= 8:
+                x1, y1, x2, _, _, y2, _, _ = content
+                return {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1}
+
+        # Legacy: .publish-page-publish-btn button.bg-red
         return self._evaluate(f"""
             (() => {{
                 const visible = (node) => (
@@ -3995,25 +4050,13 @@ class XiaohongshuPublisher:
                     const rect = node.getBoundingClientRect();
                     return {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }};
                 }};
-
-                // Current: xhs-publish-btn custom element (renders 发布 inside Shadow DOM)
-                const xhsBtn = document.querySelector({json.dumps(SELECTORS["publish_button"])});
-                if (visible(xhsBtn) && xhsBtn.getAttribute("submit-disabled") !== "true") {{
-                    // Click center of the element where 发布 button renders
-                    return toRect(xhsBtn);
-                }}
-
-                // Legacy: .publish-page-publish-btn button.bg-red
                 const legacyBtn = document.querySelector({json.dumps(SELECTORS["publish_button_legacy"])});
                 if (visible(legacyBtn)) return toRect(legacyBtn);
-
-                // Fallback: text match on regular DOM buttons
                 const keywords = [
                     {json.dumps(SELECTORS["publish_button_text"])},
                     {json.dumps(SELECTORS["schedule_publish_button_text"])},
                 ];
-                const candidates = document.querySelectorAll("button, [role='button'], .d-button");
-                for (const node of candidates) {{
+                for (const node of document.querySelectorAll("button, [role='button'], .d-button")) {{
                     if (!visible(node)) continue;
                     const text = (node.innerText || node.textContent || "").trim();
                     if (keywords.includes(text)) return toRect(node);
@@ -4033,22 +4076,17 @@ class XiaohongshuPublisher:
                     node.getBoundingClientRect().height > 0
                 );
 
-                // Current: xhs-publish-btn custom element
+                // Current: xhs-publish-btn — ready when present, visible, submit-disabled != true
                 const xhsBtn = document.querySelector({json.dumps(SELECTORS["publish_button"])});
                 if (visible(xhsBtn) && xhsBtn.getAttribute("submit-disabled") !== "true") {{
                     return true;
                 }}
 
                 // Legacy selectors
-                const legacySelectors = [
-                    {json.dumps(SELECTORS["publish_button_legacy"])},
-                    "button.publishBtn",
-                ];
-                for (const selector of legacySelectors) {{
-                    const button = document.querySelector(selector);
-                    if (!visible(button)) continue;
-                    if (button.hasAttribute("disabled")) continue;
-                    if (String(button.className || "").includes("disabled")) continue;
+                for (const sel of [{json.dumps(SELECTORS["publish_button_legacy"])}, "button.publishBtn"]) {{
+                    const btn = document.querySelector(sel);
+                    if (!visible(btn) || btn.hasAttribute("disabled")) continue;
+                    if (String(btn.className || "").includes("disabled")) continue;
                     return true;
                 }}
                 return false;
