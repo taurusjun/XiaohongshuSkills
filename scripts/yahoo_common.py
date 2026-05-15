@@ -489,6 +489,47 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     return seo_title, summary, content, comment, "", topic_tags
 
 
+# ============ 质量评分 ============
+
+def evaluate_quality(title_zh: str, content: str, comment: str,
+                     title_ja: str = "", body_text: str = "") -> dict:
+    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues}"""
+    prompt = f"""请根据以下维度，给这条小红书笔记的标题和内容打分。
+
+【标题评分维度】（0-5分）
+加分项（各+1）：剧情感 | 冲突感 | 猎奇感 | 用户共鸣 | 名人 | 热点
+减分项（各-1）：简单通知 | 震惊体词汇 | 概括全部内容
+
+【内容评分维度】（0-5分）
+加分项（各+1）：原创度高 | 趣味性 | 有用信息非简单复述 | 补充对立信息 | 配视频
+减分项（各-1）：离题 | 啰嗦重复 | 主动讨赏
+
+---
+标题：{title_zh}
+正文摘要：{content[:200]}
+解读：{comment[:150]}
+---
+
+只输出一行，格式：
+TITLE_SCORE=数字 CONTENT_SCORE=数字 扣分: xxx（没有则写无）
+"""
+
+    result = call_litellm(prompt, max_tokens=200)
+    if not result:
+        return {"title_score": 0, "content_score": 0, "issues": []}
+
+    import re
+    ts = re.search(r"TITLE_SCORE=([\d.]+)", result)
+    cs = re.search(r"CONTENT_SCORE=([\d.]+)", result)
+    issues_m = re.search(r"扣分:\s*(.+)", result)
+
+    return {
+        "title_score": float(ts.group(1)) if ts else 0,
+        "content_score": float(cs.group(1)) if cs else 0,
+        "issues": [i.strip() for i in (issues_m.group(1).split(",") if issues_m else []) if i.strip() != "无"],
+    }
+
+
 # ============ 分类 ============
 
 def auto_classify(title: str, content: str = "", keyword: str = "") -> Tuple[str, List[str]]:
@@ -711,6 +752,14 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['summary']  = summary
         news['content']  = content
         news['comment']  = comment
+        # 质量评分
+        quality = evaluate_quality(seo_title, content, comment, news.get('title_ja',''), news.get('body_text',''))
+        news['_title_score'] = quality['title_score']
+        news['_content_score'] = quality['content_score']
+        if quality['issues']:
+            print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} | 扣分: {', '.join(quality['issues'])}")
+        if quality['title_score'] < 2.0:
+            print(f"    ⚠️ 标题质量偏低，建议人工复审")
         news['video_caption'] = ""  # 先占位，tags 确定后再填
     else:
         news.setdefault('title_zh', news['title_ja'])
@@ -922,6 +971,10 @@ def push_to_notion(news: Dict) -> str:
         "发布时间": {"rich_text": [{"text": {"content": news.get("pub_time", datetime.now().strftime('%Y.%m.%d'))}}]},
         "原文链接": {"url": news["link"]},
     }
+    if news.get('_title_score'):
+        props["标题评分"] = {"number": news['_title_score']}
+    if news.get('_content_score'):
+        props["内容评分"] = {"number": news['_content_score']}
     if image_url:
         props["封面图"] = {"url": image_url}
     if orig_img:
