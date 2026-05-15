@@ -791,14 +791,18 @@ class XiaohongshuPublisher:
         page_size: int,
         note_type: int,
     ) -> dict[str, Any]:
-        """Fallback: capture the page-triggered content-data request via CDP."""
+        """Capture the page-triggered content-data request via CDP."""
         self._send("Page.enable")
-        self._send("Network.enable", {"maxPostDataSize": 65536})
+        self._send("Network.enable", {
+            "maxPostDataSize": 65536,
+            "maxResourceBufferSize": 10 * 1024 * 1024,
+        })
         self._send("Page.navigate", {"url": XHS_CONTENT_DATA_URL})
 
         request_url_by_id: dict[str, str] = {}
         target_request_id = ""
         target_request_url = ""
+        body_text = ""
         deadline = time.time() + 18
 
         while time.time() < deadline:
@@ -817,38 +821,45 @@ class XiaohongshuPublisher:
                 request = params.get("request", {})
                 if isinstance(request_id, str):
                     request_url_by_id[request_id] = request.get("url", "")
-                continue
 
-            if method == "Network.responseReceived":
+            elif method == "Network.responseReceived":
                 request_id = params.get("requestId")
-                if not isinstance(request_id, str):
+                if target_request_id or not isinstance(request_id, str):
                     continue
-
                 request_url = request_url_by_id.get(request_id, "")
                 if XHS_CONTENT_DATA_API_PATH not in request_url:
                     continue
-
                 status = params.get("response", {}).get("status")
-                if status != 200:
-                    raise CDPError(
-                        "Content data API responded with non-200 status: "
-                        f"{status}, url={request_url}"
-                    )
+                if status == 200:
+                    target_request_id = request_id
+                    target_request_url = request_url
 
-                target_request_id = request_id
-                target_request_url = request_url
-                break
+            elif method == "Network.loadingFinished" and target_request_id:
+                if params.get("requestId") == target_request_id:
+                    try:
+                        body_result = self._send(
+                            "Network.getResponseBody",
+                            {"requestId": target_request_id},
+                        )
+                        body_text = body_result.get("body", "")
+                        if body_result.get("base64Encoded"):
+                            body_text = base64.b64decode(body_text).decode(
+                                "utf-8", errors="replace"
+                            )
+                    except CDPError:
+                        pass
+                    break
 
-        if not target_request_id:
+        if not body_text:
+            if target_request_id:
+                raise CDPError(
+                    "Failed to retrieve response body for content data request. "
+                    f"url={target_request_url}"
+                )
             raise CDPError(
                 "Timed out waiting for content data request. "
                 "Please open data-analysis page manually and retry."
             )
-
-        body_result = self._send("Network.getResponseBody", {"requestId": target_request_id})
-        body_text = body_result.get("body", "")
-        if body_result.get("base64Encoded"):
-            body_text = base64.b64decode(body_text).decode("utf-8", errors="replace")
 
         try:
             payload = json.loads(body_text)
@@ -3860,23 +3871,11 @@ class XiaohongshuPublisher:
             raise CDPError("--page-num must be >= 1.")
         if page_size < 1:
             raise CDPError("--page-size must be >= 1.")
-        self._navigate(XHS_CONTENT_DATA_URL)
-        try:
-            return self._fetch_content_data_via_page_fetch(
-                page_num=page_num,
-                page_size=page_size,
-                note_type=note_type,
-            )
-        except CDPError as exc:
-            print(
-                "[cdp_publish] Explicit content-data fetch failed, "
-                f"falling back to network capture: {exc}"
-            )
-            return self._capture_content_data_from_page_request(
-                page_num=page_num,
-                page_size=page_size,
-                note_type=note_type,
-            )
+        return self._capture_content_data_from_page_request(
+            page_num=page_num,
+            page_size=page_size,
+            note_type=note_type,
+        )
 
     # ------------------------------------------------------------------
     # Publishing actions
