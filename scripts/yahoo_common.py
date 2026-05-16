@@ -533,19 +533,29 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 TITLE_SCORE=数字 CONTENT_SCORE=数字 扣分: xxx（没有则写无）
 """
 
-    result = call_litellm(prompt, max_tokens=200)
+    result = call_litellm(prompt, max_tokens=1000)
     if not result:
         return {"title_score": 0, "content_score": 0, "issues": []}
 
     import re
-    ts = re.search(r"TITLE_SCORE=([\d.]+)", result)
-    cs = re.search(r"CONTENT_SCORE=([\d.]+)", result)
-    issues_m = re.search(r"扣分:\s*(.+)", result)
+    # 从所有行中提取评分（推理模型可能在前面输出思考过程）
+    ts = cs = None
+    issues_str = ""
+    for line in result.split("\n"):
+        line = line.strip()
+        if "TITLE_SCORE=" in line:
+            ts = re.search(r"TITLE_SCORE=([\d.]+)", line)
+        if "CONTENT_SCORE=" in line:
+            cs = re.search(r"CONTENT_SCORE=([\d.]+)", line)
+        if "扣分:" in line:
+            issues_m = re.search(r"扣分:\s*(.+)", line)
+            if issues_m:
+                issues_str = issues_m.group(1)
 
     return {
         "title_score": float(ts.group(1)) if ts else 0,
         "content_score": float(cs.group(1)) if cs else 0,
-        "issues": [i.strip() for i in (issues_m.group(1).split(",") if issues_m else []) if i.strip() != "无"],
+        "issues": [i.strip() for i in (issues_str.split(",") if issues_str else []) if i.strip() not in ("无", "")],
     }
 
 
