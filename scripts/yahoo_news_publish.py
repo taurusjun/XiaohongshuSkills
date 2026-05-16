@@ -84,11 +84,11 @@ def _get_pending_sqlite() -> list:
 
 def get_pending_pages() -> list:
     """获取 发布XHS=True 且 发布XHS时间 为空 的条目（支持 notion/sqlite/both）"""
-    from yahoo_common import USE_SQLITE, USE_NOTION
+    from config.yahoo_conf import STORAGE_BACKEND
     results = []
-    if USE_NOTION:
+    if STORAGE_BACKEND == "notion":
         results = _get_pending_notion()
-    if USE_SQLITE:
+    if STORAGE_BACKEND == "sqlite":
         sqlite_rows = _get_pending_sqlite()
         # 去重（同一 key 只保留一份）
         seen_keys = set()
@@ -294,8 +294,8 @@ def mark_as_published(page_id: str, news_key: str = ""):
         pass
     # SQLite
     if news_key:
-        from yahoo_common import USE_SQLITE
-        if USE_SQLITE:
+        from yahoo_common 
+        if STORAGE_BACKEND == "sqlite":
             try:
                 from sqlite_db import mark_published as sqlite_pub
                 sqlite_pub(news_key, datetime.now().strftime("%Y-%m-%d %H:%M"))
