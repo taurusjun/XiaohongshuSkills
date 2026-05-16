@@ -15,6 +15,7 @@ yahoo_common.py — Yahoo Japan 新闻脚本公共模块
 import os
 import re
 import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project root for config
 import json
 import time
 import random
@@ -709,6 +710,15 @@ def fetch_article_details(url: str) -> dict:
                 if p:
                     result["summary"] = p.get_text(strip=True)[:600]
 
+        # 发布时间
+        pub_meta = soup.find("meta", property="article:published_time")
+        if pub_meta and pub_meta.get("content"):
+            result["pub_time"] = pub_meta["content"]  # ISO format
+        else:
+            time_tag = soup.find("time")
+            if time_tag and time_tag.get("datetime"):
+                result["pub_time"] = time_tag["datetime"]
+
         # 正文：提取 article 内所有段落，给 LLM 提供更多上下文
         body_text = ""
         article = soup.find("article") or soup.find(class_="article")
@@ -750,6 +760,7 @@ def process_news_item(news: dict, no_translate: bool = False,
     原地修改并返回 news dict。
     """
     # 1. 翻译 + AI 生成
+    details = {}  # 默认空，当不翻译时 pub_time 可用 now()
     if LITELLM_API_KEY and not no_translate:
         # 先抓文章详情，用 og:title 替换 Yahoo 搜索页的拼接/截断标题
         print("    抓取文章详情（供AI参考）...")
@@ -827,8 +838,25 @@ def process_news_item(news: dict, no_translate: bool = False,
             news['title_zh'], news.get('summary', ''),
             news.get('content', ''), tags,
         )
-    # pub_time：强制统一为 YYYY.MM.DD，忽略来源页的日文时间格式
-    news['pub_time'] = datetime.now().strftime('%Y.%m.%d')
+    # pub_time：SQLite 精确到分钟，Notion 仅日期
+    raw_time = details.get('pub_time', '')
+    if raw_time and STORAGE_BACKEND == 'sqlite':
+        try:
+            from datetime import datetime as dt
+            t = dt.fromisoformat(raw_time.replace('Z', '+00:00'))
+            news['pub_time'] = t.strftime('%Y.%m.%d %H:%M')
+        except Exception:
+            news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
+    elif raw_time and STORAGE_BACKEND == 'notion':
+        try:
+            from datetime import datetime as dt
+            t = dt.fromisoformat(raw_time.replace('Z', '+00:00'))
+            news['pub_time'] = t.strftime('%Y.%m.%d')
+        except Exception:
+            news['pub_time'] = datetime.now().strftime('%Y.%m.%d')
+    else:
+        date_fmt = '%Y.%m.%d %H:%M' if STORAGE_BACKEND == 'sqlite' else '%Y.%m.%d'
+        news['pub_time'] = datetime.now().strftime(date_fmt)
     if keyword:
         news['keyword'] = keyword
 
