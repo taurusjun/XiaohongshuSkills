@@ -98,10 +98,7 @@ def _disable_proxy():
 NOTION_API_KEY    = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
-# 存储后端: notion | sqlite | both (默认both双写)
-STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "both")
-USE_SQLITE = STORAGE_BACKEND in ("sqlite", "both")
-USE_NOTION = STORAGE_BACKEND in ("notion", "both")
+from config.yahoo_conf import STORAGE_BACKEND
 
 LITELLM_URL        = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
 LITELLM_API_KEY    = os.environ.get("LITELLM_API_KEY", "")
@@ -850,7 +847,7 @@ def process_news_item(news: dict, no_translate: bool = False,
     print(f"    分类: {category} | 标签: {', '.join(tags[:3])}")
 
     # 存储后端写入
-    if USE_SQLITE:
+    if STORAGE_BACKEND == "sqlite":
         try:
             from sqlite_db import insert_news as sqlite_insert
             sqlite_insert({
@@ -936,7 +933,7 @@ def load_today_keys() -> set:
         start_cursor = data.get("next_cursor")
 
     # 合并 SQLite 去重 key
-    if USE_SQLITE:
+    if STORAGE_BACKEND == "sqlite":
         try:
             from sqlite_db import load_today_keys as sqlite_keys
             keys |= sqlite_keys(today)
@@ -1077,7 +1074,7 @@ def push_to_notion(news: Dict) -> str:
 def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
     """推送到 Notion/SQLite 并检测图集外链。返回是否成功"""
     key = extract_key_from_url(news["link"])
-    if USE_NOTION:
+    if STORAGE_BACKEND == "notion":
         page_id = push_to_notion(news)
         if not page_id:
             print("    ❌ 推送失败")
@@ -1094,7 +1091,7 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
         from gallery_fetch import detect_gallery_link, update_notion_gallery_url
         gallery_url = detect_gallery_link(news["link"])
         if gallery_url:
-            if USE_NOTION:
+            if STORAGE_BACKEND == "notion":
                 update_notion_gallery_url(page_id, gallery_url)
             else:
                 print(f"    📸 图集: {gallery_url}")
@@ -1107,7 +1104,7 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
 
 def push_stub_to_notion(news: dict, existing_keys: set | None = None) -> bool:
     """推送最小化存根到 Notion/SQLite（仅用于去重记录：翻译标题 + 原地址 + key）"""
-    if not USE_NOTION:
+    if STORAGE_BACKEND != "notion":
         return True  # SQLite 已通过 process_news_item 写入
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
         return False
