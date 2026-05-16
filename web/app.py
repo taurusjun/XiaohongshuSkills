@@ -446,11 +446,16 @@ textarea{min-height:120px;resize:vertical}
     <div style="margin-bottom:4px"><label style="font-size:11px">📸 图集源链接</label><input name="gallery_url" value="{{news.gallery_url or ''}}" style="width:100%;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#666;background:#fff" placeholder="https://..."></div>
   </div>
   {% if news.gallery_images %}
-  <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:12px">
+  <label style="font-size:13px;color:#666;margin:14px 0 4px;font-weight:500">📸 发布图片 (勾选的将发到小红书)</label>
+  <div id="publishImgStrip" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:4px">
     {% for p in news.gallery_images %}
-    <img src="/local-image?path={{p}}" style="max-height:150px;border-radius:6px">
+    <div style="position:relative;flex-shrink:0;cursor:pointer" onclick="togglePublishImg(this)">
+      <img src="/local-image?path={{p}}" style="max-height:150px;border-radius:6px">
+      <input type="checkbox" style="position:absolute;top:4px;left:4px;pointer-events:none" data-path="{{p}}">
+    </div>
     {% endfor %}
   </div>
+  <button type="button" class="btn btn-sm btn-primary" onclick="savePublishImages()" style="margin-bottom:12px">💾 保存发布图选择</button>
   {% endif %}
   <div class="row">
     <div>📊 标题评分: {{"%.1f"|format(news.title_score or 0)}}</div>
@@ -597,12 +602,23 @@ async function saveGallery(){
 async function saveAndUpload(){
   const selected=galleryImages.filter(function(p){return p.sel;}).map(function(p){return p.path;});
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:selected})});
-  const r=await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:selected})});
-  const d=await r.json();
-  if(d.urls&&d.urls.length)alert('已上传 '+d.urls.length+' 张');
+  await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:selected})});
+  alert('已上传 '+selected.length+' 张');
   closeGalleryModal(); location.reload();
 }
 function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active');}
+function togglePublishImg(el){ var cb=el.querySelector('input[type=checkbox]'); cb.checked=!cb.checked; el.style.opacity=cb.checked?'1':'0.4'; }
+async function savePublishImages(){
+  var paths=[]; document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){paths.push(cb.dataset.path);});
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths})});
+  var t=document.getElementById('toast'); t.textContent='发布图已保存 ('+paths.length+'张)'; t.style.display='block'; setTimeout(function(){t.style.display='none';t.textContent='已保存';},1500);
+}
+(function initPublishCheckboxes(){
+  {% if news.publish_images %}var pubSet=new Set({{news.publish_images|tojson}});{% else %}var pubSet=new Set();{% endif %}
+  document.querySelectorAll('#publishImgStrip input[type=checkbox]').forEach(function(cb){
+    if(pubSet.has(cb.dataset.path)){cb.checked=true;}else{cb.parentElement.style.opacity='0.4';}
+  });
+})();
 </script>
 </body></html>"""
 
@@ -617,9 +633,11 @@ def detail(key):
     news = get_by_key(key)
     if not news:
         return "Not found", 404
-    # Parse gallery_images JSON
+    # Parse gallery_images / publish_images JSON
     gi = news.get('gallery_images', '')
     news['gallery_images'] = json.loads(gi) if isinstance(gi, str) and gi else (gi or [])
+    pi = news.get('publish_images', '')
+    news['publish_images'] = json.loads(pi) if isinstance(pi, str) and pi else (pi or [])
     # Scan cache for extra images (use config's GALLERY_CACHE_DIR)
     from config.yahoo_conf import GALLERY_CACHE_DIR
     cache_dir = os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), key)
