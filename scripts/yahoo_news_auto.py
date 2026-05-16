@@ -321,7 +321,11 @@ def main():
 
     if args.push:
         print(f"✅ 完成！已推送 {len(all_processed)} 条")
-        print(f"🔗 查看: https://www.notion.so/{NOTION_DATABASE_ID}")
+        from config.yahoo_conf import STORAGE_BACKEND
+        if STORAGE_BACKEND == 'sqlite':
+            print("🔗 查看: http://localhost:5000/")
+        else:
+            print(f"🔗 查看: https://www.notion.so/{NOTION_DATABASE_ID}")
     else:
         print("使用 --push 或 -p 参数自动推送到 Notion")
         print("=" * 60)

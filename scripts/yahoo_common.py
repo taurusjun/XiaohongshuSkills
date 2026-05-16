@@ -710,14 +710,30 @@ def fetch_article_details(url: str) -> dict:
                 if p:
                     result["summary"] = p.get_text(strip=True)[:600]
 
-        # 发布时间
+        # 发布时间（多级回退：meta → header <time> → footer <time>）
+        def _parse_time_text(txt):
+            import re as _re
+            m = _re.match(r'(\d{1,2})/(\d{1,2}).*?(\d{1,2}):(\d{2})', txt)
+            if m:
+                month, day, hour, minute = m.groups()
+                now = datetime.now()
+                return f"{now.year}-{int(month):02d}-{int(day):02d}T{int(hour):02d}:{minute}:00"
+            return ""
+        pub_time = ""
         pub_meta = soup.find("meta", property="article:published_time")
         if pub_meta and pub_meta.get("content"):
-            result["pub_time"] = pub_meta["content"]  # ISO format
-        else:
-            time_tag = soup.find("time")
-            if time_tag and time_tag.get("datetime"):
-                result["pub_time"] = time_tag["datetime"]
+            pub_time = pub_meta["content"]
+        if not pub_time:
+            for time_tag in soup.find_all("time"):
+                dt_attr = time_tag.get("datetime")
+                if dt_attr:
+                    pub_time = dt_attr; break
+                txt = time_tag.get_text(strip=True)
+                pub_time = _parse_time_text(txt)
+                if pub_time:
+                    break
+        if pub_time:
+            result["pub_time"] = pub_time
 
         # 正文：提取 article 内所有段落，给 LLM 提供更多上下文
         body_text = ""
@@ -1122,6 +1138,8 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
             if STORAGE_BACKEND == "notion":
                 update_notion_gallery_url(page_id, gallery_url)
             else:
+                from sqlite_db import update_news
+                update_news(key, {'gallery_url': gallery_url})
                 print(f"    📸 图集: {gallery_url}")
         else:
             print("    — 未检测到图集外链")
