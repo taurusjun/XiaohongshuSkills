@@ -172,7 +172,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
-               'video_path','video_caption','gallery_images','gallery_video','gallery_url',
+               'video_path','video_caption','gallery_images','publish_images','gallery_video','gallery_url',
                'publish_xhs','publish_time','status','title_score','content_score'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:

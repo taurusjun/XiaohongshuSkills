@@ -114,7 +114,7 @@ def get_page_media_blocks(page_id: str, is_sqlite: bool = False) -> tuple[list[s
         row = get_by_key(page_id)
         if row:
             images = row.get('image_url','')
-            gallery = row.get('gallery_images','') or '[]'
+            gallery = row.get('publish_images','') or '[]'
             try: gallery_imgs = json.loads(gallery) if isinstance(gallery, str) else gallery
             except: gallery_imgs = []
             img_urls = [images] if images else []
@@ -409,8 +409,14 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
         # XHS 最多 18 张
         effective_urls = image_urls[:18]
         if effective_urls:
-            cmd += ["--image-urls"] + effective_urls
-            print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
+            # 检测本地路径 vs URL
+            first = effective_urls[0]
+            if first.startswith('/') or (first.startswith('\\\\') and not first.startswith('http')):
+                cmd += ["--images"] + effective_urls
+                print(f"  配图 {len(effective_urls)} 张(本地): {os.path.basename(first)}...")
+            else:
+                cmd += ["--image-urls"] + effective_urls
+                print(f"  配图 {len(effective_urls)} 张(URL): {first[:60]}...")
         else:
             print(f"  ⚠️ 未找到封面图，发布可能失败")
 
