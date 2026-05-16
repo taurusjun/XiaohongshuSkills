@@ -3009,6 +3009,17 @@ def process_page(page: dict, redownload: bool = False) -> bool:
 
     # 同步写入 Notion
     update_notion_gallery_url(page["id"], gallery_url)
+    # SQLite 双写：更新图集/视频字段
+    try:
+        from sqlite_db import update_news as sqlite_update
+        images = [str(article_dir / f) for f in local_files if not f.endswith('_video.mp4')]
+        videos = [str(article_dir / f) for f in local_files if f.endswith('_video.mp4')]
+        gallery_data = {'gallery_images': images}
+        if videos:
+            gallery_data['gallery_video'] = videos[0]
+        sqlite_update(key, gallery_data)
+    except ImportError:
+        pass
     print(f"  ✅ 已缓存 {len(local_files)} 张")
     return True
 
