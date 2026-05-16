@@ -32,16 +32,27 @@ _tasks = {}
 _task_counter = 0
 _publish_lock = threading.Lock()
 _publish_running = False
+_fetch_lock = threading.Lock()
+_fetch_running = False
 
 def _run_task(cmd, task_id, env=None, on_done=None):
+    log_lines = []
+    if env is None:
+        env = {}
+    env.setdefault('PYTHONUNBUFFERED', '1')
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                              cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
-                              env=env)
-        log = (proc.stdout + proc.stderr).strip()
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1,
+                                cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
+                                env=env)
+        for line in proc.stdout:
+            log_lines.append(line.rstrip())
+            _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines)}
+        proc.wait(timeout=600)
+        log = '\n'.join(log_lines).strip()
         _tasks[task_id] = {'status': 'done', 'log': log}
     except Exception as e:
-        _tasks[task_id] = {'status': f'error: {e}', 'log': ''}
+        _tasks[task_id] = {'status': f'error: {e}', 'log': '\n'.join(log_lines)}
     finally:
         if on_done:
             on_done()
@@ -53,7 +64,13 @@ def api_gallery_download(key):
 
 @app.route('/api/trigger-fetch', methods=['POST'])
 def api_trigger_fetch():
-    global _task_counter
+    global _task_counter, _fetch_running
+    if _fetch_running:
+        return jsonify({"locked": True, "msg": "已有抓取任务在运行，请等待完成"})
+    with _fetch_lock:
+        if _fetch_running:
+            return jsonify({"locked": True, "msg": "已有抓取任务在运行，请等待完成"})
+        _fetch_running = True
     data = request.json or {}
     tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
@@ -64,7 +81,11 @@ def api_trigger_fetch():
         cmd = [sys.executable, 'yahoo_recommendations.py',
                '--max', str(data.get('max',10)), '--push', '--auto']
     sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
-    threading.Thread(target=_run_task, args=(cmd, tid, sub_env), daemon=True).start()
+    def on_fetch_done():
+        global _fetch_running
+        with _fetch_lock:
+            _fetch_running = False
+    threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
     return jsonify({"task_id": tid})
 
 @app.route('/api/trigger-publish', methods=['POST'])
@@ -93,6 +114,15 @@ def api_task(tid):
     if isinstance(t, dict):
         return jsonify(t)
     return jsonify({"status": t, "log": ""})
+
+@app.route('/api/active-tasks')
+def api_active_tasks():
+    """返回所有运行中的任务"""
+    active = []
+    for tid, t in _tasks.items():
+        if isinstance(t, dict) and t.get('status') == 'running':
+            active.append({'task_id': tid, 'status': 'running', 'log': t.get('log', '')})
+    return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
 
 @app.route('/api/gallery-upload/<key>', methods=['POST'])
 def api_gallery_upload(key):
@@ -162,6 +192,7 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
 <div class="header">
   <h1>📰 新闻管理</h1>
   <div class="stats" id="stats"></div>
+  <span id="taskBar" style="display:none;font-size:12px;cursor:pointer;color:#ff6b35;font-weight:500" onclick="showTaskModal()"></span>
   <div class="grow"></div>
   <input type="text" id="keywordInput" placeholder="关键词" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid #ddd;border-radius:4px" value="AKB">
   <input type="number" id="kwMax" value="5" min="1" max="30" style="width:50px;padding:4px 6px;font-size:12px;border:1px solid #ddd;border-radius:4px">
@@ -182,6 +213,7 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
 </div>
 <table class="table">
   <thead><tr>
+    <th style="width:40px">#</th>
     <th onclick="setSort('pub_time')">新闻时间 ↕</th>
     <th>标题</th>
     <th style="width:55px">发布XHS</th>
@@ -212,14 +244,46 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
 
 <script>
 let sortBy='created_at',sortDir='DESC',page=0;
+let activeTaskId=null, activeTaskLabel='';
 const S=id=>document.getElementById(id);
+
+async function checkActiveTasks(){
+  const r=await fetch('/api/active-tasks'); const d=await r.json();
+  if(d.active.length>0 || d.fetch_running){
+    // 抓取运行中：禁抓取/推荐按钮 + 灰化
+    S('taskBar').style.display=''; S('taskBar').textContent='⏳ 抓取任务运行中...点击查看';
+    activeTaskId=d.active.length>0?d.active[0].task_id:localStorage.getItem('lastTaskId');
+    ['kwBtn','recomBtn'].forEach(id=>{ S(id).disabled=true; S(id).style.opacity='0.5'; });
+    S('pubBtn').disabled=false; S('pubBtn').style.opacity='1';
+  } else if(d.publish_running){
+    S('taskBar').style.display=''; S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
+    activeTaskId=localStorage.getItem('lastTaskId');
+    S('pubBtn').disabled=true; S('pubBtn').style.opacity='0.5';
+    ['kwBtn','recomBtn'].forEach(id=>{ S(id).disabled=false; S(id).style.opacity='1'; });
+  } else {
+    S('taskBar').style.display='none'; activeTaskId=null; localStorage.removeItem('lastTaskId');
+    ['kwBtn','recomBtn','pubBtn'].forEach(id=>{ S(id).disabled=false; S(id).style.opacity='1'; });
+  }
+}
+function showTaskModal(){
+  if(!activeTaskId) return;
+  S('taskModal').classList.add('active');
+  pollTaskLog(activeTaskId);
+}
+async function pollTaskLog(tid){
+  const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
+  if(sd.log) S('taskLog').textContent=sd.log;
+  if(sd.status==='running'){ setTimeout(()=>pollTaskLog(tid), 3000); }
+  else{ checkActiveTasks(); }
+}
 
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:100,offset:page*100,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
     category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value});
   const r=await fetch('/api/news?'+p); const d=await r.json();
-  S('tbody').innerHTML=d.rows.map(n=>`<tr>
+  S('tbody').innerHTML=d.rows.map((n,i)=>`<tr>
+    <td style="color:#999;font-size:11px">${page*100+i+1}</td>
     <td style="white-space:nowrap">${n.pub_time||''}</td>
     <td><a href="/detail/${n.key}" style="color:#333;text-decoration:none"
            onclick="event.stopPropagation()"><b>${esc(n.title||'')}</b></a><br>
@@ -271,10 +335,12 @@ async function preview(key){
 }
 function closeModal(){S('modal').classList.remove('active');}
 function closeTaskModal(){S('taskModal').classList.remove('active');}
+function restoreButtons(){['kwBtn','recomBtn','pubBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=false;b.style.opacity='1';}});}
+function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5';}});}
 async function triggerFetch(mode){
   const bid=mode==='keywords'?'kwBtn':'recomBtn';
   const b=document.getElementById(bid);
-  const orig=b.textContent; b.disabled=true; b.style.opacity='0.5'; b.textContent='⏳ 运行中...';
+  const orig=b.textContent; disableFetchBtns(); b.textContent='⏳ 运行中...';
   const body={mode};
   if(mode==='keywords'){body.keyword=document.getElementById('keywordInput').value;body.max=parseInt(document.getElementById('kwMax').value)||5;}
   else{body.max=parseInt(document.getElementById('recomMax').value)||10;}
@@ -283,15 +349,20 @@ async function triggerFetch(mode){
   S('taskLog').textContent='⏳ 启动中...';
   S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json(); const tid=d.task_id;
+  const d=await r.json();
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent=orig; b.style.opacity='1'; b.disabled=false; return;}
+  const tid=d.task_id;
+  activeTaskId=tid; activeTaskLabel=mode==='keywords'?'关键词抓取':'推荐抓取';
+  localStorage.setItem('lastTaskId',tid);
+  S('taskBar').style.display=''; S('taskBar').textContent='⏳ '+activeTaskLabel+'运行中...点击查看';
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
     const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
     if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList();},2000);return;}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList();},2000);return;}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
   }
-  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false;
+  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false; activeTaskId=null; localStorage.removeItem('lastTaskId'); S('taskBar').style.display='none';
 }
 async function triggerPublish(){
   const b=document.getElementById('pubBtn'); b.disabled=true; b.style.opacity='0.5'; b.textContent='⏳ 发布中...';
@@ -302,14 +373,17 @@ async function triggerPublish(){
   const d=await r.json();
   if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent='📤 发布到小红书'; b.style.opacity='1'; b.disabled=false; return;}
   const tid=d.task_id;
+  activeTaskId=tid; activeTaskLabel='发布';
+  localStorage.setItem('lastTaskId',tid);
+  S('taskBar').style.display=''; S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
     const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
     if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书';},2000);return;}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书';},2000);return;}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
   }
-  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false;
+  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false; activeTaskId=null; localStorage.removeItem('lastTaskId'); S('taskBar').style.display='none';
 }
 async function togglePublish(key,val){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
@@ -319,7 +393,7 @@ async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
-loadList();loadCategories();
+loadList();loadCategories();checkActiveTasks();
 </script>
 </body></html>"""
 
