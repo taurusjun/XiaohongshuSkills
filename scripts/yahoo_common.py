@@ -1075,14 +1075,16 @@ def push_to_notion(news: Dict) -> str:
 
 
 def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
-    """推送到 Notion 并检测图集外链。返回是否成功"""
+    """推送到 Notion/SQLite 并检测图集外链。返回是否成功"""
     key = extract_key_from_url(news["link"])
-    page_id = push_to_notion(news)
-    if not page_id:
-        print("    ❌ 推送失败")
-        return False
-
-    print("    ✅ 已推送到 Notion")
+    if USE_NOTION:
+        page_id = push_to_notion(news)
+        if not page_id:
+            print("    ❌ 推送失败")
+            return False
+        print("    ✅ 已推送到 Notion")
+    else:
+        print("    ✅ 已保存到 SQLite")
     if existing_keys is not None:
         existing_keys.add(key)
 
@@ -1092,7 +1094,10 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
         from gallery_fetch import detect_gallery_link, update_notion_gallery_url
         gallery_url = detect_gallery_link(news["link"])
         if gallery_url:
-            update_notion_gallery_url(page_id, gallery_url)
+            if USE_NOTION:
+                update_notion_gallery_url(page_id, gallery_url)
+            else:
+                print(f"    📸 图集: {gallery_url}")
         else:
             print("    — 未检测到图集外链")
     except Exception as e:
@@ -1101,7 +1106,9 @@ def push_with_gallery(news: dict, existing_keys: set | None = None) -> bool:
 
 
 def push_stub_to_notion(news: dict, existing_keys: set | None = None) -> bool:
-    """推送最小化存根到 Notion（仅用于去重记录：翻译标题 + 原地址 + key）"""
+    """推送最小化存根到 Notion/SQLite（仅用于去重记录：翻译标题 + 原地址 + key）"""
+    if not USE_NOTION:
+        return True  # SQLite 已通过 process_news_item 写入
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
         return False
     key = extract_key_from_url(news["link"])
