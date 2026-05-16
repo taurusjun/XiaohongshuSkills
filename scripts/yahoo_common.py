@@ -98,6 +98,11 @@ def _disable_proxy():
 NOTION_API_KEY    = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
+# 存储后端: notion | sqlite | both (默认both双写)
+STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "both")
+USE_SQLITE = STORAGE_BACKEND in ("sqlite", "both")
+USE_NOTION = STORAGE_BACKEND in ("notion", "both")
+
 LITELLM_URL        = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
 LITELLM_API_KEY    = os.environ.get("LITELLM_API_KEY", "")
 LITELLM_MODEL      = os.environ.get("LITELLM_MODEL", "")
@@ -843,6 +848,34 @@ def process_news_item(news: dict, no_translate: bool = False,
         print("    封面图: ⚠️ 未找到")
 
     print(f"    分类: {category} | 标签: {', '.join(tags[:3])}")
+
+    # 存储后端写入
+    if USE_SQLITE:
+        try:
+            from sqlite_db import insert_news as sqlite_insert
+            sqlite_insert({
+                'title': news.get('title_zh', news['title_ja']),
+                'title_ja': news.get('title_ja', ''),
+                'link': news.get('link', ''),
+                'source': news.get('source', ''),
+                'category': category,
+                'content': news.get('content', ''),
+                'comment': news.get('comment', ''),
+                'summary': news.get('summary', ''),
+                'tags': tags,
+                'image_url': news.get('image_url', ''),
+                'original_image_url': news.get('original_image_url', ''),
+                'video_path': news.get('video_path', ''),
+                'video_caption': news.get('video_caption', ''),
+                'pub_time': news.get('pub_time', ''),
+                'title_score': news.get('_title_score', 0),
+                'content_score': news.get('_content_score', 0),
+                'key': extract_key_from_url(news.get('link', '')),
+                'status': 'active',
+            })
+        except ImportError:
+            pass
+
     return news
 
 
@@ -901,6 +934,14 @@ def load_today_keys() -> set:
                 keys.add(key)
         has_more = data.get("has_more", False)
         start_cursor = data.get("next_cursor")
+
+    # 合并 SQLite 去重 key
+    if USE_SQLITE:
+        try:
+            from sqlite_db import load_today_keys as sqlite_keys
+            keys |= sqlite_keys(today)
+        except ImportError:
+            pass
 
     print(f"📋 已加载今天的 {len(keys)} 个已存在 key")
     return keys
