@@ -136,8 +136,8 @@ def get_by_key(key: str) -> dict | None:
     return None
 
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
-               status: str = "active", search: str = "", limit: int = 200,
-               sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
+               status: str = "active", search: str = "", publish_xhs: str = "",
+               limit: int = 200, sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
     if sort_by not in valid_sort:
         sort_by = 'created_at'
@@ -150,6 +150,12 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
         sql += "AND pub_time <= ? "; params.append(date_to)
     if category:
         sql += "AND category = ? "; params.append(category)
+    if publish_xhs == 'published':
+        sql += "AND publish_xhs=1 AND publish_time IS NOT NULL AND publish_time!='' "
+    elif publish_xhs == 'pending':
+        sql += "AND publish_xhs=1 AND (publish_time IS NULL OR publish_time='') "
+    elif publish_xhs == 'unpublished':
+        sql += "AND publish_xhs=0 "
     if search:
         sql += "AND (title LIKE ? OR content LIKE ? OR comment LIKE ?) "
         params.extend([f"%{search}%"]*3)

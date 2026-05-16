@@ -31,13 +31,15 @@ def check_backend():
 _tasks = {}
 _task_counter = 0
 
-def _run_task(cmd, task_id):
+def _run_task(cmd, task_id, env=None):
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                       cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-        _tasks[task_id] = 'done'
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                              cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
+                              env=env)
+        log = (proc.stdout + proc.stderr).strip()
+        _tasks[task_id] = {'status': 'done', 'log': log}
     except Exception as e:
-        _tasks[task_id] = f'error: {e}'
+        _tasks[task_id] = {'status': f'error: {e}', 'log': ''}
 
 @app.route('/api/gallery-download/<key>', methods=['POST'])
 def api_gallery_download(key):
@@ -49,28 +51,33 @@ def api_trigger_fetch():
     global _task_counter
     data = request.json or {}
     tid = str(_task_counter); _task_counter += 1
-    _tasks[tid] = 'running'
+    _tasks[tid] = {'status': 'running', 'log': ''}
     if data.get('mode') == 'keywords':
         cmd = [sys.executable, 'yahoo_news_auto.py', '--keyword', data.get('keyword','AKB'),
                '--max', str(data.get('max',5)), '--push', '--auto']
     else:
         cmd = [sys.executable, 'yahoo_recommendations.py',
                '--max', str(data.get('max',10)), '--push', '--auto']
-    threading.Thread(target=_run_task, args=(cmd, tid), daemon=True).start()
+    sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
+    threading.Thread(target=_run_task, args=(cmd, tid, sub_env), daemon=True).start()
     return jsonify({"task_id": tid})
 
 @app.route('/api/trigger-publish', methods=['POST'])
 def api_trigger_publish():
     global _task_counter
     tid = str(_task_counter); _task_counter += 1
-    _tasks[tid] = 'running'
+    _tasks[tid] = {'status': 'running', 'log': ''}
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
-    threading.Thread(target=_run_task, args=(cmd, tid), daemon=True).start()
+    sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
+    threading.Thread(target=_run_task, args=(cmd, tid, sub_env), daemon=True).start()
     return jsonify({"task_id": tid})
 
 @app.route('/api/task/<tid>')
 def api_task(tid):
-    return jsonify({"status": _tasks.get(tid, 'unknown')})
+    t = _tasks.get(tid, 'unknown')
+    if isinstance(t, dict):
+        return jsonify(t)
+    return jsonify({"status": t, "log": ""})
 
 @app.route('/api/gallery-upload/<key>', methods=['POST'])
 def api_gallery_upload(key):
@@ -155,16 +162,17 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
   <input type="date" id="dateTo" title="结束日期">
   <select id="category"><option value="">全部分类</option></select>
   <select id="status"><option value="active">活跃</option><option value="archived">已归档</option></select>
+  <select id="publishXhs"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
   <button class="btn btn-primary btn-sm" onclick="loadList()">筛选</button>
 </div>
 <table class="table">
   <thead><tr>
-    <th onclick="setSort('pub_time')">发布时间 ↕</th>
+    <th onclick="setSort('pub_time')">新闻时间 ↕</th>
     <th>标题</th>
     <th style="width:55px">发布XHS</th>
     <th style="width:85px">发布XHS时间</th>
     <th>分类</th>
-    <th onclick="setSort('title_score')">评分</th>
+    <th onclick="setSort('title_score')">评分 ↕</th>
     <th>标签</th>
   </tr></thead>
   <tbody id="tbody"></tbody>
@@ -176,14 +184,25 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
   <div class="modal-content" id="modalContent"></div>
 </div>
 
+<!-- Terminal log modal -->
+<div class="modal" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal-content" style="max-width:750px;background:#1e1e1e;color:#0f0">
+    <h3 id="taskModalTitle" style="color:#fff;margin-bottom:12px">🖥️ 终端</h3>
+    <pre id="taskLog" style="font:12px Menlo,monospace;white-space:pre-wrap;min-height:300px;max-height:60vh;overflow-y:auto;margin:0">等待中...</pre>
+    <div style="margin-top:12px;text-align:right">
+      <button class="btn btn-sm" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
-let sortBy='pub_time',sortDir='DESC',page=0;
+let sortBy='created_at',sortDir='DESC',page=0;
 const S=id=>document.getElementById(id);
 
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:100,offset:page*100,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
-    category:S('category').value,status:S('status').value});
+    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value});
   const r=await fetch('/api/news?'+p); const d=await r.json();
   S('tbody').innerHTML=d.rows.map(n=>`<tr>
     <td style="white-space:nowrap">${n.pub_time||''}</td>
@@ -197,9 +216,22 @@ async function loadList(){
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</td>
   </tr>`).join('');
   S('stats').innerHTML=`共 ${d.total} 条 | 今日 ${d.today} | 待发布 ${d.pending}`;
+  // Pagination
+  const totalPages=Math.ceil(d.total/100);
+  let pager='';
+  if(totalPages>1){
+    pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${page-1})" ${page<=0?'disabled':''}>‹ 上一页</button> `;
+    for(let i=0;i<totalPages;i++){
+      if(i===page)pager+=`<button class="btn btn-sm btn-primary">${i+1}</button> `;
+      else pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${i})">${i+1}</button> `;
+    }
+    pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>下一页 ›</button>`;
+  }
+  S('pager').innerHTML=pager;
 }
+function goPage(n){page=n;loadList();window.scrollTo(0,0);}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function setSort(col){ sortBy=col; sortDir=sortBy===col&&sortDir==='DESC'?'ASC':'DESC'; loadList(); }
+function setSort(col){ if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}else{sortBy=col;sortDir='DESC'} loadList(); }
 
 async function preview(key){
   const r=await fetch('/api/news/'+key); const n=await r.json();
@@ -223,34 +255,44 @@ async function preview(key){
   S('modal').classList.add('active');
 }
 function closeModal(){S('modal').classList.remove('active');}
+function closeTaskModal(){S('taskModal').classList.remove('active');}
 async function triggerFetch(mode){
   const bid=mode==='keywords'?'kwBtn':'recomBtn';
   const b=document.getElementById(bid);
-  const orig=b.textContent; b.disabled=true; b.textContent='⏳ 运行中...';
+  const orig=b.textContent; b.disabled=true; b.style.opacity='0.5'; b.textContent='⏳ 运行中...';
   const body={mode};
   if(mode==='keywords'){body.keyword=document.getElementById('keywordInput').value;body.max=parseInt(document.getElementById('kwMax').value)||5;}
   else{body.max=parseInt(document.getElementById('recomMax').value)||10;}
+  // Show terminal modal
+  S('taskModalTitle').textContent=mode==='keywords'?'🔍 抓取关键词':'📰 推荐新闻';
+  S('taskLog').textContent='⏳ 启动中...';
+  S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json(); const tid=d.task_id;
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
     const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
-    if(sd.status==='done'){b.textContent='✅ 完成';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList();},2000);return;}
-    if(sd.status.startsWith('error')){b.textContent='❌ 失败';b.disabled=false;return;}
+    if(sd.log)S('taskLog').textContent=sd.log;
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList();},2000);return;}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
   }
-  b.textContent='⏰ 超时'; b.disabled=false;
+  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false;
 }
 async function triggerPublish(){
-  const b=document.getElementById('pubBtn'); b.disabled=true; b.textContent='⏳ 发布中...';
+  const b=document.getElementById('pubBtn'); b.disabled=true; b.style.opacity='0.5'; b.textContent='⏳ 发布中...';
+  S('taskModalTitle').textContent='📤 发布到小红书';
+  S('taskLog').textContent='⏳ 启动中...';
+  S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-publish',{method:'POST'});
   const d=await r.json(); const tid=d.task_id;
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
     const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
-    if(sd.status==='done'){b.textContent='✅ 完成';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书';},2000);return;}
-    if(sd.status.startsWith('error')){b.textContent='❌ 失败';b.disabled=false;return;}
+    if(sd.log)S('taskLog').textContent=sd.log;
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书';},2000);return;}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
   }
-  b.textContent='⏰ 超时'; b.disabled=false;
+  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false;
 }
 async function togglePublish(key,val){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
@@ -271,10 +313,10 @@ DETAIL_HTML = r"""
 <title>编辑 - {{news.title}}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
+body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333;padding-bottom:3em}
 .header{background:#fff;border-bottom:1px solid #e0e0e0;padding:12px 20px;display:flex;align-items:center;gap:16px}
 .header a{color:#ff2442;text-decoration:none;font-size:13px}
-form{padding:20px;max-width:800px;margin:0 auto}
+form{padding:20px 20px 3em;max-width:800px;margin:0 auto}
 label{display:block;font-size:13px;color:#666;margin:14px 0 4px;font-weight:500}
 input,textarea,select{width:100%;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit}
 textarea{min-height:120px;resize:vertical}
@@ -518,6 +560,7 @@ def api_list():
         category=request.args.get('category',''),
         status=request.args.get('status','active'),
         search=request.args.get('search',''),
+        publish_xhs=request.args.get('publish_xhs',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),

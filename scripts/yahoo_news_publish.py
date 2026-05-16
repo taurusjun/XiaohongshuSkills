@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-从 Notion 读取已勾选「发布XHS」的新闻，自动发布到小红书
+从 SQLite/Notion 读取已勾选「发布XHS」的新闻，自动发布到小红书
 - 只发布 发布XHS=True 且 发布XHS时间 为空 的条目
 - 发布成功后写入 发布XHS时间
 """
 
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project root for config
 import requests
 import json
-import sys
-import os
 import time
 from datetime import datetime, timezone
 
@@ -279,28 +279,27 @@ def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
 
 
 def mark_as_published(page_id: str, news_key: str = ""):
-    """写入发布时间（Notion + SQLite 双写）"""
+    """写入发布时间（Notion 或 SQLite）"""
+    from config.yahoo_conf import STORAGE_BACKEND
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     ok = False
-    # Notion
-    try:
-        resp = requests.patch(
-            f"https://api.notion.com/v1/pages/{page_id}",
-            headers=NOTION_HEADERS,
-            json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
-        )
-        ok = resp.status_code == 200
-    except Exception:
-        pass
-    # SQLite
-    if news_key:
-        from yahoo_common 
-        if STORAGE_BACKEND == "sqlite":
-            try:
-                from sqlite_db import mark_published as sqlite_pub
-                sqlite_pub(news_key, datetime.now().strftime("%Y-%m-%d %H:%M"))
-            except ImportError:
-                pass
+    if STORAGE_BACKEND == "sqlite" and news_key:
+        try:
+            from sqlite_db import mark_published as sqlite_pub
+            sqlite_pub(news_key, datetime.now().strftime("%Y-%m-%d %H:%M"))
+            ok = True
+        except Exception as e:
+            print(f"SQLite 更新失败: {e}")
+    elif STORAGE_BACKEND == "notion":
+        try:
+            resp = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=NOTION_HEADERS,
+                json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
+            )
+            ok = resp.status_code == 200
+        except Exception:
+            pass
     return ok
 
 
@@ -455,7 +454,9 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("📤 小红书发布器 - 从 Notion 读取待发布内容")
+    from config.yahoo_conf import STORAGE_BACKEND
+    backend_label = "SQLite" if STORAGE_BACKEND == "sqlite" else "Notion"
+    print(f"📤 小红书发布器 - 从 {backend_label} 读取待发布内容")
     print("=" * 60)
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}")
     if args.auto:
