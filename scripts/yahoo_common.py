@@ -257,34 +257,35 @@ def translate_title(title_ja: str) -> str:
         except Exception:
             pass
 
-    # LLM 翻译（max_tokens 设大到 800，保证推理模型有空间同时输出 reasoning + content）
+    # LLM 翻译（max_tokens=500，结构化输出防止前缀泄漏）
     if LITELLM_API_KEY:
         result = call_litellm(
-            prompt=f"将以下日文翻译为中文。只输出译文，不要解释。\n\n{title_ja}",
-            system_prompt="你是日译中翻译器。只输出中文译文，不要加任何前缀、解释或描述。",
-            max_tokens=500,
+            prompt=f"日译中，只输出一行中文译文，不要任何解释：\n\n{title_ja}\n\n译文：",
+            max_tokens=300,
         )
         if result and len(result) > 2 and result != title_ja:
             result = result.strip()
-            # 洗掉模型偶尔带的格式前缀（含长句描述型前缀）
-            prefixes = [
-                "以下是中文翻译：", "中文翻译：", "**中文翻译：**", "以下是翻译：", "翻译结果：",
-                "以下是翻译成中文的内容：", "译文：", "翻译：", "翻译如下：",
-                "翻译成中文如下：", "以下是中文译文：",
-                "我们收到一个翻译任务：", "我们被要求", "我们需要", "请将以下", "这是一段日文",
-                "以下是将日文", "将以下日文", "以下为翻译", "翻译内容为",
-            ]
-            for prefix in prefixes:
-                if prefix in result[:50]:  # check first 50 chars
-                    # 找到真正的译文（通常是前缀后的冒号或换行后的内容）
-                    # 尝试取前缀后的内容
-                    idx = result.find(prefix)
-                    if idx >= 0:
-                        after = result[idx + len(prefix):].lstrip("：:。，\n ")
-                        # 如果 after 仍然很长且不像翻译，保留 result
-                        if len(after) > 3 and len(after) < len(title_ja) * 3:
-                            result = after
+            # 取第一行或【译文】后的内容
+            import re
+            # 尝试提取【译文】标记后的内容
+            m = re.search(r'【译文】\s*(.+?)$', result, re.DOTALL)
+            if m:
+                result = m.group(1).strip().split('\n')[0]
+            # 如果包含明显不是译文的元描述（如"我们被要求""这是一段"），取最后一行
+            meta_patterns = ["我们被要求", "我们收到", "我们需要", "请将以下", "这是一段", "以下是将", "翻译任务", "翻译内容"]
+            if any(p in result[:60] for p in meta_patterns):
+                lines = result.split('\n')
+                # 取最后一个非空行
+                for line in reversed(lines):
+                    line = line.strip()
+                    if line and len(line) > 3 and not any(p in line for p in meta_patterns):
+                        result = line
                         break
+            # 洗掉常见短前缀
+            short_prefixes = ["翻译：", "译文：", "中文：", "**"]
+            for p in short_prefixes:
+                if result.startswith(p):
+                    result = result[len(p):].strip()
             # 洗掉 markdown 加粗包裹
             if result.startswith("**") and "**" in result[2:]:
                 result = result[2:result.index("**", 2)].strip()
