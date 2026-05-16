@@ -30,8 +30,10 @@ def check_backend():
 # Background task tracking {task_id: status}
 _tasks = {}
 _task_counter = 0
+_publish_lock = threading.Lock()
+_publish_running = False
 
-def _run_task(cmd, task_id, env=None):
+def _run_task(cmd, task_id, env=None, on_done=None):
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
                               cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
@@ -40,6 +42,9 @@ def _run_task(cmd, task_id, env=None):
         _tasks[task_id] = {'status': 'done', 'log': log}
     except Exception as e:
         _tasks[task_id] = {'status': f'error: {e}', 'log': ''}
+    finally:
+        if on_done:
+            on_done()
 
 @app.route('/api/gallery-download/<key>', methods=['POST'])
 def api_gallery_download(key):
@@ -64,12 +69,22 @@ def api_trigger_fetch():
 
 @app.route('/api/trigger-publish', methods=['POST'])
 def api_trigger_publish():
-    global _task_counter
+    global _task_counter, _publish_running
+    if _publish_running:
+        return jsonify({"locked": True, "msg": "已有发布任务在运行，请等待完成"})
+    with _publish_lock:
+        if _publish_running:
+            return jsonify({"locked": True, "msg": "已有发布任务在运行，请等待完成"})
+        _publish_running = True
     tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
     sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
-    threading.Thread(target=_run_task, args=(cmd, tid, sub_env), daemon=True).start()
+    def on_publish_done():
+        global _publish_running
+        with _publish_lock:
+            _publish_running = False
+    threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_publish_done), daemon=True).start()
     return jsonify({"task_id": tid})
 
 @app.route('/api/task/<tid>')
@@ -284,7 +299,9 @@ async function triggerPublish(){
   S('taskLog').textContent='⏳ 启动中...';
   S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-publish',{method:'POST'});
-  const d=await r.json(); const tid=d.task_id;
+  const d=await r.json();
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent='📤 发布到小红书'; b.style.opacity='1'; b.disabled=false; return;}
+  const tid=d.task_id;
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
     const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
