@@ -33,6 +33,7 @@ def init_db():
                 original_image_url TEXT,
                 gallery_images TEXT,
                 gallery_video  TEXT,
+                gallery_url   TEXT,
                 video_path  TEXT,
                 video_caption TEXT,
                 pub_time    TEXT,
@@ -92,9 +93,9 @@ def insert_news(news: dict) -> bool:
             db.execute("""
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
                     summary, tags, image_url, original_image_url, gallery_images, gallery_video,
-                    video_path, video_caption, pub_time, title_score, content_score,
+                    video_path, video_caption, gallery_url, pub_time, title_score, content_score,
                     publish_xhs, publish_time, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -102,6 +103,7 @@ def insert_news(news: dict) -> bool:
                     image_url=excluded.image_url, original_image_url=excluded.original_image_url,
                     gallery_images=excluded.gallery_images, gallery_video=excluded.gallery_video,
                     video_path=excluded.video_path, video_caption=excluded.video_caption,
+                    gallery_url=excluded.gallery_url,
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
                     content_score=excluded.content_score, updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
@@ -109,7 +111,7 @@ def insert_news(news: dict) -> bool:
                   news.get('content',''), news.get('comment',''), news.get('summary',''),
                   tag_str, news.get('image_url',''), news.get('original_image_url',''),
                   gallery_str, news.get('gallery_video',''),
-                  news.get('video_path',''), news.get('video_caption',''),
+                  news.get('video_path',''), news.get('video_caption',''), news.get('gallery_url',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
                   news.get('publish_xhs',0), news.get('publish_time','')))
             return True
@@ -164,7 +166,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
-               'video_path','video_caption','gallery_images','gallery_video',
+               'video_path','video_caption','gallery_images','gallery_video','gallery_url',
                'publish_xhs','publish_time','status','title_score','content_score'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
