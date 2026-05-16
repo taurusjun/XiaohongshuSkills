@@ -34,8 +34,7 @@ NOTION_HEADERS = {
 
 # ============ Notion 查询 ============
 
-def get_pending_pages() -> list:
-    """获取 发布XHS=True 且 发布XHS时间 为空 的条目"""
+def _get_pending_notion() -> list:
     resp = requests.post(
         f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
         headers=NOTION_HEADERS,
@@ -55,13 +54,75 @@ def get_pending_pages() -> list:
     return []
 
 
-def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
-    """获取页面中图片和视频 URL。
-    识别两种写法：
-    1. 新格式（to_do + image/video 成对）：只取 checked=True 的 to_do 后面紧跟的 block
-    2. 旧格式（裸 image block）：直接取所有 image URL（兼容旧数据）
-    返回 (image_urls, video_urls)
-    """
+def _get_pending_sqlite() -> list:
+    """SQLite: 返回伪 Notion page dict，兼容下游解析"""
+    from sqlite_db import get_pending_publish as sqlite_pending
+    rows = sqlite_pending(50)
+    result = []
+    for r in rows:
+        tags = r.get('tags','').split(',') if isinstance(r.get('tags'), str) else r.get('tags',[])
+        result.append({
+            "_sqlite": True,
+            "_key": r['key'],
+            "id": r['key'],
+            "properties": {
+                "Name": {"title": [{"plain_text": r.get('title','')}]},
+                "来源": {"rich_text": [{"plain_text": r.get('source','')}]},
+                "发布时间": {"rich_text": [{"plain_text": r.get('pub_time','')}]},
+                "原文链接": {"url": r.get('link','')},
+                "封面图": {"url": r.get('image_url','')},
+                "分类": {"select": {"name": r.get('category','')}},
+                "标签": {"multi_select": [{"name": t} for t in tags]},
+                "标题评分": {"number": r.get('title_score',0)},
+                "内容评分": {"number": r.get('content_score',0)},
+                "发布XHS": {"checkbox": bool(r.get('publish_xhs'))},
+                "发布XHS时间": {"date": {"start": r.get('publish_time','')} if r.get('publish_time') else None},
+            },
+        })
+    return result
+
+
+def get_pending_pages() -> list:
+    """获取 发布XHS=True 且 发布XHS时间 为空 的条目（支持 notion/sqlite/both）"""
+    from yahoo_common import USE_SQLITE, USE_NOTION
+    results = []
+    if USE_NOTION:
+        results = _get_pending_notion()
+    if USE_SQLITE:
+        sqlite_rows = _get_pending_sqlite()
+        # 去重（同一 key 只保留一份）
+        seen_keys = set()
+        merged = []
+        for r in results:
+            key = r.get('_key') or r.get('properties',{}).get('key',{}).get('rich_text',[{}])[0].get('plain_text','')
+            if key not in seen_keys:
+                seen_keys.add(key)
+                merged.append(r)
+        for r in sqlite_rows:
+            if r['_key'] not in seen_keys:
+                seen_keys.add(r['_key'])
+                merged.append(r)
+        results = merged
+    return results
+
+
+def get_page_media_blocks(page_id: str, is_sqlite: bool = False) -> tuple[list[str], list[str]]:
+    """获取页面中图片和视频 URL。返回 (image_urls, video_urls)"""
+    if is_sqlite:
+        from sqlite_db import get_by_key
+        import json
+        row = get_by_key(page_id)
+        if row:
+            images = row.get('image_url','')
+            gallery = row.get('gallery_images','') or '[]'
+            try: gallery_imgs = json.loads(gallery) if isinstance(gallery, str) else gallery
+            except: gallery_imgs = []
+            img_urls = [images] if images else []
+            img_urls.extend(gallery_imgs)
+            video = row.get('video_path','') or row.get('gallery_video','')
+            return img_urls, [video] if video else []
+        return [], []
+
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
@@ -113,10 +174,19 @@ def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
     return image_urls, video_urls
 
 
-def get_page_content(page_id: str) -> tuple:
+def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
     """获取页面正文内容。
     返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 短配文)
     """
+    # SQLite: 内容已在行数据中
+    if is_sqlite:
+        from sqlite_db import get_by_key
+        row = get_by_key(page_id)
+        if row:
+            return (row.get('content',''), '', row.get('title_ja',''), '',
+                    row.get('summary',''), row.get('video_caption',''))
+        return "", "", "", "", "", ""
+
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
@@ -412,12 +482,13 @@ def main():
     # 逐条处理
     for i, page in enumerate(pages, 1):
         info = parse_page(page)
+        is_sqlite = page.get("_sqlite", False)
         print(f"━━━ [{i}/{len(pages)}] ━━━")
         print(f"标题: {info['title'][:40]}...")
         print(f"来源: {info['source']} | 分类: {info['category']}")
 
         # 获取正文和词汇
-        content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"])
+        content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"], is_sqlite)
         if not content:
             print("⚠️ 正文为空，跳过\n")
             continue
@@ -566,7 +637,7 @@ def main():
             image_url = fetch_article_image(info["link"])
 
         # 图集图片 / 视频（gallery_upload 写入的 blocks）
-        gallery_urls, gallery_videos = get_page_media_blocks(page["id"])
+        gallery_urls, gallery_videos = get_page_media_blocks(page["id"], is_sqlite)
         if gallery_urls:
             print(f"  图集图片: {len(gallery_urls)} 张")
         if gallery_videos:
@@ -610,7 +681,8 @@ def main():
                           preview=args.preview, headless=not args.no_headless,
                           post_time=args.post_time, timing_jitter=args.timing_jitter,
                           reuse_existing_tab=args.reuse_existing_tab):
-            if mark_as_published(page["id"]):
+            sqlite_key = page.get("_key", "") if is_sqlite else ""
+            if mark_as_published(page["id"], sqlite_key):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
                 print(f"✅ 发布成功，但更新时间失败\n")
