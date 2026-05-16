@@ -3,11 +3,19 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_file
 from sqlite_db import init_db, query_news, get_by_key, update_news, get_scores, upsert_scores, stats
 
 app = Flask(__name__)
 init_db()
+
+@app.route('/local-image')
+def local_image():
+    """代理本地图片文件"""
+    path = request.args.get('path', '')
+    if not path or not os.path.exists(path):
+        return '', 404
+    return send_file(path)
 
 INDEX_HTML = r"""
 <!DOCTYPE html>
@@ -76,6 +84,8 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
     <th>分类</th>
     <th onclick="setSort('title_score')">评分</th>
     <th>标签</th>
+    <th style="width:60px">发布XHS</th>
+    <th style="width:90px">发布时间</th>
   </tr></thead>
   <tbody id="tbody"></tbody>
 </table>
@@ -103,6 +113,8 @@ async function loadList(){
     <td>${n.category||''}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</td>
+    <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
+    <td style="font-size:11px;color:#999">${n.publish_time||''}</td>
   </tr>`).join('');
   S('stats').innerHTML=`共 ${d.total} 条 | 今日 ${d.today} | 待发布 ${d.pending}`;
 }
@@ -111,10 +123,17 @@ function setSort(col){ sortBy=col; sortDir=sortBy===col&&sortDir==='DESC'?'ASC':
 
 async function preview(key){
   const r=await fetch('/api/news/'+key); const n=await r.json();
+  let imgs='';
+  if(n.image_url) imgs+=`<img class="preview-img" src="${esc(n.image_url)}">`;
+  // Gallery images
+  if(n.gallery_images){ try{
+    const g=typeof n.gallery_images==='string'?JSON.parse(n.gallery_images):n.gallery_images;
+    g.forEach(p=>{ imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`; });
+  }catch(e){}}
   S('modalContent').innerHTML=`
-    ${n.image_url?`<img class="preview-img" src="${esc(n.image_url)}">`:''}
+    ${imgs}
     <h2>${esc(n.title)}</h2>
-    <div class="meta">${n.pub_time} | ${n.source} | ${n.category}</div>
+    <div class="meta">${n.pub_time} | ${n.source} | ${n.category} | 📊标题${(n.title_score||0).toFixed(1)} 内容${(n.content_score||0).toFixed(1)}</div>
     ${n.summary?`<p style="color:#555;margin:8px 0">${esc(n.summary)}</p>`:''}
     <div class="section"><h4>新闻要点</h4><p>${esc(n.content||'').replace(/\n/g,'<br>')}</p></div>
     <div class="section"><h4>我的解读</h4><p>${esc(n.comment||'').replace(/\n/g,'<br>')}</p></div>
@@ -123,7 +142,10 @@ async function preview(key){
   S('modal').classList.add('active');
 }
 function closeModal(){S('modal').classList.remove('active');}
-
+async function togglePublish(key,val){
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
+  loadList();
+}
 async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
@@ -163,6 +185,18 @@ textarea{min-height:120px;resize:vertical}
 <body>
 <div class="header"><a href="/">← 返回列表</a><span>{{news.title}}</span></div>
 <form id="editForm">
+  {% if news.image_url %}<img src="{{news.image_url}}" style="max-width:100%;max-height:300px;border-radius:8px;margin-bottom:12px">{% endif %}
+  {% if news.gallery_images %}
+  <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:12px">
+    {% for p in news.gallery_images %}
+    <img src="/local-image?path={{p}}" style="max-height:150px;border-radius:6px">
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="row">
+    <div>📊 标题评分: {{"%.1f"|format(news.title_score or 0)}}</div>
+    <div>📊 内容评分: {{"%.1f"|format(news.content_score or 0)}}</div>
+  </div>
   <label>标题</label><input name="title" value="{{news.title}}">
   <label>引流摘要</label><input name="summary" value="{{news.summary or ''}}">
   <label>新闻要点</label><textarea name="content">{{news.content or ''}}</textarea>
@@ -224,9 +258,13 @@ def index():
 @app.route('/detail/<key>')
 def detail(key):
     from flask import render_template_string as rts
+    import json
     news = get_by_key(key)
     if not news:
         return "Not found", 404
+    # Parse gallery_images JSON
+    gi = news.get('gallery_images', '')
+    news['gallery_images'] = json.loads(gi) if isinstance(gi, str) and gi else (gi or [])
     scores = get_scores(key)
     return rts(DETAIL_HTML, news=news, scores=scores)
 
