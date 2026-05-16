@@ -234,7 +234,7 @@ def main():
 
     # 启动 Flask（先启动再导航，避免 Chrome 加载时 server 还没就绪）
     flask_thread = threading.Thread(
-        target=lambda: app.run(host="127.0.0.1", port=args.port, debug=False, use_reloader=False),
+        target=lambda: app.run(host="0.0.0.0", port=args.port, debug=False, use_reloader=False),
         daemon=True,
     )
     flask_thread.start()
