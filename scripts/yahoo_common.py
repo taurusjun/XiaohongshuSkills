@@ -170,7 +170,7 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
             msg = resp.json().get("choices", [{}])[0].get("message", {})
             # 优先取 content（最终回答），不存在时才取 reasoning_content
             content = msg.get("content")
-            if content is None:
+            if not content:  # None or empty string
                 content = msg.get("reasoning_content", "")
             return content.strip()
         print(f"    ⚠️ LiteLLM 错误: {resp.status_code}")
@@ -259,13 +259,32 @@ def translate_title(title_ja: str) -> str:
 
     # LLM 翻译（max_tokens 设大到 800，保证推理模型有空间同时输出 reasoning + content）
     if LITELLM_API_KEY:
-        result = call_litellm(prompt=f"翻译成中文：{title_ja}", max_tokens=800)
+        result = call_litellm(
+            prompt=f"将以下日文翻译为中文。只输出译文，不要解释。\n\n{title_ja}",
+            system_prompt="你是日译中翻译器。只输出中文译文，不要加任何前缀、解释或描述。",
+            max_tokens=500,
+        )
         if result and len(result) > 2 and result != title_ja:
             result = result.strip()
-            # 洗掉模型偶尔带的格式前缀
-            for prefix in ["以下是中文翻译：", "中文翻译：", "**中文翻译：**", "以下是翻译：", "翻译结果："]:
-                if result.startswith(prefix):
-                    result = result[len(prefix):].strip()
+            # 洗掉模型偶尔带的格式前缀（含长句描述型前缀）
+            prefixes = [
+                "以下是中文翻译：", "中文翻译：", "**中文翻译：**", "以下是翻译：", "翻译结果：",
+                "以下是翻译成中文的内容：", "译文：", "翻译：", "翻译如下：",
+                "翻译成中文如下：", "以下是中文译文：",
+                "我们收到一个翻译任务：", "我们被要求", "我们需要", "请将以下", "这是一段日文",
+                "以下是将日文", "将以下日文", "以下为翻译", "翻译内容为",
+            ]
+            for prefix in prefixes:
+                if prefix in result[:50]:  # check first 50 chars
+                    # 找到真正的译文（通常是前缀后的冒号或换行后的内容）
+                    # 尝试取前缀后的内容
+                    idx = result.find(prefix)
+                    if idx >= 0:
+                        after = result[idx + len(prefix):].lstrip("：:。，\n ")
+                        # 如果 after 仍然很长且不像翻译，保留 result
+                        if len(after) > 3 and len(after) < len(title_ja) * 3:
+                            result = after
+                        break
             # 洗掉 markdown 加粗包裹
             if result.startswith("**") and "**" in result[2:]:
                 result = result[2:result.index("**", 2)].strip()
@@ -971,9 +990,9 @@ def push_to_notion(news: Dict) -> str:
         "发布时间": {"rich_text": [{"text": {"content": news.get("pub_time", datetime.now().strftime('%Y.%m.%d'))}}]},
         "原文链接": {"url": news["link"]},
     }
-    if news.get('_title_score'):
+    if news.get('_title_score') is not None:
         props["标题评分"] = {"number": news['_title_score']}
-    if news.get('_content_score'):
+    if news.get('_content_score') is not None:
         props["内容评分"] = {"number": news['_content_score']}
     if image_url:
         props["封面图"] = {"url": image_url}
