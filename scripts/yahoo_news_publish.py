@@ -208,15 +208,30 @@ def get_page_content(page_id: str) -> tuple:
     )
 
 
-def mark_as_published(page_id: str):
-    """写入发布时间"""
+def mark_as_published(page_id: str, news_key: str = ""):
+    """写入发布时间（Notion + SQLite 双写）"""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    resp = requests.patch(
-        f"https://api.notion.com/v1/pages/{page_id}",
-        headers=NOTION_HEADERS,
-        json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
-    )
-    return resp.status_code == 200
+    ok = False
+    # Notion
+    try:
+        resp = requests.patch(
+            f"https://api.notion.com/v1/pages/{page_id}",
+            headers=NOTION_HEADERS,
+            json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
+        )
+        ok = resp.status_code == 200
+    except Exception:
+        pass
+    # SQLite
+    if news_key:
+        from yahoo_common import USE_SQLITE
+        if USE_SQLITE:
+            try:
+                from sqlite_db import mark_published as sqlite_pub
+                sqlite_pub(news_key, datetime.now().strftime("%Y-%m-%d %H:%M"))
+            except ImportError:
+                pass
+    return ok
 
 
 def parse_page(page: dict) -> dict:
