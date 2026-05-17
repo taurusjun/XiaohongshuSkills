@@ -982,11 +982,12 @@ def load_today_keys() -> set:
         has_more = data.get("has_more", False)
         start_cursor = data.get("next_cursor")
 
-    # 合并 SQLite 去重 key
+    # 合并 SQLite 去重 key（created_at 格式为 YYYY-MM-DD）
     if STORAGE_BACKEND == "sqlite":
         try:
             from sqlite_db import load_today_keys as sqlite_keys
-            keys |= sqlite_keys(today)
+            sqlite_today = datetime.now().strftime('%Y-%m-%d')
+            keys |= sqlite_keys(sqlite_today)
         except ImportError:
             pass
 
