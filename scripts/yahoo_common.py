@@ -524,16 +524,15 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 def evaluate_quality(title_zh: str, content: str, comment: str,
                      title_ja: str = "", body_text: str = "") -> dict:
-    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues}"""
+    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues, 各维度0/1}"""
     prompt = f"""请根据以下维度，给这条小红书笔记的标题和内容打分。
 
-【标题评分维度】（0-5分）
-加分项（各+1）：剧情感 | 冲突感 | 猎奇感 | 用户共鸣 | 名人 | 热点
-减分项（各-1）：简单通知 | 震惊体词汇 | 概括全部内容
-
-【内容评分维度】（0-5分）
-加分项（各+1）：原创度高 | 趣味性 | 有用信息非简单复述 | 补充对立信息 | 配视频
-减分项（各-1）：离题 | 啰嗦重复 | 主动讨赏
+【标题加分项】以下各项符合写1，不符合写0：剧情感, 冲突感, 猎奇感, 用户共鸣, 名人, 热点
+【标题减分项】以下各项符合写1，不符合写0：简单通知, 震惊体, 概括全部
+【内容加分项】以下各项符合写1，不符合写0：原创度, 趣味性, 有用信息, 对立信息, 视频
+【内容减分项】以下各项符合写1，不符合写0：离题, 啰嗦重复, 主动讨赏
+【图片加分项】以下各项符合写1，不符合写0：生活照, 搞怪照
+【图片减分项】以下各项符合写1，不符合写0：宣传照, 写真, 中年男照, 负面情绪
 
 ---
 标题：{title_zh}
@@ -541,34 +540,33 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 解读：{comment[:150]}
 ---
 
-只输出一行，格式：
-TITLE_SCORE=数字 CONTENT_SCORE=数字 扣分: xxx（没有则写无）
+只输出一行JSON，例如：
+{{"剧情感":1,"冲突感":0,"猎奇感":1,"用户共鸣":1,"名人":1,"热点":0,"简单通知":0,"震惊体":0,"概括全部":0,"原创度":1,"趣味性":1,"有用信息":0,"对立信息":0,"视频":0,"离题":0,"啰嗦重复":0,"主动讨赏":0,"生活照":0,"搞怪照":0,"宣传照":0,"写真":0,"中年男照":0,"负面情绪":0,"title_score":4,"content_score":3}}
 """
 
     result = call_litellm(prompt, max_tokens=1000)
     if not result:
         return {"title_score": 0, "content_score": 0, "issues": []}
 
-    import re
-    # 从所有行中提取评分（推理模型可能在前面输出思考过程）
-    ts = cs = None
-    issues_str = ""
+    import re, json as _json
+    # 尝试从输出中提取 JSON
     for line in result.split("\n"):
         line = line.strip()
-        if "TITLE_SCORE=" in line:
-            ts = re.search(r"TITLE_SCORE=([\d.]+)", line)
-        if "CONTENT_SCORE=" in line:
-            cs = re.search(r"CONTENT_SCORE=([\d.]+)", line)
-        if "扣分:" in line:
-            issues_m = re.search(r"扣分:\s*(.+)", line)
-            if issues_m:
-                issues_str = issues_m.group(1)
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                scores = _json.loads(line)
+                title_score = float(scores.pop("title_score", 0))
+                content_score = float(scores.pop("content_score", 0))
+                return {
+                    "title_score": title_score,
+                    "content_score": content_score,
+                    "issues": [],
+                    "scores": {k: int(v) if isinstance(v, (int, float)) else 0 for k, v in scores.items()},
+                }
+            except (_json.JSONDecodeError, ValueError):
+                continue
 
-    return {
-        "title_score": float(ts.group(1)) if ts else 0,
-        "content_score": float(cs.group(1)) if cs else 0,
-        "issues": [i.strip() for i in (issues_str.split(",") if issues_str else []) if i.strip() not in ("无", "")],
-    }
+    return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
 
 
 # ============ 分类 ============
@@ -823,6 +821,14 @@ def process_news_item(news: dict, no_translate: bool = False,
         quality = evaluate_quality(seo_title, content, comment, news.get('title_ja',''), news.get('body_text',''))
         news['_title_score'] = quality['title_score']
         news['_content_score'] = quality['content_score']
+        # 写入 23 项评分维度到 scores 表
+        if quality.get('scores') and STORAGE_BACKEND == 'sqlite':
+            try:
+                from sqlite_db import upsert_scores
+                news_key = extract_key_from_url(news.get('link', ''))
+                upsert_scores(news_key, quality['scores'])
+            except Exception:
+                pass
         if quality['issues']:
             print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} | 扣分: {', '.join(quality['issues'])}")
         if quality['title_score'] < 2.0:
