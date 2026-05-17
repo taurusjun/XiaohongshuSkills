@@ -57,7 +57,7 @@ _publish_running = False
 _fetch_lock = threading.Lock()
 _fetch_running = False
 _regen_lock = threading.Lock()
-_regen_running = False
+_regen_keys = set()
 
 def _run_task(cmd, task_id, env=None, on_done=None):
     log_lines = []
@@ -193,16 +193,16 @@ def api_active_tasks():
 
 @app.route('/api/regenerate/<key>', methods=['POST'])
 def api_regenerate(key):
-    global _regen_running
-    if _regen_running:
-        return jsonify({"locked": True, "msg": "已有重新生成任务在运行"})
+    global _regen_keys
+    if key in _regen_keys:
+        return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
     with _regen_lock:
-        if _regen_running: return jsonify({"locked": True, "msg": "已有重新生成任务在运行"})
-        _regen_running = True
+        if key in _regen_keys: return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
+        _regen_keys.add(key)
     from sqlite_db import get_by_key
     row = get_by_key(key)
     if not row:
-        with _regen_lock: _regen_running = False
+        with _regen_lock: _regen_keys.discard(key)
         return jsonify({"error": "not found"}), 404
     def do_regenerate():
         _tasks['regen_'+key] = {'status': 'running', 'log': ''}
@@ -212,15 +212,20 @@ def api_regenerate(key):
             import json as _json
             log = []
             log.append('翻译标题...')
+            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
             title_zh = translate_title(row.get('title_ja', row.get('title','')))
             log.append(f'标题: {title_zh[:50]}')
+            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
             log.append('生成内容...')
+            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
             gen = generate_content_and_comment(row.get('title_ja',''), title_zh, body_text=row.get('content',''))
             if gen:
                 seo_title, summary, content, comment, _, topic_tags = gen
                 log.append('生成短配文...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                 video_caption = generate_video_caption(seo_title, summary, content, list(topic_tags) if topic_tags else [])
                 log.append('评估质量...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                 quality = evaluate_quality(seo_title, content, comment, row.get('title_ja',''), row.get('content',''))
                 updates = {'title': seo_title, 'summary': summary, 'content': content, 'comment': comment,
                            'video_caption': video_caption,
@@ -242,8 +247,8 @@ def api_regenerate(key):
             _tasks['regen_'+key] = {'status': f'error: {e}', 'log': '\n'.join(log) if log else ''}
             _save_task_log('regen_'+key, '\n'.join(log) + f'\nERROR: {e}' if log else str(e))
         finally:
-            global _regen_running
-            with _regen_lock: _regen_running = False
+            global _regen_keys
+            with _regen_lock: _regen_keys.discard(key)
     threading.Thread(target=do_regenerate, daemon=True).start()
     return jsonify({"status": "started", "task_id": "regen_"+key})
 
@@ -528,13 +533,13 @@ function closeModal(){S('modal').classList.remove('active')}
 function closeTaskModal(){S('taskModal').classList.remove('active')}
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone, taskLabel} = opts;
-  btn.disabled=true;btn.style.opacity='0.5';btn.textContent='⏳ 运行中...';
+  btn.disabled=true;btn.style.opacity='0.6';btn.textContent='⏳ 运行中...';btn.style.background='var(--red)';btn.style.color='#fff';
   S('taskModalTitle').textContent=title;
   S('taskLog').textContent='⏳ 启动中...';
   S('taskModal').classList.add('active');
   var r=await fetch(apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(apiBody)});
   var d=await r.json();
-  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.disabled=false;return}
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;return}
   var tid=d.task_id;
   activeTaskId=tid;localStorage.setItem('lastTaskId',tid);
   S('taskBar').style.display='';S('taskBar').textContent='⏳ '+taskLabel+'运行中...点击查看';
@@ -545,10 +550,10 @@ async function runTask(opts){
     if(sd.log){
       if(sd.log.length>lastLen){S('taskLog').textContent=sd.log;S('taskLog').scrollTop=S('taskLog').scrollHeight;lastLen=sd.log.length}
     }
-    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{btn.disabled=false;btn.textContent=origText;if(onDone)onDone()},2000);return}
-    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';return}
+    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';btn.style.background='';btn.style.color='';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{btn.disabled=false;btn.textContent=origText;if(onDone)onDone()},2000);return}
+    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';return}
   }
-  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
+  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
 }
 
 function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5'}})}
@@ -824,28 +829,49 @@ switchScoreTab('title');
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone} = opts;
-  btn.disabled=true;btn.style.opacity='0.5';btn.textContent='⏳ 运行中...';
+  btn.disabled=true;btn.style.opacity='0.6';btn.textContent='⏳ 运行中...';btn.style.background='var(--red)';btn.style.color='#fff';
   document.getElementById('taskModalTitle').textContent=title;
   document.getElementById('taskLog').textContent='⏳ 启动中...';
   document.getElementById('taskModal').classList.add('active');
   var r=await fetch(apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(apiBody)});
   var d=await r.json();
-  if(d.locked){document.getElementById('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.disabled=false;return}
+  if(d.locked){document.getElementById('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;return}
   var tid=d.task_id,lastLen=0;
   for(var i=0;i<60;i++){
     await new Promise(r=>setTimeout(r,2000));
     var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
     if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
-    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';setTimeout(()=>{if(onDone)onDone()},1000);return}
-    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.disabled=false;return}
+    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';btn.style.background='';btn.style.color='';setTimeout(()=>{if(onDone)onDone()},1000);return}
+    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;return}
   }
-  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.disabled=false;
+  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;
 }
 async function regenerateContent(){
   if(!confirm('重新生成会覆盖当前标题和内容，确定？'))return;
   var btn=document.getElementById('regenBtn'),orig=btn.textContent;
   runTask({title:'🔄 重新生成',apiUrl:'/api/regenerate/'+key,apiBody:{},btn:btn,origText:orig,onDone:()=>location.reload()});
 }
+// Check if regen is already running on page load
+(async function checkRegenRunning(){
+  var r=await fetch('/api/task/regen_'+key);var d=await r.json();
+  if(d.status==='running'){
+    var btn=document.getElementById('regenBtn');
+    btn.disabled=true;btn.style.opacity='0.6';btn.style.background='var(--red)';btn.style.color='#fff';
+    btn.textContent='⏳ 运行中...';
+    document.getElementById('taskModalTitle').textContent='🔄 重新生成';
+    document.getElementById('taskLog').textContent=d.log||'⏳ 运行中...';
+    document.getElementById('taskModal').classList.add('active');
+    // Keep polling
+    var tid='regen_'+key,lastLen=(d.log||'').length;
+    for(var i=0;i<60;i++){
+      await new Promise(r=>setTimeout(r,2000));
+      var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+      if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
+      if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.background='';btn.style.color='';btn.style.opacity='1';setTimeout(()=>location.reload(),1000);return}
+      if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.background='';btn.style.color='';btn.style.opacity='1';btn.disabled=false;return}
+    }
+  }
+})();
 async function setAsCover(path){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:path})});
   location.reload();
