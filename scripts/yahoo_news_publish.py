@@ -406,17 +406,31 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             cmd += ["--video-url", video_url]
             print(f"  视频模式(URL): {video_url[:70]}")
     else:
-        # XHS 最多 18 张
+        # XHS 最多 18 张，统一转为本地路径
         effective_urls = image_urls[:18]
         if effective_urls:
-            # 检测本地路径 vs URL
-            first = effective_urls[0]
-            if first.startswith('/') or (first.startswith('\\\\') and not first.startswith('http')):
-                cmd += ["--images"] + effective_urls
-                print(f"  配图 {len(effective_urls)} 张(本地): {os.path.basename(first)}...")
+            from config.yahoo_conf import STORAGE_BACKEND
+            if STORAGE_BACKEND == 'sqlite':
+                # SQLite: 图片可能为本地路径，远程URL先下载再用 --images
+                local_paths = []
+                for u in effective_urls:
+                    if u.startswith('http'):
+                        try:
+                            import tempfile, requests as _req
+                            tmp = os.path.join(tempfile.gettempdir(), 'xhs_pub_' + os.path.basename(u.split('?')[0]))
+                            if not os.path.exists(tmp):
+                                r = _req.get(u, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+                                with open(tmp, 'wb') as f: f.write(r.content)
+                            local_paths.append(tmp)
+                        except Exception:
+                            print(f"  ⚠️ 下载失败: {u[:60]}")
+                    else:
+                        local_paths.append(u)
+                cmd += ["--images"] + local_paths
+                print(f"  配图 {len(local_paths)} 张: {os.path.basename(local_paths[0])}...")
             else:
                 cmd += ["--image-urls"] + effective_urls
-                print(f"  配图 {len(effective_urls)} 张(URL): {first[:60]}...")
+                print(f"  配图 {len(effective_urls)} 张(URL): {effective_urls[0][:60]}...")
         else:
             print(f"  ⚠️ 未找到封面图，发布可能失败")
 

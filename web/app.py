@@ -9,7 +9,29 @@ from config.yahoo_conf import STORAGE_BACKEND
 from sqlite_db import init_db, query_news, get_by_key, update_news, get_scores, upsert_scores, stats
 from web.gallery_downloader import trigger_download, get_status as gstatus, upload_selected
 
-import subprocess, json, glob, threading
+import subprocess, json, glob, threading, time, shutil
+from datetime import datetime as _dt_ad2
+from pathlib import Path as _Path_ad2
+
+# Task log persistence
+TASK_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'logs')
+def _init_log_dir():
+    p = _Path_ad2(TASK_LOG_DIR); p.mkdir(parents=True, exist_ok=True)
+    # Cleanup logs older than 1 day
+    cutoff = _dt_ad2.now().timestamp() - 86400
+    for f in p.glob('task_*.log'):
+        if f.stat().st_mtime < cutoff:
+            f.unlink()
+_init_log_dir()
+
+def _save_task_log(task_id: str, log_text: str):
+    try:
+        today = _dt_ad2.now().strftime('%Y-%m-%d')
+        log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
+        with open(log_path, 'a') as f:
+            f.write(f"\n=== {task_id} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n{log_text}\n")
+    except Exception:
+        pass
 
 # Notion 模式提示页
 NOTION_ONLY = """<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
@@ -34,6 +56,8 @@ _publish_lock = threading.Lock()
 _publish_running = False
 _fetch_lock = threading.Lock()
 _fetch_running = False
+_regen_lock = threading.Lock()
+_regen_running = False
 
 def _run_task(cmd, task_id, env=None, on_done=None):
     log_lines = []
@@ -45,14 +69,21 @@ def _run_task(cmd, task_id, env=None, on_done=None):
                                 text=True, bufsize=1,
                                 cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
                                 env=env)
-        for line in proc.stdout:
-            log_lines.append(line.rstrip())
-            _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines)}
+        # Open log file for incremental writes
+        today = _dt_ad2.now().strftime('%Y-%m-%d')
+        log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
+        with open(log_path, 'a', buffering=1) as log_fh:
+            log_fh.write(f"\n=== {task_id} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n")
+            for line in proc.stdout:
+                log_lines.append(line.rstrip())
+                log_fh.write(line)
+                _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines)}
         proc.wait(timeout=600)
         log = '\n'.join(log_lines).strip()
         _tasks[task_id] = {'status': 'done', 'log': log}
     except Exception as e:
         _tasks[task_id] = {'status': f'error: {e}', 'log': '\n'.join(log_lines)}
+        _save_task_log(task_id, '\n'.join(log_lines) + f'\nERROR: {e}')
     finally:
         if on_done:
             on_done()
@@ -133,6 +164,15 @@ def api_task(tid):
         return jsonify(t)
     return jsonify({"status": t, "log": ""})
 
+@app.route('/api/task-logs')
+def api_task_logs():
+    today = _dt_ad2.now().strftime('%Y-%m-%d')
+    log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
+    if os.path.exists(log_path):
+        with open(log_path) as f:
+            return jsonify({"logs": f.read()[-20000:]})
+    return jsonify({"logs": ""})
+
 @app.route('/api/keywords')
 def api_keywords():
     try:
@@ -150,6 +190,62 @@ def api_active_tasks():
         if isinstance(t, dict) and t.get('status') == 'running':
             active.append({'task_id': tid, 'status': 'running', 'log': t.get('log', '')})
     return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
+
+@app.route('/api/regenerate/<key>', methods=['POST'])
+def api_regenerate(key):
+    global _regen_running
+    if _regen_running:
+        return jsonify({"locked": True, "msg": "已有重新生成任务在运行"})
+    with _regen_lock:
+        if _regen_running: return jsonify({"locked": True, "msg": "已有重新生成任务在运行"})
+        _regen_running = True
+    from sqlite_db import get_by_key
+    row = get_by_key(key)
+    if not row:
+        with _regen_lock: _regen_running = False
+        return jsonify({"error": "not found"}), 404
+    def do_regenerate():
+        _tasks['regen_'+key] = {'status': 'running', 'log': ''}
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+            from yahoo_common import translate_title, generate_content_and_comment, evaluate_quality, generate_video_caption
+            import json as _json
+            log = []
+            log.append('翻译标题...')
+            title_zh = translate_title(row.get('title_ja', row.get('title','')))
+            log.append(f'标题: {title_zh[:50]}')
+            log.append('生成内容...')
+            gen = generate_content_and_comment(row.get('title_ja',''), title_zh, body_text=row.get('content',''))
+            if gen:
+                seo_title, summary, content, comment, _, topic_tags = gen
+                log.append('生成短配文...')
+                video_caption = generate_video_caption(seo_title, summary, content, list(topic_tags) if topic_tags else [])
+                log.append('评估质量...')
+                quality = evaluate_quality(seo_title, content, comment, row.get('title_ja',''), row.get('content',''))
+                updates = {'title': seo_title, 'summary': summary, 'content': content, 'comment': comment,
+                           'video_caption': video_caption,
+                           'title_score': quality['title_score'], 'content_score': quality['content_score']}
+                update_news(key, updates)
+                if quality.get('scores'):
+                    try:
+                        from sqlite_db import upsert_scores
+                        upsert_scores(key, quality['scores'])
+                    except: pass
+                ts = quality.get('title_score', 0)
+                cs = quality.get('content_score', 0)
+                log.append('✅ 完成 标题' + str(ts) + ' 内容' + str(cs))
+            else:
+                log.append('❌ LLM生成失败')
+            _tasks['regen_'+key] = {'status': 'done', 'log': '\n'.join(log)}
+            _save_task_log('regen_'+key, '\n'.join(log))
+        except Exception as e:
+            _tasks['regen_'+key] = {'status': f'error: {e}', 'log': '\n'.join(log) if log else ''}
+            _save_task_log('regen_'+key, '\n'.join(log) + f'\nERROR: {e}' if log else str(e))
+        finally:
+            global _regen_running
+            with _regen_lock: _regen_running = False
+    threading.Thread(target=do_regenerate, daemon=True).start()
+    return jsonify({"status": "started", "task_id": "regen_"+key})
 
 @app.route('/api/archive-bulk', methods=['POST'])
 def api_archive_bulk():
@@ -430,66 +526,52 @@ async function preview(key){
 }
 function closeModal(){S('modal').classList.remove('active')}
 function closeTaskModal(){S('taskModal').classList.remove('active')}
-function restoreButtons(){['kwBtn','recomBtn','pubBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=false;b.style.opacity='1'}})}
+async function runTask(opts){
+  const {title, apiUrl, apiBody, btn, origText, onDone, taskLabel} = opts;
+  btn.disabled=true;btn.style.opacity='0.5';btn.textContent='⏳ 运行中...';
+  S('taskModalTitle').textContent=title;
+  S('taskLog').textContent='⏳ 启动中...';
+  S('taskModal').classList.add('active');
+  var r=await fetch(apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(apiBody)});
+  var d=await r.json();
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.disabled=false;return}
+  var tid=d.task_id;
+  activeTaskId=tid;localStorage.setItem('lastTaskId',tid);
+  S('taskBar').style.display='';S('taskBar').textContent='⏳ '+taskLabel+'运行中...点击查看';
+  var lastLen=0;
+  for(var i=0;i<120;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+    if(sd.log){
+      if(sd.log.length>lastLen){S('taskLog').textContent=sd.log;S('taskLog').scrollTop=S('taskLog').scrollHeight;lastLen=sd.log.length}
+    }
+    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{btn.disabled=false;btn.textContent=origText;if(onDone)onDone()},2000);return}
+    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';return}
+  }
+  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
+}
+
 function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5'}})}
 
-// Keyword management
-let keywords=[];
-async function loadKeywords(){
-  try{const r=await fetch('/api/keywords');const d=await r.json();keywords=d.keywords}catch(e){keywords=[]}
-  renderKeywords();
-}
-function renderKeywords(){
-  const grid=document.getElementById('kwGrid');
-  grid.innerHTML=keywords.map((k,i)=>`<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
-    <input type="checkbox" checked onchange="updateKwSummary()" style="width:14px;height:14px;accent-color:var(--red)">
-    <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
-    <span style="color:var(--text3)">×</span>
-    <input type="number" value="${k.max}" min="1" max="30" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
-    <span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>
-  </div>`).join('');
-  updateKwSummary();
-}
-function addKeyword(){keywords.push({keyword:'新词',max:5,china_filter:false});renderKeywords()}
-function deleteKeyword(i){keywords.splice(i,1);renderKeywords()}
-function resetKeywords(){loadKeywords()}
-function updateKwSummary(){
-  const chips=document.querySelectorAll('#kwGrid .kw-chip');
-  let total=0,sel=0;
-  chips.forEach(c=>{const cb=c.querySelector('input[type=checkbox]');const mx=c.querySelector('input[type=number]');if(cb.checked){sel++;total+=parseInt(mx.value)||5}});
-  S('kwSummary').textContent=`已选 ${sel} 个 · 共 ${total} 条`;
-}
-loadKeywords();
-
 async function triggerFetch(mode){
-  const bid=mode==='keywords'?'kwBtn':'recomBtn';const b=document.getElementById(bid);
-  const orig=b.textContent;disableFetchBtns();b.textContent='⏳ 运行中...';
-  const body={mode};
+  var b=document.getElementById(mode==='keywords'?'kwBtn':'recomBtn');
+  var orig=b.textContent;disableFetchBtns();
+  var body={mode:mode};
   if(mode==='keywords'){
-    const kws=[];document.querySelectorAll('#kwGrid .kw-chip').forEach(c=>{
-      const cb=c.querySelector('input[type=checkbox]');if(!cb.checked)return;
-      const ins=c.querySelectorAll('input');kws.push({keyword:ins[1].value,max:parseInt(ins[2].value)||5});
+    var kws=[];document.querySelectorAll('#kwGrid .kw-chip').forEach(c=>{
+      var cb=c.querySelector('input[type=checkbox]');if(!cb.checked)return;
+      var ins=c.querySelectorAll('input');kws.push({keyword:ins[1].value,max:parseInt(ins[2].value)||5});
     });
     if(!kws.length){alert('请至少勾选一个关键词');b.textContent=orig;b.style.opacity='1';b.disabled=false;return}
     body.keywords=kws;
   }else{body.max=parseInt(document.getElementById('recomMax').value)||10}
-  S('taskModalTitle').textContent=mode==='keywords'?'🔍 抓取关键词':'📰 推荐新闻';
-  S('taskLog').textContent='⏳ 启动中...';S('taskModal').classList.add('active');
-  const r=await fetch('/api/trigger-fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json();
-  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;b.textContent=orig;b.style.opacity='1';b.disabled=false;return}
-  const tid=d.task_id;
-  activeTaskId=tid;activeTaskLabel=mode==='keywords'?'关键词抓取':'推荐抓取';
-  localStorage.setItem('lastTaskId',tid);
-  S('taskBar').style.display='';S('taskBar').textContent='⏳ '+activeTaskLabel+'运行中...点击查看';
-  for(let i=0;i<120;i++){
-    await new Promise(r=>setTimeout(r,3000));
-    const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
-    if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList()},2000);return}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return}
-  }
-  b.textContent='⏰ 超时';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
+  runTask({title:mode==='keywords'?'🔍 抓取关键词':'📰 推荐新闻',apiUrl:'/api/trigger-fetch',apiBody:body,btn:b,origText:orig,taskLabel:mode==='keywords'?'关键词抓取':'推荐抓取',onDone:()=>loadList()});
+}
+
+async function triggerPublish(){
+  var b=document.getElementById('pubBtn');var orig=b.textContent;
+  var pt=S('postTime').value;if(pt)pt=pt.replace('T',' ')+':00';
+  runTask({title:'📤 发布到小红书',apiUrl:'/api/trigger-publish',apiBody:{post_time:pt||''},btn:b,origText:orig,taskLabel:'发布',onDone:null});
 }
 async function triggerPublish(){
   const b=document.getElementById('pubBtn');b.disabled=true;b.style.opacity='0.5';b.textContent='⏳ 发布中...';
@@ -609,13 +691,14 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <a href="/">← 返回</a>
   {% if news.fetch_by %}<span class="badge badge-gray">{{news.fetch_by}}</span>{% endif %}
   <span class="title">{{news.title}}</span>
+  <button class="btn btn-gray" id="regenBtn" onclick="regenerateContent()">🔄 重新生成</button>
   <button class="btn btn-red" id="saveBtn">💾 保存修改</button>
 </div>
 
 <div class="page-detail">
 
   <div class="card">
-    {% if news.image_url %}<img src="{{news.image_url}}" class="cover-img" style="margin-bottom:10px">{% endif %}
+    {% if news.image_url %}<img src="{{ '/local-image?path=' + news.image_url if news.image_url.startswith('/') else news.image_url }}" class="cover-img" style="margin-bottom:10px">{% endif %}
     <div class="meta-grid">
       <span class="badge {% if news.status=='archived' %}badge-gray{% else %}badge-green{% endif %}">{% if news.status=='archived' %}📦 已归档{% else %}● 活跃{% endif %}</span>
       <span class="meta-item">分类 <b>{{news.category or '-'}}</b></span>
@@ -649,13 +732,13 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     {% if news.gallery_images %}
     <div class="img-strip" id="publishImgStrip">
       {% for p in news.gallery_images %}
-      <div class="img-item" onclick="togglePublishImg(this)">
+      <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
         <img src="/local-image?path={{p}}">
         <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
+        <button class="btn btn-gray" style="font-size:9px;padding:1px 6px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
       </div>
       {% endfor %}
     </div>
-    <button class="btn btn-red btn-sm" onclick="savePublishImages()" style="margin-top:8px">💾 保存发布图</button>
     {% endif %}
   </div>
 
@@ -691,6 +774,15 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 </div>
 
 <div class="toast" id="toast">已保存</div>
+
+<div class="modal" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal-card" style="max-width:750px;background:#1e1e1e;color:#0f0">
+    <h3 id="taskModalTitle" style="color:#fff;margin-bottom:12px">🖥️ 终端</h3>
+    <pre id="taskLog" style="font:12px Menlo,monospace;white-space:pre-wrap;min-height:200px;max-height:50vh;overflow-y:auto;margin:0">等待中...</pre>
+    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
+  </div>
+</div>
+<script>function closeTaskModal(){document.getElementById('taskModal').classList.remove('active')}</script>
 
 <div class="modal" id="galleryModal" onclick="if(event.target===this)closeGalleryModal()">
   <div class="modal-card" style="max-width:800px">
@@ -730,6 +822,34 @@ function switchScoreTab(tab){
 switchScoreTab('title');
 {% endif %}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function runTask(opts){
+  const {title, apiUrl, apiBody, btn, origText, onDone} = opts;
+  btn.disabled=true;btn.style.opacity='0.5';btn.textContent='⏳ 运行中...';
+  document.getElementById('taskModalTitle').textContent=title;
+  document.getElementById('taskLog').textContent='⏳ 启动中...';
+  document.getElementById('taskModal').classList.add('active');
+  var r=await fetch(apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(apiBody)});
+  var d=await r.json();
+  if(d.locked){document.getElementById('taskLog').textContent='🔒 '+d.msg;btn.textContent=origText;btn.style.opacity='1';btn.disabled=false;return}
+  var tid=d.task_id,lastLen=0;
+  for(var i=0;i<60;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+    if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
+    if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';setTimeout(()=>{if(onDone)onDone()},1000);return}
+    if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.disabled=false;return}
+  }
+  btn.textContent='⏰ 超时';btn.style.opacity='1';btn.disabled=false;
+}
+async function regenerateContent(){
+  if(!confirm('重新生成会覆盖当前标题和内容，确定？'))return;
+  var btn=document.getElementById('regenBtn'),orig=btn.textContent;
+  runTask({title:'🔄 重新生成',apiUrl:'/api/regenerate/'+key,apiBody:{},btn:btn,origText:orig,onDone:()=>location.reload()});
+}
+async function setAsCover(path){
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:path})});
+  location.reload();
+}
 
 let tags={% if news.tags %}{{news.tags|tojson}}{% else %}[]{% endif %};
 function renderTags(){
@@ -757,6 +877,8 @@ document.getElementById('saveBtn').addEventListener('click',async()=>{
   data.tags=tags;
   data.publish_xhs=parseInt(document.querySelector('[name=publish_xhs]').value);
   data.status=document.querySelector('[name=status]').value;
+  var pubPaths=[];document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){pubPaths.push(cb.dataset.path)});
+  if(pubPaths.length)data.publish_images=pubPaths;
   const r=await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   if(r.ok){const t=document.getElementById('toast');t.style.display='block';setTimeout(()=>t.style.display='none',1500)}
 });
@@ -814,11 +936,10 @@ async function saveAndUpload(){
   alert('已上传 '+selected.length+' 张');closeGalleryModal();location.reload();
 }
 function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active')}
-function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4'}
+function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4';savePublishImages()}
 async function savePublishImages(){
   var paths=[];document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){paths.push(cb.dataset.path)});
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths})});
-  var t=document.getElementById('toast');t.textContent='发布图已保存 ('+paths.length+'张)';t.style.display='block';setTimeout(function(){t.style.display='none';t.textContent='已保存'},1500);
 }
 (function initPublishCheckboxes(){
   {% if news.publish_images %}var pubSet=new Set({{news.publish_images|tojson}});{% else %}var pubSet=new Set();{% endif %}
@@ -851,7 +972,7 @@ def detail(key):
     cached = []
     if os.path.isdir(cache_dir):
         for f in sorted(os.listdir(cache_dir)):
-            if f.endswith(('.jpg','.jpeg','.png','.webp')) and not f.startswith('.'):
+            if f.endswith(('.jpg','.jpeg','.png','.webp')) and not f.startswith('.') and not f.startswith('cover.'):
                 cached.append(os.path.abspath(os.path.join(cache_dir, f)))
     news['cached_images'] = cached
     # Fallback: 从 meta.json 读图集链接
