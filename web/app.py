@@ -693,7 +693,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .field-row-ta{align-items:flex-start}
 .field-row-ta label{padding-top:7px}
 .field-row label{font-size:12px;color:var(--text2);width:68px;flex-shrink:0;text-align:right}
-.field-row .value{flex:1}
+.field-row .value{flex:1;position:relative}
 .cover-img{max-width:100%;max-height:360px;border-radius:8px;object-fit:cover}
 .url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
 .img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
@@ -759,10 +759,10 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     </div>
     <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
     <hr class="sep-line">
-    <div class="field-row" style="margin-bottom:3px"><label>原文</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
-    <div class="field-row" style="margin-bottom:3px"><label>封面</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>原文</label><div class="value"><a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.link or ''}}">{{news.link or '-'}}</a></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>封面</label><div class="value"><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div></div>
     {% if news.original_image_url and news.original_image_url != news.image_url %}
-    <div class="field-row" style="margin-bottom:3px"><label>原图</label><div class="value"><input class="url-input" value="{{news.original_image_url}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>原图</label><div class="value"><a href="{{news.original_image_url or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.original_image_url or ''}}">{{news.original_image_url or '-'}}</a></div></div>
     {% endif %}
     <div class="field-row"><label>图集</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
   </div>
@@ -803,7 +803,10 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <div class="card">
     <h3>✏️ 内容编辑</h3>
     <div class="field-group">
-      <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
+      <div class="field-row"><label>标题</label><div class="value">
+        <input class="inline-input" name="title" id="titleInput" value="{{news.title}}" oninput="updateTitleCount()" style="padding-right:50px">
+        <span id="titleCount" style="position:absolute;right:8px;top:6px;font-size:11px;color:var(--text3)"></span>
+      </div></div>
       <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
@@ -940,6 +943,26 @@ function addTag(e){
   }
 }
 renderTags();
+function xhsCharCount(s){
+  // XHS: 字符显示宽度计数。全角(中日韩/假名/全角标点)=2,半角(ASCII/数字)=1,总数/2
+  var w=0;
+  for(var i=0;i<s.length;i++){
+    var c=s.charCodeAt(i);
+    if(c>=0xd800&&c<=0xdfff){w+=4;i++;continue} // surrogate emoji
+    if(c<=0x7f)w+=1;       // ASCII
+    else if(c<=0x7ff)w+=2; // Latin supplement etc
+    else w+=2;             // CJK, kana, fullwidth - all width 2
+  }
+  return Math.ceil(w/2);
+}
+function updateTitleCount(){
+  var el=document.getElementById('titleInput'),c=document.getElementById('titleCount');
+  if(!el||!c)return;
+  var n=xhsCharCount(el.value);
+  c.textContent=n+'/20';
+  c.style.color=n>20?'var(--red)':'var(--text3)';
+}
+updateTitleCount();
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
 document.querySelectorAll('.auto-resize').forEach(function(ta){
   ta.addEventListener('input',function(){autoGrow(this)});
@@ -948,7 +971,7 @@ document.querySelectorAll('.auto-resize').forEach(function(ta){
 
 document.getElementById('saveBtn').addEventListener('click',async()=>{
   const data={};
-  ['title','summary','content','comment','category','video_caption'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
+  ['title','summary','content','comment','category','video_caption','gallery_url','image_url'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
   data.tags=tags;
   data.publish_xhs=parseInt(document.querySelector('[name=publish_xhs]').value);
   data.status=document.querySelector('[name=status]').value;
