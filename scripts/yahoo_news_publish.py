@@ -183,7 +183,7 @@ def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
         from sqlite_db import get_by_key
         row = get_by_key(page_id)
         if row:
-            return (row.get('content',''), '', row.get('title_ja',''), '',
+            return (row.get('content',''), row.get('comment',''), row.get('title_ja',''), '',
                     row.get('summary',''), row.get('video_caption',''))
         return "", "", "", "", "", ""
 
@@ -528,6 +528,11 @@ def main():
         # 新闻要点
         parts.append(content)
         parts.append("")
+
+        # 我的解读（SQLite: comment 在 vocab 位置; Notion: 词汇部分）
+        if vocab:
+            parts.append(vocab)
+            parts.append("")
 
         xhs_content = "\n".join(parts)
 

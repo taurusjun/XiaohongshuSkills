@@ -531,6 +531,35 @@ async function preview(key){
 }
 function closeModal(){S('modal').classList.remove('active')}
 function closeTaskModal(){S('taskModal').classList.remove('active')}
+
+// Keyword management
+let keywords=[];
+async function loadKeywords(){
+  try{const r=await fetch('/api/keywords');const d=await r.json();keywords=d.keywords}catch(e){keywords=[]}
+  renderKeywords();
+}
+function renderKeywords(){
+  const grid=document.getElementById('kwGrid');
+  grid.innerHTML=keywords.map((k,i)=>`<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+    <input type="checkbox" checked onchange="updateKwSummary()" style="width:14px;height:14px;accent-color:var(--red)">
+    <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
+    <span style="color:var(--text3)">×</span>
+    <input type="number" value="${k.max}" min="1" max="50" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
+    <span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>
+  </div>`).join('');
+  updateKwSummary();
+}
+function addKeyword(){keywords.push({keyword:'新词',max:5,china_filter:false});renderKeywords()}
+function deleteKeyword(i){keywords.splice(i,1);renderKeywords()}
+function resetKeywords(){loadKeywords()}
+function updateKwSummary(){
+  const chips=document.querySelectorAll('#kwGrid .kw-chip');
+  let total=0,sel=0;
+  chips.forEach(c=>{const cb=c.querySelector('input[type=checkbox]');const mx=c.querySelector('input[type=number]');if(cb.checked){sel++;total+=parseInt(mx.value)||5}});
+  S('kwSummary').textContent=`已选 ${sel} 个 · 共 ${total} 条`;
+}
+loadKeywords();
+
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone, taskLabel} = opts;
   btn.disabled=true;btn.style.opacity='0.6';btn.textContent='⏳ 运行中...';btn.style.background='var(--red)';btn.style.color='#fff';
