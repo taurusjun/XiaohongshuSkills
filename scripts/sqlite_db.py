@@ -123,7 +123,7 @@ def load_today_keys(date_str: str = "") -> set[str]:
     if not date_str:
         date_str = datetime.now().strftime('%Y.%m.%d')
     with _connect() as db:
-        rows = db.execute("SELECT key FROM news WHERE pub_time LIKE ? AND status='active'", (f"{date_str}%",)).fetchall()
+        rows = db.execute("SELECT key FROM news WHERE created_at LIKE ? AND status='active'", (f"{date_str}%",)).fetchall()
     return {r['key'] for r in rows}
 
 def get_by_key(key: str) -> dict | None:
@@ -145,9 +145,9 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
     sql = f"SELECT * FROM news WHERE status=? "
     params = [status]
     if date_from:
-        sql += "AND pub_time >= ? "; params.append(date_from)
+        sql += "AND created_at >= ? "; params.append(date_from)
     if date_to:
-        sql += "AND pub_time <= ? "; params.append(date_to)
+        sql += "AND created_at <= ? || ' 23:59:59' "; params.append(date_to)
     if category:
         sql += "AND category = ? "; params.append(category)
     if publish_xhs == 'published':
@@ -207,8 +207,8 @@ def archive_old(days: int = 30):
 def stats() -> dict:
     with _connect() as db:
         total = db.execute("SELECT COUNT(*) as n FROM news WHERE status='active'").fetchone()['n']
-        today = db.execute("SELECT COUNT(*) as n FROM news WHERE pub_time LIKE ? AND status='active'",
-                           (datetime.now().strftime('%Y.%m.%d')+'%',)).fetchone()['n']
+        today = db.execute("SELECT COUNT(*) as n FROM news WHERE created_at LIKE ? AND status='active'",
+                           (datetime.now().strftime('%Y-%m-%d')+'%',)).fetchone()['n']
         pending = db.execute("SELECT COUNT(*) as n FROM news WHERE publish_xhs=1 AND (publish_time IS NULL OR publish_time='') AND status='active'").fetchone()['n']
     return {"total": total, "today": today, "pending": pending}
 

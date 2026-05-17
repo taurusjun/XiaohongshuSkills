@@ -278,6 +278,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
         <th style="width:30px"><input type="checkbox" onclick="selectAllRows(this.checked)" title="全选"></th>
         <th style="width:36px">#</th>
         <th onclick="setSort('pub_time')" style="width:90px">新闻时间</th>
+        <th onclick="setSort('created_at')" style="width:85px">入库时间</th>
         <th>标题</th>
         <th style="width:55px">发布XHS</th>
         <th style="width:85px">发布时间</th>
@@ -343,6 +344,7 @@ async function loadList(){
     <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()"></td>
     <td style="color:var(--text3);font-size:11px">${page*100+i+1}</td>
     <td style="white-space:nowrap;font-size:12px;color:var(--text2)">${n.pub_time||''}</td>
+    <td style="white-space:nowrap;font-size:11px;color:var(--text3)">${(n.created_at||'').substring(0,16)}</td>
     <td><a href="/detail/${n.key}" class="link" onclick="event.stopPropagation()"><b>${esc(n.title||'')}</b></a><br>
         <span style="color:var(--text3);font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
@@ -493,7 +495,8 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .inline-input,.inline-textarea{border:none;border-bottom:2px dashed transparent;background:transparent;padding:6px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0}
 .inline-input:hover,.inline-textarea:hover{border-bottom-color:#ddd}
 .inline-input:focus,.inline-textarea:focus{border-bottom-color:var(--red);border-bottom-style:solid}
-.inline-textarea{resize:vertical;min-height:60px}
+.inline-textarea{resize:vertical;min-height:100px}
+.auto-resize{resize:none;overflow:hidden;transition:height .1s}
 .inline-textarea:focus{border:1px solid var(--red);border-radius:6px;padding:8px}
 .field-group{display:flex;flex-direction:column;gap:12px}
 .field-row{display:flex;align-items:center;gap:12px}
@@ -574,10 +577,10 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     </div>
     <div class="field-group">
       <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
-      <div class="field-row"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea" name="video_caption">{{news.video_caption or ''}}</textarea></div></div>
+      <div class="field-row"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
-      <div class="field-row"><label>新闻要点</label><div class="value"><textarea class="inline-textarea" name="content">{{news.content or ''}}</textarea></div></div>
-      <div class="field-row"><label>我的解读</label><div class="value"><textarea class="inline-textarea" name="comment">{{news.comment or ''}}</textarea></div></div>
+      <div class="field-row"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:100px">{{news.content or ''}}</textarea></div></div>
+      <div class="field-row"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea></div></div>
     </div>
     <div class="field-row" style="margin-top:8px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
     <div class="field-row" style="margin-top:4px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
@@ -646,6 +649,12 @@ function addTag(e){
   }
 }
 renderTags();
+// Auto-resize textareas
+function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
+document.querySelectorAll('.auto-resize').forEach(function(ta){
+  ta.addEventListener('input',function(){autoGrow(this)});
+  autoGrow(ta);
+});
 
 document.getElementById('saveBtn').addEventListener('click',async()=>{
   const data={};
