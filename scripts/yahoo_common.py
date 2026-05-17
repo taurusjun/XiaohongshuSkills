@@ -557,14 +557,24 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
         return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
 
     try:
-        scores = _json.loads(result)
-        title_score = float(scores.pop("title_score", 0))
-        content_score = float(scores.pop("content_score", 0))
+        raw = _json.loads(result)
+        raw.pop("title_score", None)
+        raw.pop("content_score", None)
+        dim_scores = {k: int(raw.get(k, 0)) if isinstance(raw.get(k), (int, float)) else 0 for k in dims}
+        # 加分项 +1，减分项 -1
+        title_plus = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点']
+        title_minus = ['简单通知','震惊体','概括全部']
+        content_plus = ['原创度','趣味性','有用信息','对立信息','视频']
+        content_minus = ['离题','啰嗦重复','主动讨赏','宣传照','写真','中年男照','负面情绪','生活照','搞怪照']
+        title_score = sum(dim_scores.get(d, 0) for d in title_plus) - sum(dim_scores.get(d, 0) for d in title_minus)
+        content_score = sum(dim_scores.get(d, 0) for d in content_plus) - sum(dim_scores.get(d, 0) for d in content_minus)
+        title_score = max(0, min(5, title_score))
+        content_score = max(0, min(5, content_score))
         return {
             "title_score": title_score,
             "content_score": content_score,
             "issues": [],
-            "scores": {k: int(v) for k, v in scores.items() if k in dims},
+            "scores": dim_scores,
         }
     except (_json.JSONDecodeError, ValueError, KeyError) as e:
         print(f"    ⚠️ 评分JSON解析失败: {e} | 输出: {result[:150]}")
