@@ -161,282 +161,302 @@ INDEX_HTML = r"""
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>新闻管理</title>
 <style>
+:root{--bg:#f0f2f5;--card-bg:#fff;--text:#333;--text2:#888;--text3:#bbb;--border:#eef0f4;--red:#ff2442;--orange:#ff6b35;--shadow:0 1px 3px rgba(0,0,0,.06);--radius:10px}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:14px -apple-system,sans-serif;background:#f0f2f5;color:#333}
-.header{background:#fff;padding:10px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.header h1{font-size:16px;font-weight:700;white-space:nowrap}
-.stats{display:flex;gap:12px;font-size:12px;color:#888}
-.toolbar{background:#fff;padding:8px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #eee}
-.toolbar .grp{display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;background:#f8f9fa;border:1px solid #eee}
-.toolbar .grp label{font-size:10px;color:#999;margin-right:2px;text-transform:uppercase;letter-spacing:.5px}
-.toolbar input[type=text],.toolbar input[type=number],.toolbar input[type=date],.toolbar input[type=datetime-local],.toolbar select{padding:5px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;background:#fff;outline:none}
-.toolbar input[type=text]:focus,.toolbar input[type=number]:focus,.toolbar input[type=date]:focus,.toolbar input[type=datetime-local]:focus,.toolbar select:focus{border-color:#ff2442}
-.toolbar input[type=text]{width:160px}
-.toolbar input[type=number]{width:46px}
-.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.filters .sep{width:1px;height:20px;background:#ddd;margin:0 2px}
-.table{width:100%;border-collapse:collapse;background:#fff}
-.table th{background:#fafafa;padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:#888;border-bottom:1px solid #e8e8e8;cursor:pointer;user-select:none;white-space:nowrap}
-.table th:hover{color:#333}
-.table td{padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:13px}
-.table tr:hover{background:#fafcff}
-.table tr{cursor:pointer}
-.score{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
-.score-hi{background:#e6f7e9;color:#1a7d2e}
-.score-mid{background:#fff8e6;color:#8a6d14}
-.score-lo{background:#fde8e8;color:#a71d2a}
-.tag{display:inline-block;background:#eef2ff;color:#3d5af1;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 2px;font-weight:500}
-.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:200;justify-content:center;align-items:center}
+body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.page{padding:20px;max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 20px}
+.card-header{display:flex;align-items:center;gap:16px}
+.card-header h1{font-size:18px;font-weight:700}
+.stats{display:flex;gap:16px;font-size:12px;color:var(--text2)}
+.stats b{color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;white-space:nowrap;line-height:1.4}
+.btn:hover{filter:brightness(.95)}
+.btn:disabled{opacity:.4;pointer-events:none}
+.btn-red{background:var(--red);color:#fff}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-gray{background:#eef0f2;color:#555}
+.btn-dark{background:#6b7280;color:#fff}
+input,select,textarea{font:inherit;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.toolbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0}
+.toolbar-row+.toolbar-row{border-top:1px solid var(--border);padding-top:8px;margin-top:2px}
+.toolbar-row .label{font-size:11px;font-weight:600;color:var(--text3);width:36px;flex-shrink:0}
+.toolbar-row input[type=text]{width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px}
+.toolbar-row input[type=number]{width:44px;padding:5px 4px;border:1px solid #ddd;border-radius:5px;font-size:12px;text-align:center}
+.toolbar-row input[type=date],.toolbar-row input[type=datetime-local]{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px}
+.toolbar-row select{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff}
+.sep{width:1px;height:22px;background:var(--border);margin:0 4px;flex-shrink:0}
+.table-wrap{overflow-x:auto}
+.table{width:100%;border-collapse:collapse}
+.table th{background:#f7f8fa;padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+.table th:hover{color:var(--text)}
+.table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.table tbody tr{transition:background .1s}
+.table tbody tr:hover{background:#f5f7ff}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
+.badge-green{background:#e6f7e9;color:#1a7d2e}
+.badge-gray{background:#f0f0f0;color:#888}
+.badge-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-dot-active{background:#22c55e}
+.badge-dot-archived{background:#bbb}
+.score{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.score-hi{background:#dcfce7;color:#15803d}
+.score-mid{background:#fef3c7;color:#a16207}
+.score-lo{background:#fee2e2;color:#b91c1c}
+.tag{display:inline-block;background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 3px}
+.link{color:var(--text);text-decoration:none}
+.link:hover{color:var(--red)}
+.pagination{display:flex;justify-content:center;gap:4px;padding:4px 0}
+.pagination button{min-width:32px;height:30px}
+.pagination button.current{background:var(--red);color:#fff}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
 .modal.active{display:flex}
-.modal-content{background:#fff;border-radius:12px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;padding:24px}
+.modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
 .modal img.preview-img{max-width:100%;max-height:300px;border-radius:8px;margin-bottom:12px}
-.modal h2{font-size:20px;margin-bottom:8px}
-.modal .meta{color:#666;font-size:12px;margin-bottom:12px}
-.modal .section{margin:12px 0;padding:8px 0;border-top:1px solid #eee}
-.modal .section h4{font-size:13px;color:#999;margin-bottom:4px}
-.detail-page{padding:20px;max-width:800px;margin:0 auto}
-.detail-page label{display:block;font-size:13px;color:#666;margin:12px 0 4px}
-.detail-page input,.detail-page textarea,.detail-page select{width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px}
-.detail-page textarea{min-height:100px;resize:vertical}
-.btn{padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
-.btn:hover{opacity:.85}
-.btn-primary{background:#ff2442;color:#fff}
-.btn-secondary{background:#f0f0f0;color:#555}
-.btn-sm{padding:4px 10px;font-size:11px}
-.btn-danger{background:#888;color:#fff}
-.flex{display:flex;gap:8px;align-items:center}
-.grow{flex:1}
-.pagination{padding:16px;text-align:center;font-size:13px;color:#666}
-.pagination button{margin:0 3px}
+.modal h2{font-size:18px;margin-bottom:8px}
+.modal .meta{color:var(--text2);font-size:12px;margin-bottom:12px}
+.modal .section{margin:10px 0;padding:8px 0;border-top:1px solid var(--border)}
+.modal .section h4{font-size:12px;color:var(--text2);margin-bottom:4px}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>📰 新闻管理</h1>
-  <div class="stats" id="stats"></div>
-  <span id="taskBar" style="display:none;font-size:11px;cursor:pointer;color:#ff6b35;font-weight:600" onclick="showTaskModal()"></span>
-  <div class="grow"></div>
-  <div class="grp">
-    <label>抓取</label>
-    <input type="text" id="keywordInput" placeholder="关键词" value="AKB" style="width:80px">
-    <input type="number" id="kwMax" value="5" min="1" max="30">
-    <button class="btn btn-sm btn-primary" onclick="triggerFetch('keywords')" id="kwBtn">🔍 关键词</button>
-    <input type="number" id="recomMax" value="10" min="1" max="30">
-    <button class="btn btn-sm btn-primary" onclick="triggerFetch('recom')" id="recomBtn">📰 推荐</button>
+<div class="page">
+  <!-- Header -->
+  <div class="card card-header">
+    <h1>📰 新闻管理</h1>
+    <div class="stats" id="stats"></div>
+    <span id="taskBar" style="display:none;font-size:12px;cursor:pointer;color:var(--orange);font-weight:600" onclick="showTaskModal()"></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-dark btn-sm" onclick="location.reload()">🔄 刷新</button>
   </div>
-  <div class="grp">
-    <label>发布</label>
-    <input type="datetime-local" id="postTime" style="width:140px" title="定时发布时间">
-    <button class="btn btn-sm" onclick="triggerPublish()" id="pubBtn" style="background:#ff6b35;color:#fff">📤 发布到小红书</button>
-  </div>
-  <div class="grp">
-    <label>管理</label>
-    <button class="btn btn-sm btn-danger" onclick="archiveSelected()" id="archiveBtn">📦 归档选中</button>
-    <button class="btn btn-sm btn-secondary" onclick="location.reload()">🔄 刷新</button>
-  </div>
-</div>
-<div class="toolbar filters">
-  <input type="text" id="search" placeholder="搜索标题/正文...">
-  <div class="sep"></div>
-  <input type="date" id="dateFrom" title="开始日期">
-  <input type="date" id="dateTo" title="结束日期">
-  <div class="sep"></div>
-  <select id="category"><option value="">全部分类</option></select>
-  <select id="status"><option value="active">活跃</option><option value="archived">已归档</option></select>
-  <select id="publishXhs"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
-  <button class="btn btn-primary btn-sm" onclick="loadList()">🔍 筛选</button>
-</div>
-<table class="table">
-  <thead><tr>
-    <th style="width:30px"><input type="checkbox" onclick="selectAllRows(this.checked)" title="全选"></th>
-    <th style="width:40px">#</th>
-    <th onclick="setSort('pub_time')">新闻时间 ↕</th>
-    <th>标题</th>
-    <th style="width:55px">发布XHS</th>
-    <th style="width:85px">发布XHS时间</th>
-    <th style="width:50px">状态</th>
-    <th>分类</th>
-    <th onclick="setSort('title_score')">评分 ↕</th>
-    <th>标签</th>
-  </tr></thead>
-  <tbody id="tbody"></tbody>
-</table>
-<div class="pagination" id="pager"></div>
 
-<!-- Modal preview -->
-<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">
-  <div class="modal-content" id="modalContent"></div>
+  <!-- Actions Toolbar -->
+  <div class="card toolbar">
+    <div class="toolbar-row">
+      <span class="label">抓取</span>
+      <input type="text" id="keywordInput" placeholder="关键词" value="AKB">
+      <input type="number" id="kwMax" value="5" min="1" max="30">
+      <button class="btn btn-red" onclick="triggerFetch('keywords')" id="kwBtn">🔍 关键词抓取</button>
+      <input type="number" id="recomMax" value="10" min="1" max="30">
+      <button class="btn btn-red" onclick="triggerFetch('recom')" id="recomBtn">📰 推荐抓取</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="搜索标题/正文..." style="width:180px;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px">
+      <div class="sep"></div>
+      <input type="date" id="dateFrom" title="开始日期" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px">
+      <input type="date" id="dateTo" title="结束日期" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px">
+      <div class="sep"></div>
+      <select id="category" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部分类</option></select>
+      <select id="status" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="active">活跃</option><option value="archived">已归档</option></select>
+      <select id="publishXhs" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
+      <button class="btn btn-red" onclick="loadList()">筛选</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="archiveBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fafbfc;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;color:var(--text2)" id="archiveCount">已选 0 条</span>
+      <button class="btn btn-dark btn-sm" onclick="archiveSelected()">📦 归档选中</button>
+    </div>
+    <div id="publishBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fff7f5;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;color:var(--text2)"><b id="pendingCount">0</b> 条待发布</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="datetime-local" id="postTime" title="定时发布" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px;width:130px">
+        <button class="btn btn-orange btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布到小红书</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th style="width:30px"><input type="checkbox" onclick="selectAllRows(this.checked)" title="全选"></th>
+        <th style="width:36px">#</th>
+        <th onclick="setSort('pub_time')" style="width:90px">新闻时间</th>
+        <th>标题</th>
+        <th style="width:55px">发布XHS</th>
+        <th style="width:85px">发布时间</th>
+        <th style="width:52px">状态</th>
+        <th>分类</th>
+        <th onclick="setSort('title_score')" style="width:60px">评分</th>
+        <th>标签</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    </div>
+    <div class="pagination" id="pager" style="padding:12px"></div>
+  </div>
 </div>
 
-<!-- Terminal log modal -->
+<!-- Preview modal -->
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
+
+<!-- Terminal modal -->
 <div class="modal" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
-  <div class="modal-content" style="max-width:750px;background:#1e1e1e;color:#0f0">
+  <div class="modal-card" style="max-width:750px;background:#1e1e1e;color:#0f0">
     <h3 id="taskModalTitle" style="color:#fff;margin-bottom:12px">🖥️ 终端</h3>
     <pre id="taskLog" style="font:12px Menlo,monospace;white-space:pre-wrap;min-height:300px;max-height:60vh;overflow-y:auto;margin:0">等待中...</pre>
-    <div style="margin-top:12px;text-align:right">
-      <button class="btn btn-sm" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button>
-    </div>
+    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
   </div>
 </div>
 
 <script>
 let sortBy='created_at',sortDir='DESC',page=0;
-let activeTaskId=null, activeTaskLabel='';
+let activeTaskId=null,activeTaskLabel='';
 const S=id=>document.getElementById(id);
 
 async function checkActiveTasks(){
-  const r=await fetch('/api/active-tasks'); const d=await r.json();
-  if(d.active.length>0 || d.fetch_running){
-    // 抓取运行中：禁抓取/推荐按钮 + 灰化
-    S('taskBar').style.display=''; S('taskBar').textContent='⏳ 抓取任务运行中...点击查看';
+  const r=await fetch('/api/active-tasks');const d=await r.json();
+  if(d.active.length>0||d.fetch_running){
+    S('taskBar').style.display='';S('taskBar').textContent='⏳ 抓取任务运行中...点击查看';
     activeTaskId=d.active.length>0?d.active[0].task_id:localStorage.getItem('lastTaskId');
-    ['kwBtn','recomBtn'].forEach(id=>{ S(id).disabled=true; S(id).style.opacity='0.5'; });
-    S('pubBtn').disabled=false; S('pubBtn').style.opacity='1';
-  } else if(d.publish_running){
-    S('taskBar').style.display=''; S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
+    ['kwBtn','recomBtn'].forEach(id=>{S(id).disabled=true;S(id).style.opacity='0.5'});
+    S('pubBtn').disabled=false;S('pubBtn').style.opacity='1';
+  }else if(d.publish_running){
+    S('taskBar').style.display='';S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
     activeTaskId=localStorage.getItem('lastTaskId');
-    S('pubBtn').disabled=true; S('pubBtn').style.opacity='0.5';
-    ['kwBtn','recomBtn'].forEach(id=>{ S(id).disabled=false; S(id).style.opacity='1'; });
-  } else {
-    S('taskBar').style.display='none'; activeTaskId=null; localStorage.removeItem('lastTaskId');
-    ['kwBtn','recomBtn','pubBtn'].forEach(id=>{ S(id).disabled=false; S(id).style.opacity='1'; });
+    S('pubBtn').disabled=true;S('pubBtn').style.opacity='0.5';
+    ['kwBtn','recomBtn'].forEach(id=>{S(id).disabled=false;S(id).style.opacity='1'});
+  }else{
+    S('taskBar').style.display='none';activeTaskId=null;localStorage.removeItem('lastTaskId');
+    ['kwBtn','recomBtn','pubBtn'].forEach(id=>{S(id).disabled=false;S(id).style.opacity='1'});
   }
 }
-function showTaskModal(){
-  if(!activeTaskId) return;
-  S('taskModal').classList.add('active');
-  pollTaskLog(activeTaskId);
-}
+function showTaskModal(){if(!activeTaskId)return;S('taskModal').classList.add('active');pollTaskLog(activeTaskId)}
 async function pollTaskLog(tid){
-  const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
-  if(sd.log) S('taskLog').textContent=sd.log;
-  if(sd.status==='running'){ setTimeout(()=>pollTaskLog(tid), 3000); }
-  else{ checkActiveTasks(); }
+  const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
+  if(sd.log)S('taskLog').textContent=sd.log;
+  if(sd.status==='running'){setTimeout(()=>pollTaskLog(tid),3000)}else{checkActiveTasks()}
 }
 
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:100,offset:page*100,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
     category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value});
-  const r=await fetch('/api/news?'+p); const d=await r.json();
+  const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>`<tr>
-    <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()"></td>
-    <td style="color:#999;font-size:11px">${page*100+i+1}</td>
-    <td style="white-space:nowrap">${n.pub_time||''}</td>
-    <td><a href="/detail/${n.key}" style="color:#333;text-decoration:none"
-           onclick="event.stopPropagation()"><b>${esc(n.title||'')}</b></a><br>
-        <span style="color:#999;font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
+    <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()"></td>
+    <td style="color:var(--text3);font-size:11px">${page*100+i+1}</td>
+    <td style="white-space:nowrap;font-size:12px;color:var(--text2)">${n.pub_time||''}</td>
+    <td><a href="/detail/${n.key}" class="link" onclick="event.stopPropagation()"><b>${esc(n.title||'')}</b></a><br>
+        <span style="color:var(--text3);font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
-    <td style="font-size:11px;color:#999">${n.publish_time||''}</td>
-    <td style="font-size:11px">${n.status==='archived'?'📦':'●'}</td>
-    <td>${n.category||''}</td>
+    <td style="font-size:11px;color:var(--text2)">${n.publish_time||'-'}</td>
+    <td><span class="badge ${n.status==='archived'?'badge-gray':'badge-green'}"><span class="badge-dot ${n.status==='archived'?'badge-dot-archived':'badge-dot-active'}"></span>${n.status==='archived'?'归档':'活跃'}</span></td>
+    <td>${n.category||'-'}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
-    <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</td>
+    <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
   </tr>`).join('');
-  S('stats').innerHTML=`共 ${d.total} 条 | 今日 ${d.today} | 待发布 ${d.pending}`;
-  // Pagination
-  const totalPages=Math.ceil(d.total/100);
-  let pager='';
+  S('stats').innerHTML=`<b>${d.total}</b> 条 · 今日 <b>${d.today}</b> · 待发布 <b>${d.pending}</b>`;
+  // Show/hide publish bar
+  const pendingBar=document.getElementById('publishBar');
+  if(d.pending>0){pendingBar.style.display='flex';document.getElementById('pendingCount').textContent=d.pending}
+  else pendingBar.style.display='none';
+  const totalPages=Math.ceil(d.total/100);let pager='';
   if(totalPages>1){
-    pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${page-1})" ${page<=0?'disabled':''}>‹ 上一页</button> `;
+    pager+=`<button class="btn btn-gray" onclick="goPage(${page-1})" ${page<=0?'disabled':''}>‹</button>`;
     for(let i=0;i<totalPages;i++){
-      if(i===page)pager+=`<button class="btn btn-sm btn-primary">${i+1}</button> `;
-      else pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${i})">${i+1}</button> `;
+      if(i===page)pager+=`<button class="btn btn-red current">${i+1}</button>`;
+      else pager+=`<button class="btn btn-gray" onclick="goPage(${i})">${i+1}</button>`;
     }
-    pager+=`<button class="btn btn-sm btn-secondary" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>下一页 ›</button>`;
+    pager+=`<button class="btn btn-gray" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>›</button>`;
   }
   S('pager').innerHTML=pager;
 }
-function goPage(n){page=n;loadList();window.scrollTo(0,0);}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function setSort(col){ if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}else{sortBy=col;sortDir='DESC'} loadList(); }
+function goPage(n){page=n;loadList();window.scrollTo(0,0)}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function setSort(col){if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}else{sortBy=col;sortDir='DESC'}loadList()}
 
 async function preview(key){
-  const r=await fetch('/api/news/'+key); const n=await r.json();
+  const r=await fetch('/api/news/'+key);const n=await r.json();
   let imgs='';
-  if(n.image_url) imgs+=`<img class="preview-img" src="${esc(n.image_url)}">`;
-  // Gallery images
-  if(n.gallery_images){ try{
+  if(n.image_url)imgs+=`<img class="preview-img" src="${esc(n.image_url)}">`;
+  if(n.gallery_images){try{
     const g=typeof n.gallery_images==='string'?JSON.parse(n.gallery_images):n.gallery_images;
-    g.forEach(p=>{ imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`; });
+    g.forEach(p=>{imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`});
   }catch(e){}}
   S('modalContent').innerHTML=`
     ${imgs}
     <h2>${esc(n.title)}</h2>
     <div class="meta">${n.pub_time} | ${n.source} | ${n.category} | 📊标题${(n.title_score||0).toFixed(1)} 内容${(n.content_score||0).toFixed(1)}</div>
     ${n.summary?`<p style="color:#555;margin:8px 0">${esc(n.summary)}</p>`:''}
-    <div class="section"><h4>新闻要点</h4><p>${esc(n.content||'').replace(/\n/g,'<br>')}</p></div>
-    <div class="section"><h4>我的解读</h4><p>${esc(n.comment||'').replace(/\n/g,'<br>')}</p></div>
+    <div class="section"><h4>新闻要点</h4><p>${esc(n.content||'').replace(/\\n/g,'<br>')}</p></div>
+    <div class="section"><h4>我的解读</h4><p>${esc(n.comment||'').replace(/\\n/g,'<br>')}</p></div>
     ${n.video_caption?`<div class="section"><h4>🎬 短配文</h4><p>${esc(n.video_caption||'')}</p></div>`:''}
     <div class="section"><h4>标签</h4>${(n.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</div>
-    <div style="margin-top:16px"><a href="/detail/${n.key}" class="btn btn-primary btn-sm">编辑详情</a> <button class="btn btn-secondary btn-sm" onclick="closeModal()">关闭</button></div>`;
+    <div style="margin-top:16px"><a href="/detail/${n.key}" class="btn btn-red">编辑详情</a> <button class="btn btn-gray" onclick="closeModal()">关闭</button></div>`;
   S('modal').classList.add('active');
 }
-function closeModal(){S('modal').classList.remove('active');}
-function closeTaskModal(){S('taskModal').classList.remove('active');}
-function restoreButtons(){['kwBtn','recomBtn','pubBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=false;b.style.opacity='1';}});}
-function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5';}});}
+function closeModal(){S('modal').classList.remove('active')}
+function closeTaskModal(){S('taskModal').classList.remove('active')}
+function restoreButtons(){['kwBtn','recomBtn','pubBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=false;b.style.opacity='1'}})}
+function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5'}})}
+
 async function triggerFetch(mode){
-  const bid=mode==='keywords'?'kwBtn':'recomBtn';
-  const b=document.getElementById(bid);
-  const orig=b.textContent; disableFetchBtns(); b.textContent='⏳ 运行中...';
+  const bid=mode==='keywords'?'kwBtn':'recomBtn';const b=document.getElementById(bid);
+  const orig=b.textContent;disableFetchBtns();b.textContent='⏳ 运行中...';
   const body={mode};
-  if(mode==='keywords'){body.keyword=document.getElementById('keywordInput').value;body.max=parseInt(document.getElementById('kwMax').value)||5;}
-  else{body.max=parseInt(document.getElementById('recomMax').value)||10;}
-  // Show terminal modal
+  if(mode==='keywords'){body.keyword=document.getElementById('keywordInput').value;body.max=parseInt(document.getElementById('kwMax').value)||5}
+  else{body.max=parseInt(document.getElementById('recomMax').value)||10}
   S('taskModalTitle').textContent=mode==='keywords'?'🔍 抓取关键词':'📰 推荐新闻';
-  S('taskLog').textContent='⏳ 启动中...';
-  S('taskModal').classList.add('active');
+  S('taskLog').textContent='⏳ 启动中...';S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
-  if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent=orig; b.style.opacity='1'; b.disabled=false; return;}
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;b.textContent=orig;b.style.opacity='1';b.disabled=false;return}
   const tid=d.task_id;
-  activeTaskId=tid; activeTaskLabel=mode==='keywords'?'关键词抓取':'推荐抓取';
+  activeTaskId=tid;activeTaskLabel=mode==='keywords'?'关键词抓取':'推荐抓取';
   localStorage.setItem('lastTaskId',tid);
-  S('taskBar').style.display=''; S('taskBar').textContent='⏳ '+activeTaskLabel+'运行中...点击查看';
+  S('taskBar').style.display='';S('taskBar').textContent='⏳ '+activeTaskLabel+'运行中...点击查看';
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
-    const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
+    const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
     if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList();},2000);return;}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent=orig;loadList()},2000);return}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return}
   }
-  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false; activeTaskId=null; localStorage.removeItem('lastTaskId'); S('taskBar').style.display='none';
+  b.textContent='⏰ 超时';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
 }
 async function triggerPublish(){
-  const b=document.getElementById('pubBtn'); b.disabled=true; b.style.opacity='0.5'; b.textContent='⏳ 发布中...';
-  S('taskModalTitle').textContent='📤 发布到小红书';
-  S('taskLog').textContent='⏳ 启动中...';
-  S('taskModal').classList.add('active');
-  var pt=S('postTime').value; if(pt)pt=pt.replace('T',' ')+':00';
+  const b=document.getElementById('pubBtn');b.disabled=true;b.style.opacity='0.5';b.textContent='⏳ 发布中...';
+  S('taskModalTitle').textContent='📤 发布到小红书';S('taskLog').textContent='⏳ 启动中...';S('taskModal').classList.add('active');
+  var pt=S('postTime').value;if(pt)pt=pt.replace('T',' ')+':00';
   const r=await fetch('/api/trigger-publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_time:pt||''})});
   const d=await r.json();
-  if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent='📤 发布到小红书'; b.style.opacity='1'; b.disabled=false; return;}
+  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;b.textContent='📤 发布到小红书';b.style.opacity='1';b.disabled=false;return}
   const tid=d.task_id;
-  activeTaskId=tid; activeTaskLabel='发布';
-  localStorage.setItem('lastTaskId',tid);
-  S('taskBar').style.display=''; S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
+  activeTaskId=tid;activeTaskLabel='发布';localStorage.setItem('lastTaskId',tid);
+  S('taskBar').style.display='';S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
   for(let i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,3000));
-    const sr=await fetch('/api/task/'+tid); const sd=await sr.json();
+    const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
     if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书';},2000);return;}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return;}
+    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书'},2000);return}
+    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return}
   }
-  b.textContent='⏰ 超时'; b.style.opacity='1'; b.disabled=false; activeTaskId=null; localStorage.removeItem('lastTaskId'); S('taskBar').style.display='none';
+  b.textContent='⏰ 超时';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
 }
 async function togglePublish(key,val){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
   loadList();
 }
-function selectAllRows(val){
-  document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val;});
+function selectAllRows(val){document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val});updateArchiveBar()}
+function updateArchiveBar(){
+  const n=document.querySelectorAll('.rowSel:checked').length;
+  const bar=document.getElementById('archiveBar');
+  if(n>0){bar.style.display='flex';document.getElementById('archiveCount').textContent='已选 '+n+' 条'}
+  else bar.style.display='none';
 }
 async function archiveSelected(){
-  var keys=[]; document.querySelectorAll('.rowSel:checked').forEach(cb=>{keys.push(cb.value);});
-  if(!keys.length){alert('请先勾选新闻');return;}
+  var keys=[];document.querySelectorAll('.rowSel:checked').forEach(cb=>{keys.push(cb.value)});
+  if(!keys.length){alert('请先勾选新闻');return}
   if(!confirm('确定归档 '+keys.length+' 条新闻？'))return;
   await fetch('/api/archive-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys})});
+  document.getElementById('archiveBar').style.display='none';
   loadList();
 }
 async function loadCategories(){
@@ -451,113 +471,153 @@ DETAIL_HTML = r"""
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>编辑 - {{news.title}}</title>
+<title>{{news.title}}</title>
 <style>
+:root{--bg:#f0f2f5;--card-bg:#fff;--text:#333;--text2:#888;--text3:#bbb;--border:#eef0f4;--red:#ff2442;--orange:#ff6b35;--shadow:0 1px 3px rgba(0,0,0,.06);--radius:10px}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333;padding-bottom:3em}
-.header{background:#fff;border-bottom:1px solid #e0e0e0;padding:12px 20px;display:flex;align-items:center;gap:16px}
-.header a{color:#ff2442;text-decoration:none;font-size:13px}
-form{padding:20px 20px 3em;max-width:800px;margin:0 auto}
-label{display:block;font-size:13px;color:#666;margin:14px 0 4px;font-weight:500}
-input,textarea,select{width:100%;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit}
-textarea{min-height:120px;resize:vertical}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.btn{padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500}
-.btn-primary{background:#ff2442;color:#fff}
-.btn-secondary{background:#f0f0f0;color:#333}
-.actions{display:flex;gap:12px;margin-top:24px}
-.score-block{background:#f5f5f5;border-radius:8px;padding:16px;margin-top:16px}
-.score-block h3{font-size:14px;margin-bottom:8px}
-.score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px}
-.score-item{text-align:center;padding:6px;border-radius:6px;font-size:12px}
-.score-plus{background:#d4edda}
-.score-minus{background:#f8d7da}
-.toast{position:fixed;top:20px;right:20px;background:#28a745;color:#fff;padding:12px 20px;border-radius:8px;display:none;z-index:999}
-.tag-bubble{display:inline-flex;align-items:center;background:#e8f0fe;color:#1967d2;padding:4px 10px;border-radius:12px;font-size:12px;margin:2px 4px;gap:6px}
+body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.topbar{background:var(--card-bg);padding:10px 24px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}
+.topbar a{color:var(--red);text-decoration:none;font-size:13px;font-weight:500}
+.topbar a:hover{opacity:.8}
+.topbar .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.page-detail{padding:20px;max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;white-space:nowrap;line-height:1.4;text-decoration:none}
+.btn:hover{filter:brightness(.95)}
+.btn:disabled{opacity:.4;pointer-events:none}
+.btn-red{background:var(--red);color:#fff}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-gray{background:#eef0f2;color:#555}
+.btn-sm{padding:3px 10px;font-size:11px}
+.inline-input,.inline-textarea{border:none;border-bottom:2px dashed transparent;background:transparent;padding:6px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0}
+.inline-input:hover,.inline-textarea:hover{border-bottom-color:#ddd}
+.inline-input:focus,.inline-textarea:focus{border-bottom-color:var(--red);border-bottom-style:solid}
+.inline-textarea{resize:vertical;min-height:60px}
+.inline-textarea:focus{border:1px solid var(--red);border-radius:6px;padding:8px}
+.field-group{display:flex;flex-direction:column;gap:12px}
+.field-row{display:flex;align-items:center;gap:12px}
+.field-row label{font-size:12px;color:var(--text2);width:78px;flex-shrink:0;text-align:right}
+.field-row .value{flex:1}
+.cover-img{max-width:100%;max-height:360px;border-radius:8px;object-fit:cover}
+.url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
+.img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
+.img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
+.img-strip .img-item img{height:130px;border-radius:6px;display:block}
+.img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
+.score-row{display:flex;gap:16px;font-size:13px;color:var(--text2);margin-bottom:12px}
+.score-row b{color:var(--text)}
+.score-block{background:#fafbfc;border-radius:8px;padding:14px;margin-top:4px}
+.score-block summary{font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);user-select:none}
+.score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:5px;margin-top:8px}
+.score-item{text-align:center;padding:4px 8px;border-radius:5px;font-size:11px}
+.score-plus{background:#dcfce7;color:#15803d}
+.score-minus{background:#fee2e2;color:#b91c1c}
+.tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
+.tag-bubble{display:inline-flex;align-items:center;background:#eef2ff;color:#4f46e5;padding:3px 10px;border-radius:10px;font-size:11px;gap:6px}
 .tag-bubble .del{cursor:pointer;opacity:.5;font-weight:bold}
 .tag-bubble .del:hover{opacity:1}
-.tag-input{border:none;background:transparent;padding:4px 8px;font-size:12px;width:80px;outline:none}
-.tag-add{cursor:pointer;background:#e8f0fe;color:#1967d2;padding:4px 10px;border-radius:12px;font-size:12px;border:1px dashed #1967d2}
-.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:200;justify-content:center;align-items:center}
+.tag-input{border:none;background:transparent;padding:3px 6px;font-size:11px;width:70px;outline:none}
+.selects-row{display:flex;gap:16px;align-items:center}
+.selects-row label{font-size:12px;color:var(--text2);margin-right:4px}
+.selects-row select{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff}
+.actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.toast{position:fixed;top:20px;right:20px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:8px;display:none;z-index:999;font-weight:500;font-size:13px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
 .modal.active{display:flex}
-.modal-content{background:#fff;border-radius:12px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;padding:24px}
+.modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
 </style>
 </head>
 <body>
-<div class="header"><a href="/">← 返回列表</a><span>{{news.title}}</span></div>
-<form id="editForm">
-  {% if news.image_url %}<img src="{{news.image_url}}" style="max-width:100%;max-height:300px;border-radius:8px;margin-bottom:12px">{% endif %}
-  <div style="margin-bottom:12px;background:#f8f8f8;padding:10px;border-radius:8px;font-size:12px">
-    <div style="margin-bottom:4px"><label style="font-size:11px">🔗 原文链接</label><input value="{{news.link or ''}}" readonly style="width:100%;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#666;background:#fff" onclick="this.select()"></div>
-    <div style="margin-bottom:4px"><label style="font-size:11px">🖼️ 封面图链接</label><input value="{{news.image_url or ''}}" readonly style="width:100%;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#666;background:#fff" onclick="this.select()"></div>
+<div class="topbar"><a href="/">← 返回列表</a><span class="title">{{news.title}}</span></div>
+
+<div class="page-detail">
+
+  <div class="card">
+    {% if news.image_url %}<img src="{{news.image_url}}" class="cover-img" style="margin-bottom:12px">{% endif %}
+    <div class="field-row" style="margin-bottom:4px"><label>原文链接</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:4px"><label>封面图</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
     {% if news.original_image_url and news.original_image_url != news.image_url %}
-    <div style="margin-bottom:4px"><label style="font-size:11px">📷 原图链接</label><input value="{{news.original_image_url or ''}}" readonly style="width:100%;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#666;background:#fff" onclick="this.select()"></div>
+    <div class="field-row" style="margin-bottom:4px"><label>原图</label><div class="value"><input class="url-input" value="{{news.original_image_url}}" readonly onclick="this.select()"></div></div>
     {% endif %}
-    <div style="margin-bottom:4px"><label style="font-size:11px">📸 图集源链接</label><input name="gallery_url" value="{{news.gallery_url or ''}}" style="width:100%;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#666;background:#fff" placeholder="https://..."></div>
+    <div class="field-row"><label>图集源</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📸 下载图集</button>
+      {% if news.gallery_images %}
+      <button class="btn btn-gray btn-sm" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
+      {% endif %}
+    </div>
+    <pre id="galleryLog" style="display:none;margin-top:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
   </div>
   {% if news.gallery_images %}
-  <label style="font-size:13px;color:#666;margin:14px 0 4px;font-weight:500">📸 发布图片 (勾选的将发到小红书)</label>
-  <div id="publishImgStrip" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:4px">
-    {% for p in news.gallery_images %}
-    <div style="position:relative;flex-shrink:0;cursor:pointer" onclick="togglePublishImg(this)">
-      <img src="/local-image?path={{p}}" style="max-height:150px;border-radius:6px">
-      <input type="checkbox" style="position:absolute;top:4px;left:4px;pointer-events:none" data-path="{{p}}">
+  <div class="card">
+    <h3>📸 发布图片 <span style="font-weight:400;font-size:12px;color:var(--text2)">— 勾选将发到小红书</span></h3>
+    <div class="img-strip" id="publishImgStrip">
+      {% for p in news.gallery_images %}
+      <div class="img-item" onclick="togglePublishImg(this)">
+        <img src="/local-image?path={{p}}">
+        <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
+    <button class="btn btn-red btn-sm" onclick="savePublishImages()" style="margin-top:8px">💾 保存发布图</button>
   </div>
-  <button type="button" class="btn btn-sm btn-primary" onclick="savePublishImages()" style="margin-bottom:12px">💾 保存发布图选择</button>
   {% endif %}
-  <div class="row">
-    <div>📊 标题评分: {{"%.1f"|format(news.title_score or 0)}}</div>
-    <div>📊 内容评分: {{"%.1f"|format(news.content_score or 0)}}</div>
+
+  <div class="card">
+    <div class="score-row">
+      <span>📊 标题评分 <b>{{"%.1f"|format(news.title_score or 0)}}</b></span>
+      <span>📊 内容评分 <b>{{"%.1f"|format(news.content_score or 0)}}</b></span>
+    </div>
+    <div class="field-group">
+      <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
+      <div class="field-row"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea" name="video_caption">{{news.video_caption or ''}}</textarea></div></div>
+      <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
+      <div class="field-row"><label>新闻要点</label><div class="value"><textarea class="inline-textarea" name="content">{{news.content or ''}}</textarea></div></div>
+      <div class="field-row"><label>我的解读</label><div class="value"><textarea class="inline-textarea" name="comment">{{news.comment or ''}}</textarea></div></div>
+    </div>
+    <div class="field-row" style="margin-top:8px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
+    <div class="field-row" style="margin-top:4px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
+    <div class="selects-row" style="margin-top:8px">
+      <label>发布XHS</label>
+      <select name="publish_xhs"><option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option><option value="1" {{'selected' if news.publish_xhs else ''}}>是</option></select>
+      <label>状态</label>
+      <select name="status"><option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option><option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option></select>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn btn-red" id="saveBtn">💾 保存修改</button>
+      <a href="/" class="btn btn-gray">取消</a>
+    </div>
   </div>
-  <label>标题</label><input name="title" value="{{news.title}}">
-  <label>🎬 短配文</label><textarea name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea>
-  <label>引流摘要</label><input name="summary" value="{{news.summary or ''}}">
-  <label>新闻要点</label><textarea name="content">{{news.content or ''}}</textarea>
-  <label>我的解读</label><textarea name="comment">{{news.comment or ''}}</textarea>
-  <div class="row">
-    <div><label>分类</label><input name="category" value="{{news.category or ''}}"></div>
-    <div><label>标签</label><div id="tagBubbles" style="display:flex;flex-wrap:wrap;align-items:center;min-height:36px;padding:4px;border:1px solid #ddd;border-radius:8px"></div></div>
-  </div>
-  <div class="row">
-    <div><label>发布XHS</label><select name="publish_xhs">
-      <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
-      <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
-    </select></div>
-    <div><label>状态</label><select name="status">
-      <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
-      <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
-    </select></div>
-  </div>
+
   {% if scores %}
-  <div class="score-block">
-    <h3>📊 评分明细</h3>
-    <div class="score-grid" id="scoreGrid"></div>
+  <div class="card">
+    <details style="padding:0;background:transparent"><summary style="font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);user-select:none">📊 评分明细 (21项)</summary>
+    <div class="score-grid" id="scoreGrid" style="margin-top:8px"></div></details>
   </div>
   {% endif %}
-  <div class="actions">
-    <button type="submit" class="btn btn-primary">保存</button>
-    <button type="button" class="btn btn-secondary" onclick="downloadGallery()" id="galleryBtn">📸 下载图集</button>
-    <button type="button" class="btn btn-secondary" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
-    <a href="/" class="btn btn-secondary">取消</a>
-  </div>
-  <pre id="galleryLog" style="display:none;margin-top:12px;padding:12px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:12px;max-height:300px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
-</form>
+
+</div>
+
 <div class="toast" id="toast">已保存</div>
+
 <div class="modal" id="galleryModal" onclick="if(event.target===this)closeGalleryModal()">
-  <div class="modal-content" style="max-width:800px">
+  <div class="modal-card" style="max-width:800px">
     <h3>📸 选择要保留的图片</h3>
     <div id="galleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:12px 0;max-height:60vh;overflow-y:auto"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-secondary" onclick="selectAllGallery(true)">全选</button>
-      <button class="btn btn-secondary" onclick="selectAllGallery(false)">取消全选</button>
-      <button class="btn btn-primary" onclick="saveGallery()">💾 保存</button>
-      <button class="btn btn-primary" onclick="saveAndUpload()" style="background:#ff6b35">☁️ 保存并上传</button>
-      <button class="btn btn-secondary" onclick="closeGalleryModal()">关闭</button>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn btn-gray" onclick="selectAllGallery(true)">全选</button>
+      <button class="btn btn-gray" onclick="selectAllGallery(false)">取消全选</button>
+      <button class="btn btn-red" onclick="saveGallery()">💾 保存</button>
+      <button class="btn btn-orange" onclick="saveAndUpload()">☁️ 保存并上传</button>
+      <button class="btn btn-gray" onclick="closeGalleryModal()">关闭</button>
     </div>
   </div>
 </div>
+
 <script>
 const key='{{news.key}}';
 {% if scores %}
@@ -570,70 +630,64 @@ let html='';
 });
 document.getElementById('scoreGrid').innerHTML=html;
 {% endif %}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-// Tag management
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
 let tags={% if news.tags %}{{news.tags|tojson}}{% else %}[]{% endif %};
 function renderTags(){
   const el=document.getElementById('tagBubbles');
   el.innerHTML=tags.map((t,i)=>`<span class="tag-bubble">${esc(t)}<span class="del" onclick="delTag(${i})">×</span></span>`).join('')
-    +'<input class="tag-input" id="tagInput" placeholder="+ 添加" onkeydown="addTag(event)">';
+    +'<input class="tag-input" id="tagInput" placeholder="+添加" onkeydown="addTag(event)">';
 }
-function delTag(i){tags.splice(i,1);renderTags();}
+function delTag(i){tags.splice(i,1);renderTags()}
 function addTag(e){
   if(e.key==='Enter'||e.key===','){
-    e.preventDefault();
-    const v=e.target.value.trim().replace(/,$/,'');
-    if(v){tags.push(v);e.target.value='';renderTags();}
+    e.preventDefault();const v=e.target.value.trim().replace(/,$/,'');
+    if(v){tags.push(v);e.target.value='';renderTags()}
   }
 }
 renderTags();
 
-document.getElementById('editForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const fd=new FormData(e.target);
-  const data={}; for(const[k,v]of fd)data[k]=v;
-  data.gallery_url=document.querySelector('input[name=gallery_url]').value;
+document.getElementById('saveBtn').addEventListener('click',async()=>{
+  const data={};
+  ['title','summary','content','comment','category','video_caption'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
   data.tags=tags;
-  data.publish_xhs=parseInt(data.publish_xhs);
+  data.publish_xhs=parseInt(document.querySelector('[name=publish_xhs]').value);
+  data.status=document.querySelector('[name=status]').value;
   const r=await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   if(r.ok){const t=document.getElementById('toast');t.style.display='block';setTimeout(()=>t.style.display='none',1500)}
 });
 
-// Gallery: saved=默认选中, cached=默认不选
 var galleryImages=[];
 (function initGallery(){
   {% if news.gallery_images %}var saved={{news.gallery_images|tojson}};{% else %}var saved=[];{% endif %}
   var savedSet=new Set(saved);
-  saved.forEach(function(p){galleryImages.push({path:p,sel:true});});
+  saved.forEach(function(p){galleryImages.push({path:p,sel:true})});
   {% if news.cached_images %}var cached={{news.cached_images|tojson}};
-  cached.forEach(function(p){if(!savedSet.has(p))galleryImages.push({path:p,sel:false});});
+  cached.forEach(function(p){if(!savedSet.has(p))galleryImages.push({path:p,sel:false})});
   {% endif %}
-  // Already downloaded? Change button text
   var hasCache={% if news.cached_images %}cached.length{% else %}0{% endif %};
-  if(hasCache>0||galleryImages.length>0){
-    document.getElementById('galleryBtn').textContent='🔄 重新下载';
-  }
+  if(hasCache>0||galleryImages.length>0)document.getElementById('galleryBtn').textContent='\u{1f504} 重新下载';
 })();
 async function downloadGallery(){
-  const btn=document.getElementById('galleryBtn'); btn.disabled=true;
-  const log=document.getElementById('galleryLog'); log.style.display='block'; log.textContent='⏳ 开始下载...\n';
+  const btn=document.getElementById('galleryBtn');btn.disabled=true;
+  const log=document.getElementById('galleryLog');log.style.display='block';log.textContent='⏳ 开始下载...\n';
   await fetch('/api/gallery-download/'+key,{method:'POST'});
   for(let i=0;i<60;i++){
     await new Promise(r=>setTimeout(r,2000));
-    const resp=await fetch('/api/gallery-status/'+key); const d=await resp.json();
-    if(d.log){log.textContent=d.log; log.scrollTop=log.scrollHeight;}
+    const resp=await fetch('/api/gallery-status/'+key);const d=await resp.json();
+    if(d.log){log.textContent=d.log;log.scrollTop=log.scrollHeight}
     if(d.status==='done'){
-      d.images.forEach(function(p){galleryImages.push({path:p,sel:false});});
-      btn.disabled=false; btn.textContent='🔄 重新下载';
+      d.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
+      btn.disabled=false;btn.textContent='\u{1f504} 重新下载';
       log.textContent+='\n✅ 完成 ('+d.images.length+'张)';
-      setTimeout(function(){showGalleryModal();log.style.display='none';},1500);
+      setTimeout(function(){showGalleryModal();log.style.display='none'},1500);
       return;
     }
-    if(d.status&&d.status.toString().startsWith('error')){log.textContent+='\n❌ '+d.status;btn.disabled=false;return;}
+    if(d.status&&d.status.toString().startsWith('error')){log.textContent+='\n❌ '+d.status;btn.disabled=false;return}
   }
-  log.textContent+='\n⏰ 超时'; btn.disabled=false;
+  log.textContent+='\n⏰ 超时';btn.disabled=false;
 }
-function toggleGalleryModal(){var m=document.getElementById('galleryModal');if(m.classList.contains('active'))closeGalleryModal();else showGalleryModal();}
+function toggleGalleryModal(){var m=document.getElementById('galleryModal');if(m.classList.contains('active'))closeGalleryModal();else showGalleryModal()}
 function showGalleryModal(){
   const grid=document.getElementById('galleryGrid');
   grid.innerHTML=galleryImages.map(function(p,i){return `<div style="position:relative;cursor:pointer" onclick="toggleGalleryImg(${i})">
@@ -642,36 +696,34 @@ function showGalleryModal(){
   </div>`}).join('');
   document.getElementById('galleryModal').classList.add('active');
 }
-function toggleGalleryImg(i){galleryImages[i].sel=!galleryImages[i].sel;showGalleryModal();}
-function selectAllGallery(val){galleryImages.forEach(function(p){p.sel=val;});showGalleryModal();}
+function toggleGalleryImg(i){galleryImages[i].sel=!galleryImages[i].sel;showGalleryModal()}
+function selectAllGallery(val){galleryImages.forEach(function(p){p.sel=val});showGalleryModal()}
 async function saveGallery(){
-  const selected=galleryImages.filter(function(p){return p.sel;}).map(function(p){return p.path;});
+  const selected=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:selected})});
-  closeGalleryModal(); location.reload();
+  closeGalleryModal();location.reload();
 }
 async function saveAndUpload(){
-  const selected=galleryImages.filter(function(p){return p.sel;}).map(function(p){return p.path;});
+  const selected=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:selected})});
   await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:selected})});
-  alert('已上传 '+selected.length+' 张');
-  closeGalleryModal(); location.reload();
+  alert('已上传 '+selected.length+' 张');closeGalleryModal();location.reload();
 }
-function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active');}
-function togglePublishImg(el){ var cb=el.querySelector('input[type=checkbox]'); cb.checked=!cb.checked; el.style.opacity=cb.checked?'1':'0.4'; }
+function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active')}
+function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4'}
 async function savePublishImages(){
-  var paths=[]; document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){paths.push(cb.dataset.path);});
+  var paths=[];document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){paths.push(cb.dataset.path)});
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths})});
-  var t=document.getElementById('toast'); t.textContent='发布图已保存 ('+paths.length+'张)'; t.style.display='block'; setTimeout(function(){t.style.display='none';t.textContent='已保存';},1500);
+  var t=document.getElementById('toast');t.textContent='发布图已保存 ('+paths.length+'张)';t.style.display='block';setTimeout(function(){t.style.display='none';t.textContent='已保存'},1500);
 }
 (function initPublishCheckboxes(){
   {% if news.publish_images %}var pubSet=new Set({{news.publish_images|tojson}});{% else %}var pubSet=new Set();{% endif %}
   document.querySelectorAll('#publishImgStrip input[type=checkbox]').forEach(function(cb){
-    if(pubSet.has(cb.dataset.path)){cb.checked=true;}else{cb.parentElement.style.opacity='0.4';}
+    if(pubSet.has(cb.dataset.path)){cb.checked=true}else{cb.parentElement.style.opacity='0.4'}
   });
 })();
 </script>
 </body></html>"""
-
 @app.route('/')
 def index():
     return render_template_string(INDEX_HTML)
