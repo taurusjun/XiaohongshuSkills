@@ -43,7 +43,8 @@ def init_db():
                 publish_time TEXT,
                 status      TEXT DEFAULT 'active',
                 created_at  TEXT DEFAULT (datetime('now','localtime')),
-                updated_at  TEXT DEFAULT (datetime('now','localtime'))
+                updated_at  TEXT DEFAULT (datetime('now','localtime')),
+                fetch_by    TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_key ON news(key);
             CREATE INDEX IF NOT EXISTS idx_pub_time ON news(pub_time);
@@ -80,6 +81,9 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_scores_key ON scores(news_key);
         """)
+        # Compat: add fetch_by to existing DBs
+        try: db.execute("ALTER TABLE news ADD COLUMN fetch_by TEXT DEFAULT ''")
+        except: pass
 
 # ── 新闻 CRUD ──
 
@@ -94,8 +98,8 @@ def insert_news(news: dict) -> bool:
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
                     summary, tags, image_url, original_image_url, gallery_images, gallery_video,
                     video_path, video_caption, gallery_url, pub_time, title_score, content_score,
-                    publish_xhs, publish_time, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                    publish_xhs, publish_time, fetch_by, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -105,7 +109,8 @@ def insert_news(news: dict) -> bool:
                     video_path=excluded.video_path, video_caption=excluded.video_caption,
                     gallery_url=excluded.gallery_url,
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
-                    content_score=excluded.content_score, updated_at=datetime('now','localtime')
+                    content_score=excluded.content_score, fetch_by=excluded.fetch_by,
+                    updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
                   news.get('link',''), news.get('source',''), news.get('category',''),
                   news.get('content',''), news.get('comment',''), news.get('summary',''),
@@ -113,7 +118,7 @@ def insert_news(news: dict) -> bool:
                   gallery_str, news.get('gallery_video',''),
                   news.get('video_path',''), news.get('video_caption',''), news.get('gallery_url',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
-                  news.get('publish_xhs',0), news.get('publish_time','')))
+                  news.get('publish_xhs',0), news.get('publish_time',''), news.get('fetch_by','')))
             return True
         except Exception as e:
             print(f"  ⚠️ SQLite 写入失败: {e}")
@@ -173,7 +178,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
                'video_path','video_caption','gallery_images','publish_images','gallery_video','gallery_url',
-               'publish_xhs','publish_time','status','title_score','content_score'}
+               'publish_xhs','publish_time','status','title_score','content_score','fetch_by'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

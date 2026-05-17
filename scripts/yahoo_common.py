@@ -153,7 +153,8 @@ def is_china_related(title: str) -> bool:
 
 
 
-def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -> str:
+def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
+                 response_format: dict | None = None) -> str:
     """调用 LiteLLM API，返回文本；未配置或失败时返回空字符串"""
     if not LITELLM_API_KEY:
         return ""
@@ -163,18 +164,30 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000) -
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        body = {"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7}
+        if response_format:
+            body["response_format"] = response_format
+
         resp = _direct_session.post(
             f"{LITELLM_URL}/chat/completions",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_API_KEY}"},
-            json={"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7},
+            json=body,
             timeout=(30, 600),
         )
         if resp.status_code == 200:
             msg = resp.json().get("choices", [{}])[0].get("message", {})
             # 优先取 content（最终回答），不存在时才取 reasoning_content
-            content = msg.get("content")
-            if not content:  # None or empty string
-                content = msg.get("reasoning_content", "")
+            content = msg.get("content", "").strip()
+            if not content:
+                reasoning = msg.get("reasoning_content", "").strip()
+                if reasoning:
+                    # 尝试从 reasoning 中提取 JSON
+                    import re as _re2
+                    m = _re2.search(r'\{[^{}]*\}', reasoning)
+                    if m:
+                        content = m.group(0)
+                    if not content:
+                        content = reasoning
             return content.strip()
         print(f"    ⚠️ LiteLLM 错误: {resp.status_code}")
     except Exception as e:
@@ -524,49 +537,37 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 def evaluate_quality(title_zh: str, content: str, comment: str,
                      title_ja: str = "", body_text: str = "") -> dict:
-    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues, 各维度0/1}"""
-    prompt = f"""请根据以下维度，给这条小红书笔记的标题和内容打分。
+    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues, scores(23维度)}"""
+    dims = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点',
+            '简单通知','震惊体','概括全部','原创度','趣味性','有用信息',
+            '对立信息','视频','离题','啰嗦重复','主动讨赏',
+            '生活照','搞怪照','宣传照','写真','中年男照','负面情绪']
+    dims_str = ','.join(dims)
+    prompt = f"""评估标题和正文，对以下23个维度判断符合(1)或不符合(0)，并给出title_score(0-5)和content_score(0-5)。
 
-【标题加分项】以下各项符合写1，不符合写0：剧情感, 冲突感, 猎奇感, 用户共鸣, 名人, 热点
-【标题减分项】以下各项符合写1，不符合写0：简单通知, 震惊体, 概括全部
-【内容加分项】以下各项符合写1，不符合写0：原创度, 趣味性, 有用信息, 对立信息, 视频
-【内容减分项】以下各项符合写1，不符合写0：离题, 啰嗦重复, 主动讨赏
-【图片加分项】以下各项符合写1，不符合写0：生活照, 搞怪照
-【图片减分项】以下各项符合写1，不符合写0：宣传照, 写真, 中年男照, 负面情绪
-
----
+23个维度：{dims_str}
 标题：{title_zh}
-正文摘要：{content[:200]}
-解读：{comment[:150]}
----
+正文：{content[:200]}
+解读：{comment[:150]}"""
 
-只输出一行JSON，例如：
-{{"剧情感":1,"冲突感":0,"猎奇感":1,"用户共鸣":1,"名人":1,"热点":0,"简单通知":0,"震惊体":0,"概括全部":0,"原创度":1,"趣味性":1,"有用信息":0,"对立信息":0,"视频":0,"离题":0,"啰嗦重复":0,"主动讨赏":0,"生活照":0,"搞怪照":0,"宣传照":0,"写真":0,"中年男照":0,"负面情绪":0,"title_score":4,"content_score":3}}
-"""
-
-    result = call_litellm(prompt, max_tokens=1000)
+    import json as _json
+    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON, no other text.", max_tokens=2000, response_format={"type": "json_object"})
     if not result:
-        return {"title_score": 0, "content_score": 0, "issues": []}
+        return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
 
-    import re, json as _json
-    # 尝试从输出中提取 JSON
-    for line in result.split("\n"):
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                scores = _json.loads(line)
-                title_score = float(scores.pop("title_score", 0))
-                content_score = float(scores.pop("content_score", 0))
-                return {
-                    "title_score": title_score,
-                    "content_score": content_score,
-                    "issues": [],
-                    "scores": {k: int(v) if isinstance(v, (int, float)) else 0 for k, v in scores.items()},
-                }
-            except (_json.JSONDecodeError, ValueError):
-                continue
-
-    return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
+    try:
+        scores = _json.loads(result)
+        title_score = float(scores.pop("title_score", 0))
+        content_score = float(scores.pop("content_score", 0))
+        return {
+            "title_score": title_score,
+            "content_score": content_score,
+            "issues": [],
+            "scores": {k: int(v) for k, v in scores.items() if k in dims},
+        }
+    except (_json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"    ⚠️ 评分JSON解析失败: {e} | 输出: {result[:150]}")
+        return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
 
 
 # ============ 分类 ============
@@ -821,14 +822,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         quality = evaluate_quality(seo_title, content, comment, news.get('title_ja',''), news.get('body_text',''))
         news['_title_score'] = quality['title_score']
         news['_content_score'] = quality['content_score']
-        # 写入 23 项评分维度到 scores 表
-        if quality.get('scores') and STORAGE_BACKEND == 'sqlite':
-            try:
-                from sqlite_db import upsert_scores
-                news_key = extract_key_from_url(news.get('link', ''))
-                upsert_scores(news_key, quality['scores'])
-            except Exception:
-                pass
+        news['_quality'] = quality  # 暂存，insert_news 后再写 scores
         if quality['issues']:
             print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} | 扣分: {', '.join(quality['issues'])}")
         if quality['title_score'] < 2.0:
@@ -919,7 +913,18 @@ def process_news_item(news: dict, no_translate: bool = False,
                 'content_score': news.get('_content_score', 0),
                 'key': extract_key_from_url(news.get('link', '')),
                 'status': 'active',
+                'fetch_by': keyword if keyword else 'recomm',
             })
+            # 写入评分维度（需在 insert_news 之后，满足外键约束）
+            quality_scores = news.get('_quality', {}).get('scores')
+            if quality_scores:
+                try:
+                    from sqlite_db import upsert_scores
+                    news_key = extract_key_from_url(news.get('link', ''))
+                    upsert_scores(news_key, quality_scores)
+                    print(f"    📊 评分明细已写入: {len(quality_scores)}项")
+                except Exception as e:
+                    print(f"    ⚠️ 评分写入失败: {e}")
         except ImportError:
             pass
 

@@ -75,8 +75,23 @@ def api_trigger_fetch():
     tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
     if data.get('mode') == 'keywords':
-        cmd = [sys.executable, 'yahoo_news_auto.py', '--keyword', data.get('keyword','AKB'),
-               '--max', str(data.get('max',5)), '--push', '--auto']
+        kws = data.get('keywords', []) or [{"keyword": data.get('keyword','AKB'), "max": data.get('max',5)}]
+        py = sys.executable
+        scripts_dir = os.path.join(os.path.dirname(__file__), '..', 'scripts')
+        lines = []
+        for k in kws:
+            lines.append(f'echo "======== {k["keyword"]} (max={k["max"]}) ========"')
+            lines.append(f'{py} yahoo_news_auto.py --keyword "{k["keyword"]}" --max {k["max"]} --push --auto')
+        cmd = ['bash', '-c', '\n'.join(lines)]
+        sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'PATH': os.environ.get('PATH','')}
+        scripts_dir_abs = os.path.abspath(scripts_dir)
+        sub_env['PYTHONPATH'] = scripts_dir_abs + ':' + os.path.abspath(os.path.join(scripts_dir_abs, '..')) + ':' + sub_env.get('PYTHONPATH','')
+        def on_fetch_done():
+            global _fetch_running
+            with _fetch_lock:
+                _fetch_running = False
+        threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
+        return jsonify({"task_id": tid})
     else:
         cmd = [sys.executable, 'yahoo_recommendations.py',
                '--max', str(data.get('max',10)), '--push', '--auto']
@@ -117,6 +132,15 @@ def api_task(tid):
     if isinstance(t, dict):
         return jsonify(t)
     return jsonify({"status": t, "log": ""})
+
+@app.route('/api/keywords')
+def api_keywords():
+    try:
+        from yahoo_news_auto import DEFAULT_KEYWORDS
+        kws = [{"keyword": kw, "max": mx, "china_filter": cf} for kw, mx, cf in DEFAULT_KEYWORDS]
+    except Exception:
+        kws = [{"keyword": "AKB", "max": 10, "china_filter": False}]
+    return jsonify({"keywords": kws})
 
 @app.route('/api/active-tasks')
 def api_active_tasks():
@@ -232,15 +256,25 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
     <button class="btn btn-dark btn-sm" onclick="location.reload()">🔄 刷新</button>
   </div>
 
-  <!-- Actions Toolbar -->
-  <div class="card toolbar">
-    <div class="toolbar-row">
-      <span class="label">抓取</span>
-      <input type="text" id="keywordInput" placeholder="关键词" value="AKB">
-      <input type="number" id="kwMax" value="5" min="1" max="30">
-      <button class="btn btn-red" onclick="triggerFetch('keywords')" id="kwBtn">🔍 关键词抓取</button>
-      <input type="number" id="recomMax" value="10" min="1" max="30">
-      <button class="btn btn-red" onclick="triggerFetch('recom')" id="recomBtn">📰 推荐抓取</button>
+  <!-- Fetch -->
+  <div class="card">
+    <h3 style="margin-bottom:10px">🔍 关键词抓取</h3>
+    <div id="kwGrid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-gray btn-sm" onclick="addKeyword()">+ 自定义</button>
+      <button class="btn btn-gray btn-sm" onclick="resetKeywords()">重置为预置</button>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text2)" id="kwSummary"></span>
+      <button class="btn btn-red btn-sm" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <h3 style="margin:0">📰 推荐抓取</h3>
+      <span style="font-size:11px;color:var(--text2)">抓取 Yahoo 首页推荐流</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text2)">条数</span>
+      <input type="number" id="recomMax" value="10" min="1" max="50" style="width:50px;padding:5px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
+      <button class="btn btn-red btn-sm" onclick="triggerFetch('recom')" id="recomBtn">📰 开始抓取</button>
     </div>
   </div>
 
@@ -345,7 +379,7 @@ async function loadList(){
     <td style="color:var(--text3);font-size:11px">${page*100+i+1}</td>
     <td style="white-space:nowrap;font-size:12px;color:var(--text2)">${n.pub_time||''}</td>
     <td style="white-space:nowrap;font-size:11px;color:var(--text3)">${(n.created_at||'').substring(0,16)}</td>
-    <td><a href="/detail/${n.key}" class="link" onclick="event.stopPropagation()"><b>${esc(n.title||'')}</b></a><br>
+    <td><a href="/detail/${n.key}" class="link" onclick="event.stopPropagation()">${n.fetch_by?`<span class="tag">${esc(n.fetch_by)}</span> `:''}<b>${esc(n.title||'')}</b></a><br>
         <span style="color:var(--text3);font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
     <td style="font-size:11px;color:var(--text2)">${n.publish_time||'-'}</td>
@@ -399,12 +433,46 @@ function closeTaskModal(){S('taskModal').classList.remove('active')}
 function restoreButtons(){['kwBtn','recomBtn','pubBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=false;b.style.opacity='1'}})}
 function disableFetchBtns(){['kwBtn','recomBtn'].forEach(id=>{var b=S(id);if(b){b.disabled=true;b.style.opacity='0.5'}})}
 
+// Keyword management
+let keywords=[];
+async function loadKeywords(){
+  try{const r=await fetch('/api/keywords');const d=await r.json();keywords=d.keywords}catch(e){keywords=[]}
+  renderKeywords();
+}
+function renderKeywords(){
+  const grid=document.getElementById('kwGrid');
+  grid.innerHTML=keywords.map((k,i)=>`<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+    <input type="checkbox" checked onchange="updateKwSummary()" style="width:14px;height:14px;accent-color:var(--red)">
+    <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
+    <span style="color:var(--text3)">×</span>
+    <input type="number" value="${k.max}" min="1" max="30" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
+    <span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>
+  </div>`).join('');
+  updateKwSummary();
+}
+function addKeyword(){keywords.push({keyword:'新词',max:5,china_filter:false});renderKeywords()}
+function deleteKeyword(i){keywords.splice(i,1);renderKeywords()}
+function resetKeywords(){loadKeywords()}
+function updateKwSummary(){
+  const chips=document.querySelectorAll('#kwGrid .kw-chip');
+  let total=0,sel=0;
+  chips.forEach(c=>{const cb=c.querySelector('input[type=checkbox]');const mx=c.querySelector('input[type=number]');if(cb.checked){sel++;total+=parseInt(mx.value)||5}});
+  S('kwSummary').textContent=`已选 ${sel} 个 · 共 ${total} 条`;
+}
+loadKeywords();
+
 async function triggerFetch(mode){
   const bid=mode==='keywords'?'kwBtn':'recomBtn';const b=document.getElementById(bid);
   const orig=b.textContent;disableFetchBtns();b.textContent='⏳ 运行中...';
   const body={mode};
-  if(mode==='keywords'){body.keyword=document.getElementById('keywordInput').value;body.max=parseInt(document.getElementById('kwMax').value)||5}
-  else{body.max=parseInt(document.getElementById('recomMax').value)||10}
+  if(mode==='keywords'){
+    const kws=[];document.querySelectorAll('#kwGrid .kw-chip').forEach(c=>{
+      const cb=c.querySelector('input[type=checkbox]');if(!cb.checked)return;
+      const ins=c.querySelectorAll('input');kws.push({keyword:ins[1].value,max:parseInt(ins[2].value)||5});
+    });
+    if(!kws.length){alert('请至少勾选一个关键词');b.textContent=orig;b.style.opacity='1';b.disabled=false;return}
+    body.keywords=kws;
+  }else{body.max=parseInt(document.getElementById('recomMax').value)||10}
   S('taskModalTitle').textContent=mode==='keywords'?'🔍 抓取关键词':'📰 推荐新闻';
   S('taskLog').textContent='⏳ 启动中...';S('taskModal').classList.add('active');
   const r=await fetch('/api/trigger-fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -571,10 +639,6 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   {% endif %}
 
   <div class="card">
-    <div class="score-row">
-      <span>📊 标题评分 <b>{{"%.1f"|format(news.title_score or 0)}}</b></span>
-      <span>📊 内容评分 <b>{{"%.1f"|format(news.content_score or 0)}}</b></span>
-    </div>
     <div class="field-group">
       <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
       <div class="field-row"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
@@ -598,8 +662,12 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 
   {% if scores %}
   <div class="card">
-    <details style="padding:0;background:transparent"><summary style="font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);user-select:none">📊 评分明细 (21项)</summary>
-    <div class="score-grid" id="scoreGrid" style="margin-top:8px"></div></details>
+    <h3 style="margin-bottom:8px">📊 评分明细</h3>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-red btn-sm" id="tabTitle" onclick="switchScoreTab('title')">标题评分 {{"%.1f"|format(news.title_score or 0)}}</button>
+      <button class="btn btn-gray btn-sm" id="tabContent" onclick="switchScoreTab('content')">内容评分 {{"%.1f"|format(news.content_score or 0)}}</button>
+    </div>
+    <div class="score-grid" id="scoreGrid" style="margin-top:4px"></div>
   </div>
   {% endif %}
 
@@ -625,13 +693,24 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 const key='{{news.key}}';
 {% if scores %}
 const scoreData={{scores|tojson}};
-const plusCols=['剧情感','冲突感','猎奇感','用户共鸣','名人','热点','原创度','趣味性','有用信息','对立信息','视频','生活照','搞怪照'];
-const minusCols=['简单通知','震惊体','概括全部','离题','啰嗦重复','主动讨赏','宣传照','写真','中年男照','负面情绪'];
-let html='';
-[...plusCols,...minusCols].forEach(c=>{
-  html+=`<div class="score-item ${plusCols.includes(c)?'score-plus':'score-minus'}">${c}: ${scoreData[c]||0}</div>`;
-});
-document.getElementById('scoreGrid').innerHTML=html;
+const titleCols=['剧情感','冲突感','猎奇感','用户共鸣','名人','热点','简单通知','震惊体','概括全部'];
+const contentCols=['原创度','趣味性','有用信息','对立信息','视频','离题','啰嗦重复','主动讨赏','生活照','搞怪照','宣传照','写真','中年男照','负面情绪'];
+const titlePlus=['剧情感','冲突感','猎奇感','用户共鸣','名人','热点'];
+const contentPlus=['原创度','趣味性','有用信息','对立信息','视频'];
+function renderScoreGrid(cols){
+  let html='';
+  cols.forEach(c=>{
+    const isPlus=titlePlus.includes(c)||contentPlus.includes(c);
+    html+=`<div class="score-item ${isPlus?'score-plus':'score-minus'}">${c}: ${scoreData[c]||0}</div>`;
+  });
+  document.getElementById('scoreGrid').innerHTML=html;
+}
+function switchScoreTab(tab){
+  document.getElementById('tabTitle').className=tab==='title'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
+  document.getElementById('tabContent').className=tab==='content'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
+  renderScoreGrid(tab==='title'?titleCols:contentCols);
+}
+switchScoreTab('title');
 {% endif %}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
