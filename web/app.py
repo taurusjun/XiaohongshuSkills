@@ -100,6 +100,9 @@ def api_trigger_publish():
     tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
+    post_time = (request.json or {}).get('post_time', '')
+    if post_time:
+        cmd += ['--post-time', post_time]
     sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
     def on_publish_done():
         global _publish_running
@@ -123,6 +126,15 @@ def api_active_tasks():
         if isinstance(t, dict) and t.get('status') == 'running':
             active.append({'task_id': tid, 'status': 'running', 'log': t.get('log', '')})
     return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
+
+@app.route('/api/archive-bulk', methods=['POST'])
+def api_archive_bulk():
+    data = request.json or {}
+    keys = data.get('keys', [])
+    if keys:
+        for key in keys:
+            update_news(key, {'status': 'archived'})
+    return jsonify({"ok": True, "count": len(keys)})
 
 @app.route('/api/gallery-upload/<key>', methods=['POST'])
 def api_gallery_upload(key):
@@ -150,23 +162,30 @@ INDEX_HTML = r"""
 <title>新闻管理</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
-.header{background:#fff;border-bottom:1px solid #e0e0e0;padding:12px 20px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
-.header h1{font-size:18px;font-weight:600}
-.stats{display:flex;gap:16px;font-size:13px;color:#666}
-.filters{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;background:#fff;border-bottom:1px solid #eee}
-.filters input,.filters select{padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px}
-.filters input{width:200px}
+body{font:14px -apple-system,sans-serif;background:#f0f2f5;color:#333}
+.header{background:#fff;padding:10px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.header h1{font-size:16px;font-weight:700;white-space:nowrap}
+.stats{display:flex;gap:12px;font-size:12px;color:#888}
+.toolbar{background:#fff;padding:8px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #eee}
+.toolbar .grp{display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;background:#f8f9fa;border:1px solid #eee}
+.toolbar .grp label{font-size:10px;color:#999;margin-right:2px;text-transform:uppercase;letter-spacing:.5px}
+.toolbar input[type=text],.toolbar input[type=number],.toolbar input[type=date],.toolbar input[type=datetime-local],.toolbar select{padding:5px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;background:#fff;outline:none}
+.toolbar input[type=text]:focus,.toolbar input[type=number]:focus,.toolbar input[type=date]:focus,.toolbar input[type=datetime-local]:focus,.toolbar select:focus{border-color:#ff2442}
+.toolbar input[type=text]{width:160px}
+.toolbar input[type=number]{width:46px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filters .sep{width:1px;height:20px;background:#ddd;margin:0 2px}
 .table{width:100%;border-collapse:collapse;background:#fff}
-.table th{background:#f5f5f5;padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:#666;border-bottom:2px solid #e0e0e0;cursor:pointer;user-select:none}
-.table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px}
-.table tr:hover{background:#fafafa}
+.table th{background:#fafafa;padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:#888;border-bottom:1px solid #e8e8e8;cursor:pointer;user-select:none;white-space:nowrap}
+.table th:hover{color:#333}
+.table td{padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:13px}
+.table tr:hover{background:#fafcff}
 .table tr{cursor:pointer}
 .score{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
-.score-hi{background:#d4edda;color:#155724}
-.score-mid{background:#fff3cd;color:#856404}
-.score-lo{background:#f8d7da;color:#721c24}
-.tag{display:inline-block;background:#e8f0fe;color:#1967d2;padding:1px 6px;border-radius:4px;font-size:11px;margin:1px 2px}
+.score-hi{background:#e6f7e9;color:#1a7d2e}
+.score-mid{background:#fff8e6;color:#8a6d14}
+.score-lo{background:#fde8e8;color:#a71d2a}
+.tag{display:inline-block;background:#eef2ff;color:#3d5af1;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 2px;font-weight:500}
 .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:200;justify-content:center;align-items:center}
 .modal.active{display:flex}
 .modal-content{background:#fff;border-radius:12px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;padding:24px}
@@ -179,45 +198,63 @@ body{font:14px -apple-system,sans-serif;background:#f8f8f8;color:#333}
 .detail-page label{display:block;font-size:13px;color:#666;margin:12px 0 4px}
 .detail-page input,.detail-page textarea,.detail-page select{width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px}
 .detail-page textarea{min-height:100px;resize:vertical}
-.btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
+.btn{padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+.btn:hover{opacity:.85}
 .btn-primary{background:#ff2442;color:#fff}
-.btn-secondary{background:#f0f0f0;color:#333}
-.btn-sm{padding:4px 10px;font-size:12px}
+.btn-secondary{background:#f0f0f0;color:#555}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-danger{background:#888;color:#fff}
 .flex{display:flex;gap:8px;align-items:center}
 .grow{flex:1}
 .pagination{padding:16px;text-align:center;font-size:13px;color:#666}
+.pagination button{margin:0 3px}
 </style>
 </head>
 <body>
 <div class="header">
   <h1>📰 新闻管理</h1>
   <div class="stats" id="stats"></div>
-  <span id="taskBar" style="display:none;font-size:12px;cursor:pointer;color:#ff6b35;font-weight:500" onclick="showTaskModal()"></span>
+  <span id="taskBar" style="display:none;font-size:11px;cursor:pointer;color:#ff6b35;font-weight:600" onclick="showTaskModal()"></span>
   <div class="grow"></div>
-  <input type="text" id="keywordInput" placeholder="关键词" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid #ddd;border-radius:4px" value="AKB">
-  <input type="number" id="kwMax" value="5" min="1" max="30" style="width:50px;padding:4px 6px;font-size:12px;border:1px solid #ddd;border-radius:4px">
-  <button class="btn btn-sm btn-primary" onclick="triggerFetch('keywords')" id="kwBtn">🔍 抓取</button>
-  <input type="number" id="recomMax" value="10" min="1" max="30" style="width:50px;padding:4px 6px;font-size:12px;border:1px solid #ddd;border-radius:4px">
-  <button class="btn btn-sm btn-primary" onclick="triggerFetch('recom')" id="recomBtn">📰 推荐</button>
-  <button class="btn btn-sm" onclick="triggerPublish()" id="pubBtn" style="background:#ff6b35;color:#fff">📤 发布到小红书</button>
-  <button class="btn btn-sm btn-secondary" onclick="location.reload()">刷新</button>
+  <div class="grp">
+    <label>抓取</label>
+    <input type="text" id="keywordInput" placeholder="关键词" value="AKB" style="width:80px">
+    <input type="number" id="kwMax" value="5" min="1" max="30">
+    <button class="btn btn-sm btn-primary" onclick="triggerFetch('keywords')" id="kwBtn">🔍 关键词</button>
+    <input type="number" id="recomMax" value="10" min="1" max="30">
+    <button class="btn btn-sm btn-primary" onclick="triggerFetch('recom')" id="recomBtn">📰 推荐</button>
+  </div>
+  <div class="grp">
+    <label>发布</label>
+    <input type="datetime-local" id="postTime" style="width:140px" title="定时发布时间">
+    <button class="btn btn-sm" onclick="triggerPublish()" id="pubBtn" style="background:#ff6b35;color:#fff">📤 发布到小红书</button>
+  </div>
+  <div class="grp">
+    <label>管理</label>
+    <button class="btn btn-sm btn-danger" onclick="archiveSelected()" id="archiveBtn">📦 归档选中</button>
+    <button class="btn btn-sm btn-secondary" onclick="location.reload()">🔄 刷新</button>
+  </div>
 </div>
-<div class="filters">
+<div class="toolbar filters">
   <input type="text" id="search" placeholder="搜索标题/正文...">
+  <div class="sep"></div>
   <input type="date" id="dateFrom" title="开始日期">
   <input type="date" id="dateTo" title="结束日期">
+  <div class="sep"></div>
   <select id="category"><option value="">全部分类</option></select>
   <select id="status"><option value="active">活跃</option><option value="archived">已归档</option></select>
   <select id="publishXhs"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
-  <button class="btn btn-primary btn-sm" onclick="loadList()">筛选</button>
+  <button class="btn btn-primary btn-sm" onclick="loadList()">🔍 筛选</button>
 </div>
 <table class="table">
   <thead><tr>
+    <th style="width:30px"><input type="checkbox" onclick="selectAllRows(this.checked)" title="全选"></th>
     <th style="width:40px">#</th>
     <th onclick="setSort('pub_time')">新闻时间 ↕</th>
     <th>标题</th>
     <th style="width:55px">发布XHS</th>
     <th style="width:85px">发布XHS时间</th>
+    <th style="width:50px">状态</th>
     <th>分类</th>
     <th onclick="setSort('title_score')">评分 ↕</th>
     <th>标签</th>
@@ -283,6 +320,7 @@ async function loadList(){
     category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value});
   const r=await fetch('/api/news?'+p); const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>`<tr>
+    <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()"></td>
     <td style="color:#999;font-size:11px">${page*100+i+1}</td>
     <td style="white-space:nowrap">${n.pub_time||''}</td>
     <td><a href="/detail/${n.key}" style="color:#333;text-decoration:none"
@@ -290,6 +328,7 @@ async function loadList(){
         <span style="color:#999;font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
     <td style="font-size:11px;color:#999">${n.publish_time||''}</td>
+    <td style="font-size:11px">${n.status==='archived'?'📦':'●'}</td>
     <td>${n.category||''}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</td>
@@ -369,7 +408,8 @@ async function triggerPublish(){
   S('taskModalTitle').textContent='📤 发布到小红书';
   S('taskLog').textContent='⏳ 启动中...';
   S('taskModal').classList.add('active');
-  const r=await fetch('/api/trigger-publish',{method:'POST'});
+  var pt=S('postTime').value; if(pt)pt=pt.replace('T',' ')+':00';
+  const r=await fetch('/api/trigger-publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_time:pt||''})});
   const d=await r.json();
   if(d.locked){S('taskLog').textContent='🔒 '+d.msg; b.textContent='📤 发布到小红书'; b.style.opacity='1'; b.disabled=false; return;}
   const tid=d.task_id;
@@ -387,6 +427,16 @@ async function triggerPublish(){
 }
 async function togglePublish(key,val){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
+  loadList();
+}
+function selectAllRows(val){
+  document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val;});
+}
+async function archiveSelected(){
+  var keys=[]; document.querySelectorAll('.rowSel:checked').forEach(cb=>{keys.push(cb.value);});
+  if(!keys.length){alert('请先勾选新闻');return;}
+  if(!confirm('确定归档 '+keys.length+' 条新闻？'))return;
+  await fetch('/api/archive-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys})});
   loadList();
 }
 async function loadCategories(){
