@@ -45,7 +45,9 @@ def _download(key: str, gallery_url: str = ""):
         row = get_by_key(key)
         article_url = row.get('link', '') if row else ''
 
-        # Detect gallery if not provided
+        # 优先用已存储的图集源链接，其次从原文检测
+        if not gallery_url:
+            gallery_url = (row.get('gallery_url','') or '').strip()
         if not gallery_url:
             if article_url:
                 log.append(f'🔍 检测图集链接: {article_url[:60]}...')
