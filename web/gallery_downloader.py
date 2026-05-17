@@ -9,8 +9,7 @@ from config.yahoo_conf import GALLERY_CACHE_DIR
 from sqlite_db import get_by_key, update_news
 
 # Reuse scripts download components
-from gallery_fetch import (detect_gallery_link, scrape_gallery_images,
-                           download_images, HEADERS)
+from gallery_fetch import detect_gallery_link, scrape_gallery_images, HEADERS
 # Import Instagram/YouTube downloaders
 from unified_media_downloader import download_instagram as _dl_ig
 from unified_media_downloader import download_youtube as _dl_yt
@@ -82,10 +81,19 @@ def _download(key: str, gallery_url: str = ""):
                 task['log'] = '\n'.join(log)
                 return
             log.append(f'📷 抓到 {len(image_urls)} 张图片')
-            log.append(f'  下载 {len(image_urls)} 张图片...')
-            files = download_images(image_urls, d, gallery_url=gallery_url)
-            for f in files:
-                log.append(f'    ✓ {f}')
+            task['log'] = '\n'.join(log)
+            for i, url in enumerate(image_urls):
+                try:
+                    resp = __import__('requests').get(url, headers=HEADERS, timeout=30)
+                    ext = url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
+                    if ext not in ('jpg','jpeg','png','webp','gif','mp4'):
+                        ext = 'jpg'
+                    fname = f'{i+1:03d}.{ext}'
+                    (d / fname).write_bytes(resp.content)
+                    log.append(f'    ✓ {fname}')
+                except Exception as e2:
+                    log.append(f'    ✗ {i+1:03d}: {e2}')
+                task['log'] = '\n'.join(log)
 
         task['status'] = 'done'
         images = [str(d / f) for f in sorted(os.listdir(d))
