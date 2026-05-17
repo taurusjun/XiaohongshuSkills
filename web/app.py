@@ -489,7 +489,7 @@ async function loadList(){
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
   </tr>`).join('');
-  S('stats').innerHTML=`<b>${d.total}</b> 条 · 今日 <b>${d.today}</b> · 待发布 <b>${d.pending}</b>`;
+  S('stats').innerHTML=`<b>${d.total}</b> 条 · 今日 <b>${d.today}</b> · 待发 <b>${d.pending}</b> · 已发 <b>${d.published||0}</b>`;
   // Show/hide publish bar
   const pendingBar=document.getElementById('publishBar');
   if(d.pending>0){pendingBar.style.display='flex';document.getElementById('pendingCount').textContent=d.pending}
@@ -745,6 +745,18 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     {% endif %}
     <div class="field-row" style="margin-bottom:4px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
     <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
+    <div class="selects-row" style="margin-bottom:8px">
+      <label>发布XHS</label>
+      <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)">
+        <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
+        <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
+      </select>
+      <label>状态</label>
+      <select name="status" onchange="autoSaveField('status',this.value)">
+        <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+        <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
+      </select>
+    </div>
     <hr class="sep-line">
     <div class="field-row" style="margin-bottom:4px"><label>原文链接</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
     <div class="field-row" style="margin-bottom:4px"><label>封面图</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
@@ -797,13 +809,15 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row field-row-ta"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea></div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
     </div>
-    <div class="selects-row" style="margin-top:8px">
-      <label>发布XHS</label>
-      <select name="publish_xhs"><option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option><option value="1" {{'selected' if news.publish_xhs else ''}}>是</option></select>
-      <label>状态</label>
-      <select name="status"><option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option><option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option></select>
-    </div>
   </div>
+
+  {% if news.title_ja or news.content_ja %}
+  <div class="card">
+    <h3 style="margin-bottom:8px">📰 原文</h3>
+    {% if news.title_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文标题</p><p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">{{news.title_ja}}</p>{% endif %}
+    {% if news.content_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文摘要</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.6">{{news.content_ja[:2000]}}</p>{% endif %}
+  </div>
+  {% endif %}
 
 </div>
 
@@ -856,6 +870,11 @@ function switchScoreTab(tab){
 switchScoreTab('title');
 {% endif %}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function autoSaveField(field,val){
+  var data={};data[field]=field==='publish_xhs'?parseInt(val):val;
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1000);
+}
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone} = opts;
   btn.disabled=true;btn.style.opacity='0.6';btn.textContent='⏳ 运行中...';btn.style.background='var(--red)';btn.style.color='#fff';
