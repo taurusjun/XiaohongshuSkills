@@ -547,12 +547,12 @@ DETAIL_HTML = r"""
 *{margin:0;padding:0;box-sizing:border-box}
 body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 .topbar{background:var(--card-bg);padding:10px 24px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}
-.topbar a{color:var(--red);text-decoration:none;font-size:13px;font-weight:500}
+.topbar a{color:var(--red);text-decoration:none;font-size:13px;font-weight:500;flex-shrink:0}
 .topbar a:hover{opacity:.8}
-.topbar .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.page-detail{padding:20px;max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.topbar .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.page-detail{padding:20px;max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
 .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px}
-.card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text)}
+.card h3{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--text);display:flex;align-items:center;gap:6px}
 .btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;white-space:nowrap;line-height:1.4;text-decoration:none}
 .btn:hover{filter:brightness(.95)}
 .btn:disabled{opacity:.4;pointer-events:none}
@@ -560,15 +560,23 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .btn-orange{background:var(--orange);color:#fff}
 .btn-gray{background:#eef0f2;color:#555}
 .btn-sm{padding:3px 10px;font-size:11px}
+.meta-grid{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px}
+.meta-item{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px}
+.meta-item b{color:var(--text)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
+.badge-green{background:#e6f7e9;color:#1a7d2e}
+.badge-gray{background:#f0f0f0;color:#888}
 .inline-input,.inline-textarea{border:none;border-bottom:2px dashed transparent;background:transparent;padding:6px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0}
 .inline-input:hover,.inline-textarea:hover{border-bottom-color:#ddd}
 .inline-input:focus,.inline-textarea:focus{border-bottom-color:var(--red);border-bottom-style:solid}
 .inline-textarea{resize:vertical;min-height:100px}
 .auto-resize{resize:none;overflow:hidden;transition:height .1s}
 .inline-textarea:focus{border:1px solid var(--red);border-radius:6px;padding:8px}
-.field-group{display:flex;flex-direction:column;gap:12px}
+.field-group{display:flex;flex-direction:column;gap:10px}
 .field-row{display:flex;align-items:center;gap:12px}
-.field-row label{font-size:12px;color:var(--text2);width:78px;flex-shrink:0;text-align:right}
+.field-row-ta{align-items:flex-start}
+.field-row-ta label{padding-top:7px}
+.field-row label{font-size:12px;color:var(--text2);width:68px;flex-shrink:0;text-align:right}
 .field-row .value{flex:1}
 .cover-img{max-width:100%;max-height:360px;border-radius:8px;object-fit:cover}
 .url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
@@ -576,12 +584,8 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
 .img-strip .img-item img{height:130px;border-radius:6px;display:block}
 .img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
-.score-row{display:flex;gap:16px;font-size:13px;color:var(--text2);margin-bottom:12px}
-.score-row b{color:var(--text)}
-.score-block{background:#fafbfc;border-radius:8px;padding:14px;margin-top:4px}
-.score-block summary{font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);user-select:none}
-.score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:5px;margin-top:8px}
-.score-item{text-align:center;padding:4px 8px;border-radius:5px;font-size:11px}
+.score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
+.score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
 .score-plus{background:#dcfce7;color:#15803d}
 .score-minus{background:#fee2e2;color:#b91c1c}
 .tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
@@ -592,20 +596,39 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .selects-row{display:flex;gap:16px;align-items:center}
 .selects-row label{font-size:12px;color:var(--text2);margin-right:4px}
 .selects-row select{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff}
-.actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
 .toast{position:fixed;top:20px;right:20px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:8px;display:none;z-index:999;font-weight:500;font-size:13px}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
 .modal.active{display:flex}
 .modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.sep-line{border:none;border-top:1px solid var(--border);margin:10px 0}
 </style>
 </head>
 <body>
-<div class="topbar"><a href="/">← 返回列表</a><span class="title">{{news.title}}</span></div>
+<div class="topbar">
+  <a href="/">← 返回</a>
+  {% if news.fetch_by %}<span class="badge badge-gray">{{news.fetch_by}}</span>{% endif %}
+  <span class="title">{{news.title}}</span>
+  <button class="btn btn-red" id="saveBtn">💾 保存修改</button>
+</div>
 
 <div class="page-detail">
 
   <div class="card">
-    {% if news.image_url %}<img src="{{news.image_url}}" class="cover-img" style="margin-bottom:12px">{% endif %}
+    {% if news.image_url %}<img src="{{news.image_url}}" class="cover-img" style="margin-bottom:10px">{% endif %}
+    <div class="meta-grid">
+      <span class="badge {% if news.status=='archived' %}badge-gray{% else %}badge-green{% endif %}">{% if news.status=='archived' %}📦 已归档{% else %}● 活跃{% endif %}</span>
+      <span class="meta-item">分类 <b>{{news.category or '-'}}</b></span>
+      <span class="meta-item">来源 <b>{{news.source or '-'}}</b></span>
+      <span class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></span>
+      <span class="meta-item">入库 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></span>
+    </div>
+    {% if scores %}
+    <div class="meta-item" style="margin-bottom:8px">📊 标题评分 <b>{{"%.1f"|format(news.title_score or 0)}}</b> · 内容评分 <b>{{"%.1f"|format(news.content_score or 0)}}</b></div>
+    {% endif %}
+    <div class="field-row" style="margin-bottom:4px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
+    <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
+    <hr class="sep-line">
     <div class="field-row" style="margin-bottom:4px"><label>原文链接</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
     <div class="field-row" style="margin-bottom:4px"><label>封面图</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
     {% if news.original_image_url and news.original_image_url != news.image_url %}
@@ -615,17 +638,15 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   </div>
 
   <div class="card">
-    <div class="actions">
-      <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📸 下载图集</button>
+    <h3>📸 图集 <span style="font-weight:400;font-size:12px;color:var(--text2)">— 下载并选择发布图片</span></h3>
+    <div class="actions" style="margin-bottom:8px">
+      <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载图集</button>
       {% if news.gallery_images %}
       <button class="btn btn-gray btn-sm" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
       {% endif %}
     </div>
-    <pre id="galleryLog" style="display:none;margin-top:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
-  </div>
-  {% if news.gallery_images %}
-  <div class="card">
-    <h3>📸 发布图片 <span style="font-weight:400;font-size:12px;color:var(--text2)">— 勾选将发到小红书</span></h3>
+    <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
+    {% if news.gallery_images %}
     <div class="img-strip" id="publishImgStrip">
       {% for p in news.gallery_images %}
       <div class="img-item" onclick="togglePublishImg(this)">
@@ -635,29 +656,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       {% endfor %}
     </div>
     <button class="btn btn-red btn-sm" onclick="savePublishImages()" style="margin-top:8px">💾 保存发布图</button>
-  </div>
-  {% endif %}
-
-  <div class="card">
-    <div class="field-group">
-      <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
-      <div class="field-row"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
-      <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
-      <div class="field-row"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:100px">{{news.content or ''}}</textarea></div></div>
-      <div class="field-row"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea></div></div>
-    </div>
-    <div class="field-row" style="margin-top:8px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
-    <div class="field-row" style="margin-top:4px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
-    <div class="selects-row" style="margin-top:8px">
-      <label>发布XHS</label>
-      <select name="publish_xhs"><option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option><option value="1" {{'selected' if news.publish_xhs else ''}}>是</option></select>
-      <label>状态</label>
-      <select name="status"><option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option><option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option></select>
-    </div>
-    <div class="actions" style="margin-top:14px">
-      <button class="btn btn-red" id="saveBtn">💾 保存修改</button>
-      <a href="/" class="btn btn-gray">取消</a>
-    </div>
+    {% endif %}
   </div>
 
   {% if scores %}
@@ -667,9 +666,27 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <button class="btn btn-red btn-sm" id="tabTitle" onclick="switchScoreTab('title')">标题评分 {{"%.1f"|format(news.title_score or 0)}}</button>
       <button class="btn btn-gray btn-sm" id="tabContent" onclick="switchScoreTab('content')">内容评分 {{"%.1f"|format(news.content_score or 0)}}</button>
     </div>
-    <div class="score-grid" id="scoreGrid" style="margin-top:4px"></div>
+    <div class="score-grid" id="scoreGrid"></div>
   </div>
   {% endif %}
+
+  <div class="card">
+    <h3>✏️ 内容编辑</h3>
+    <div class="field-group">
+      <div class="field-row"><label>标题</label><div class="value"><input class="inline-input" name="title" value="{{news.title}}"></div></div>
+      <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
+      <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
+      <hr class="sep-line">
+      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea></div></div>
+      <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
+    </div>
+    <div class="selects-row" style="margin-top:8px">
+      <label>发布XHS</label>
+      <select name="publish_xhs"><option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option><option value="1" {{'selected' if news.publish_xhs else ''}}>是</option></select>
+      <label>状态</label>
+      <select name="status"><option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option><option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option></select>
+    </div>
+  </div>
 
 </div>
 
@@ -728,7 +745,6 @@ function addTag(e){
   }
 }
 renderTags();
-// Auto-resize textareas
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
 document.querySelectorAll('.auto-resize').forEach(function(ta){
   ta.addEventListener('input',function(){autoGrow(this)});
@@ -812,6 +828,7 @@ async function savePublishImages(){
 })();
 </script>
 </body></html>"""
+
 @app.route('/')
 def index():
     return render_template_string(INDEX_HTML)
