@@ -32,6 +32,7 @@ def init_db():
                 image_url   TEXT,
                 original_image_url TEXT,
                 gallery_images TEXT,
+                publish_images TEXT DEFAULT '',
                 gallery_video  TEXT,
                 gallery_url   TEXT,
                 video_path  TEXT,
@@ -81,8 +82,10 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_scores_key ON scores(news_key);
         """)
-        # Compat: add fetch_by to existing DBs
+        # Compat: add fetch_by / publish_images to existing DBs
         try: db.execute("ALTER TABLE news ADD COLUMN fetch_by TEXT DEFAULT ''")
+        except: pass
+        try: db.execute("ALTER TABLE news ADD COLUMN publish_images TEXT DEFAULT ''")
         except: pass
 
 # ── 新闻 CRUD ──
@@ -186,6 +189,8 @@ def update_news(key: str, fields: dict) -> bool:
         updates['tags'] = ','.join(updates['tags'])
     if 'gallery_images' in updates and isinstance(updates['gallery_images'], list):
         updates['gallery_images'] = json.dumps(updates['gallery_images'])
+    if 'publish_images' in updates and isinstance(updates['publish_images'], list):
+        updates['publish_images'] = json.dumps(updates['publish_images'])
     set_clause = ', '.join(f"{k}=?" for k in updates)
     vals = list(updates.values()) + [key]
     with _connect() as db:

@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project roo
 import json
 import time
 import random
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
@@ -99,7 +100,7 @@ def _disable_proxy():
 NOTION_API_KEY    = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
-from config.yahoo_conf import STORAGE_BACKEND
+from config.yahoo_conf import STORAGE_BACKEND, GALLERY_CACHE_DIR
 
 LITELLM_URL        = os.environ.get("LITELLM_URL", "https://litellm-prod.toolsfdg.net")
 LITELLM_API_KEY    = os.environ.get("LITELLM_API_KEY", "")
@@ -214,7 +215,7 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 最后一句：互动召唤，≤10字，如"你怎么看？""你知道吗？"。
 全文80-120字，口语化，不要新闻腔。）"""
 
-    result = call_litellm(prompt, max_tokens=3000)
+    result = call_litellm(prompt, system_prompt="只输出短配文正文，不要任何分析、推理过程、字数检查。", max_tokens=3000)
     if not result:
         return ""
 
@@ -881,9 +882,13 @@ def process_news_item(news: dict, no_translate: bool = False,
     news.setdefault('ja_summary', '')
     news.setdefault('original_image_url', '')
 
-    # 4. Cloudinary 上传
+    # 4. 封面图处理（SQLite 下载到本地，Notion 上传 Cloudinary）
     if news['original_image_url']:
-        news['image_url'] = upload_cover_image(news['original_image_url'])
+        if STORAGE_BACKEND == 'sqlite':
+            news['image_url'] = news['original_image_url']  # 暂存原URL，后面下载到本地
+        else:
+            cdn_url = upload_cover_image(news['original_image_url'])
+            news['image_url'] = cdn_url if cdn_url else news['original_image_url']
     else:
         news.setdefault('image_url', "")
         print("    封面图: ⚠️ 未找到")
@@ -915,12 +920,29 @@ def process_news_item(news: dict, no_translate: bool = False,
                 'status': 'active',
                 'fetch_by': keyword if keyword else 'recomm',
             })
+            news_key = extract_key_from_url(news.get('link', ''))
+            # 封面图存本地（SQLite 专属）
+            cover_url = news.get('image_url', '')
+            if cover_url and cover_url.startswith('http'):
+                try:
+                    import requests as _req, hashlib as _hl
+                    cover_dir = Path(os.path.expanduser(GALLERY_CACHE_DIR)) / news_key
+                    cover_dir.mkdir(parents=True, exist_ok=True)
+                    resp = _req.get(cover_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+                    ext = cover_url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
+                    if ext not in ('jpg','jpeg','png','webp'): ext = 'jpg'
+                    cover_path = cover_dir / f'cover.{ext}'
+                    cover_path.write_bytes(resp.content)
+                    from sqlite_db import update_news as _sql_update
+                    _sql_update(news_key, {'image_url': str(cover_path)})
+                    print(f"    封面图本地: {cover_path}")
+                except Exception as e:
+                    print(f"    ⚠️ 封面本地下载失败: {e}")
             # 写入评分维度（需在 insert_news 之后，满足外键约束）
             quality_scores = news.get('_quality', {}).get('scores')
             if quality_scores:
                 try:
                     from sqlite_db import upsert_scores
-                    news_key = extract_key_from_url(news.get('link', ''))
                     upsert_scores(news_key, quality_scores)
                     print(f"    📊 评分明细已写入: {len(quality_scores)}项")
                 except Exception as e:

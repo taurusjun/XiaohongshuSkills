@@ -29,7 +29,7 @@ def get_status(key: str) -> dict:
     d = CACHE_DIR / key
     if d.is_dir():
         cached = [str(d / f) for f in sorted(os.listdir(d))
-                  if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.')]
+                  if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.')]
         if cached:
             return {'status': 'done', 'images': cached, 'log': ''}
     return {'status': 'idle', 'images': [], 'log': ''}
