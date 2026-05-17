@@ -604,27 +604,8 @@ async function triggerFetch(mode){
 
 async function triggerPublish(){
   var b=document.getElementById('pubBtn');var orig=b.textContent;
-  var pt=S('postTime').value;if(pt)pt=pt.replace('T',' ')+':00';
-  runTask({title:'📤 发布到小红书',apiUrl:'/api/trigger-publish',apiBody:{post_time:pt||''},btn:b,origText:orig,taskLabel:'发布',onDone:null});
-}
-async function triggerPublish(){
-  const b=document.getElementById('pubBtn');b.disabled=true;b.style.opacity='0.5';b.textContent='⏳ 发布中...';
-  S('taskModalTitle').textContent='📤 发布到小红书';S('taskLog').textContent='⏳ 启动中...';S('taskModal').classList.add('active');
-  var pt=S('postTime').value;if(pt)pt=pt.replace('T',' ')+':00';
-  const r=await fetch('/api/trigger-publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_time:pt||''})});
-  const d=await r.json();
-  if(d.locked){S('taskLog').textContent='🔒 '+d.msg;b.textContent='📤 发布到小红书';b.style.opacity='1';b.disabled=false;return}
-  const tid=d.task_id;
-  activeTaskId=tid;activeTaskLabel='发布';localStorage.setItem('lastTaskId',tid);
-  S('taskBar').style.display='';S('taskBar').textContent='⏳ 发布任务运行中...点击查看';
-  for(let i=0;i<120;i++){
-    await new Promise(r=>setTimeout(r,3000));
-    const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
-    if(sd.log)S('taskLog').textContent=sd.log;
-    if(sd.status==='done'){b.textContent='✅ 完成';b.style.opacity='1';activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';setTimeout(()=>{b.disabled=false;b.textContent='📤 发布到小红书'},2000);return}
-    if(sd.status&&sd.status.startsWith('error')){b.textContent='❌ 失败';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';S('taskLog').textContent+='\n\n❌ '+sd.status;return}
-  }
-  b.textContent='⏰ 超时';b.style.opacity='1';b.disabled=false;activeTaskId=null;localStorage.removeItem('lastTaskId');S('taskBar').style.display='none';
+  var pt=S('postTime').value;pt=pt?pt.replace('T',' '):'';
+  runTask({title:'📤 发布到小红书',apiUrl:'/api/trigger-publish',apiBody:{post_time:pt},btn:b,origText:orig,taskLabel:'发布',onDone:null});
 }
 async function togglePublish(key,val){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
@@ -757,6 +738,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
         <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
       </select>
     </div>
+    {% if news.publish_time %}<div class="meta-item" style="margin-bottom:6px">发布XHS时间 <b>{{news.publish_time}}</b> <span style="cursor:pointer;color:var(--red);font-size:11px" onclick="autoSaveField('publish_time','');location.reload()">[清除]</span></div>{% endif %}
     <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
     <hr class="sep-line">
     <div class="field-row" style="margin-bottom:3px"><label>原文</label><div class="value"><a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.link or ''}}">{{news.link or '-'}}</a></div></div>
