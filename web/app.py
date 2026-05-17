@@ -734,36 +734,37 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <div class="card">
     {% if news.image_url %}<img src="{{ '/local-image?path=' + news.image_url if news.image_url.startswith('/') else news.image_url }}" class="cover-img" style="margin-bottom:10px">{% endif %}
     <div class="meta-grid">
-      <span class="badge {% if news.status=='archived' %}badge-gray{% else %}badge-green{% endif %}">{% if news.status=='archived' %}📦 已归档{% else %}● 活跃{% endif %}</span>
-      <span class="meta-item">分类 <b>{{news.category or '-'}}</b></span>
       <span class="meta-item">来源 <b>{{news.source or '-'}}</b></span>
       <span class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></span>
       <span class="meta-item">入库 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></span>
+      {% if scores %}
+      <span class="meta-item">📊 标题 <b>{{"%.1f"|format(news.title_score or 0)}}</b> · 内容 <b>{{"%.1f"|format(news.content_score or 0)}}</b></span>
+      {% endif %}
     </div>
-    {% if scores %}
-    <div class="meta-item" style="margin-bottom:8px">📊 标题评分 <b>{{"%.1f"|format(news.title_score or 0)}}</b> · 内容评分 <b>{{"%.1f"|format(news.content_score or 0)}}</b></div>
-    {% endif %}
-    <div class="field-row" style="margin-bottom:4px"><label>分类</label><div class="value"><input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:200px"></div></div>
-    <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
-    <div class="selects-row" style="margin-bottom:8px">
-      <label>发布XHS</label>
-      <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <span style="font-size:12px;color:var(--text2)">分类</span>
+      <input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:120px">
+      <span style="color:var(--border)">|</span>
+      <span style="font-size:12px;color:var(--text2)">发布XHS</span>
+      <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
         <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
         <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
       </select>
-      <label>状态</label>
-      <select name="status" onchange="autoSaveField('status',this.value)">
+      <span style="color:var(--border)">|</span>
+      <span style="font-size:12px;color:var(--text2)">状态</span>
+      <select name="status" onchange="autoSaveField('status',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
         <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
         <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
       </select>
     </div>
+    <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
     <hr class="sep-line">
-    <div class="field-row" style="margin-bottom:4px"><label>原文链接</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
-    <div class="field-row" style="margin-bottom:4px"><label>封面图</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>原文</label><div class="value"><input class="url-input" value="{{news.link or ''}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>封面</label><div class="value"><input class="url-input" value="{{news.image_url or ''}}" readonly onclick="this.select()"></div></div>
     {% if news.original_image_url and news.original_image_url != news.image_url %}
-    <div class="field-row" style="margin-bottom:4px"><label>原图</label><div class="value"><input class="url-input" value="{{news.original_image_url}}" readonly onclick="this.select()"></div></div>
+    <div class="field-row" style="margin-bottom:3px"><label>原图</label><div class="value"><input class="url-input" value="{{news.original_image_url}}" readonly onclick="this.select()"></div></div>
     {% endif %}
-    <div class="field-row"><label>图集源</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
+    <div class="field-row"><label>图集</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
   </div>
 
   <div class="card">
