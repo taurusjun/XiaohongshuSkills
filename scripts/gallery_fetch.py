@@ -94,6 +94,7 @@ GALLERY_SITES: dict[str, str] = {
     "lasisa.net":            "main img, .entry-content img",
     "jisin.jp":              ".post-content img, .slider-show img",
     "lp.p.pia.jp":           ".photoGallaryArea__largeImage, img[data-src]",
+    "news-postseven.com":    "article img, .post-content img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
