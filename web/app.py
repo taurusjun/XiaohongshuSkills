@@ -90,6 +90,11 @@ def _run_task(cmd, task_id, env=None, on_done=None):
 
 @app.route('/api/gallery-download/<key>', methods=['POST'])
 def api_gallery_download(key):
+    # Per-key lock: check if already running
+    from web.gallery_downloader import _tasks as _gtasks
+    t = _gtasks.get(key, {})
+    if isinstance(t, dict) and t.get('status') == 'running':
+        return jsonify({"locked": True, "msg": "该图集正在下载中"})
     trigger_download(key)
     return jsonify({"status": "started"})
 
@@ -974,25 +979,62 @@ var galleryImages=[];
   var hasCache={% if news.cached_images %}cached.length{% else %}0{% endif %};
   if(hasCache>0||galleryImages.length>0)document.getElementById('galleryBtn').textContent='\u{1f504} 重新下载';
 })();
+var galleryRunning=false;
 async function downloadGallery(){
-  const btn=document.getElementById('galleryBtn');btn.disabled=true;
-  const log=document.getElementById('galleryLog');log.style.display='block';log.textContent='⏳ 开始下载...\n';
-  await fetch('/api/gallery-download/'+key,{method:'POST'});
-  for(let i=0;i<60;i++){
+  if(galleryRunning){return}
+  const btn=document.getElementById('galleryBtn');galleryRunning=true;
+  btn.disabled=true;btn.textContent='⏳ 下载中...';btn.style.background='var(--red)';btn.style.color='#fff';btn.style.opacity='0.6';
+  document.getElementById('taskModalTitle').textContent='📸 下载图集';
+  document.getElementById('taskLog').textContent='⏳ 启动中...';
+  document.getElementById('taskModal').classList.add('active');
+  const log=document.getElementById('galleryLog');log.style.display='block';
+  var r=await fetch('/api/gallery-download/'+key,{method:'POST'});
+  var d=await r.json();
+  if(d.locked){document.getElementById('taskLog').textContent='🔒 '+d.msg;resetGalleryBtn();return}
+  for(var i=0;i<120;i++){
     await new Promise(r=>setTimeout(r,2000));
-    const resp=await fetch('/api/gallery-status/'+key);const d=await resp.json();
-    if(d.log){log.textContent=d.log;log.scrollTop=log.scrollHeight}
-    if(d.status==='done'){
-      d.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
-      btn.disabled=false;btn.textContent='\u{1f504} 重新下载';
-      log.textContent+='\n✅ 完成 ('+d.images.length+'张)';
+    var sr=await fetch('/api/gallery-status/'+key);var sd=await sr.json();
+    if(sd.log){document.getElementById('taskLog').textContent=sd.log;log.textContent=sd.log;log.scrollTop=log.scrollHeight}
+    if(sd.status==='done'){
+      sd.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
+      resetGalleryBtn();btn.textContent='\u{1f504} 重新下载';
+      document.getElementById('taskLog').textContent+='\n✅ 完成 ('+sd.images.length+'张)';
+      log.textContent+='\n✅ 完成 ('+sd.images.length+'张)';
       setTimeout(function(){showGalleryModal();log.style.display='none'},1500);
       return;
     }
-    if(d.status&&d.status.toString().startsWith('error')){log.textContent+='\n❌ '+d.status;btn.disabled=false;return}
+    if(sd.status&&sd.status.toString().startsWith('error')){document.getElementById('taskLog').textContent+='\n❌ '+sd.status;log.textContent+='\n❌ '+sd.status;resetGalleryBtn();return}
   }
-  log.textContent+='\n⏰ 超时';btn.disabled=false;
+  log.textContent+='\n⏰ 超时';resetGalleryBtn();
 }
+function resetGalleryBtn(){
+  galleryRunning=false;var b=document.getElementById('galleryBtn');
+  b.disabled=false;b.style.background='';b.style.color='';b.style.opacity='1';
+}
+// Check if gallery download is running on page load
+(function checkGalleryRunning(){
+  fetch('/api/gallery-status/'+key).then(r=>r.json()).then(function(d){
+    if(d.status==='running'){
+      galleryRunning=true;var b=document.getElementById('galleryBtn');
+      b.disabled=true;b.textContent='⏳ 下载中...';b.style.background='var(--red)';b.style.color='#fff';b.style.opacity='0.6';
+      document.getElementById('taskModalTitle').textContent='📸 下载图集';
+      document.getElementById('taskLog').textContent=d.log||'⏳ 运行中...';
+      document.getElementById('taskModal').classList.add('active');
+      document.getElementById('galleryLog').style.display='block';
+      // Keep polling
+      var tid=setInterval(async function(){
+        var sr=await fetch('/api/gallery-status/'+key);var sd=await sr.json();
+        if(sd.log){document.getElementById('taskLog').textContent=sd.log;document.getElementById('galleryLog').textContent=sd.log}
+        if(sd.status==='done'){
+          clearInterval(tid);resetGalleryBtn();b.textContent='\u{1f504} 重新下载';
+          sd.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
+          document.getElementById('taskLog').textContent+='\n✅ 完成 ('+sd.images.length+'张)';
+        }
+        if(sd.status&&sd.status.toString().startsWith('error')){clearInterval(tid);resetGalleryBtn()}
+      },3000);
+    }
+  });
+})();
 function toggleGalleryModal(){var m=document.getElementById('galleryModal');if(m.classList.contains('active'))closeGalleryModal();else showGalleryModal()}
 function showGalleryModal(){
   const grid=document.getElementById('galleryGrid');
