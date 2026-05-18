@@ -759,7 +759,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <div class="actions" style="margin-bottom:8px">
       <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载图集</button>
       {% if news.gallery_images %}
-      <button class="btn btn-gray btn-sm" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
+      <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
       {% endif %}
     </div>
     <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
@@ -998,6 +998,15 @@ async function downloadGallery(){
     if(sd.status==='done'){
       sd.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
       resetGalleryBtn();btn.textContent='\u{1f504} 重新下载';
+      // Show manage gallery button
+      var mgmtBtn=document.getElementById('manageGalleryBtn');
+      if(!mgmtBtn){
+        mgmtBtn=document.createElement('button');
+        mgmtBtn.id='manageGalleryBtn';mgmtBtn.className='btn btn-gray btn-sm';
+        mgmtBtn.textContent='\u{1f5bc} 管理图集';
+        mgmtBtn.onclick=toggleGalleryModal;
+        btn.parentNode.insertBefore(mgmtBtn,btn.nextSibling);
+      }
       document.getElementById('taskLog').textContent+='\n✅ 完成 ('+sd.images.length+'张)';
       log.textContent+='\n✅ 完成 ('+sd.images.length+'张)';
       setTimeout(function(){showGalleryModal();log.style.display='none'},1500);
@@ -1028,6 +1037,13 @@ function resetGalleryBtn(){
         if(sd.status==='done'){
           clearInterval(tid);resetGalleryBtn();b.textContent='\u{1f504} 重新下载';
           sd.images.forEach(function(p){galleryImages.push({path:p,sel:false})});
+          // Show manage gallery button
+          var mgmtBtn=document.getElementById('manageGalleryBtn');
+          if(!mgmtBtn){
+            mgmtBtn=document.createElement('button');mgmtBtn.id='manageGalleryBtn';
+            mgmtBtn.className='btn btn-gray btn-sm';mgmtBtn.textContent='\u{1f5bc} 管理图集';
+            mgmtBtn.onclick=toggleGalleryModal;b.parentNode.insertBefore(mgmtBtn,b.nextSibling);
+          }
           document.getElementById('taskLog').textContent+='\n✅ 完成 ('+sd.images.length+'张)';
         }
         if(sd.status&&sd.status.toString().startsWith('error')){clearInterval(tid);resetGalleryBtn()}
