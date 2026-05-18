@@ -121,8 +121,8 @@ def api_trigger_fetch():
         threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
         return jsonify({"task_id": tid})
     else:
-        cmd = [sys.executable, 'yahoo_recommendations.py',
-               '--max', str(data.get('max',10)), '--push', '--auto']
+        cmd = [sys.executable, 'yahoo_recommendations_sqlite.py',
+               '--max', str(data.get('max',10)), '--push']
     sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
     def on_fetch_done():
         global _fetch_running
