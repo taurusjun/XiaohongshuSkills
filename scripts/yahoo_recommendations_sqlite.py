@@ -85,7 +85,7 @@ def run_parallel(max_results=20, max_workers=3):
             done[0] += 1
             s = '✅' if not news.get('_skip') else '⏭️'
             t = news.get('title_zh', news.get('title_ja',''))[:40]
-            print(f"[{done[0]}/{len(tasks)}] {s} {t}")
+            print(f"[{done[0]}/{len(tasks)}] [{key[:8]}] {s} {t}")
         return key, news
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
