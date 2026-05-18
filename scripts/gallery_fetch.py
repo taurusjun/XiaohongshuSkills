@@ -215,7 +215,16 @@ def detect_gallery_link(article_url: str) -> str:
     if not article_url:
         return ""
     try:
-        resp = requests.get(article_url, headers=HEADERS, timeout=15)
+        import time as _time
+        for attempt in range(3):
+            try:
+                resp = requests.get(article_url, headers=HEADERS, timeout=15)
+                break
+            except Exception:
+                if attempt < 2:
+                    _time.sleep(2)
+                else:
+                    raise
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # Instagram embed（blockquote / iframe）— 优先检测
