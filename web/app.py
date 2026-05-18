@@ -117,7 +117,8 @@ def api_trigger_fetch():
         def _run_keywords():
             log_lines = []
             log_lock = threading.Lock()
-            max_workers = min(len(kws), 3)
+            from config.yahoo_conf import FETCH_PARALLEL
+            max_workers = min(len(kws), FETCH_PARALLEL)
             try:
                 today = _dt_ad2.now().strftime('%Y-%m-%d')
                 log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
