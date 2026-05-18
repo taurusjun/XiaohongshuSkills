@@ -94,7 +94,7 @@ GALLERY_SITES: dict[str, str] = {
     "lasisa.net":            "main img, .entry-content img",
     "jisin.jp":              ".post-content img, .slider-show img",
     "lp.p.pia.jp":           ".photoGallaryArea__largeImage, img[data-src]",
-    "news-postseven.com":    "article img, .post-content img",
+    "news-postseven.com":    ".c-PhotoImage img, article img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -2495,6 +2495,31 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_postseven(gallery_url: str) -> list[str]:
+    """news-postseven.com 图集：.c-PhotoImage 大图"""
+    from urllib.parse import urljoin
+    headers = {**HEADERS, "Referer": "https://www.news-postseven.com/"}
+    try:
+        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ postseven 抓取失败: {e}")
+        return []
+    images = []
+    seen = set()
+    for img in soup.select(".c-PhotoImage img, article img[src*=uploads]"):
+        src = img.get("src") or img.get("data-src") or ""
+        if src and "uploads" in src and src not in seen:
+            seen.add(src)
+            images.append(urljoin(gallery_url, src))
+    # If only 1, convert thumbnail to full-size
+    if len(images) == 1:
+        full = images[0].replace('-500x750', '')
+        if full != images[0]:
+            images.append(full)
+    return images
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2766,6 +2791,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "lp.p.pia.jp" in domain:
         images = _scrape_pia(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "news-postseven.com" in domain:
+        images = _scrape_postseven(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
