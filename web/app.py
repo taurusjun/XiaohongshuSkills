@@ -10,6 +10,7 @@ from sqlite_db import init_db, query_news, get_by_key, update_news, get_scores, 
 from web.gallery_downloader import trigger_download, get_status as gstatus, upload_selected
 
 import subprocess, json, glob, threading, time, shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime as _dt_ad2
 from pathlib import Path as _Path_ad2
 
@@ -115,23 +116,30 @@ def api_trigger_fetch():
         sub_env['PYTHONUNBUFFERED'] = '1'
         def _run_keywords():
             log_lines = []
+            log_lock = threading.Lock()
+            max_workers = min(len(kws), 3)
             try:
                 today = _dt_ad2.now().strftime('%Y-%m-%d')
                 log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
                 with open(log_path, 'a', buffering=1) as log_fh:
                     log_fh.write(f"\n=== {tid} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n")
-                    for k in kws:
-                        log_lines.append(f"\n======== {k['keyword']} (max={k['max']}) ========")
-                        _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
-                        log_fh.write(f"======== {k['keyword']} (max={k['max']}) ========\n")
+                    def run_one(k):
+                        prefix = f"[{k['keyword']}] "
                         cmd = [py, 'yahoo_news_auto.py', '--keyword', k['keyword'], '--max', str(k['max']), '--push', '--auto']
-                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                                text=True, bufsize=1, cwd=scripts_dir, env=sub_env)
-                        for line in proc.stdout:
-                            log_lines.append(line.rstrip())
-                            log_fh.write(line)
-                            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
-                        proc.wait(timeout=600)
+                        try:
+                            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                                    text=True, bufsize=1, cwd=scripts_dir, env=sub_env)
+                            for line in proc.stdout:
+                                with log_lock:
+                                    log_lines.append(prefix + line.rstrip())
+                                    log_fh.write(prefix + line)
+                                    _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
+                            proc.wait(timeout=600)
+                        except Exception as e:
+                            with log_lock:
+                                log_lines.append(f"{prefix}ERROR: {e}")
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        list(executor.map(run_one, kws))
                 _tasks[tid] = {'status': 'done', 'log': '\n'.join(log_lines)}
             except Exception as e:
                 _tasks[tid] = {'status': f'error: {e}', 'log': '\n'.join(log_lines)}
