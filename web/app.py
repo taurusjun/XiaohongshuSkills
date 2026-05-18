@@ -78,7 +78,7 @@ def _run_task(cmd, task_id, env=None, on_done=None):
                 log_lines.append(line.rstrip())
                 log_fh.write(line)
                 _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines)}
-        proc.wait(timeout=600)
+        proc.wait(timeout=7200)
         log = '\n'.join(log_lines).strip()
         _tasks[task_id] = {'status': 'done', 'log': log}
     except Exception as e:
@@ -109,19 +109,37 @@ def api_trigger_fetch():
         kws = data.get('keywords', []) or [{"keyword": data.get('keyword','AKB'), "max": data.get('max',5)}]
         py = sys.executable
         scripts_dir = os.path.join(os.path.dirname(__file__), '..', 'scripts')
-        lines = []
-        for k in kws:
-            lines.append(f'echo "======== {k["keyword"]} (max={k["max"]}) ========"')
-            lines.append(f'{py} yahoo_news_auto.py --keyword "{k["keyword"]}" --max {k["max"]} --push --auto')
-        cmd = ['bash', '-c', '\n'.join(lines)]
         sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'PATH': os.environ.get('PATH','')}
         scripts_dir_abs = os.path.abspath(scripts_dir)
         sub_env['PYTHONPATH'] = scripts_dir_abs + ':' + os.path.abspath(os.path.join(scripts_dir_abs, '..')) + ':' + sub_env.get('PYTHONPATH','')
-        def on_fetch_done():
-            global _fetch_running
-            with _fetch_lock:
-                _fetch_running = False
-        threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
+        sub_env['PYTHONUNBUFFERED'] = '1'
+        def _run_keywords():
+            log_lines = []
+            try:
+                today = _dt_ad2.now().strftime('%Y-%m-%d')
+                log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
+                with open(log_path, 'a', buffering=1) as log_fh:
+                    log_fh.write(f"\n=== {tid} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n")
+                    for k in kws:
+                        log_lines.append(f"\n======== {k['keyword']} (max={k['max']}) ========")
+                        _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
+                        log_fh.write(f"======== {k['keyword']} (max={k['max']}) ========\n")
+                        cmd = [py, 'yahoo_news_auto.py', '--keyword', k['keyword'], '--max', str(k['max']), '--push', '--auto']
+                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                                text=True, bufsize=1, cwd=scripts_dir, env=sub_env)
+                        for line in proc.stdout:
+                            log_lines.append(line.rstrip())
+                            log_fh.write(line)
+                            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
+                        proc.wait(timeout=600)
+                _tasks[tid] = {'status': 'done', 'log': '\n'.join(log_lines)}
+            except Exception as e:
+                _tasks[tid] = {'status': f'error: {e}', 'log': '\n'.join(log_lines)}
+                _save_task_log(tid, '\n'.join(log_lines) + f'\nERROR: {e}')
+            finally:
+                global _fetch_running
+                with _fetch_lock: _fetch_running = False
+        threading.Thread(target=_run_keywords, daemon=True).start()
         return jsonify({"task_id": tid})
     else:
         cmd = [sys.executable, 'yahoo_recommendations.py',
@@ -161,6 +179,9 @@ def api_trigger_publish():
 def api_task(tid):
     t = _tasks.get(tid, 'unknown')
     if isinstance(t, dict):
+        # Sanitize log to ensure valid JSON
+        if 'log' in t and t['log']:
+            t['log'] = t['log'].replace('\x00','').replace('\x1b','')
         return jsonify(t)
     return jsonify({"status": t, "log": ""})
 
@@ -465,7 +486,7 @@ async function checkActiveTasks(){
 }
 function showTaskModal(){if(!activeTaskId)return;S('taskModal').classList.add('active');pollTaskLog(activeTaskId)}
 async function pollTaskLog(tid){
-  const sr=await fetch('/api/task/'+tid);const sd=await sr.json();
+  try{var sr=await fetch('/api/task/'+tid);var sd=await sr.json()}catch(e){setTimeout(()=>pollTaskLog(tid),3000);return}
   if(sd.log)S('taskLog').textContent=sd.log;
   if(sd.status==='running'){setTimeout(()=>pollTaskLog(tid),3000)}else{checkActiveTasks()}
 }
@@ -573,9 +594,9 @@ async function runTask(opts){
   activeTaskId=tid;localStorage.setItem('lastTaskId',tid);
   S('taskBar').style.display='';S('taskBar').textContent='⏳ '+taskLabel+'运行中...点击查看';
   var lastLen=0;
-  for(var i=0;i<120;i++){
+  for(var i=0;i<2400;i++){
     await new Promise(r=>setTimeout(r,3000));
-    var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+    try{var sr=await fetch('/api/task/'+tid);var sd=await sr.json()}catch(e){continue}
     if(sd.log){
       if(sd.log.length>lastLen){S('taskLog').textContent=sd.log;S('taskLog').scrollTop=S('taskLog').scrollHeight;lastLen=sd.log.length}
     }
@@ -873,7 +894,7 @@ async function runTask(opts){
   var tid=d.task_id,lastLen=0;
   for(var i=0;i<60;i++){
     await new Promise(r=>setTimeout(r,2000));
-    var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+    try{var sr=await fetch('/api/task/'+tid);var sd=await sr.json()}catch(e){continue}
     if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
     if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.opacity='1';btn.style.background='';btn.style.color='';setTimeout(()=>{if(onDone)onDone()},1000);return}
     if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;return}
@@ -899,7 +920,7 @@ async function regenerateContent(){
     var tid='regen_'+key,lastLen=(d.log||'').length;
     for(var i=0;i<60;i++){
       await new Promise(r=>setTimeout(r,2000));
-      var sr=await fetch('/api/task/'+tid);var sd=await sr.json();
+      try{var sr=await fetch('/api/task/'+tid);var sd=await sr.json()}catch(e){continue}
       if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
       if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.background='';btn.style.color='';btn.style.opacity='1';setTimeout(()=>location.reload(),1000);return}
       if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.background='';btn.style.color='';btn.style.opacity='1';btn.disabled=false;return}
