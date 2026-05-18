@@ -92,6 +92,7 @@ GALLERY_SITES: dict[str, str] = {
     "times.abema.tv":        ".article-body",
     "realsound.jp":          "figure img, .post-content img",
     "lasisa.net":            "main img, .entry-content img",
+    "jisin.jp":              ".post-content img, .slider-show img",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -2483,6 +2484,40 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_jisin(gallery_url: str) -> list[str]:
+    """jisin.jp 图集：取 .slider-show img + 所有 img[src*=uploads] 图片"""
+    from urllib.parse import urljoin
+    headers = {**HEADERS, "Referer": "https://www.jisin.jp/"}
+    try:
+        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ jisin.jp 抓取失败: {e}")
+        return []
+
+    images: list[str] = []
+    seen: set[str] = set()
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or img.get("data-lazy-src") or ""
+        if not src or "logo" in src or "icon" in src or "banner" in src:
+            continue
+        # Prefer large images, skip site chrome
+        if src.startswith("/"):
+            src = urljoin(gallery_url, src)
+        if src not in seen:
+            seen.add(src)
+            images.append(src)
+    # Also try .slider-show specifically
+    slider = soup.select_one(".slider-show")
+    if slider:
+        for img in slider.find_all("img"):
+            src = img.get("src") or img.get("data-src") or ""
+            if src and src not in seen and "logo" not in src:
+                seen.add(src)
+                images.insert(0, urljoin(gallery_url, src) if src.startswith("/") else src)
+    return images
+
 def _scrape_vivi_tv(gallery_url: str) -> list[str]:
     """vivi.tv 图集：图片通过 Cloudinary CDN 代理，从 URL 提取原始 wp-content/uploads 图片。"""
     import re
@@ -2669,6 +2704,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "times.abema.tv" in domain:
         images = _scrape_abema_tv(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "jisin.jp" in domain:
+        images = _scrape_jisin(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
