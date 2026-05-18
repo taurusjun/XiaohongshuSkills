@@ -93,6 +93,7 @@ GALLERY_SITES: dict[str, str] = {
     "realsound.jp":          "figure img, .post-content img",
     "lasisa.net":            "main img, .entry-content img",
     "jisin.jp":              ".post-content img, .slider-show img",
+    "lp.p.pia.jp":           ".photoGallaryArea__largeImage, img[data-src]",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -2493,6 +2494,49 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
     return images
 
 
+def _scrape_pia(gallery_url: str) -> list[str]:
+    """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
+    import re
+    from urllib.parse import urljoin
+    headers = {**HEADERS, "Referer": "https://lp.p.pia.jp/"}
+    try:
+        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+    except Exception as e:
+        print(f"  ⚠️ pia.jp 抓取失败: {e}")
+        return []
+
+    images: list[str] = []
+    seen: set[str] = set()
+
+    # Find total pages from pagination
+    total = 1
+    base_url = re.sub(r'[?&]id=\d+', '', gallery_url)
+    page_links = soup.select('a[href*="id="]')
+    for a in page_links:
+        m = re.search(r'id=(\d+)', a.get('href', ''))
+        if m:
+            total = max(total, int(m.group(1)))
+
+    for pn in range(1, min(total, MAX_IMAGES) + 1):
+        if pn > 1:
+            page_url = f"{base_url}{'&' if '?' in base_url else '?'}id={pn}"
+            try:
+                resp = requests.get(page_url, headers=headers, timeout=15)
+                soup = BeautifulSoup(resp.text, "html.parser")
+            except Exception:
+                continue
+        for img in soup.find_all("img"):
+            src = img.get("data-src") or img.get("src") or ""
+            if not src or "logo" in src or "icon" in src or "facebook" in src:
+                continue
+            full = urljoin(gallery_url, src)
+            if "shared/materials" in full and full not in seen:
+                seen.add(full)
+                images.append(full)
+    return images
+
 def _scrape_jisin(gallery_url: str) -> list[str]:
     """jisin.jp 图集：取 .slider-show img + 所有 img[src*=uploads] 图片"""
     from urllib.parse import urljoin
@@ -2717,6 +2761,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "jisin.jp" in domain:
         images = _scrape_jisin(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "lp.p.pia.jp" in domain:
+        images = _scrape_pia(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
