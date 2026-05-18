@@ -58,3 +58,7 @@ Thumbs.db
 
 # Generated data
 yahoo_china_news_*.json
+data/news.db
+data/news.db-shm
+data/news.db-wal
+data/logs/
