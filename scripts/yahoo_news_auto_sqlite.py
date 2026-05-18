@@ -51,7 +51,9 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
             print(f"\n{'━' * 60}")
             print(f"🔍 关键词: 【{k}】| 最多 {mx} 条")
             print(f"{'━' * 60}")
+        _log_ctx.prefix = f"[{k}] "
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
+        _log_ctx.prefix = ""
         with lock:
             print(f"  ✅ 找到 {len(articles)} 条\n")
         tags = KEYWORD_TAG_MAP.get(k, []) or [k]
