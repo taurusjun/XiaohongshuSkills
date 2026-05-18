@@ -41,7 +41,7 @@ from yahoo_common import (
 
 
 def fetch_all_articles(keywords, existing_keys, max_workers):
-    """并行收集所有 keyword 的文章"""
+    """并行收集所有 keyword 的文章，最后去重"""
     tasks = []
     lock = threading.Lock()
 
@@ -55,7 +55,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
         _log_ctx.prefix = ""
         with lock:
-            print(f"  ✅ 找到 {len(articles)} 条\n")
+            print(f"  ✅ [{k}] 找到 {len(articles)} 条\n")
         tags = KEYWORD_TAG_MAP.get(k, []) or [k]
         return [{'news': a, 'keyword': k, 'extra_tags': tags} for a in articles]
 
@@ -63,7 +63,18 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         futures = {executor.submit(_fetch_one, kw): kw for kw in keywords}
         for f in as_completed(futures):
             tasks.extend(f.result())
-    return tasks
+
+    # Dedup: 并行CDP搜索可能导致跨keyword重复
+    seen = set()
+    unique = []
+    for t in tasks:
+        k = extract_key_from_url(t['news']['link'])
+        if k not in seen:
+            seen.add(k)
+            unique.append(t)
+    if len(unique) < len(tasks):
+        print(f"  ⚠️ 去重: {len(tasks)} → {len(unique)} 条\n")
+    return unique
 
 
 def process_article(task):
@@ -103,12 +114,13 @@ def run_parallel(keywords, max_workers=3):
     done = [0]
 
     def _process(task):
+        kw = task['keyword']
         key, news = process_article(task)
         with lock:
             done[0] += 1
             s = '✅' if not news.get('_skip') else '⏭️'
             t = news.get('title_zh', task['news'].get('title_ja',''))[:40]
-            print(f"[{done[0]}/{len(tasks)}] {s} {t}")
+            print(f"[{done[0]}/{len(tasks)}] [{kw}/{key[:8]}] {s} {t}")
         return key, news
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
