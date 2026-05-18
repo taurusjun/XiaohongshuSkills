@@ -2496,7 +2496,8 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
 
 
 def _scrape_postseven(gallery_url: str) -> list[str]:
-    """news-postseven.com 图集：.c-PhotoImage 大图"""
+    """news-postseven.com 图集：找「すべての写真を見る」按钮 → 分页抓取 .c-PhotoImage"""
+    import re
     from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://www.news-postseven.com/"}
     try:
@@ -2506,18 +2507,36 @@ def _scrape_postseven(gallery_url: str) -> list[str]:
     except Exception as e:
         print(f"  ⚠️ postseven 抓取失败: {e}")
         return []
+
+    # Find the "view all photos" gallery URL
+    gallery_url_full = gallery_url
+    for a in soup.select('a[href*=IMAGE][href*=PAGE]'):
+        gallery_url_full = urljoin(gallery_url, a['href'])
+        break
+
+    # Extract total pages from PAGE=1-N
+    total = 1
+    m = re.search(r'PAGE=\d+-(\d+)', gallery_url_full)
+    if m:
+        total = min(int(m.group(1)), MAX_IMAGES)
+
     images = []
     seen = set()
-    for img in soup.select(".c-PhotoImage img, article img[src*=uploads]"):
-        src = img.get("src") or img.get("data-src") or ""
-        if src and "uploads" in src and src not in seen:
-            seen.add(src)
-            images.append(urljoin(gallery_url, src))
-    # If only 1, convert thumbnail to full-size
-    if len(images) == 1:
-        full = images[0].replace('-500x750', '')
-        if full != images[0]:
-            images.append(full)
+    for pn in range(1, total + 1):
+        page_url = re.sub(r'PAGE=\d+(-\d+)?', f'PAGE={pn}', gallery_url_full)
+        if pn > 1:
+            try:
+                resp = requests.get(page_url, headers=headers, timeout=15)
+                soup = BeautifulSoup(resp.text, "html.parser")
+            except Exception:
+                continue
+        for img in soup.select(".c-PhotoImage img, article img[src*=uploads]"):
+            src = img.get("src") or img.get("data-src") or ""
+            if src and "uploads" in src and src not in seen:
+                seen.add(src)
+                full = urljoin(gallery_url, src)
+                if full.startswith('//'): full = 'https:' + full
+                images.append(full)
     return images
 
 def _scrape_pia(gallery_url: str) -> list[str]:
