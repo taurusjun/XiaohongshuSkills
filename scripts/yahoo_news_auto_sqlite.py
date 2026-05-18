@@ -41,40 +41,26 @@ from yahoo_common import (
 
 
 def fetch_all_articles(keywords, existing_keys, max_workers):
-    """并行收集所有 keyword 的文章，最后去重"""
+    """串行收集所有 keyword 的文章（CDP 共享一个 tab，不能并行搜索）"""
     tasks = []
-    lock = threading.Lock()
+    seen_keys = set()
 
-    def _fetch_one(kw):
+    for kw in keywords:
         k, mx, cf = kw['keyword'], kw.get('max', 10), kw.get('china_filter', False)
-        with lock:
-            print(f"\n{'━' * 60}")
-            print(f"🔍 关键词: 【{k}】| 最多 {mx} 条")
-            print(f"{'━' * 60}")
+        print(f"\n{'━' * 60}")
+        print(f"🔍 关键词: 【{k}】| 最多 {mx} 条")
+        print(f"{'━' * 60}")
         _log_ctx.prefix = f"[{k}] "
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
         _log_ctx.prefix = ""
-        with lock:
-            print(f"  ✅ [{k}] 找到 {len(articles)} 条\n")
+        print(f"  ✅ [{k}] 找到 {len(articles)} 条\n")
         tags = KEYWORD_TAG_MAP.get(k, []) or [k]
-        return [{'news': a, 'keyword': k, 'extra_tags': tags} for a in articles]
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_fetch_one, kw): kw for kw in keywords}
-        for f in as_completed(futures):
-            tasks.extend(f.result())
-
-    # Dedup: 并行CDP搜索可能导致跨keyword重复
-    seen = set()
-    unique = []
-    for t in tasks:
-        k = extract_key_from_url(t['news']['link'])
-        if k not in seen:
-            seen.add(k)
-            unique.append(t)
-    if len(unique) < len(tasks):
-        print(f"  ⚠️ 去重: {len(tasks)} → {len(unique)} 条\n")
-    return unique
+        for a in articles:
+            key = extract_key_from_url(a['link'])
+            if key not in seen_keys:
+                seen_keys.add(key)
+                tasks.append({'news': a, 'keyword': k, 'extra_tags': tags})
+    return tasks
 
 
 def process_article(task):
