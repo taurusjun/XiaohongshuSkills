@@ -758,9 +758,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <h3>📸 图集 <span style="font-weight:400;font-size:12px;color:var(--text2)">— 下载并选择发布图片</span></h3>
     <div class="actions" style="margin-bottom:8px">
       <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载图集</button>
-      {% if news.gallery_images %}
-      <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()">🖼️ 管理图集</button>
-      {% endif %}
+      <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理图集</button>
     </div>
     <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
     {% if news.gallery_images %}
@@ -977,7 +975,10 @@ var galleryImages=[];
   cached.forEach(function(p){if(!savedSet.has(p))galleryImages.push({path:p,sel:false})});
   {% endif %}
   var hasCache={% if news.cached_images %}cached.length{% else %}0{% endif %};
-  if(hasCache>0||galleryImages.length>0)document.getElementById('galleryBtn').textContent='\u{1f504} 重新下载';
+  if(hasCache>0||galleryImages.length>0){
+    document.getElementById('galleryBtn').textContent='\u{1f504} 重新下载';
+    var mb=document.getElementById('manageGalleryBtn');if(mb)mb.style.display='';
+  }
 })();
 var galleryRunning=false;
 async function downloadGallery(){
