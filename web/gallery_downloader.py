@@ -84,9 +84,12 @@ def _download(key: str, gallery_url: str = ""):
                 return
             log.append(f'📷 抓到 {len(image_urls)} 张图片')
             task['log'] = '\n'.join(log)
+            # Build Referer from gallery domain to prevent 403
+            dl_headers = dict(HEADERS)
+            dl_headers['Referer'] = gallery_url
             for i, url in enumerate(image_urls):
                 try:
-                    resp = __import__('requests').get(url, headers=HEADERS, timeout=30)
+                    resp = __import__('requests').get(url, headers=dl_headers, timeout=30)
                     ext = url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
                     if ext not in ('jpg','jpeg','png','webp','gif','mp4'):
                         ext = 'jpg'
