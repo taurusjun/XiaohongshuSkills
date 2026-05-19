@@ -789,7 +789,11 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <div class="img-strip" id="publishImgStrip">
       {% for p in news.gallery_images %}
       <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
+        {% if p.endswith('.mp4') %}
+        <video src="/local-image?path={{p}}" style="height:130px;border-radius:6px"></video>
+        {% else %}
         <img src="/local-image?path={{p}}">
+        {% endif %}
         <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
         <button class="btn btn-gray" style="font-size:9px;padding:1px 6px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
       </div>
