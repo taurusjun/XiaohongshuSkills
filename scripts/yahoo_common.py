@@ -1009,7 +1009,13 @@ def process_news_item(news: dict, no_translate: bool = False,
                     upsert_score_dims(news_key, quality_scores)
                     print(f"    📊 评分明细已写入: {len(quality_scores)}项")
                 except Exception as e:
-                    print(f"    ⚠️ 评分写入失败: {e}")
+                    # WAL 模式偶发外键延迟，重试一次
+                    time.sleep(0.5)
+                    try:
+                        upsert_score_dims(news_key, quality_scores)
+                        print(f"    📊 评分明细已写入(重试): {len(quality_scores)}项")
+                    except Exception as e2:
+                        print(f"    ⚠️ 评分写入失败: {e2}")
         except ImportError:
             pass
 
