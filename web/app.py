@@ -802,7 +802,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
         <video src="/local-image?path={{news.gallery_video}}" style="height:130px;border-radius:6px"></video>
         <span style="font-size:10px;color:var(--red);margin-top:2px">🎬 视频</span>
-        <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" checked onclick="event.stopPropagation()">
+        <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
       </div>
       {% endif %}
     </div>
@@ -1121,11 +1121,17 @@ async function clearGalleryVideo(){await fetch('/api/news/'+key,{method:'PUT',he
 function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active')}
 function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4';savePublishImages()}
 async function savePublishImages(){
-  var paths=[];document.querySelectorAll('#publishImgStrip input[type=checkbox]:checked').forEach(function(cb){paths.push(cb.dataset.path)});
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths})});
+  var paths=[];var vidPath='';document.querySelectorAll('#publishImgStrip input[type=checkbox][data-path]').forEach(function(cb){
+    if(cb.checked){
+      if(cb.dataset.path.endsWith('.mp4'))vidPath=cb.dataset.path;else paths.push(cb.dataset.path);
+    }
+  });
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths, gallery_video:vidPath})});
+  var t=document.getElementById('toast');t.textContent='发布图已保存 ('+(paths.length+(vidPath?1:0))+'项)';t.style.display='block';setTimeout(function(){t.style.display='none';t.textContent='已保存'},1500);
 }
 (function initPublishCheckboxes(){
   {% if news.publish_images %}var pubSet=new Set({{news.publish_images|tojson}});{% else %}var pubSet=new Set();{% endif %}
+  {% if news.gallery_video %}pubSet.add('{{news.gallery_video}}');{% endif %}
   document.querySelectorAll('#publishImgStrip input[type=checkbox]').forEach(function(cb){
     if(pubSet.has(cb.dataset.path)){cb.checked=true}else{cb.parentElement.style.opacity='0.4'}
   });
