@@ -1099,7 +1099,8 @@ async function saveGallery(){
   var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
   var vids=all.filter(function(p){return p.endsWith('.mp4')});
-  var vidCb=document.querySelector('#publishImgStrip .img-item input[type=checkbox][data-path$=.mp4]');
+  var vidCbs=document.querySelectorAll('#publishImgStrip input[type=checkbox][data-path]'),vidCb=null;
+  vidCbs.forEach(function(c){if(c.dataset.path.endsWith('.mp4'))vidCb=c});
   if(vidCb&&!vidCb.checked)vids=[];
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
   closeGalleryModal();location.reload();
@@ -1108,7 +1109,8 @@ async function saveAndUpload(){
   var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
   var vids=all.filter(function(p){return p.endsWith('.mp4')});
-  var vidCb=document.querySelector('#publishImgStrip .img-item input[type=checkbox][data-path$=.mp4]');
+  var vidCbs=document.querySelectorAll('#publishImgStrip input[type=checkbox][data-path]'),vidCb=null;
+  vidCbs.forEach(function(c){if(c.dataset.path.endsWith('.mp4'))vidCb=c});
   if(vidCb&&!vidCb.checked)vids=[];
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
   await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:imgs})});
