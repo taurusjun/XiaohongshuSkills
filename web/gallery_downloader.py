@@ -94,7 +94,7 @@ def _download(key: str, gallery_url: str = ""):
             for tw_url in video_urls:
                 try:
                     import subprocess as _sp2, shutil as _sh
-                    ytdlp = _sh.which('yt-dlp') or '/opt/homebrew/bin/yt-dlp'
+                    ytdlp = _sh.which('yt-dlp') or os.path.join(os.path.dirname(sys.executable), 'yt-dlp')
                     _sp2.run([ytdlp, tw_url, '-o', str(d / 'twitter_%(id)s.%(ext)s'), '--no-playlist', '--merge-output-format', 'mp4'], capture_output=True, timeout=120, cwd=str(d))
                     log.append('    ✓ ' + tw_url.split('/')[-1])
                 except Exception as e2:
