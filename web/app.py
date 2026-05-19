@@ -64,12 +64,13 @@ def _run_task(cmd, task_id, env=None, on_done=None):
     if env is None:
         env = {}
     env.setdefault('PYTHONUNBUFFERED', '1')
+    proc = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, bufsize=1,
                                 cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
                                 env=env)
-        # Open log file for incremental writes
+        _tasks[task_id] = {'status': 'running', 'log': '', 'proc': proc}
         today = _dt_ad2.now().strftime('%Y-%m-%d')
         log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
         with open(log_path, 'a', buffering=1) as log_fh:
@@ -77,7 +78,7 @@ def _run_task(cmd, task_id, env=None, on_done=None):
             for line in proc.stdout:
                 log_lines.append(line.rstrip())
                 log_fh.write(line)
-                _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines)}
+                _tasks[task_id] = {'status': 'running', 'log': '\n'.join(log_lines), 'proc': proc}
         proc.wait(timeout=7200)
         log = '\n'.join(log_lines).strip()
         _tasks[task_id] = {'status': 'done', 'log': log}
@@ -163,11 +164,26 @@ def api_trigger_publish():
 def api_task(tid):
     t = _tasks.get(tid, 'unknown')
     if isinstance(t, dict):
-        # Sanitize log to ensure valid JSON
         if 'log' in t and t['log']:
             t['log'] = t['log'].replace('\x00','').replace('\x1b','')
-        return jsonify(t)
+        # Don't expose proc object
+        r = {k: v for k, v in t.items() if k != 'proc'}
+        return jsonify(r)
     return jsonify({"status": t, "log": ""})
+
+@app.route('/api/task/<tid>/stop', methods=['POST'])
+def api_task_stop(tid):
+    t = _tasks.get(tid, {})
+    if isinstance(t, dict) and t.get('status') == 'running':
+        proc = t.get('proc')
+        if proc:
+            try:
+                proc.kill()
+                _tasks[tid] = {'status': 'error: 用户终止', 'log': t.get('log', '') + '\n\n🛑 任务已终止'}
+                return jsonify({"ok": True})
+            except Exception as e:
+                return jsonify({"ok": False, "msg": str(e)})
+    return jsonify({"ok": False, "msg": "无运行中的任务"})
 
 @app.route('/api/task-logs')
 def api_task_logs():
@@ -442,7 +458,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
   <div class="modal-card" style="max-width:750px;background:#1e1e1e;color:#0f0">
     <h3 id="taskModalTitle" style="color:#fff;margin-bottom:12px">🖥️ 终端</h3>
     <pre id="taskLog" style="font:12px Menlo,monospace;white-space:pre-wrap;min-height:300px;max-height:60vh;overflow-y:auto;margin:0">等待中...</pre>
-    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
+    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#dc3545;color:#fff" onclick="stopTask()">🛑 终止</button> <button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
   </div>
 </div>
 
@@ -536,6 +552,11 @@ async function preview(key){
 }
 function closeModal(){S('modal').classList.remove('active')}
 function closeTaskModal(){S('taskModal').classList.remove('active')}
+async function stopTask(){
+  if(!activeTaskId)return;
+  if(!confirm('确定终止当前任务？'))return;
+  await fetch('/api/task/'+activeTaskId+'/stop',{method:'POST'});
+}
 
 // Keyword management
 let keywords=[];
@@ -817,10 +838,11 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <div class="modal-card" style="max-width:750px;background:#1e1e1e;color:#0f0">
     <h3 id="taskModalTitle" style="color:#fff;margin-bottom:12px">🖥️ 终端</h3>
     <pre id="taskLog" style="font:12px Menlo,monospace;white-space:pre-wrap;min-height:200px;max-height:50vh;overflow-y:auto;margin:0">等待中...</pre>
-    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
+    <div style="margin-top:12px;text-align:right"><button class="btn" style="background:#dc3545;color:#fff" onclick="stopTask()">🛑 终止</button> <button class="btn" style="background:#555;color:#fff" onclick="closeTaskModal()">关闭</button></div>
   </div>
 </div>
-<script>function closeTaskModal(){document.getElementById('taskModal').classList.remove('active')}</script>
+<script>function closeTaskModal(){document.getElementById('taskModal').classList.remove('active')}
+async function stopTask(){if(confirm('确定终止？')){await fetch('/api/task/regen_'+key+'/stop',{method:'POST'});location.reload()}}</script>
 
 <div class="modal" id="galleryModal" onclick="if(event.target===this)closeGalleryModal()">
   <div class="modal-card" style="max-width:800px">
