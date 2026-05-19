@@ -800,10 +800,14 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <div class="card">
     <h3 style="margin-bottom:8px">📊 评分明细</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-red btn-sm" id="tabTitle" onclick="switchScoreTab('title')">标题评分 {{"%.1f"|format(news.title_score or 0)}}</button>
-      <button class="btn btn-gray btn-sm" id="tabContent" onclick="switchScoreTab('content')">内容评分 {{"%.1f"|format(news.content_score or 0)}}</button>
+      <button class="btn btn-red btn-sm" id="tabTitle" onclick="filterScoreTab('标题')">标题评分 {{"%.1f"|format(news.title_score or 0)}}</button>
+      <button class="btn btn-gray btn-sm" id="tabContent" onclick="filterScoreTab('内容')">内容评分 {{"%.1f"|format(news.content_score or 0)}}</button>
     </div>
-    <div class="score-grid" id="scoreGrid"></div>
+    <div class="score-grid" id="scoreGrid">
+      {% for d in scores %}
+      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %}" data-cat="{{d.category}}" title="{{d.reason}}" style="{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}</div>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 
@@ -861,22 +865,13 @@ async function stopTask(){if(confirm('确定终止？')){await fetch('/api/task/
 <script>
 const key='{{news.key}}';
 {% if scores and scores|length > 0 %}
-const scoreData={{scores|tojson}};
-function renderScoreGrid(cat){
-  let html='';
-  scoreData.forEach(d=>{
-    if(d.category!==cat)return;
-    const cls=d.calc==='加分'?'score-plus':d.calc==='减分'?'score-minus':'score-neutral';
-    html+=`<div class="score-item ${cls}" title="${esc(d.reason||'')}">${d.dimension}: ${d.value}</div>`;
+function filterScoreTab(cat){
+  document.getElementById('tabTitle').className=cat==='标题'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
+  document.getElementById('tabContent').className=cat==='内容'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
+  document.querySelectorAll('#scoreGrid .score-item').forEach(el=>{
+    el.style.display=el.dataset.cat===cat?'':'none';
   });
-  document.getElementById('scoreGrid').innerHTML=html;
 }
-function switchScoreTab(tab){
-  document.getElementById('tabTitle').className=tab==='title'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
-  document.getElementById('tabContent').className=tab==='content'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
-  renderScoreGrid(tab==='title'?'标题':'内容');
-}
-switchScoreTab('title');
 {% endif %}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 async function autoSaveField(field,val){
