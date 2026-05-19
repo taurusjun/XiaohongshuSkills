@@ -99,7 +99,8 @@ def insert_news(news: dict) -> bool:
                     video_path=excluded.video_path, video_caption=excluded.video_caption,
                     gallery_url=excluded.gallery_url, content_ja=excluded.content_ja,
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
-                    content_score=excluded.content_score, fetch_by=excluded.fetch_by,
+                    content_score=excluded.content_score, publish_xhs=excluded.publish_xhs,
+                    publish_time=excluded.publish_time, fetch_by=excluded.fetch_by,
                     updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
                   news.get('link',''), news.get('source',''), news.get('category',''),
