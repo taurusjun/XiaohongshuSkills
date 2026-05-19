@@ -146,6 +146,11 @@ def launch_chrome(
     if headless:
         cmd.append("--headless=new")
 
+    # 代理配置（从 yahoo_conf 读取）
+    from config.yahoo_conf import USE_PROXY, PROXY_URL
+    if USE_PROXY and PROXY_URL:
+        cmd.append(f"--proxy-server={PROXY_URL}")
+
     mode_label = "headless" if headless else "headed"
     account_label = account or "default"
     print(f"[chrome_launcher] Launching Chrome ({mode_label}, account: {account_label})...")
