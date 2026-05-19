@@ -712,6 +712,8 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .score-plus{background:#dcfce7;color:#15803d}
 .score-minus{background:#fee2e2;color:#b91c1c}
 .score-neutral{background:#f3f4f6;color:#888}
+.reason-tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#333;color:#fff;font-size:11px;padding:4px 8px;border-radius:4px;white-space:nowrap;z-index:10;margin-bottom:4px}
+.score-item:hover .reason-tip{display:block}
 .tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
 .tag-bubble{display:inline-flex;align-items:center;background:#eef2ff;color:#4f46e5;padding:3px 10px;border-radius:10px;font-size:11px;gap:6px}
 .tag-bubble .del{cursor:pointer;opacity:.5;font-weight:bold}
@@ -805,7 +807,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     </div>
     <div class="score-grid" id="scoreGrid">
       {% for d in scores %}
-      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %}" data-cat="{{d.category}}" title="{{d.reason}}" style="{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}</div>
+      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %}" data-cat="{{d.category}}" style="position:relative;{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
       {% endfor %}
     </div>
   </div>
@@ -1126,7 +1128,7 @@ def detail(key):
     cached = []
     if os.path.isdir(cache_dir):
         for f in sorted(os.listdir(cache_dir)):
-            if f.endswith(('.jpg','.jpeg','.png','.webp')) and not f.startswith('.') and not f.startswith('cover.'):
+            if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.'):
                 cached.append(os.path.abspath(os.path.join(cache_dir, f)))
     news['cached_images'] = cached
     # Fallback: 从 meta.json 读图集链接
