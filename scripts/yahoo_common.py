@@ -41,26 +41,31 @@ except ImportError:
 def check_proxy(interactive: bool = True) -> bool:
     """启动时检测代理是否可用。interactive=True 时代理挂了会询问用户。
     返回 True 表示继续，False 表示用户选择退出。"""
-    from config.yahoo_conf import USE_PROXY
+    from config.yahoo_conf import USE_PROXY, PROXY_URL
     if not USE_PROXY:
         _disable_proxy()
         return True
-    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
-    if not proxy_url:
+    if not PROXY_URL:
         print("ℹ️ 未配置代理，使用直连")
         return True
+
+    # 设置代理环境变量
+    os.environ['HTTP_PROXY'] = PROXY_URL
+    os.environ['HTTPS_PROXY'] = PROXY_URL
+    os.environ['http_proxy'] = PROXY_URL
+    os.environ['https_proxy'] = PROXY_URL
 
     # 先测代理
     try:
         r = requests.get("https://news.yahoo.co.jp/", timeout=8)
         if r.status_code == 200:
-            print(f"✅ 代理可用 ({proxy_url})")
+            print(f"✅ 代理可用 ({PROXY_URL})")
             return True
     except Exception:
         pass
 
     # 代理不通，测一下直连是否可行
-    print(f"\n⚠️  代理不可用 ({proxy_url})")
+    print(f"\n⚠️  代理不可用 ({PROXY_URL})")
     direct_ok = False
     try:
         r = requests.get("https://news.yahoo.co.jp/",

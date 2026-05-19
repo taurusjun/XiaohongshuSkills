@@ -10,5 +10,6 @@ GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.c
 # 多关键词并行抓取数量（默认 3）
 FETCH_PARALLEL = int(os.environ.get("FETCH_PARALLEL", "3"))
 
-# 是否使用代理（0=直连，1=代理）
+# 代理配置
 USE_PROXY = int(os.environ.get("USE_PROXY", "0"))
+PROXY_URL = os.environ.get("PROXY_URL", "http://127.0.0.1:10090")
