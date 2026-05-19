@@ -1002,6 +1002,7 @@ var galleryImages=[];
   {% if news.cached_images %}var cached={{news.cached_images|tojson}};
   cached.forEach(function(p){if(!savedSet.has(p))galleryImages.push({path:p,sel:false})});
   {% endif %}
+  {% if news.gallery_video %}galleryImages.push({path:'{{news.gallery_video}}',sel:true});{% endif %}
   var hasCache={% if news.cached_images %}cached.length{% else %}0{% endif %};
   if(hasCache>0||galleryImages.length>0){
     document.getElementById('galleryBtn').textContent='\u{1f504} 重新下载';
