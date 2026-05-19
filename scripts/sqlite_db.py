@@ -34,6 +34,7 @@ def init_db():
                 gallery_images TEXT,
                 publish_images TEXT DEFAULT '',
                 gallery_video  TEXT,
+                publish_video TEXT DEFAULT '',
                 gallery_url   TEXT,
                 video_path  TEXT,
                 video_caption TEXT,
@@ -69,6 +70,8 @@ def init_db():
         except: pass
         try: db.execute("ALTER TABLE news ADD COLUMN publish_images TEXT DEFAULT ''")
         except: pass
+        try: db.execute("ALTER TABLE news ADD COLUMN publish_video TEXT DEFAULT ''")
+        except: pass
         try: db.execute("ALTER TABLE news ADD COLUMN content_ja TEXT DEFAULT ''")
         except: pass
 
@@ -83,10 +86,10 @@ def insert_news(news: dict) -> bool:
         try:
             db.execute("""
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
-                    summary, tags, image_url, original_image_url, gallery_images, gallery_video,
-                    video_path, video_caption, gallery_url, content_ja, pub_time, title_score, content_score,
-                    publish_xhs, publish_time, fetch_by, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                    summary, tags, image_url, original_image_url, gallery_images, publish_images,
+                    gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
+                    pub_time, title_score, content_score, publish_xhs, publish_time, fetch_by, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -165,7 +168,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
-               'video_path','video_caption','gallery_images','publish_images','gallery_video','gallery_url','content_ja',
+               'video_path','video_caption','gallery_images','publish_images','gallery_video','publish_video','gallery_url','content_ja',
                'publish_xhs','publish_time','status','title_score','content_score','fetch_by'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
