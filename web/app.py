@@ -1072,8 +1072,12 @@ function resetGalleryBtn(){
 function toggleGalleryModal(){var m=document.getElementById('galleryModal');if(m.classList.contains('active'))closeGalleryModal();else showGalleryModal()}
 function showGalleryModal(){
   const grid=document.getElementById('galleryGrid');
-  grid.innerHTML=galleryImages.map(function(p,i){return `<div style="position:relative;cursor:pointer" onclick="toggleGalleryImg(${i})">
-    <img src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;height:120px;object-fit:cover;border-radius:6px;border:3px solid ${p.sel?'#4CAF50':'#ddd'}">
+  grid.innerHTML=galleryImages.map(function(p,i){
+    var isVideo=p.path.endsWith('.mp4');
+    var media=isVideo?`<video src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;height:120px;object-fit:cover;border-radius:6px"></video>`:`<img src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;height:120px;object-fit:cover;border-radius:6px">`;
+    return `<div style="position:relative;cursor:pointer" onclick="toggleGalleryImg(${i})">
+    ${media}
+    ${isVideo?'<span style="position:absolute;top:4px;left:4px;background:#333;color:#fff;font-size:9px;padding:1px 4px;border-radius:3px">🎬</span>':''}
     <input type="checkbox" ${p.sel?'checked':''} style="position:absolute;top:4px;right:4px;pointer-events:none">
   </div>`}).join('');
   document.getElementById('galleryModal').classList.add('active');
