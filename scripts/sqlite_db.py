@@ -11,7 +11,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA foreign_keys=OFF")
     return conn
 
 def init_db():
@@ -60,8 +60,7 @@ def init_db():
                 dimension   TEXT NOT NULL,
                 value       INTEGER DEFAULT 0,
                 reason      TEXT DEFAULT '',
-                UNIQUE(news_key, dimension),
-                FOREIGN KEY (news_key) REFERENCES news(key)
+                UNIQUE(news_key, dimension)
             );
             CREATE INDEX IF NOT EXISTS idx_score_dims_key ON score_dims(news_key);
         """)
