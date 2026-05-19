@@ -785,7 +785,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理图集</button>
     </div>
     <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
-    {% if news.gallery_images %}
+    {% if news.gallery_images or news.gallery_video %}
     <div class="img-strip" id="publishImgStrip">
       {% for p in news.gallery_images %}
       <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
@@ -798,6 +798,12 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
         <button class="btn btn-gray" style="font-size:9px;padding:1px 6px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
       </div>
       {% endfor %}
+      {% if news.gallery_video %}
+      <div class="img-item" style="display:flex;flex-direction:column;align-items:center">
+        <video src="/local-image?path={{news.gallery_video}}" style="height:130px;border-radius:6px"></video>
+        <span style="font-size:10px;color:var(--red);margin-top:2px">🎬 视频</span>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>
