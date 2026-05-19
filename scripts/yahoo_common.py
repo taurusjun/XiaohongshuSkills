@@ -41,6 +41,10 @@ except ImportError:
 def check_proxy(interactive: bool = True) -> bool:
     """启动时检测代理是否可用。interactive=True 时代理挂了会询问用户。
     返回 True 表示继续，False 表示用户选择退出。"""
+    from config.yahoo_conf import USE_PROXY
+    if not USE_PROXY:
+        _disable_proxy()
+        return True
     proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
     if not proxy_url:
         print("ℹ️ 未配置代理，使用直连")
