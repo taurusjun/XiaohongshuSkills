@@ -194,6 +194,29 @@ def api_task_logs():
             return jsonify({"logs": f.read()[-20000:]})
     return jsonify({"logs": ""})
 
+# Custom keywords persistence
+CUSTOM_KW_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'custom_keywords.json')
+def _load_custom_keywords():
+    if os.path.exists(CUSTOM_KW_FILE):
+        with open(CUSTOM_KW_FILE) as f:
+            return json.load(f)
+    return []
+def _save_custom_keywords(kws):
+    os.makedirs(os.path.dirname(CUSTOM_KW_FILE), exist_ok=True)
+    with open(CUSTOM_KW_FILE, 'w') as f:
+        json.dump(kws, f)
+
+@app.route('/api/custom-keywords', methods=['GET'])
+def api_custom_keywords():
+    return jsonify({"keywords": _load_custom_keywords()})
+
+@app.route('/api/custom-keywords', methods=['POST'])
+def api_custom_keywords_save():
+    data = request.json or {}
+    kws = data.get('keywords', [])
+    _save_custom_keywords(kws)
+    return jsonify({"ok": True})
+
 @app.route('/api/keywords')
 def api_keywords():
     try:
@@ -383,8 +406,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
     <h3 style="margin-bottom:10px">🔍 关键词抓取</h3>
     <div id="kwGrid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-gray btn-sm" onclick="selectAllKw(true)">全选</button>
+      <button class="btn btn-gray btn-sm" onclick="selectAllKw(false)">全不选</button>
       <button class="btn btn-gray btn-sm" onclick="addKeyword()">+ 自定义</button>
-      <button class="btn btn-gray btn-sm" onclick="resetKeywords()">重置为预置</button>
+      <button class="btn btn-gray btn-sm" onclick="resetKeywords()">重置预置</button>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text2)" id="kwSummary"></span>
       <button class="btn btn-red btn-sm" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
@@ -559,24 +584,42 @@ async function stopTask(){
 }
 
 // Keyword management
-let keywords=[];
+let keywords=[],presetCount=0;
 async function loadKeywords(){
-  try{const r=await fetch('/api/keywords');const d=await r.json();keywords=d.keywords}catch(e){keywords=[]}
+  try{
+    var r1=await fetch('/api/keywords');var d1=await r1.json();
+    keywords=d1.keywords;presetCount=keywords.length;
+    var r2=await fetch('/api/custom-keywords');var d2=await r2.json();
+    d2.keywords.forEach(function(k){k.custom=true;keywords.push(k)});
+  }catch(e){keywords=[];presetCount=0}
   renderKeywords();
 }
-function renderKeywords(){
-  const grid=document.getElementById('kwGrid');
-  grid.innerHTML=keywords.map((k,i)=>`<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+function renderKeywordChip(k,i,canDelete){
+  return `<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
     <input type="checkbox" checked onchange="updateKwSummary()" style="width:14px;height:14px;accent-color:var(--red)">
     <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
     <span style="color:var(--text3)">×</span>
     <input type="number" value="${k.max}" min="1" max="50" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
-    <span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>
-  </div>`).join('');
+    ${canDelete?`<span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>`:''}
+  </div>`;
+}
+function renderKeywords(){
+  var grid=document.getElementById('kwGrid'),html='';
+  for(var i=0;i<keywords.length;i++){
+    if(i===0)html+='<span style="font-size:10px;color:var(--text3);width:100%">预置</span>';
+    if(i===presetCount && i<keywords.length)html+='<span style="font-size:10px;color:var(--text3);width:100%;margin-top:4px">自定义</span>';
+    html+=renderKeywordChip(keywords[i],i,i>=presetCount);
+  }
+  grid.innerHTML=html;
   updateKwSummary();
 }
-function addKeyword(){keywords.push({keyword:'新词',max:5,china_filter:false});renderKeywords()}
-function deleteKeyword(i){keywords.splice(i,1);renderKeywords()}
+function selectAllKw(val){document.querySelectorAll('#kwGrid .kw-chip input[type=checkbox]').forEach(function(cb){cb.checked=val});updateKwSummary()}
+async function addKeyword(){keywords.push({keyword:'新词',max:5,custom:true});renderKeywords();await saveCustomKw()}
+async function deleteKeyword(i){keywords.splice(i,1);renderKeywords();await saveCustomKw()}
+async function saveCustomKw(){
+  var custom=keywords.slice(presetCount).map(function(k){return{keyword:k.keyword,max:k.max}});
+  await fetch('/api/custom-keywords',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:custom})});
+}
 function resetKeywords(){loadKeywords()}
 function updateKwSummary(){
   const chips=document.querySelectorAll('#kwGrid .kw-chip');
