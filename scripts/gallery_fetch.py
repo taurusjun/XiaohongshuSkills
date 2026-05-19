@@ -1737,6 +1737,16 @@ def _scrape_yorozoonews(gallery_url: str) -> list[str]:
 
             large_img = ""
             thumb_candidates: list[str] = []
+            # 优先取 .module-article-photo 大图
+            photo = s.select_one(".module-article-photo")
+            if photo:
+                for img in photo.find_all("img"):
+                    src = (img.get("data-src") or img.get("src") or "")
+                    if src and src not in seen:
+                        if src.startswith("//"): src = "https:" + src
+                        seen.add(src)
+                        images.append(src)
+            # 正文里的图片（分页模式）
             body = s.select_one(".module-article-body") or s
             for img in body.find_all("img"):
                 src = (img.get("data-src") or img.get("src") or "")
