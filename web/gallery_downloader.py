@@ -77,14 +77,30 @@ def _download(key: str, gallery_url: str = ""):
                     log.append(f'  ✓ {f}')
             image_urls = []
         else:
-            image_urls = scrape_gallery_images(gallery_url)
-            if not image_urls:
+            mixed_urls = scrape_gallery_images(gallery_url)
+            if not mixed_urls:
                 task['status'] = 'error: 图集为空'
                 task['log'] = '\n'.join(log)
                 return
-            log.append(f'📷 抓到 {len(image_urls)} 张图片')
+            # Separate Twitter/X video URLs from image URLs
+            video_urls = [u for u in mixed_urls if 'x.com/' in u or 'twitter.com/' in u]
+            image_urls = [u for u in mixed_urls if u not in video_urls]
+            if video_urls:
+                log.append(f'🎬 找到 {len(video_urls)} 个推特视频')
+            if image_urls:
+                log.append(f'📷 抓到 {len(image_urls)} 张图片')
             task['log'] = '\n'.join(log)
-            # Build Referer from gallery domain to prevent 403
+            # Download twitter videos via yt-dlp
+            for tw_url in video_urls:
+                try:
+                    import subprocess as _sp2, shutil as _sh
+                    ytdlp = _sh.which('yt-dlp') or '/opt/homebrew/bin/yt-dlp'
+                    _sp2.run([ytdlp, tw_url, '-o', str(d / 'twitter_%(id)s.%(ext)s'), '--no-playlist', '--merge-output-format', 'mp4'], capture_output=True, timeout=120, cwd=str(d))
+                    log.append('    ✓ ' + tw_url.split('/')[-1])
+                except Exception as e2:
+                    log.append(f'    ✗ twitter: {e2}')
+                task['log'] = '\n'.join(log)
+            # Download images
             dl_headers = dict(HEADERS)
             dl_headers['Referer'] = gallery_url
             for i, url in enumerate(image_urls):

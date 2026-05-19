@@ -751,6 +751,15 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
     r = requests.get(gallery_url, headers=headers, timeout=15)
     s = BeautifulSoup(r.text, "html.parser")
 
+    # Twitter 视频嵌入检测
+    import re as _re2
+    tw_urls = _re2.findall(r'https?://(?:twitter|x)\.com/\w+/status/\d+', r.text)
+    for tw in tw_urls:
+        tw = tw.split('?')[0].split('#')[0].replace('twitter.com', 'x.com')
+        if tw not in seen:
+            seen.add(tw)
+            images.append(tw)
+
     # 结构A：figure.module-article-photo + Next/Prev 分页
     fig = s.select_one("figure.module-article-photo")
     if fig:
