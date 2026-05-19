@@ -597,9 +597,9 @@ async function loadKeywords(){
 function renderKeywordChip(k,i,canDelete){
   return `<div class="kw-chip" style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
     <input type="checkbox" checked onchange="updateKwSummary()" style="width:14px;height:14px;accent-color:var(--red)">
-    <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
+    <input value="${esc(k.keyword)}" onchange="keywords[${i}].keyword=this.value;if(i>=presetCount)saveCustomKw()" style="border:none;background:transparent;width:${Math.max(40,k.keyword.length*14)}px;font-size:12px;font-weight:500;outline:none;padding:2px">
     <span style="color:var(--text3)">×</span>
-    <input type="number" value="${k.max}" min="1" max="50" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
+    <input type="number" value="${k.max}" min="1" max="50" onchange="keywords[${i}].max=parseInt(this.value)||5;updateKwSummary();if(i>=presetCount)saveCustomKw()" style="width:38px;padding:2px;border:1px solid #eee;border-radius:4px;font-size:11px;text-align:center">
     ${canDelete?`<span style="cursor:pointer;color:var(--text3);font-size:14px" onclick="deleteKeyword(${i})" title="删除">×</span>`:''}
   </div>`;
 }
