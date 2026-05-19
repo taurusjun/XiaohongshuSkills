@@ -1126,12 +1126,12 @@ async function savePublishImages(){
       if(cb.dataset.path.endsWith('.mp4'))vidPath=cb.dataset.path;else paths.push(cb.dataset.path);
     }
   });
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths, gallery_video:vidPath})});
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_images:paths, publish_video:vidPath})});
   var t=document.getElementById('toast');t.textContent='发布图已保存 ('+(paths.length+(vidPath?1:0))+'项)';t.style.display='block';setTimeout(function(){t.style.display='none';t.textContent='已保存'},1500);
 }
 (function initPublishCheckboxes(){
   {% if news.publish_images %}var pubSet=new Set({{news.publish_images|tojson}});{% else %}var pubSet=new Set();{% endif %}
-  {% if news.gallery_video %}pubSet.add('{{news.gallery_video}}');{% endif %}
+  {% if news.publish_video %}pubSet.add('{{news.publish_video}}');{% endif %}
   document.querySelectorAll('#publishImgStrip input[type=checkbox]').forEach(function(cb){
     if(pubSet.has(cb.dataset.path)){cb.checked=true}else{cb.parentElement.style.opacity='0.4'}
   });

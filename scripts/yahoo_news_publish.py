@@ -119,7 +119,7 @@ def get_page_media_blocks(page_id: str, is_sqlite: bool = False) -> tuple[list[s
             except: gallery_imgs = []
             img_urls = [images] if images else []
             img_urls.extend(gallery_imgs)
-            video = row.get('video_path','') or row.get('gallery_video','')
+            video = row.get('publish_video','') or row.get('gallery_video','') or row.get('video_path','')
             return img_urls, [video] if video else []
         return [], []
 
