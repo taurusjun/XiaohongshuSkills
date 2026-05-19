@@ -2994,7 +2994,7 @@ def download_images(image_urls: list[str], article_dir: Path,
     import subprocess
     import shutil
 
-    ytdlp_bin = shutil.which("yt-dlp") or "/opt/homebrew/bin/yt-dlp"
+    ytdlp_bin = shutil.which("yt-dlp") or os.path.join(os.path.dirname(sys.executable), 'yt-dlp')
     article_dir.mkdir(parents=True, exist_ok=True)
     local_files = []
     for i, url in enumerate(image_urls):
