@@ -88,13 +88,14 @@ def insert_news(news: dict) -> bool:
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
                     pub_time, title_score, content_score, publish_xhs, publish_time, fetch_by, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
                     comment=excluded.comment, summary=excluded.summary, tags=excluded.tags,
                     image_url=excluded.image_url, original_image_url=excluded.original_image_url,
-                    gallery_images=excluded.gallery_images, gallery_video=excluded.gallery_video,
+                    gallery_images=excluded.gallery_images, publish_images=excluded.publish_images,
+                    gallery_video=excluded.gallery_video, publish_video=excluded.publish_video,
                     video_path=excluded.video_path, video_caption=excluded.video_caption,
                     gallery_url=excluded.gallery_url, content_ja=excluded.content_ja,
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
@@ -104,7 +105,8 @@ def insert_news(news: dict) -> bool:
                   news.get('link',''), news.get('source',''), news.get('category',''),
                   news.get('content',''), news.get('comment',''), news.get('summary',''),
                   tag_str, news.get('image_url',''), news.get('original_image_url',''),
-                  gallery_str, news.get('gallery_video',''),
+                  gallery_str, news.get('publish_images',''),
+                  news.get('gallery_video',''), news.get('publish_video',''),
                   news.get('video_path',''), news.get('video_caption',''), news.get('gallery_url',''),
                   news.get('content_ja',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
