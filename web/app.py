@@ -799,10 +799,10 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       </div>
       {% endfor %}
       {% if news.gallery_video %}
-      <div class="img-item" style="display:flex;flex-direction:column;align-items:center">
+      <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
         <video src="/local-image?path={{news.gallery_video}}" style="height:130px;border-radius:6px"></video>
         <span style="font-size:10px;color:var(--red);margin-top:2px">🎬 视频</span>
-        <button class="btn btn-gray" style="font-size:9px;padding:1px 6px;position:absolute;top:2px;right:2px" onclick="event.stopPropagation();clearGalleryVideo()" title="清除视频">✕</button>
+        <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" checked onclick="event.stopPropagation()">
       </div>
       {% endif %}
     </div>
@@ -1099,6 +1099,8 @@ async function saveGallery(){
   var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
   var vids=all.filter(function(p){return p.endsWith('.mp4')});
+  var vidCb=document.querySelector('#publishImgStrip .img-item input[type=checkbox][data-path$=.mp4]');
+  if(vidCb&&!vidCb.checked)vids=[];
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
   closeGalleryModal();location.reload();
 }
@@ -1106,6 +1108,8 @@ async function saveAndUpload(){
   var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
   var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
   var vids=all.filter(function(p){return p.endsWith('.mp4')});
+  var vidCb=document.querySelector('#publishImgStrip .img-item input[type=checkbox][data-path$=.mp4]');
+  if(vidCb&&!vidCb.checked)vids=[];
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
   await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:imgs})});
   alert('已上传 '+imgs.length+' 张');closeGalleryModal();location.reload();
