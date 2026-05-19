@@ -53,35 +53,16 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_status ON news(status);
             CREATE INDEX IF NOT EXISTS idx_publish_xhs ON news(publish_xhs);
 
-            CREATE TABLE IF NOT EXISTS scores (
+            CREATE TABLE IF NOT EXISTS score_dims (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                news_key    TEXT UNIQUE NOT NULL,
-                剧情感      INTEGER DEFAULT 0,
-                冲突感      INTEGER DEFAULT 0,
-                猎奇感      INTEGER DEFAULT 0,
-                用户共鸣    INTEGER DEFAULT 0,
-                名人        INTEGER DEFAULT 0,
-                热点        INTEGER DEFAULT 0,
-                简单通知    INTEGER DEFAULT 0,
-                震惊体      INTEGER DEFAULT 0,
-                概括全部    INTEGER DEFAULT 0,
-                原创度      INTEGER DEFAULT 0,
-                趣味性      INTEGER DEFAULT 0,
-                有用信息    INTEGER DEFAULT 0,
-                对立信息    INTEGER DEFAULT 0,
-                视频        INTEGER DEFAULT 0,
-                离题        INTEGER DEFAULT 0,
-                啰嗦重复    INTEGER DEFAULT 0,
-                主动讨赏    INTEGER DEFAULT 0,
-                宣传照      INTEGER DEFAULT 0,
-                写真        INTEGER DEFAULT 0,
-                生活照      INTEGER DEFAULT 0,
-                搞怪照      INTEGER DEFAULT 0,
-                中年男照    INTEGER DEFAULT 0,
-                负面情绪    INTEGER DEFAULT 0,
+                news_key    TEXT NOT NULL,
+                dimension   TEXT NOT NULL,
+                value       INTEGER DEFAULT 0,
+                reason      TEXT DEFAULT '',
+                UNIQUE(news_key, dimension),
                 FOREIGN KEY (news_key) REFERENCES news(key)
             );
-            CREATE INDEX IF NOT EXISTS idx_scores_key ON scores(news_key);
+            CREATE INDEX IF NOT EXISTS idx_score_dims_key ON score_dims(news_key);
         """)
         # Compat: add fetch_by / publish_images to existing DBs
         try: db.execute("ALTER TABLE news ADD COLUMN fetch_by TEXT DEFAULT ''")
@@ -229,14 +210,38 @@ def stats() -> dict:
 
 # ── 评分 ──
 
-def upsert_scores(news_key: str, scores: dict):
-    cols = ['news_key'] + list(scores.keys())
-    placeholders = ','.join(['?'] * len(cols))
-    vals = [news_key] + list(scores.values())
-    with _connect() as db:
-        db.execute(f"INSERT INTO scores ({','.join(cols)}) VALUES ({placeholders}) ON CONFLICT(news_key) DO UPDATE SET {', '.join(f'{k}=excluded.{k}' for k in scores.keys())}", vals)
+# 维度定义：dimension → (category, calc)
+_DIM_DEFS = {
+    '剧情感': ('标题','加分'), '冲突感': ('标题','加分'), '猎奇感': ('标题','加分'),
+    '用户共鸣': ('标题','加分'), '名人': ('标题','加分'), '热点': ('标题','加分'),
+    '简单通知': ('标题','减分'), '震惊体': ('标题','减分'), '概括全部': ('标题','减分'),
+    '原创度': ('内容','加分'), '趣味性': ('内容','加分'), '有用信息': ('内容','加分'),
+    '对立信息': ('内容','加分'), '视频': ('内容','加分'),
+    '离题': ('内容','减分'), '啰嗦重复': ('内容','减分'), '主动讨赏': ('内容','减分'),
+    '负面情绪': ('内容','减分'),
+    '生活照': ('图片','不计分'), '搞怪照': ('图片','不计分'), '宣传照': ('图片','不计分'),
+    '写真': ('图片','不计分'), '中年男照': ('图片','不计分'),
+}
 
-def get_scores(news_key: str) -> dict | None:
+def upsert_score_dims(news_key: str, scores: dict):
+    """scores: {dimension: {"value": 0|1, "reason": "..."}}"""
     with _connect() as db:
-        row = db.execute("SELECT * FROM scores WHERE news_key=?", (news_key,)).fetchone()
-    return dict(row) if row else None
+        for dim, data in scores.items():
+            v = data.get('value', 0) if isinstance(data, dict) else int(data)
+            r = data.get('reason', '') if isinstance(data, dict) else ''
+            db.execute(
+                "INSERT INTO score_dims (news_key, dimension, value, reason) VALUES (?,?,?,?) ON CONFLICT(news_key, dimension) DO UPDATE SET value=excluded.value, reason=excluded.reason",
+                (news_key, dim, v, r)
+            )
+
+def get_score_dims(news_key: str) -> list[dict]:
+    with _connect() as db:
+        rows = db.execute("SELECT dimension, value, reason FROM score_dims WHERE news_key=?", (news_key,)).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        cat, calc = _DIM_DEFS.get(d['dimension'], ('其他', '不计分'))
+        d['category'] = cat
+        d['calc'] = calc
+        result.append(d)
+    return result

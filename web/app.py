@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 from flask import Flask, jsonify, render_template_string, request, send_file
 from config.yahoo_conf import STORAGE_BACKEND
-from sqlite_db import init_db, query_news, get_by_key, update_news, get_scores, upsert_scores, stats
+from sqlite_db import init_db, query_news, get_by_key, update_news, get_score_dims, upsert_score_dims, stats
 from web.gallery_downloader import trigger_download, get_status as gstatus, upload_selected
 
 import subprocess, json, glob, threading, time, shutil
@@ -238,8 +238,8 @@ def api_regenerate(key):
                 update_news(key, updates)
                 if quality.get('scores'):
                     try:
-                        from sqlite_db import upsert_scores
-                        upsert_scores(key, quality['scores'])
+                        from sqlite_db import upsert_score_dims
+                        upsert_score_dims(key, quality['scores'])
                     except: pass
                 ts = quality.get('title_score', 0)
                 cs = quality.get('content_score', 0)
@@ -690,6 +690,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
 .score-plus{background:#dcfce7;color:#15803d}
 .score-minus{background:#fee2e2;color:#b91c1c}
+.score-neutral{background:#f3f4f6;color:#888}
 .tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
 .tag-bubble{display:inline-flex;align-items:center;background:#eef2ff;color:#4f46e5;padding:3px 10px;border-radius:10px;font-size:11px;gap:6px}
 .tag-bubble .del{cursor:pointer;opacity:.5;font-weight:bold}
@@ -723,7 +724,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <span class="meta-item">来源 <b>{{news.source or '-'}}</b></span>
       <span class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></span>
       <span class="meta-item">入库 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></span>
-      {% if scores %}
+      {% if scores and scores|length > 0 %}
       <span class="meta-item">📊 标题 <b>{{"%.1f"|format(news.title_score or 0)}}</b> · 内容 <b>{{"%.1f"|format(news.content_score or 0)}}</b></span>
       {% endif %}
     </div>
@@ -774,7 +775,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     {% endif %}
   </div>
 
-  {% if scores %}
+  {% if scores and scores|length > 0 %}
   <div class="card">
     <h3 style="margin-bottom:8px">📊 评分明细</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -837,24 +838,21 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 
 <script>
 const key='{{news.key}}';
-{% if scores %}
+{% if scores and scores|length > 0 %}
 const scoreData={{scores|tojson}};
-const titleCols=['剧情感','冲突感','猎奇感','用户共鸣','名人','热点','简单通知','震惊体','概括全部'];
-const contentCols=['原创度','趣味性','有用信息','对立信息','视频','离题','啰嗦重复','主动讨赏','生活照','搞怪照','宣传照','写真','中年男照','负面情绪'];
-const titlePlus=['剧情感','冲突感','猎奇感','用户共鸣','名人','热点'];
-const contentPlus=['原创度','趣味性','有用信息','对立信息','视频'];
-function renderScoreGrid(cols){
+function renderScoreGrid(cat){
   let html='';
-  cols.forEach(c=>{
-    const isPlus=titlePlus.includes(c)||contentPlus.includes(c);
-    html+=`<div class="score-item ${isPlus?'score-plus':'score-minus'}">${c}: ${scoreData[c]||0}</div>`;
+  scoreData.forEach(d=>{
+    if(d.category!==cat)return;
+    const cls=d.calc==='加分'?'score-plus':d.calc==='减分'?'score-minus':'score-neutral';
+    html+=`<div class="score-item ${cls}" title="${esc(d.reason||'')}">${d.dimension}: ${d.value}</div>`;
   });
   document.getElementById('scoreGrid').innerHTML=html;
 }
 function switchScoreTab(tab){
   document.getElementById('tabTitle').className=tab==='title'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
   document.getElementById('tabContent').className=tab==='content'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
-  renderScoreGrid(tab==='title'?titleCols:contentCols);
+  renderScoreGrid(tab==='title'?'标题':'内容');
 }
 switchScoreTab('title');
 {% endif %}
@@ -1124,7 +1122,7 @@ def detail(key):
                     meta = _json.load(f)
                 news['gallery_url'] = meta.get('gallery_url', '')
             except: pass
-    scores = get_scores(key)
+    scores = get_score_dims(key)
     return rts(DETAIL_HTML, news=news, scores=scores)
 
 @app.route('/api/news')
@@ -1147,7 +1145,7 @@ def api_list():
 def api_detail(key):
     news = get_by_key(key)
     if not news: return jsonify({"error": "not found"}), 404
-    news['scores'] = get_scores(key)
+    news['scores'] = get_score_dims(key)
     return jsonify(news)
 
 @app.route('/api/news/<key>', methods=['PUT'])

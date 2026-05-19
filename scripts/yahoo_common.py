@@ -572,47 +572,57 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 def evaluate_quality(title_zh: str, content: str, comment: str,
                      title_ja: str = "", body_text: str = "") -> dict:
-    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, issues, scores(23维度)}"""
+    """用 LLM 评估标题和内容质量，返回 {title_score, content_score, scores(维度+理由)}"""
     dims = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点',
             '简单通知','震惊体','概括全部','原创度','趣味性','有用信息',
-            '对立信息','视频','离题','啰嗦重复','主动讨赏',
-            '生活照','搞怪照','宣传照','写真','中年男照','负面情绪']
-    dims_str = ','.join(dims)
-    prompt = f"""评估标题和正文，对以下23个维度判断符合(1)或不符合(0)，并给出title_score(0-5)和content_score(0-5)。
+            '对立信息','视频','离题','啰嗦重复','主动讨赏','负面情绪']
+    prompt = f"""评估笔记，18个维度各判0或1，每维度附一句理由(15-50字)，外加title_score(0-5)和content_score(0-5)。
 
-23个维度：{dims_str}
+维度：{','.join(dims)}
 标题：{title_zh}
 正文：{content[:200]}
-解读：{comment[:150]}"""
+解读：{comment[:150]}
+
+严格JSON格式，每维度为{{"value":0或1,"reason":"理由说明"}}，无其他文字。"""
 
     import json as _json
-    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON, no other text.", max_tokens=2000, response_format={"type": "json_object"})
+    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=3000, response_format={"type": "json_object"})
     if not result:
-        return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
+        return {"title_score": 0, "content_score": 0, "scores": {}}
 
     try:
         raw = _json.loads(result)
         raw.pop("title_score", None)
         raw.pop("content_score", None)
-        dim_scores = {k: int(raw.get(k, 0)) if isinstance(raw.get(k), (int, float)) else 0 for k in dims}
-        # 加分项 +1，减分项 -1
+        # 维度定义
         title_plus = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点']
         title_minus = ['简单通知','震惊体','概括全部']
         content_plus = ['原创度','趣味性','有用信息','对立信息','视频']
-        content_minus = ['离题','啰嗦重复','主动讨赏','宣传照','写真','中年男照','负面情绪','生活照','搞怪照']
-        title_score = sum(dim_scores.get(d, 0) for d in title_plus) - sum(dim_scores.get(d, 0) for d in title_minus)
-        content_score = sum(dim_scores.get(d, 0) for d in content_plus) - sum(dim_scores.get(d, 0) for d in content_minus)
+        content_minus = ['离题','啰嗦重复','主动讨赏','负面情绪']
+        all_dims = title_plus + title_minus + content_plus + content_minus
+        # 解析 value + reason
+        dim_scores = {}
+        for d in all_dims:
+            v = raw.get(d)
+            if isinstance(v, dict):
+                dim_scores[d] = {"value": int(v.get("value", 0) or 0), "reason": v.get("reason", "")}
+            elif isinstance(v, (int, float)):
+                dim_scores[d] = {"value": int(v), "reason": ""}
+            else:
+                dim_scores[d] = {"value": 0, "reason": ""}
+        # 计算
+        title_score = sum(dim_scores.get(d, {}).get("value", 0) for d in title_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in title_minus)
+        content_score = sum(dim_scores.get(d, {}).get("value", 0) for d in content_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in content_minus)
         title_score = max(0, min(5, title_score))
         content_score = max(0, min(5, content_score))
         return {
             "title_score": title_score,
             "content_score": content_score,
-            "issues": [],
             "scores": dim_scores,
         }
     except (_json.JSONDecodeError, ValueError, KeyError) as e:
         print(f"    ⚠️ 评分JSON解析失败: {e} | 输出: {result[:150]}")
-        return {"title_score": 0, "content_score": 0, "issues": [], "scores": {}}
+        return {"title_score": 0, "content_score": 0, "scores": {}}
 
 
 # ============ 分类 ============
@@ -868,8 +878,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['_title_score'] = quality['title_score']
         news['_content_score'] = quality['content_score']
         news['_quality'] = quality  # 暂存，insert_news 后再写 scores
-        if quality['issues']:
-            print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} | 扣分: {', '.join(quality['issues'])}")
+        print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']}")
         if quality['title_score'] < 2.0:
             print(f"    ⚠️ 标题质量偏低，建议人工复审")
         news['video_caption'] = ""  # 先占位，tags 确定后再填
@@ -987,8 +996,8 @@ def process_news_item(news: dict, no_translate: bool = False,
             quality_scores = news.get('_quality', {}).get('scores')
             if quality_scores:
                 try:
-                    from sqlite_db import upsert_scores
-                    upsert_scores(news_key, quality_scores)
+                    from sqlite_db import upsert_score_dims
+                    upsert_score_dims(news_key, quality_scores)
                     print(f"    📊 评分明细已写入: {len(quality_scores)}项")
                 except Exception as e:
                     print(f"    ⚠️ 评分写入失败: {e}")
