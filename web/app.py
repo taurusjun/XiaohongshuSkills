@@ -1089,15 +1089,19 @@ function showGalleryModal(){
 function toggleGalleryImg(i){galleryImages[i].sel=!galleryImages[i].sel;showGalleryModal()}
 function selectAllGallery(val){galleryImages.forEach(function(p){p.sel=val});showGalleryModal()}
 async function saveGallery(){
-  const selected=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:selected})});
+  var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
+  var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
+  var vids=all.filter(function(p){return p.endsWith('.mp4')});
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
   closeGalleryModal();location.reload();
 }
 async function saveAndUpload(){
-  const selected=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:selected})});
-  await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:selected})});
-  alert('已上传 '+selected.length+' 张');closeGalleryModal();location.reload();
+  var all=galleryImages.filter(function(p){return p.sel}).map(function(p){return p.path});
+  var imgs=all.filter(function(p){return!p.endsWith('.mp4')});
+  var vids=all.filter(function(p){return p.endsWith('.mp4')});
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:imgs, gallery_video:vids[0]||''})});
+  await fetch('/api/gallery-upload/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:imgs})});
+  alert('已上传 '+imgs.length+' 张');closeGalleryModal();location.reload();
 }
 function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active')}
 function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4';savePublishImages()}
