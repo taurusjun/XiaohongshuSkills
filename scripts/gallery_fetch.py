@@ -531,16 +531,21 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
         r = requests.get(gallery_url, headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
-        # 新格式：直接取当前页的大图
-        for img in s.find_all("img"):
-            src = img.get("src", "")
-            if "storage.mantan-web.jp" in src:
-                src = _mantan_to_jpeg(src)
-                if not any(k in src for k in ("logo", "icon", "banner")):
-                    if images:
-                        # 已有一张则跳过（当前页主图）
-                        continue
-                    images.append(src)
+        # 新格式：优先取 .photo__photo--minh 大图，否则取 storage.mantan-web.jp
+        large = s.select_one(".photo__photo--minh img")
+        if large:
+            src = large.get("data-src") or large.get("src") or ""
+            if src and "storage.mantan-web.jp" in src:
+                images.append(_mantan_to_jpeg(src))
+        if not images:
+            for img in s.find_all("img"):
+                src = img.get("data-src") or img.get("src") or ""
+                if "storage.mantan-web.jp" in src:
+                    src = _mantan_to_jpeg(src)
+                    if not any(k in src for k in ("logo", "icon", "banner")):
+                        if images:
+                            continue
+                        images.append(src)
 
         # 旧格式：photolist 导航
         for a in s.find_all("a", class_="photo__photolist-item"):
@@ -565,8 +570,14 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
                 try:
                     rp = requests.get(page_url, headers=headers, timeout=15)
                     sp = BeautifulSoup(rp.text, "html.parser")
+                    large = sp.select_one(".photo__photo--minh img")
+                    if large:
+                        src = large.get("data-src") or large.get("src") or ""
+                        if src and "storage.mantan-web.jp" in src:
+                            src = _mantan_to_jpeg(src)
+                            if src not in images: images.append(src); continue
                     for img in sp.find_all("img"):
-                        src = img.get("src", "")
+                        src = img.get("data-src") or img.get("src") or ""
                         if "storage.mantan-web.jp" in src:
                             src = _mantan_to_jpeg(src)
                             if not any(k in src for k in ("logo", "icon", "banner")):
