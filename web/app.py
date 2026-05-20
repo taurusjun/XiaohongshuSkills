@@ -712,6 +712,10 @@ async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
+// Default date range to today
+const today=new Date().toISOString().split('T')[0];
+if(!S('dateFrom').value)S('dateFrom').value=today;
+if(!S('dateTo').value)S('dateTo').value=today;
 loadList();loadCategories();checkActiveTasks();
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
@@ -784,7 +788,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .img-strip .img-item img{height:130px;border-radius:6px;display:block}
 .img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
 #imgZoom{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;pointer-events:none}
-#imgZoom img{max-width:85vw;max-height:85vh;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.4)}
+#imgZoom img{max-width:500px;max-height:500px;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.4)}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
 .score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
 .score-plus{background:#dcfce7;color:#15803d}
