@@ -781,12 +781,10 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
 .img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
 .img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
-.img-strip .img-item img{height:130px;border-radius:6px;display:block;transition:transform .2s}
-.img-strip .img-item:hover{overflow:visible;z-index:99}
-.img-strip .img-item img:hover{transform:scale(3);box-shadow:0 8px 32px rgba(0,0,0,.3);border-radius:4px}
+.img-strip .img-item img{height:130px;border-radius:6px;display:block}
 .img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
-#galleryGrid img{transition:transform .2s;cursor:pointer}
-#galleryGrid img:hover{transform:scale(2.5);z-index:99;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+#imgZoom{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;pointer-events:none}
+#imgZoom img{max-width:85vw;max-height:85vh;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.4)}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
 .score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
 .score-plus{background:#dcfce7;color:#15803d}
@@ -1214,6 +1212,18 @@ async function savePublishImages(){
   {% if news.publish_video %}pubSet.add('{{news.publish_video}}');{% endif %}
   document.querySelectorAll('#publishImgStrip input[type=checkbox]').forEach(function(cb){
     if(pubSet.has(cb.dataset.path)){cb.checked=true}else{cb.parentElement.style.opacity='0.4'}
+  });
+})();
+// Image hover zoom overlay
+(function(){
+  const ov=document.createElement('div');ov.id='imgZoom';ov.innerHTML='<img>';
+  document.body.appendChild(ov);
+  const img=ov.querySelector('img');
+  document.querySelectorAll('.img-strip .img-item img, #galleryGrid img').forEach(el=>{
+    el.addEventListener('mouseenter',e=>{
+      img.src=e.target.src;ov.style.display='block';
+    });
+    el.addEventListener('mouseleave',()=>ov.style.display='none');
   });
 })();
 </script>
