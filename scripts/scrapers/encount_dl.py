@@ -27,16 +27,20 @@ def _extract_instagram_urls(soup: BeautifulSoup, limit: int = 20) -> list[str]:
     for pw in soup.find_all(class_=re.compile(r"photo-wrap")):
         for bq in pw.find_all("blockquote", class_="instagram-media"):
             permalink = bq.get("data-instgrm-permalink", "")
-            if permalink and permalink not in seen:
-                seen.add(permalink)
-                urls.append(permalink)
-                if len(urls) >= limit:
-                    return urls
+            if permalink:
+                permalink = permalink.split("?")[0].rstrip("/") + "/"
+                if permalink not in seen:
+                    seen.add(permalink)
+                    urls.append(permalink)
+                    if len(urls) >= limit:
+                        return urls
         for a in pw.find_all("a", href=re.compile(r"instagram\.com/p/")):
             href = a.get("href", "")
-            if href and href not in seen:
-                seen.add(href)
-                urls.append(href)
+            if href:
+                href = href.split("?")[0].rstrip("/") + "/"
+                if href not in seen:
+                    seen.add(href)
+                    urls.append(href)
                 if len(urls) >= limit:
                     return urls
     return urls
