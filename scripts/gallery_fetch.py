@@ -95,6 +95,7 @@ GALLERY_SITES: dict[str, str] = {
     "jisin.jp":              ".post-content img, .slider-show img",
     "lp.p.pia.jp":           ".photoGallaryArea__largeImage, img[data-src]",
     "news-postseven.com":    ".c-PhotoImage img, article img",
+    "magmix.jp":            "#gallery_main",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -280,6 +281,11 @@ def detect_gallery_link(article_url: str) -> str:
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
     from scrapers.oricon_dl import scrape
+    return scrape(gallery_url)
+
+
+def _scrape_magmix(gallery_url: str) -> list[str]:
+    from scrapers.magmix_dl import scrape
     return scrape(gallery_url)
 
 
@@ -2680,6 +2686,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "oricon.co.jp" in domain:
         images = _scrape_oricon(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "magmix.jp" in domain:
+        images = _scrape_magmix(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "crank-in.net" in domain:
