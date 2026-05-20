@@ -82,9 +82,16 @@ def _download(key: str, gallery_url: str = ""):
                 task['status'] = 'error: 图集为空'
                 task['log'] = '\n'.join(log)
                 return
-            # Separate Twitter/X video URLs from image URLs
+            # Separate Instagram and Twitter/X URLs from image URLs
+            ig_urls = [u for u in mixed_urls if 'instagram.com/p/' in u or 'instagram.com/reel/' in u]
             video_urls = [u for u in mixed_urls if 'x.com/' in u or 'twitter.com/' in u]
-            image_urls = [u for u in mixed_urls if u not in video_urls]
+            image_urls = [u for u in mixed_urls if u not in video_urls and u not in ig_urls]
+            # Download Instagram embeds
+            for ig_url in ig_urls:
+                files = _dl_ig(ig_url, d)
+                for f in files:
+                    log.append(f'  ✓ {f}')
+                task['log'] = '\n'.join(log)
             if video_urls:
                 log.append(f'🎬 找到 {len(video_urls)} 个推特视频')
             if image_urls:
