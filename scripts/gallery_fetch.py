@@ -267,121 +267,141 @@ def detect_gallery_link(article_url: str) -> str:
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
-    """oricon.co.jp 分页图集 — 页面完全靠 JS 渲染，用 CDP 打开后抓取主图。
+    """oricon.co.jp 图集 — JS 渲染页面，每页一张大图。
 
-    策略：打开 ?page=1（或 page-num 最大的一页），拿到所有缩略图后
-    将 _s_（small）替换为 _o_（original），即得到全部大图。
+    缩略图的 _p_o_ 不存在（只有主图有 _p_o_），必须逐页抓取主图。
+    先从 page=1 数缩略图确定总页数，再逐页获取 _o_ 大图。
     """
     import json
-    from urllib.parse import urlparse, urljoin
+    from urllib.parse import urlparse, urljoin, urlunparse
+    import re as _re
 
     p = urlparse(gallery_url)
-    base = f"{p.scheme}://{p.netloc}"
+    base_url = urlunparse((p.scheme, p.netloc, "", "", "", ""))
+    path = p.path.rstrip("/")
+    base_path = _re.sub(r"/photo/\d+$", "/photo", path)
 
-    # Build CDP connection — reuse existing Chrome tab if possible
     try:
         from cdp_publish import XiaohongshuPublisher
         publisher = XiaohongshuPublisher()
         publisher.connect()
+        # Prevent bot detection — set Referer and real-looking headers
+        publisher._send("Network.enable")
+        publisher._send("Network.setExtraHTTPHeaders", {
+            "headers": {
+                "Referer": "https://www.oricon.co.jp/",
+                "Accept-Language": "ja,en;q=0.9",
+            }
+        })
     except Exception as e:
         print(f"  ⚠️ oricon CDP 连接失败: {e}")
         return _scrape_oricon_fallback(gallery_url)
 
+    images: list[str] = []
+    seen: set[str] = set()
+
     try:
-        publisher._send("Page.enable")
-        publisher._send("Page.navigate", {"url": gallery_url})
+        # Step 1: count thumbnails on page=1 to know total
+        url1 = f"{base_url}{base_path}/1/"
+        publisher._send("Page.navigate", {"url": url1})
+        time.sleep(4)
 
-        # Wait for JS to render images
-        deadline = time.time() + 8
-        while time.time() < deadline:
-            result = publisher._send("Runtime.evaluate", {
-                "expression": """
-                    (function(){
-                        var main = document.querySelector('.main_photo_image img');
-                        var thumbs = document.querySelectorAll('img[src*=\"_p_s_\"]');
-                        return JSON.stringify({
-                            ready: document.readyState,
-                            mainSrc: main ? main.src : null,
-                            thumbCount: thumbs.length,
-                            thumbs: Array.from(thumbs).map(function(i){return i.src;})
-                        });
-                    })()
-                """,
-                "returnByValue": True,
-            })
-            val = json.loads(result.get("result", {}).get("value", "{}"))
-            if val.get("mainSrc") or val.get("thumbCount", 0) > 0:
-                break
-            time.sleep(0.5)
+        result = publisher._send("Runtime.evaluate", {
+            "expression": """
+                document.querySelectorAll('img[src*=\"_p_s_\"]').length
+            """,
+            "returnByValue": True,
+        })
+        total_pages = result.get("result", {}).get("value", 0)
+        if not isinstance(total_pages, int) or total_pages <= 0:
+            total_pages = 50  # fallback safety
 
-        # Extract thumb URLs and convert _s_ → _o_ for large versions
-        seen: set[str] = set()
-        images: list[str] = []
+        print(f"  📖 oricon 共 {total_pages} 张图片")
 
-        # Always include the current page's main photo (it's a different photo than thumbnails)
-        main_src = val.get("mainSrc")
-        if main_src and isinstance(main_src, str) and "contents.oricon" in main_src:
-            if main_src not in seen:
+        # Get main photo from page=1 (already loaded)
+        result = publisher._send("Runtime.evaluate", {
+            "expression": """
+                (function(){
+                    var img = document.querySelector('.main_photo_image img');
+                    return img ? img.src : '';
+                })()
+            """,
+            "returnByValue": True,
+        })
+        main_src = result.get("result", {}).get("value", "") or ""
+        if main_src and main_src not in seen:
+            seen.add(main_src)
+            images.append(main_src)
+
+        # Step 2: iterate remaining pages
+        for page in range(2, total_pages + 1):
+            url = f"{base_url}{base_path}/{page}/"
+            publisher._send("Page.navigate", {"url": url})
+            time.sleep(3)  # generous delay to avoid bot detection
+
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                result = publisher._send("Runtime.evaluate", {
+                    "expression": """
+                        (function(){
+                            var img = document.querySelector('.main_photo_image img');
+                            return img ? img.src : '';
+                        })()
+                    """,
+                    "returnByValue": True,
+                })
+                main_src = result.get("result", {}).get("value", "") or ""
+                if main_src:
+                    break
+                time.sleep(0.4)
+
+            if main_src and main_src not in seen:
                 seen.add(main_src)
                 images.append(main_src)
-
-        if val.get("thumbs"):
-            for src in val["thumbs"]:
-                if not isinstance(src, str) or "_p_s_" not in src:
-                    continue
-                large = src.replace("_p_s_", "_p_o_")
-                if large not in seen:
-                    seen.add(large)
-                    images.append(large)
 
         return images
     except Exception as e:
         print(f"  ⚠️ oricon CDP 抓取失败: {e}")
-        return _scrape_oricon_fallback(gallery_url)
+    finally:
+        try:
+            publisher.ws.close()
+        except Exception:
+            pass
+
+    return images if images else _scrape_oricon_fallback(gallery_url)
 
 
 def _scrape_oricon_fallback(gallery_url: str) -> list[str]:
-    """Fallback: 用 requests + BeautyfulSoup（可能只拿到第一页的小图）。"""
+    """Fallback: 用 requests + BeautyfulSoup。"""
     import re
-    from urllib.parse import urljoin
-    headers = {**HEADERS, "Referer": "https://www.oricon.co.jp/"}
+    from urllib.parse import urljoin, urlparse, urlunparse
 
+    headers = {**HEADERS, "Referer": "https://www.oricon.co.jp/"}
     images: list[str] = []
     seen: set[str] = set()
-    url = gallery_url
 
-    for _ in range(MAX_IMAGES):
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, "", "", "", ""))
+    path = p.path.rstrip("/")
+    base_path = re.sub(r"/photo/\d+$", "/photo", path)
+
+    for page in range(1, 50):
+        url = f"{base_url}{base_path}/{page}/"
         try:
             r = requests.get(url, headers=headers, timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
-            # Extract all _p_s_ thumbnails and convert to _p_o_
-            for img in s.find_all("img"):
-                src = img.get("src") or img.get("data-src", "")
-                if "_p_s_" in src:
-                    large = src.replace("_p_s_", "_p_o_")
-                    if large not in seen:
-                        seen.add(large)
-                        images.append(large)
-
-            if images:
-                break  # All thumbs are on every page, one page is enough
-
-            # 「次の写真」链接兜底
-            next_a = None
-            for a in s.select("a[href*='/photo/']"):
-                if "次の写真" in a.get_text():
-                    next_a = a
-                    break
-            if not next_a:
+            img = s.select_one("#main_photo img") or s.select_one(".main_photo_image img")
+            src = img.get("src") or img.get("data-src", "") if img else ""
+            if not src:
                 break
-            next_url = urljoin("https://www.oricon.co.jp", next_a.get("href", ""))
-            if next_url == url:
-                break
-            url = next_url
-            time.sleep(0.3)
+            if not src.startswith("http"):
+                src = urljoin("https://www.oricon.co.jp", src)
+            if src not in seen:
+                seen.add(src)
+                images.append(src)
         except Exception as e:
-            print(f"  ⚠️ oricon 抓取失败: {e}")
+            print(f"  ⚠️ oricon fallback 失败 page={page}: {e}")
             break
 
     return images
