@@ -44,6 +44,7 @@ def init_db():
                 content_score REAL DEFAULT 0,
                 publish_xhs INTEGER DEFAULT 0,
                 publish_time TEXT,
+                xhs_pub_time TEXT DEFAULT '',
                 status      TEXT DEFAULT 'active',
                 created_at  TEXT DEFAULT (datetime('now','localtime')),
                 updated_at  TEXT DEFAULT (datetime('now','localtime')),
@@ -73,6 +74,8 @@ def init_db():
         except: pass
         try: db.execute("ALTER TABLE news ADD COLUMN content_ja TEXT DEFAULT ''")
         except: pass
+        try: db.execute("ALTER TABLE news ADD COLUMN xhs_pub_time TEXT DEFAULT ''")
+        except: pass
 
 # ── 新闻 CRUD ──
 
@@ -87,8 +90,8 @@ def insert_news(news: dict) -> bool:
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
-                    pub_time, title_score, content_score, publish_xhs, publish_time, fetch_by, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                    pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -100,7 +103,8 @@ def insert_news(news: dict) -> bool:
                     gallery_url=excluded.gallery_url, content_ja=excluded.content_ja,
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
                     content_score=excluded.content_score, publish_xhs=excluded.publish_xhs,
-                    publish_time=excluded.publish_time, fetch_by=excluded.fetch_by,
+                    publish_time=excluded.publish_time, xhs_pub_time=excluded.xhs_pub_time,
+                    fetch_by=excluded.fetch_by,
                     updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
                   news.get('link',''), news.get('source',''), news.get('category',''),
@@ -111,7 +115,7 @@ def insert_news(news: dict) -> bool:
                   news.get('video_path',''), news.get('video_caption',''), news.get('gallery_url',''),
                   news.get('content_ja',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
-                  news.get('publish_xhs',0), news.get('publish_time',''), news.get('fetch_by','')))
+                  news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by','')))
             return True
         except Exception as e:
             print(f"  ⚠️ SQLite 写入失败: {e}")
@@ -171,7 +175,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
                'video_path','video_caption','gallery_images','publish_images','gallery_video','publish_video','gallery_url','content_ja',
-               'publish_xhs','publish_time','status','title_score','content_score','fetch_by'}
+               'publish_xhs','publish_time','xhs_pub_time','status','title_score','content_score','fetch_by'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
@@ -187,12 +191,14 @@ def update_news(key: str, fields: dict) -> bool:
         db.execute(f"UPDATE news SET {set_clause}, updated_at=datetime('now','localtime') WHERE key=?", vals)
     return True
 
-def mark_published(key: str, publish_time: str = "") -> bool:
+def mark_published(key: str, publish_time: str = "", xhs_pub_time: str = "") -> bool:
     if not publish_time:
         publish_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    if not xhs_pub_time:
+        xhs_pub_time = publish_time
     with _connect() as db:
-        db.execute("UPDATE news SET publish_xhs=1, publish_time=?, updated_at=datetime('now','localtime') WHERE key=?",
-                   (publish_time, key))
+        db.execute("UPDATE news SET publish_xhs=1, publish_time=?, xhs_pub_time=?, updated_at=datetime('now','localtime') WHERE key=?",
+                   (publish_time, xhs_pub_time, key))
     return True
 
 def get_pending_publish(limit: int = 20) -> list[dict]:

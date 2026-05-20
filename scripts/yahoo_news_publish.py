@@ -278,15 +278,17 @@ def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
     )
 
 
-def mark_as_published(page_id: str, news_key: str = ""):
-    """写入发布时间（Notion 或 SQLite）"""
+def mark_as_published(page_id: str, news_key: str = "", post_time: str = ""):
+    """写入发布时间（Notion 或 SQLite）。post_time 为定时时间（空则为立即发布）"""
     from config.yahoo_conf import STORAGE_BACKEND
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    now_local = datetime.now().strftime("%Y-%m-%d %H:%M")
+    xhs_pub = post_time if post_time else now_local
     ok = False
     if STORAGE_BACKEND == "sqlite" and news_key:
         try:
             from sqlite_db import mark_published as sqlite_pub
-            sqlite_pub(news_key, datetime.now().strftime("%Y-%m-%d %H:%M"))
+            sqlite_pub(news_key, now_local, xhs_pub)
             ok = True
         except Exception as e:
             print(f"SQLite 更新失败: {e}")
@@ -708,7 +710,7 @@ def main():
                           post_time=args.post_time, timing_jitter=args.timing_jitter,
                           reuse_existing_tab=args.reuse_existing_tab):
             sqlite_key = page.get("_key", "") if is_sqlite else ""
-            if mark_as_published(page["id"], sqlite_key):
+            if mark_as_published(page["id"], sqlite_key, args.post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
                 print(f"✅ 发布成功，但更新时间失败\n")

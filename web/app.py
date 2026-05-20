@@ -450,6 +450,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
       <span style="font-size:12px;color:var(--text2)"><b id="pendingCount">0</b> 条待发布</span>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="datetime-local" id="postTime" title="定时发布" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px;width:130px">
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(8,0)" id="qtT8">今8:00</button>
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(12,0)" id="qtT12">今12:00</button>
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(18,0)" id="qtT18">今18:00</button>
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(8,1)" id="qtM8">明8:00</button>
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(12,1)" id="qtM12">明12:00</button>
+        <button class="btn btn-gray btn-sm" onclick="setQuickTime(18,1)" id="qtM18">明18:00</button>
         <button class="btn btn-orange btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布到小红书</button>
       </div>
     </div>
@@ -463,6 +469,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
         <th>标题</th>
         <th style="width:55px">发布XHS</th>
         <th style="width:85px">发布时间</th>
+        <th style="width:85px">XHS公开</th>
         <th style="width:52px">状态</th>
         <th>分类</th>
         <th onclick="setSort('title_score')" style="width:60px">评分</th>
@@ -530,6 +537,7 @@ async function loadList(){
         <span style="color:var(--text3);font-size:11px">${esc((n.content||'').substring(0,50))}</span></td>
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
     <td style="font-size:11px;color:var(--text2)">${n.publish_time||'-'}</td>
+    <td style="font-size:11px;color:var(--text2)">${n.xhs_pub_time||'-'}</td>
     <td><span class="badge ${n.status==='archived'?'badge-gray':'badge-green'}"><span class="badge-dot ${n.status==='archived'?'badge-dot-archived':'badge-dot-active'}"></span>${n.status==='archived'?'归档':'活跃'}</span></td>
     <td>${n.category||'-'}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
@@ -707,6 +715,24 @@ async function loadCategories(){
 loadList();loadCategories();checkActiveTasks();
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
+// Quick time buttons for publish schedule
+function setQuickTime(h,dayOffset){
+  const d=new Date();d.setDate(d.getDate()+dayOffset);
+  const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  S('postTime').value=`${ds}T${String(h).padStart(2,'0')}:00`;
+  updateQuickTimeBtns();
+}
+function updateQuickTimeBtns(){
+  const now=new Date();const today=now.getDate();const h=now.getHours();
+  ['T8','T12','T18'].forEach(id=>{
+    const btn=document.getElementById('qt'+id);if(!btn)return;
+    btn.disabled=today===new Date().getDate() && h>=parseInt(id.slice(1));
+  });
+  ['T8','T12','T18','M8','M12','M18'].forEach(id=>{
+    const btn=document.getElementById('qt'+id);if(btn)btn.style.opacity=btn.disabled?'0.4':'1';
+  });
+}
+updateQuickTimeBtns();setInterval(updateQuickTimeBtns,60000);
 </script>
 </body></html>"""
 
@@ -755,8 +781,12 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
 .img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
 .img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
-.img-strip .img-item img{height:130px;border-radius:6px;display:block}
+.img-strip .img-item img{height:130px;border-radius:6px;display:block;transition:transform .2s}
+.img-strip .img-item:hover{overflow:visible;z-index:99}
+.img-strip .img-item img:hover{transform:scale(3);box-shadow:0 8px 32px rgba(0,0,0,.3);border-radius:4px}
 .img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
+#galleryGrid img{transition:transform .2s;cursor:pointer}
+#galleryGrid img:hover{transform:scale(2.5);z-index:99;box-shadow:0 8px 32px rgba(0,0,0,.3)}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
 .score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
 .score-plus{background:#dcfce7;color:#15803d}
