@@ -550,6 +550,9 @@ async function loadList(){
     pager+=`<button class="btn btn-gray" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>›</button>`;
   }
   S('pager').innerHTML=pager;
+  // Restore scroll position when returning from detail page
+  const sy=sessionStorage.getItem('listScrollY');
+  if(sy){requestAnimationFrame(()=>{window.scrollTo(0,parseInt(sy));sessionStorage.removeItem('listScrollY')})}
 }
 function goPage(n){page=n;loadList();window.scrollTo(0,0)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
@@ -702,11 +705,8 @@ async function loadCategories(){
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
 loadList();loadCategories();checkActiveTasks();
-// Restore scroll position when returning from detail page
-const savedScrollY=sessionStorage.getItem('listScrollY');
-if(savedScrollY){setTimeout(()=>window.scrollTo(0,parseInt(savedScrollY)),100);sessionStorage.removeItem('listScrollY')}
 // Save scroll position only when navigating to detail page
-document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)});
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
 </script>
 </body></html>"""
 
