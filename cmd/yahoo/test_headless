@@ -1,0 +1,9 @@
+#!/bin/bash
+# 测试无头浏览器抓取
+cd "$(dirname "$0")/../.."
+export CDP_HEADLESS=1
+echo "=== 启动 headless Chrome ==="
+.venv/bin/python scripts/chrome_launcher.py 2>&1 || echo "(Chrome already running, using existing)"
+sleep 2
+echo "=== 测试关键词抓取 (AKB, max=2) ==="
+echo "" | STORAGE_BACKEND=sqlite .venv/bin/python scripts/yahoo_news_auto.py --keyword "AKB" --max 2 --push --auto 2>&1 | tail -30
