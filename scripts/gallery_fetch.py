@@ -857,80 +857,8 @@ def _scrape_realsound(gallery_url: str) -> list[str]:
 
 
 def _scrape_encount(gallery_url: str) -> list[str]:
-    """encount.press 图集：包含Twitter embed，只取 article body 内图片和 x.com 推文图片。"""
-    import re
-    headers = {**HEADERS, "Referer": "https://encount.press/"}
-
-    try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
-        s = BeautifulSoup(r.text, "html.parser")
-
-        # 限定 article body 容器
-        body = s.find(class_="single__content__txt")
-        if not body:
-            body = s
-
-        images: list[str] = []
-        seen: set[str] = set()
-
-        # 1. 提取 article body 内的 wp-content/uploads 图片，过滤 banner/recruit
-        banner_kw = ["banner", "recruit", "_SP_", "600x200"]
-        for img in body.find_all("img"):
-            src = (img.get("data-src") or img.get("src") or "")
-            if ("wp-content/uploads/" in src and
-                src.endswith(('.jpg', '.jpeg', '.png', '.webp')) and
-                "hatena_white.png" not in src and
-                "logo.svg" not in src and
-                "icon_" not in src):
-
-                if src.startswith("//"):
-                    src = "https:" + src
-                elif src.startswith("/"):
-                    src = "https://encount.press" + src
-
-                src = src.split('?')[0]
-
-                if any(kw in src for kw in banner_kw):
-                    continue
-
-                if src not in seen:
-                    seen.add(src)
-                    images.append(src)
-                    if len(images) >= MAX_IMAGES:
-                        break
-
-        # 2. 提取 article body 内的 Twitter 推文图片
-        # 2a. pbs.twimg.com media 直抓（CDP 渲染后可能出现）
-        body_html = str(body)
-        for m in re.finditer(r'pbs\.twimg\.com/media/([A-Za-z0-9]+)', body_html):
-            img_key = m.group(1)
-            img_url = f"https://pbs.twimg.com/media/{img_key}?format=jpg&name=large"
-            if img_url not in seen:
-                seen.add(img_url)
-                images.append(img_url)
-                print(f"    🖼️ 抓取Twitter图片: {img_key}")
-                if len(images) >= MAX_IMAGES:
-                    break
-
-        # 2b. blockquote.twitter-tweet 内的 tweet_id（静态 HTML）
-        for bq in body.find_all("blockquote", class_="twitter-tweet"):
-            for a in bq.find_all("a", href=True):
-                m = re.search(r'(?:twitter\.com|x\.com)/\w+/status/(\d+)', a["href"])
-                if m:
-                    tweet_id = m.group(1)
-                    print(f"    🔗 发现Twitter embed: {tweet_id}")
-                    twitter_images = _get_twitter_images_for_encount(tweet_id)
-                    for img_url in twitter_images:
-                        if img_url not in seen:
-                            seen.add(img_url)
-                            images.append(img_url)
-                            if len(images) >= MAX_IMAGES:
-                                break
-
-        return images
-    except Exception as e:
-        print(f"  ⚠️ encount.press 抓取失败: {e}")
-        return []
+    from scrapers.encount_dl import scrape
+    return scrape(gallery_url)
 
 
 def _scrape_abema_tv(gallery_url: str) -> list[str]:
@@ -1042,14 +970,6 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
                 break
 
     return images
-
-
-def _get_twitter_images_for_encount(tweet_id: str) -> list[str]:
-    """为encount.press获取推文图片（通过 fxtwitter API）"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
-    return _get_twitter_images_from_embed(tweet_id, headers)
 
 
 def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
