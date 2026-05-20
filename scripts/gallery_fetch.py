@@ -279,46 +279,141 @@ def detect_gallery_link(article_url: str) -> str:
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
-    """oricon.co.jp 分页图集：通过「次の写真」链接逐页遍历，抓 #main_photo img"""
-    import re
-    from urllib.parse import urljoin
-    headers = {**HEADERS, "Referer": "https://www.oricon.co.jp/"}
+    """oricon.co.jp 图集 — 用 requests + 浏览器头 + Referer 链，绕过 Cloudflare。
+
+    每页一张大图。先访问入口页数出缩略图总量，再逐页请求。
+    关键：带 Sec-Fetch 系列头 + 日文 Accept-Language + 随机延迟。
+    """
+    import random as _random
+    from urllib.parse import urlparse, urljoin, urlunparse
+    import re as _re
+
+    ORICON_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                  "image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+    }
+
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, "", "", "", ""))
+    path = p.path.rstrip("/")
+    base_path = _re.sub(r"/photo/\d+$", "/photo", path)
+
+    # Detect entry page number
+    start_num_m = _re.search(r"/photo/(\d+)/", gallery_url)
+    start_num = int(start_num_m.group(1)) if start_num_m else 1
+
+    session = requests.Session()
+    images: list[str] = []
+    seen: set[str] = set()
+
+    # Step 1: fetch entry page, count thumbnails from _p_s_ imgs
+    entry_url = f"{base_url}{base_path}/{start_num}/"
+    try:
+        resp = session.get(entry_url, headers={**ORICON_HEADERS, "Referer": f"{base_url}/"}, timeout=20)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Count via _p_s_ thumbnail imgs
+        total = len(soup.find_all("img", src=_re.compile(r"_p_s_")))
+        if total <= 0:
+            return []
+        print(f"  📖 oricon 共 {total} 张图片")
+
+        # Cache entry page soup for reuse when loop reaches start_num
+        cached_soup: dict[int, BeautifulSoup] = {start_num: soup}
+    except Exception as e:
+        print(f"  ⚠️ oricon 入口页失败: {e}")
+        return []
+
+    # Step 2: iterate 1..total, fetch each page's _o_ image
+    for i in range(1, total + 1):
+        page_url = f"{base_url}{base_path}/{i}/"
+
+        if i in cached_soup:
+            page_soup = cached_soup[i]
+        else:
+            time.sleep(_random.uniform(1.5, 3.0))
+            referer = f"{base_url}{base_path}/{max(1, i - 1)}/"
+            try:
+                resp = session.get(page_url, headers={**ORICON_HEADERS, "Referer": referer}, timeout=20)
+                resp.raise_for_status()
+                page_soup = BeautifulSoup(resp.text, "html.parser")
+            except Exception as e:
+                print(f"  ⚠️ oricon page {i} 失败: {e}")
+                continue
+
+        # Extract _p_o_ image
+        img = page_soup.find("img", class_=_re.compile(r"main_photo_image"))
+        if not img:
+            img = page_soup.find("img", src=_re.compile(r"_p_o_"))
+        src = img.get("src", "") if img else ""
+        if src and not src.startswith("http"):
+            src = urljoin(base_url, src)
+        if src and src not in seen:
+            seen.add(src)
+            images.append(src)
+
+    return images
+
+
+def _scrape_oricon_fallback(gallery_url: str) -> list[str]:
+    """Fallback: CDP 方式（旧逻辑保留）。"""
+    import json as _json
+    from urllib.parse import urlparse, urljoin, urlunparse
+    import re as _re
+
+    p = urlparse(gallery_url)
+    base_url = urlunparse((p.scheme, p.netloc, "", "", "", ""))
+    path = p.path.rstrip("/")
+    base_path = _re.sub(r"/photo/\d+$", "/photo", path)
+
+    try:
+        from cdp_publish import XiaohongshuPublisher
+        publisher = XiaohongshuPublisher()
+        publisher.connect()
+    except Exception as e:
+        print(f"  ⚠️ oricon CDP 连接失败: {e}")
+        return []
 
     images: list[str] = []
     seen: set[str] = set()
-    url = gallery_url
 
-    for _ in range(MAX_IMAGES):
+    try:
+        result = publisher._send("Runtime.evaluate", {
+            "expression": f"document.querySelectorAll('img[src*=\"_p_s_\"]').length",
+            "returnByValue": True,
+        })
+        total_pages = result.get("result", {}).get("value", 0)
+        if not isinstance(total_pages, int) or total_pages <= 0:
+            total_pages = 50
+
+        for page in range(1, total_pages + 1):
+            url = f"{base_url}{base_path}/{page}/"
+            publisher._send("Page.navigate", {"url": url})
+            time.sleep(4)
+            result = publisher._send("Runtime.evaluate", {
+                "expression": "(document.querySelector('.main_photo_image img')||{}).src||''",
+                "returnByValue": True,
+            })
+            main_src = result.get("result", {}).get("value", "") or ""
+            if main_src and main_src not in seen:
+                seen.add(main_src)
+                images.append(main_src)
+    except Exception as e:
+        print(f"  ⚠️ oricon CDP 抓取失败: {e}")
+    finally:
         try:
-            r = requests.get(url, headers=headers, timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
-
-            img = s.select_one("#main_photo img")
-            if img:
-                src = img.get("src", "")
-                if src:
-                    if src.startswith("/"):
-                        src = urljoin("https://www.oricon.co.jp", src)
-                    if src not in seen:
-                        seen.add(src)
-                        images.append(src)
-
-            # 「次の写真」リンクから次ページへ
-            next_a = None
-            for a in s.select("a[href*='/photo/']"):
-                if "次の写真" in a.get_text():
-                    next_a = a
-                    break
-            if not next_a:
-                break
-            next_url = urljoin("https://www.oricon.co.jp", next_a.get("href", ""))
-            if next_url == url:
-                break
-            url = next_url
-            time.sleep(0.3)
-        except Exception as e:
-            print(f"  ⚠️ oricon 抓取失败: {e}")
-            break
+            publisher.ws.close()
+        except Exception:
+            pass
 
     return images
 
