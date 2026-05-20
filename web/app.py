@@ -702,6 +702,11 @@ async function loadCategories(){
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
 loadList();loadCategories();checkActiveTasks();
+// Restore scroll position when returning from detail page
+const savedScrollY=sessionStorage.getItem('listScrollY');
+if(savedScrollY){setTimeout(()=>window.scrollTo(0,parseInt(savedScrollY)),100);sessionStorage.removeItem('listScrollY')}
+// Save scroll position only when navigating to detail page
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)});
 </script>
 </body></html>"""
 
