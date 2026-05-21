@@ -958,12 +958,56 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['summary']  = summary
         news['content']  = content
         news['comment']  = comment
-        # 质量评分
-        quality = evaluate_quality(seo_title, content, comment, news.get('title_ja',''), news.get('body_text',''))
+        # 质量评分 + 低分诊断 + 最多 2 次重试
+        from scripts.scoring import diagnose_low_score, Action, get_failed_dims
+        from scripts.agent_tools import regenerate_with_hint
+        from scripts.sqlite_db import get_config
+
+        publish_threshold = get_config("publish_threshold", default=3.0)
+        retry_threshold = get_config("retry_threshold", default=2.0)
+        final_action = Action.PUBLISH
+
+        for attempt in range(3):  # 原始 + 最多 2 次重试
+            quality = evaluate_quality(seo_title, content, comment,
+                                       news.get('title_ja', ''), news.get('body_text', ''))
+            action = diagnose_low_score(
+                {"content_score": quality["content_score"],
+                 "title_score": quality["title_score"],
+                 "gallery_images": news.get("gallery_images", [])},
+                quality["scores"],
+                publish_threshold=publish_threshold,
+                retry_threshold=retry_threshold,
+            )
+            final_action = action
+            if action == Action.REGENERATE and attempt < 2:
+                failed = get_failed_dims(quality["scores"])
+                print(f"    🔄 低分重试 (attempt {attempt+1}/3): {failed}")
+                news = regenerate_with_hint(news, failed)
+                hint = news.get("_regen_hint", "")
+                # 重新生成内容（注入修正提示）
+                generated = generate_content_and_comment(
+                    news['title_ja'], news['title_zh'],
+                    ja_summary=news.get('ja_summary', ''),
+                    keyword=keyword,
+                    body_text=news.get('body_text', ''),
+                )
+                if generated is None:
+                    print("    ⚠️ 重生成失败，保留当前内容")
+                    break
+                seo_title, summary, content, comment, _, topic_tags = generated
+                news['title_zh'] = seo_title
+                news['summary'] = summary
+                news['content'] = content
+                news['comment'] = comment
+            else:
+                break
+
         news['_title_score'] = quality['title_score']
         news['_content_score'] = quality['content_score']
-        news['_quality'] = quality  # 暂存，insert_news 后再写 scores
-        print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']}")
+        news['_quality'] = quality
+        print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} → {final_action.value}")
+        if final_action == Action.DISCARD:
+            news['_discard'] = True
         if quality['title_score'] < 2.0:
             print(f"    ⚠️ 标题质量偏低，建议人工复审")
         news['video_caption'] = ""  # 先占位，tags 确定后再填
