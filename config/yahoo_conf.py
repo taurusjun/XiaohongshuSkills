@@ -1,8 +1,13 @@
 """非敏感配置中心 — Yahoo Pipeline 全局配置"""
 import os
+from pathlib import Path
 
 # 存储后端: "sqlite" | "notion"（默认 sqlite）
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
+
+# SQLite 数据库路径（默认开发库 data/news_dev.db）
+DB_PATH = os.environ.get("SQLITE_PATH",
+    str(Path(__file__).parent.parent / "data" / "news_dev.db"))
 
 # 图集下载缓存目录
 GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.cache/xhs_images"))
