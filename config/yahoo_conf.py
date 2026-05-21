@@ -18,3 +18,6 @@ FETCH_PARALLEL = int(os.environ.get("FETCH_PARALLEL", "3"))
 # 代理配置
 USE_PROXY = int(os.environ.get("USE_PROXY", "0"))
 PROXY_URL = os.environ.get("PROXY_URL", "http://127.0.0.1:10090")
+
+# 封面图视觉评分（需 VISION_MODEL 支持图片输入，默认关闭）
+VISION_ENABLED = int(os.environ.get("VISION_ENABLED", "0"))
