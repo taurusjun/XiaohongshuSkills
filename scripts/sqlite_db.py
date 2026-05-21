@@ -7,9 +7,12 @@ from datetime import datetime
 from config.yahoo_conf import DB_PATH
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # file::memory:?cache=shared 让所有连接共享同一个内存库
+    path = "file::memory:?cache=shared" if DB_PATH == ":memory:" else DB_PATH
+    conn = sqlite3.connect(path, uri=True if DB_PATH == ":memory:" else False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    if DB_PATH != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=OFF")
     return conn
 

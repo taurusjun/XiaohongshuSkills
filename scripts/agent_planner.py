@@ -44,7 +44,7 @@ def plan_today(date: str = "") -> DailyPlan:
         return DailyPlan(**cached)
 
     growth_stage = get_config("growth_stage", default="cold_start")
-    focus_topics = get_config("focus_topics", default=[])
+    focus_topics = get_config("focus_topics", default=[]) or ["乃木坂", "AKB", "日向坂"]
     cold_start_quota = get_config("cold_start_quota", default=3)
     cold_start_max_quota = get_config("cold_start_max_quota", default=4)
     daily_quota = get_config("daily_quota", default=2)
@@ -79,8 +79,9 @@ def plan_today(date: str = "") -> DailyPlan:
                 is_fresh=_topic_is_fresh(ec)))
 
         # Fallback if not enough
+        fallback_topics = focus_topics or ["写真集"]
         while len(plan.topics) < quota:
-            fallback = focus_topics[len(plan.topics) % max(len(focus_topics), 1)]
+            fallback = fallback_topics[len(plan.topics) % len(fallback_topics)]
             plan.topics.append(TopicQuota(topic=fallback, quota=1, source="baseline"))
 
     else:

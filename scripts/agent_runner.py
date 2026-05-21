@@ -18,8 +18,15 @@ logger = logging.getLogger("agent_runner")
 def run(dry_run: bool = False, live_preview: bool = False):
     """智能体主循环：感知→规划→执行→通知"""
     if dry_run:
-        os.environ["SQLITE_PATH"] = ":memory:"
+        import tempfile
+        os.environ["SQLITE_PATH"] = tempfile.mktemp(suffix=".db")
+        # 强制重载 yahoo_conf 以获取新 DB_PATH
+        import config.yahoo_conf, importlib
+        importlib.reload(config.yahoo_conf)
         from scripts.sqlite_db import init_db
+        # 更新已缓存的 DB_PATH
+        import scripts.sqlite_db as sdb
+        sdb.DB_PATH = config.yahoo_conf.DB_PATH
         init_db()
         _seed_test_config()
 
