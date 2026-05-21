@@ -1659,7 +1659,11 @@ class XiaohongshuPublisher:
 
     def fetch_note_stats(self, note_url: str) -> dict[str, Any]:
         """
-        Navigate to a published note and extract interaction numbers.
+        Get interaction stats for a published note via creator dashboard API.
+
+        Navigates to creator.xiaohongshu.com data-center, intercepts the page's
+        analyze/list API response (which includes X-s/X-t signing) via CDP Network.
+
         Returns {"views": int|None, "likes": int|None, "saves": int|None, "comments": int|None}.
         On failure returns {} without raising.
         """
@@ -1667,69 +1671,87 @@ class XiaohongshuPublisher:
             print("[cdp_publish] Warning: not connected, cannot fetch note stats.")
             return {}
         try:
-            self._navigate(str(note_url))
-            self._sleep(2, minimum_seconds=1.0)
-            stats_js = r"""
-                (() => {
-                    function parseCount(text) {
-                        if (!text) return null;
-                        text = String(text).trim();
-                        if (!text) return null;
-                        if (text.includes('万')) {
-                            let n = parseFloat(text.replace('万', ''));
-                            return isNaN(n) ? null : Math.round(n * 10000);
-                        }
-                        let n = parseInt(text.replace(/[^0-9]/g, ''), 10);
-                        return isNaN(n) ? null : n;
-                    }
-                    let result = {views: null, likes: null, saves: null, comments: null};
-                    let allSpans = document.querySelectorAll('span');
-                    let found = 0;
-                    for (let span of allSpans) {
-                        let text = span.textContent.trim();
-                        if (!text) continue;
-                        let parent = span.closest('[class*="interact"]');
-                        if (!parent) continue;
-                        // Try to identify which stat type by nearby elements
-                        let container = span.parentElement;
-                        if (!container) continue;
-                        let containerText = container.textContent.toLowerCase();
-                        // Common XHS patterns
-                    }
-                    // Fallback: try to find any numbers near interaction icons
-                    let interactEls = document.querySelectorAll('[class*="interact"], [class*="action"], [class*="engage"]');
-                    for (let el of interactEls) {
-                        let nums = el.querySelectorAll('span');
-                        for (let span of nums) {
-                            let val = parseCount(span.textContent);
-                            if (val !== null && val > 0 && found < 4) {
-                                found++;
-                            }
-                        }
-                    }
-                    // Second fallback: search entire page for number patterns near icon-like elements
-                    let allElems = document.querySelectorAll('*');
-                    let counts = [];
-                    for (let el of allElems) {
-                        let text = el.textContent.trim();
-                        if (/^[\\d.,]+万?$/.test(text) && el.children.length === 0) {
-                            let val = parseCount(text);
-                            if (val !== null) counts.push(val);
-                        }
-                    }
-                    // Sort descending, assign to views/likes/saves/comments by magnitude
-                    counts.sort((a, b) => b - a);
-                    if (counts.length >= 1) result.views = counts[0];
-                    if (counts.length >= 2) result.likes = counts[1];
-                    if (counts.length >= 3) result.saves = counts[2];
-                    if (counts.length >= 4) result.comments = counts[3];
-                    return result;
-                })()
-            """
-            raw = self._evaluate(stats_js)
-            if not isinstance(raw, dict):
-                return {}
-            return {k: (int(v) if v is not None else None) for k, v in raw.items()}
+            import json as _json, time as _time, re as _re
+
+            # Enable Network on the main connection
+            self._send("Network.enable")
+
+            # Send navigation (don't use _navigate — it consumes unsolicited events)
+            self._send("Page.enable")
+            nav_id = self._msg_id + 1
+            self._msg_id = nav_id
+            self.ws.send(_json.dumps({
+                "id": nav_id, "method": "Page.navigate",
+                "params": {"url": "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"},
+            }))
+
+            # Collect all messages — both command responses and unsolicited Network events
+            request_ids = []
+            nav_done = False
+            deadline = _time.time() + 25
+
+            while _time.time() < deadline:
+                try:
+                    raw = self.ws.recv(timeout=2)
+                    msg = _json.loads(raw)
+                    msg_id = msg.get("id", 0)
+                    m = msg.get("method", "")
+
+                    # Track navigation completion
+                    if msg_id == nav_id:
+                        nav_done = True
+
+                    # Track analyze/list request
+                    if m == "Network.responseReceived":
+                        url = msg.get("params", {}).get("response", {}).get("url", "")
+                        if "analyze/list" in url:
+                            request_ids.append(msg["params"]["requestId"])
+
+                    # When analyze/list finishes loading, grab the body
+                    if m == "Network.loadingFinished":
+                        pid = msg.get("params", {}).get("requestId", "")
+                        if pid in request_ids:
+                            get_body_id = self._msg_id + 1
+                            self._msg_id = get_body_id
+                            self.ws.send(_json.dumps({
+                                "id": get_body_id,
+                                "method": "Network.getResponseBody",
+                                "params": {"requestId": pid},
+                            }))
+                            # Read the body response
+                            body_raw = _json.loads(self.ws.recv())
+                            body = body_raw.get("result", {}).get("body", "")
+
+                            if body and '"note_infos"' in body:
+                                data = _json.loads(body)
+                                notes = data.get("data", {}).get("note_infos", [])
+
+                                note_id = ""
+                                m = _re.search(r'/explore/([a-f0-9]+)', note_url)
+                                if m:
+                                    note_id = m.group(1)
+
+                                for n in notes:
+                                    if note_id and n.get("id") == note_id:
+                                        return {
+                                            "views": n.get("read_count"),
+                                            "likes": n.get("like_count"),
+                                            "saves": n.get("fav_count"),
+                                            "comments": n.get("comment_count"),
+                                        }
+                                break  # Not the note we want? return empty
+                except Exception:
+                    continue
+
+            # Drain remaining messages and reconnect if needed
+            if nav_done:
+                try:
+                    self._reconnect()
+                except Exception:
+                    pass
+
+            print("[cdp_publish] Could not capture analyze/list response")
+            return {}
         except Exception as e:
             print(f"[cdp_publish] fetch_note_stats failed: {e}")
             return {}
