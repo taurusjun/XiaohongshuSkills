@@ -298,6 +298,133 @@ def stats() -> dict:
         published = db.execute("SELECT COUNT(*) as n FROM news WHERE publish_time IS NOT NULL AND publish_time!='' AND status='active'").fetchone()['n']
     return {"total": total, "today": today, "pending": pending, "published": published}
 
+# ── 记忆层 CRUD (Module A) ──
+
+_dim_weights_cache = {"weights": {}, "cached_updated_at": ""}
+
+
+def get_top_topics(n: int = 10, window_days: int = 90) -> list[dict]:
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT * FROM topic_performance WHERE last_updated >= datetime('now','localtime',?) ORDER BY engagement_score DESC LIMIT ?",
+            (f'-{window_days} days', n),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_recent_performance(days: int = 7) -> dict:
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT * FROM account_snapshots WHERE snapshot_date >= date('now','localtime',?) AND followers IS NOT NULL ORDER BY snapshot_date DESC LIMIT ?",
+            (f'-{days} days', days),
+        ).fetchall()
+    if not rows:
+        return {"avg_week_saves": 0.0, "avg_week_views": 0.0, "data_completeness": "no_data"}
+    saves = [r["week_saves"] for r in rows if r["week_saves"]]
+    views = [r["week_views"] for r in rows if r["week_views"]]
+    return {
+        "avg_week_saves": sum(saves) / len(saves) if saves else 0.0,
+        "avg_week_views": sum(views) / len(views) if views else 0.0,
+        "data_completeness": rows[-1]["data_completeness"] if rows else "full",
+    }
+
+
+def upsert_topic_performance(topic: str, saves: float = 0, comments: float = 0,
+                              views: float = 0, **kwargs):
+    eng_w = get_config("engagement_weights", default={"saves": 0.6, "comments": 0.4})
+    eng_score = eng_w.get("saves", 0.6) * saves + eng_w.get("comments", 0.4) * comments
+    import json as _json
+    with _connect() as db:
+        existing = db.execute("SELECT post_count FROM topic_performance WHERE topic=?", (topic,)).fetchone()
+        post_count = (existing["post_count"] + 1) if existing else 1
+        db.execute(
+            """INSERT OR REPLACE INTO topic_performance
+               (topic, avg_saves, avg_comments, avg_views, engagement_score, post_count,
+                discard_count, last_discard_reason, topic_baseline_saves, topic_baseline_comments,
+                trend_signal, trend_updated_at, vertical, competition_count,
+                window_days, last_updated)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                       COALESCE((SELECT window_days FROM topic_performance WHERE topic=?), 90),
+                       datetime('now','localtime'))""",
+            (topic, saves, comments, views, eng_score, post_count,
+             kwargs.get("discard_count", 0), kwargs.get("last_discard_reason", ""),
+             kwargs.get("topic_baseline_saves", 0.0), kwargs.get("topic_baseline_comments", 0.0),
+             _json.dumps(kwargs.get("trend_signal", {}), ensure_ascii=False) if isinstance(kwargs.get("trend_signal"), dict) else str(kwargs.get("trend_signal", "")),
+             kwargs.get("trend_updated_at", ""),
+             kwargs.get("vertical", "idol"),
+             kwargs.get("competition_count", 0),
+             topic),
+        )
+
+
+def get_config(key: str, default=None):
+    import json as _json
+    with _connect() as db:
+        row = db.execute("SELECT value FROM agent_config WHERE key=?", (key,)).fetchone()
+    if not row:
+        return default
+    try:
+        return _json.loads(row["value"])
+    except Exception:
+        return row["value"]
+
+
+def set_config(key: str, value) -> None:
+    import json as _json
+    v = _json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+    with _connect() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO agent_config (key, value, updated_at) VALUES (?,?,datetime('now','localtime'))",
+            (key, v),
+        )
+
+
+def get_state(key: str, default=None):
+    import json as _json
+    with _connect() as db:
+        row = db.execute("SELECT value FROM agent_state WHERE key=?", (key,)).fetchone()
+    if not row:
+        return default
+    try:
+        return _json.loads(row["value"])
+    except Exception:
+        return row["value"]
+
+
+def set_state(key: str, value, date: str = "") -> None:
+    import json as _json
+    from datetime import datetime as _dt
+    v = _json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+    d = date or _dt.now().strftime("%Y%m%d")
+    with _connect() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO agent_state (key, value, date, updated_at) VALUES (?,?,?,datetime('now','localtime'))",
+            (key, v, d),
+        )
+
+
+def cleanup_old_states(days: int = 7):
+    from datetime import datetime as _dt, timedelta as _td
+    cutoff = (_dt.now() - _td(days=days)).strftime("%Y%m%d")
+    with _connect() as db:
+        db.execute("DELETE FROM agent_state WHERE date!='' AND date < ?", (cutoff,))
+
+
+def load_dim_weights() -> dict:
+    global _dim_weights_cache
+    import json as _json
+    with _connect() as db:
+        row = db.execute(
+            "SELECT value, updated_at FROM agent_config WHERE key='dim_weights'"
+        ).fetchone()
+    if not row:
+        return {}
+    if row["updated_at"] != _dim_weights_cache["cached_updated_at"]:
+        _dim_weights_cache["weights"] = _json.loads(row["value"])
+        _dim_weights_cache["cached_updated_at"] = row["updated_at"]
+    return _dim_weights_cache["weights"]
+
+
 # ── 评分 ──
 
 # 维度定义：dimension → (category, calc)
