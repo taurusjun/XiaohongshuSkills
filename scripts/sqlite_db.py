@@ -132,6 +132,19 @@ def init_db():
                 is_active      INTEGER DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_sdv_active ON scoring_dimension_versions(is_active);
+
+            CREATE TABLE IF NOT EXISTS metrics_history (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                news_key     TEXT NOT NULL,
+                collected_at TEXT NOT NULL,
+                views        INTEGER DEFAULT 0,
+                likes        INTEGER DEFAULT 0,
+                saves        INTEGER DEFAULT 0,
+                comments     INTEGER DEFAULT 0,
+                UNIQUE(news_key, collected_at)
+            );
+            CREATE INDEX IF NOT EXISTS idx_mh_key ON metrics_history(news_key);
+            CREATE INDEX IF NOT EXISTS idx_mh_time ON metrics_history(collected_at);
         """)
         # Compat: add columns to existing DBs
         _news_compat = [
@@ -414,6 +427,29 @@ def cleanup_old_states(days: int = 7):
     cutoff = (_dt.now() - _td(days=days)).strftime("%Y%m%d")
     with _connect() as db:
         db.execute("DELETE FROM agent_state WHERE date!='' AND date < ?", (cutoff,))
+
+
+def record_metrics(news_key: str, collected_at: str,
+                   views: int = 0, likes: int = 0,
+                   saves: int = 0, comments: int = 0):
+    """写入 metrics_history + 更新 news 最新值"""
+    with _connect() as db:
+        db.execute(
+            "INSERT OR IGNORE INTO metrics_history (news_key, collected_at, views, likes, saves, comments) VALUES (?,?,?,?,?,?)",
+            (news_key, collected_at, views, likes, saves, comments),
+        )
+        db.execute(
+            "UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?, updated_at=datetime('now','localtime') WHERE key=?",
+            (views, likes, saves, comments, news_key),
+        )
+
+
+def cleanup_old_metrics(days: int = 90):
+    """删除 N 天前的指标历史记录"""
+    from datetime import datetime as _dt, timedelta as _td
+    cutoff = (_dt.now() - _td(days=days)).strftime("%Y-%m-%d %H:%M")
+    with _connect() as db:
+        db.execute("DELETE FROM metrics_history WHERE collected_at < ?", (cutoff,))
 
 
 def load_dim_weights() -> dict:

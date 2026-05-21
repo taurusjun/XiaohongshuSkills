@@ -504,6 +504,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
     <div id="archiveBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fafbfc;justify-content:space-between;align-items:center">
       <span style="font-size:12px;color:var(--text2)" id="archiveCount">已选 0 条</span>
       <button class="btn btn-dark btn-sm" onclick="archiveSelected()">📦 归档选中</button>
+      <button class="btn btn-orange btn-sm" id="collectBtn" onclick="collectBatchMetrics()">🔄 回收数据</button>
     </div>
     <div id="publishBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fff7f5;justify-content:space-between;align-items:center">
       <span style="font-size:12px;color:var(--text2)"><b id="pendingCount">0</b> 条待发布</span>
@@ -767,6 +768,17 @@ async function archiveSelected(){
   document.getElementById('archiveBar').style.display='none';
   loadList();
 }
+async function collectBatchMetrics(){
+  var btn=document.getElementById('collectBtn');
+  btn.disabled=true;btn.textContent='⏳ 回收中...';
+  try{
+    var r=await fetch('/api/collect-metrics',{method:'POST'});
+    var d=await r.json();
+    if(d.ok){alert('回收完成: '+d.collected+' 篇');loadList()}
+    else{alert('回收失败: '+(d.error||'未知'))}
+  }catch(e){alert('请求失败: '+e.message)}
+  btn.disabled=false;btn.textContent='🔄 回收数据';
+}
 async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
@@ -934,7 +946,6 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <div class="meta-grid" style="margin-top:4px">
       <span class="meta-item">回收时间点 <b>{{news.xhs_collected_at or '未回收'}}</b></span>
     </div>
-    <button class="btn btn-orange btn-sm" onclick="collectMetrics()" style="margin-top:8px">🔄 立即回收数据</button>
     {% endif %}
   </div>
 
@@ -1322,17 +1333,6 @@ async function submitOverride(){
   let r=await fetch('/api/score-dim/'+key+'/'+encodeURIComponent(dim),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({human_value:val,override_note:note})});
   if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
 }
-async function collectMetrics(){
-  var btn=event.target;
-  btn.disabled=true;btn.textContent='⏳ 回收中...';
-  try{
-    var r=await fetch('/api/collect-metrics/'+key,{method:'POST'});
-    var d=await r.json();
-    if(d.ok){alert('回收完成: 浏览'+d.xhs_views+' 点赞'+d.xhs_likes+' 收藏'+d.xhs_saves+' 评论'+d.xhs_comments);location.reload()}
-    else{alert('回收失败: '+(d.error||'未知错误'))}
-  }catch(e){alert('请求失败: '+e.message)}
-  btn.disabled=false;btn.textContent='🔄 立即回收数据';
-}
 </script>
 <div class="modal" id="overrideModal"><div class="modal-card" style="max-width:360px">
   <h3 style="margin-bottom:8px">纠正 <span id="overrideDim"></span></h3>
@@ -1413,30 +1413,15 @@ def api_update(key):
     update_news(key, data)
     return jsonify({"ok": True})
 
-@app.route('/api/collect-metrics/<key>', methods=['POST'])
-def api_collect_metrics(key):
-    """手动触发单篇文章的实发数据回收"""
+@app.route('/api/collect-metrics', methods=['POST'])
+def api_collect_metrics_batch():
+    """批量回收已发布文章的实发数据"""
     try:
-        from scripts.metrics_collector import collect_article
-        from scripts.cdp_publish import XiaohongshuPublisher
-        article = get_by_key(key)
-        if not article:
-            return jsonify({"error": "not found"}), 404
-        pub = XiaohongshuPublisher()
-        pub.connect()
-        ok = collect_article(pub, article, "manual")
-        if ok:
-            updated = get_by_key(key)
-            return jsonify({
-                "ok": True,
-                "xhs_views": updated.get("xhs_views", 0),
-                "xhs_likes": updated.get("xhs_likes", 0),
-                "xhs_saves": updated.get("xhs_saves", 0),
-                "xhs_comments": updated.get("xhs_comments", 0),
-            })
-        return jsonify({"error": "CDP failed to collect stats"}), 500
+        from scripts.metrics_collector import collect_all
+        result = collect_all()
+        return jsonify({"ok": True, "collected": result.get("collected", 0)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
