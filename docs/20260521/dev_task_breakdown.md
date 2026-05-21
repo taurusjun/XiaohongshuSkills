@@ -37,21 +37,25 @@
 
    ```sql
    CREATE TABLE IF NOT EXISTS topic_performance (
-       topic                 TEXT PRIMARY KEY,
-       avg_saves             REAL DEFAULT 0,
-       avg_comments          REAL DEFAULT 0,
-       avg_views             REAL DEFAULT 0,
-       engagement_score      REAL DEFAULT 0,
-       post_count            INTEGER DEFAULT 0,
-       discard_count         INTEGER DEFAULT 0,
-       last_discard_reason   TEXT DEFAULT '',
-       topic_baseline_saves  REAL DEFAULT 0,
+       topic                   TEXT PRIMARY KEY,
+       avg_saves               REAL DEFAULT 0,
+       avg_comments            REAL DEFAULT 0,
+       avg_views               REAL DEFAULT 0,
+       engagement_score        REAL DEFAULT 0,
+       post_count              INTEGER DEFAULT 0,
+       discard_count           INTEGER DEFAULT 0,
+       last_discard_reason     TEXT DEFAULT '',
+       topic_baseline_saves    REAL DEFAULT 0,
        topic_baseline_comments REAL DEFAULT 0,
-       trend_signal          TEXT DEFAULT '',
-       trend_updated_at      TEXT DEFAULT '',
-       window_days           INTEGER DEFAULT 90,
-       last_updated          TEXT DEFAULT (datetime('now','localtime'))
+       trend_signal            TEXT DEFAULT '',
+       trend_updated_at        TEXT DEFAULT '',
+       window_days             INTEGER DEFAULT 90,
+       vertical                TEXT DEFAULT 'idol',   -- 垂类标签，Day 1 预留，默认 idol
+       competition_count       INTEGER DEFAULT 0,     -- 近7天同话题新发笔记数
+       last_updated            TEXT DEFAULT (datetime('now','localtime'))
    );
+   -- 注：vertical 字段从 Day 1 加入避免后续 migration，
+   -- 当前逻辑不按垂类过滤，等需要多垂类时再启用相关逻辑
 
    CREATE TABLE IF NOT EXISTS account_snapshots (
        id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -736,6 +740,7 @@ def test_cache_invalidated_after_commit():
    ```json
    {
      "dim_weights": {},
+     "dim_weights_by_vertical": {},
      "publish_threshold": 3.0,
      "retry_threshold": 2.0,
      "daily_quota": 2,
@@ -747,9 +752,13 @@ def test_cache_invalidated_after_commit():
      "engagement_weights": {"saves": 0.6, "comments": 0.4},
      "default_post_times": ["09:30", "12:00", "18:00"],
      "exploration_ratio": 0.2,
-     "baseline_ratio": 0.1
+     "baseline_ratio": 0.1,
+     "active_verticals": [
+       {"id": "idol", "label": "日本女星/写真", "quota_share": 1.0}
+     ]
    }
    ```
+   > 注：`dim_weights_by_vertical` 和 `active_verticals` 初始预留，逻辑暂不启用；当前 `active_verticals` 只有 idol 一个垂类，`quota_share=1.0` 等同于不分垂类。
 
 ### 自测清单
 
