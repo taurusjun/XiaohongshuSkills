@@ -331,6 +331,39 @@ def api_score_dim_override(key, dimension):
     return jsonify({"ok": True, "new_title_score": new_scores["title_score"],
                     "new_content_score": new_scores["content_score"]})
 
+@app.route('/webhook/feishu', methods=['POST'])
+def feishu_webhook():
+    """飞书事件回调 + 卡片交互分发"""
+    from scripts.feishu_bot import verify_feishu_signature
+    from scripts.sqlite_db import update_news, set_config, set_state
+    body = request.get_data()
+    data = request.json or {}
+    # Challenge 验证
+    if data.get("challenge"):
+        return jsonify({"challenge": data["challenge"]})
+    # 签名验证
+    ts = request.headers.get("X-Lark-Request-Timestamp", "")
+    nonce = request.headers.get("X-Lark-Request-Nonce", "")
+    sig = request.headers.get("X-Lark-Signature", "")
+    if not verify_feishu_signature(ts, nonce, body, sig):
+        return jsonify({"error": "invalid signature"}), 401
+    # 分发 card action
+    if data.get("type") == "card":
+        action_val = data.get("action", {}).get("value", {})
+        act = action_val.get("action", "")
+        key = action_val.get("news_key", "")
+        if act == "approve":
+            pub_time = action_val.get("pub_time", "")
+            update_news(key, {"publish_xhs": 1, "publish_time": pub_time})
+        elif act == "skip":
+            update_news(key, {"status": "skipped"})
+        elif act == "regenerate":
+            set_state(f"regen_{key}", {"key": key})
+        elif act == "adopt_weights":
+            weights = action_val.get("weights", {})
+            set_config("dim_weights", weights)
+    return jsonify({"code": 0})
+
 @app.route('/api/gallery-upload/<key>', methods=['POST'])
 def api_gallery_upload(key):
     data = request.json or {}
