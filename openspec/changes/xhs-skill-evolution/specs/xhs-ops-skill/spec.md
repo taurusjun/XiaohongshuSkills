@@ -13,7 +13,7 @@
 
 #### Scenario: 运营者查询今日候选文章
 - **WHEN** 用户说「看今天的候选文章」
-- **THEN** SKILL 调用 `get_candidate_articles(date="today")`，以 Markdown 表格展示（标题/评分/话题/体裁/推荐发布时间），若列表为空则提示「今日暂无候选文章，可能原因：抓取尚未运行或所有文章已丢弃」
+- **THEN** SKILL 调用 `get_candidate_articles(date="today")`，以 Markdown 表格展示（标题/评分/话题/体裁/推荐发布时间）；若列表为空则提示「今日暂无候选文章，可能原因：(1) 抓取尚未运行 (2) 所有文章因话题无聊被丢弃 (3) 所有文章处于等待图集下载状态（pending_gallery=True）——可在 Web UI 中查看各状态的文章」
 
 #### Scenario: 运营者纠正文本维度评分
 - **WHEN** 用户说「帮我把文章 [标题] 的原创度改为 0.5，因为大段直接翻译」
@@ -38,6 +38,10 @@
 #### Scenario: MCP 工具返回 error
 - **WHEN** 某工具返回 `{"error": true, "code": "NOT_FOUND", "message": "..."}`
 - **THEN** SKILL 向用户解释错误原因（「未找到该文章，请确认标题是否正确」），不继续执行后续步骤
+
+#### Scenario: 运营者调整维度权重
+- **WHEN** 用户说「把收藏驱动的权重调高到 2.0」或「原创度权重降低一点」
+- **THEN** SKILL 先调用 `get_dimension_versions()` 展示当前版本和权重，确认用户意图后调用 `update_dim_weights({"收藏驱动": 2.0})`，回复「权重已更新，下次评分立即生效」
 
 #### Scenario: MCP server 未启动
 - **WHEN** `xhs-operations` MCP server 未连接

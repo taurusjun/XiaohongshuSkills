@@ -24,7 +24,9 @@
 - [ ] 2.10（新增）实现 `run_reflection(mode?)` 工具：subprocess 启动 `reflection_runner.py --mode=quick|full`，返回 `{started: true, task_id}` 异步执行
 - [ ] 2.11（新增）实现 `batch_update_articles(news_keys, status, note?)` 工具：批量更新文章状态
 - [ ] 2.12 所有工具统一 error 返回格式：`{"error": true, "code": "str", "message": "str"}`
-- [ ] 2.13 验证：在 Claude Code 对话中调用 `get_candidate_articles`，确认返回今日候选文章列表（含完整 schema 字段）
+- [ ] 2.13（新增）实现 `get_task_status(task_id)` 工具：查询 `agent_strategy` 表中 key=`task_{task_id}` 的任务状态
+- [ ] 2.14（新增）实现 `update_dim_weights(weights)` 工具：写入 `agent_strategy` 表的 `dim_weights` key，同时触发版本版本记录
+- [ ] 2.15 验证：在 Claude Code 对话中调用 `get_candidate_articles`，确认返回今日候选文章列表（含完整 schema 字段）
 
 ## 3. MCP 注册配置
 
