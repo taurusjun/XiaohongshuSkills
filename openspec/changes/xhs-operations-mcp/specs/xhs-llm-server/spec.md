@@ -24,7 +24,11 @@
 
 **架构说明：** `evaluate_content` 工具需要从 SQLite `scoring_dimension_versions` 表读取当前生效的维度定义，这是有意设计的职责越界（xhs-llm-server 只读访问 SQLite）。替代方案（调用方先查版本再传入）会增加调用链，不如内部直接读更实用。xhs-llm-server 以只读方式访问同一 SQLite 文件，不进行写操作。
 
-**调用方式：** `scripts/yahoo_common.py` 中的 `evaluate_quality`、`generate_content_and_comment`、`generate_video_caption` 等函数重构为调用 MCP 工具，通过 FastMCP 客户端调用（subprocess stdio，本地进程间通信，延迟 < 10ms）。
+**双路径设计：**
+- **内部流水线**（cron job / agent_runner）：直接 `import` 并调用 `scripts/scoring.py`、`scripts/content_generator.py` 中的 Python 函数，不走 MCP（无需进程间通信开销）
+- **Claude Code 对话**：通过 MCP 工具调用，让 Claude 可以在对话中直接执行「评估这篇文章」「重新生成内容」「分析纠正记录」等操作
+
+两条路径共用同一套底层逻辑（`call_litellm`、`build_scoring_prompt` 等），MCP server 只是额外的对话入口，不是内部调用的必经路径。
 
 #### Scenario: translate_and_classify 单次返回翻译 + 体裁判断
 - **WHEN** 调用 `translate_and_classify(title_ja="田中みな実...写真集...", content_ja="...")`
