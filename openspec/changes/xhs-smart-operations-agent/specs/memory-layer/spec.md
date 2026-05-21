@@ -17,9 +17,10 @@
 - `topic_baseline_comments REAL`：同话题 XHS TOP 10 笔记的平均评论数（新增）
 - `discard_count INTEGER DEFAULT 0`：该话题累计被 DISCARD 的次数
 - `last_discard_reason TEXT`：最近一次丢弃的原因
+- `vertical TEXT DEFAULT 'idol'`：所属垂类标签，默认 `'idol'`（当前娱乐垂类）
 - `window_days INTEGER DEFAULT 90`：计算均值时使用的时间窗口
 
-> **不引入 `vertical` 字段**：当前只运营一个娱乐垂类，垂类过滤逻辑等同于无条件查询，属于过度设计。等需要运营第二个垂类时，以 migration 方式添加该字段（代价极小），届时数据量也足够支撑垂类隔离分析。
+> **`vertical` 字段从 Day 1 加入**：虽然当前只运营一个娱乐垂类，但字段一开始就加好，可避免后续引入第二垂类时 migration 数据的麻烦。现阶段所有记录默认值为 `'idol'`，查询时无需过滤，字段存在但不参与逻辑，零额外开销。`dim_weights_by_vertical` 同理，`agent_config` 中预留该配置键，初始值为空 `{}`。
 
 #### Scenario: 文章发布后 7 天数据更新 topic_performance（成熟数据机制，带去重保护）
 - **WHEN** 文章发布满 7 天，`xhs_collected_at` 包含 `72h` 标记，且 `news.topic_perf_updated_at IS NULL`
@@ -75,7 +76,7 @@
 - **WHEN** `account_snapshots` 中没有今日的记录
 - **THEN** 跳过需要账号数据的配额动态调整逻辑，使用默认配额，飞书摘要中注明「账号快照获取失败，今日使用默认配额」
 
-> **多垂类设计暂不实现**：`active_verticals`、`dim_weights_by_vertical`、垂类专属 prompt 模板均推迟到运营第二个垂类时再引入，届时以 migration 方式添加（改动量极小）。当前所有话题默认属于同一垂类，无需过滤。
+> **多垂类配置预留，逻辑暂不启用**：`vertical` 字段和 `dim_weights_by_vertical` 配置键从 Day 1 加入，避免未来 migration。但调度逻辑（按垂类分配配额、按垂类隔离排名、垂类专属权重计算）暂不启用，所有话题默认 `vertical='idol'`，`dim_weights_by_vertical` 初始为 `{}`。等运营第二个垂类时，只需在 `agent_config` 中配置 `active_verticals` 并更新 planner 逻辑，数据库无需 migration。
 
 ### Requirement: agent_config + agent_state 分离存储，避免配置和运行时状态混用
 系统 SHALL 将原 `agent_strategy` KV 表拆分为两张表，解决配置/状态/任务混用导致的可维护性问题：

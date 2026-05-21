@@ -21,8 +21,8 @@
 
 ## 二、系统可扩展性
 
-### active_verticals + vertical 字段 + dim_weights_by_vertical 🔴 严重：过度设计
-当前只有一个娱乐垂类（idol），但设计引入了 `active_verticals` 配置、`topic_performance.vertical` 字段、`dim_weights_by_vertical` 三层隔离逻辑。单垂类阶段所有带垂类参数的查询等价于无条件查询，但测试覆盖要额外处理垂类过滤路径。**建议完全移除，等运营第二个垂类时再加**（届时 migration 代价极小）。
+### active_verticals + vertical 字段 + dim_weights_by_vertical 🟢 决策修订：字段预留，逻辑暂不启用
+**原建议「完全移除」已修订**：`vertical` 字段（默认 `'idol'`）、`dim_weights_by_vertical`（初始 `{}`）、`active_verticals`（初始只含 idol）从 Day 1 加入 schema 和配置，避免未来引入第二垂类时 migration 数据的麻烦。字段存在但初始不参与任何过滤逻辑，零额外开销。多垂类**调度逻辑**等需要时再启用。
 
 ### topic_performance + engagement_score 在冷启动期失效 🔴 严重
 每日 2-3 篇，积累 40 篇有效样本需 14-20 周。冷启动期 avg_saves 和 avg_comments 接近 0，所有话题 engagement_score 接近 0，「70%/20%/10%」分配逻辑实际走 fallback（按 custom_keywords 平均分配）。**建议冷启动期 `plan_today()` 简化为「按 focus_topics 轮换 + 固定配额 3 篇」，等 topic_performance 有有意义数据后再启用完整逻辑。**
@@ -71,7 +71,7 @@
 
 ## 最优先需要改进的 3 个问题
 
-1. **🔴 移除多垂类抽象**（active_verticals + vertical 字段 + dim_weights_by_vertical）— 纯净负债，减少约 20% 实现工作量
+1. ~~**🔴 移除多垂类抽象**~~ → **已修订**：字段预留（Day 1 加入 schema），逻辑暂不启用，避免后续 migration
 2. **🔴 拆分 agent_strategy KV 表** — agent_config（配置）+ agent_state（运行时状态，带 TTL）
 3. **🔴 推迟 scoring_dimension_versions DB 版本管理** — Phase 0/P0 用 JSON + Git，省去 8 个基础设施任务
 
