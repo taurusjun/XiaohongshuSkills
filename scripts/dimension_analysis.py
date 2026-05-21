@@ -12,18 +12,19 @@ from scipy.stats import pearsonr
 
 
 def load_analysis_data(min_window: str = "72h") -> pd.DataFrame:
-    """JOIN news + score_dims，过滤有 min_window 回收标记的文章，PIVOT 为宽表"""
+    """JOIN news + score_dims，过滤有实发数据且有评分的文章，PIVOT 为宽表"""
     from scripts.sqlite_db import _connect
     with _connect() as db:
         rows = db.execute("""
             SELECT n.key, n.xhs_views, n.xhs_likes, n.xhs_saves, n.xhs_comments,
+                   n.xhs_shares, n.xhs_fans_gained, n.xhs_impression, n.xhs_click_rate,
+                   n.xhs_watch_time, n.xhs_danmaku,
                    s.dimension,
                    CASE WHEN s.human_override=1 THEN s.human_value ELSE s.value END as effective_value
             FROM news n
             JOIN score_dims s ON n.key = s.news_key
-            WHERE n.xhs_collected_at LIKE ?
-            AND n.status = 'active'
-        """, (f"%{min_window}%",)).fetchall()
+            WHERE n.xhs_views > 0 AND n.status = 'active'
+        """).fetchall()
 
     if not rows:
         return pd.DataFrame()
@@ -40,7 +41,11 @@ def load_analysis_data(min_window: str = "72h") -> pd.DataFrame:
     )
 
     # 附加 xhs 指标（取每个 key 的第一行）
-    metrics = df.groupby("key")[["xhs_views", "xhs_likes", "xhs_saves", "xhs_comments"]].first()
+    metric_cols = ["xhs_views", "xhs_likes", "xhs_saves", "xhs_comments",
+                   "xhs_shares", "xhs_fans_gained", "xhs_impression", "xhs_click_rate",
+                   "xhs_watch_time", "xhs_danmaku"]
+    existing_cols = [c for c in metric_cols if c in df.columns]
+    metrics = df.groupby("key")[existing_cols].first()
     result = pivot.join(metrics)
     return result
 
@@ -49,7 +54,8 @@ def compute_correlations(df: pd.DataFrame,
                          targets: tuple = ("xhs_saves", "xhs_comments", "xhs_views")) -> pd.DataFrame:
     """对每个维度列与每个 target 计算 Pearson r 和 p 值"""
     dim_cols = [c for c in df.columns if c not in targets
-                and c not in ("key", "xhs_likes", "effective_value")]
+                and not c.startswith("xhs_")
+                and c not in ("key", "effective_value")]
     records = []
     for dim in dim_cols:
         dim_data = df[dim].dropna()
