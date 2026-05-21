@@ -28,11 +28,15 @@
 - **WHEN** `gallery_download.py` 完成一篇文章的图片下载
 - **THEN** 自动对前 3 张图调用 DeepSeek 视觉评分，将结果写入 `cover_image_scores` 表
 
-#### Scenario: DeepSeek 评分直接使用本地文件，不依赖任何 URL
+#### Scenario: DeepSeek 评分直接使用本地文件，先 resize 控制 token 成本
 - **WHEN** 评分调用时
-- **THEN** 图片以本地文件 base64 编码方式传给 DeepSeek。
+- **THEN** 读本地 cache 文件，用 Pillow resize 到最长边 **512px**（保持比例），再 base64 编码传给 DeepSeek。单张图片 token 消耗 < 500 tokens（原始高分辨率写真图不压缩约 1500 tokens/张）。
 
-> **说明：** 评分在 gallery_download.py 完成后立即触发，此时图片已经下载到本地 cache（`~/.cache/xhs_images/<key>/`），上传 Cloudinary 是后续步骤。直接读本地文件是最自然的做法，无需构造任何 URL。
+> **说明：** 评分在 gallery_download.py 完成后立即触发，图片已在本地 cache，无需构造 URL。3 张/篇 × 10 篇/天 × 500 tokens ≈ 15,000 tokens/天用于图片评分，可控。
+
+#### Scenario: 减分维度在 prompt 中显式标注方向
+- **WHEN** 构造 DeepSeek 评分 prompt 时
+- **THEN** prompt 中明确区分加分维度和减分维度的方向：「以下为**负面特征维度**（存在时扣分，值越高问题越严重）：`promo_feel`（广告/水印/宣传感）、`multi_person_blur`（多人同框但主体模糊）」；加分维度另外列出，防止 LLM 统一理解为「1=好」
 
 #### Scenario: 视觉 API 调用失败时优雅降级
 - **WHEN** DeepSeek 视觉调用失败（超时/格式不支持/base64 过大）
