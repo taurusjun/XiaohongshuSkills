@@ -939,12 +939,17 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <span class="meta-item">❤ 点赞 <b>{{news.xhs_likes or 0}}</b></span>
       <span class="meta-item">⭐ 收藏 <b>{{news.xhs_saves or 0}}</b></span>
       <span class="meta-item">💬 评论 <b>{{news.xhs_comments or 0}}</b></span>
+      <span class="meta-item">🔄 分享 <b>{{news.xhs_shares or 0}}</b></span>
+      <span class="meta-item">➕ 涨粉 <b>{{news.xhs_fans_gained or 0}}</b></span>
+    </div>
+    <div class="meta-grid" style="margin-top:4px">
+      <span class="meta-item">👀 曝光 <b>{{news.xhs_impression or 0}}</b></span>
+      <span class="meta-item">🎯 点击率 <b>{{"%.1f"|format((news.xhs_click_rate or 0)*100)}}%</b></span>
+      <span class="meta-item">⏱ 人均观看 <b>{{news.xhs_watch_time or 0}}s</b></span>
+      <span class="meta-item">💬 弹幕 <b>{{news.xhs_danmaku or 0}}</b></span>
       {% if news.xhs_saves and news.xhs_views %}
       <span class="meta-item">📊 收藏率 <b>{{"%.1f"|format(news.xhs_saves / news.xhs_views * 100)}}%</b></span>
       {% endif %}
-    </div>
-    <div class="meta-grid" style="margin-top:4px">
-      <span class="meta-item">回收时间点 <b>{{news.xhs_collected_at or '未回收'}}</b></span>
     </div>
     {% endif %}
   </div>

@@ -151,8 +151,14 @@ def collect_all(dry_run: bool = False) -> dict:
                              int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0)),
                         )
                         conn.execute(
-                            "UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?, updated_at=datetime('now','localtime') WHERE key=?",
-                            (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]), key),
+                            """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
+                               xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
+                               xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
+                            (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
+                             int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
+                             int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
+                             int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0),
+                             key),
                         )
                         collected += 1
                         break
