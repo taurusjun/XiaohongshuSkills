@@ -118,6 +118,17 @@ def init_db():
                 UNIQUE(news_key, dimension)
             );
             CREATE INDEX IF NOT EXISTS idx_score_dims_key ON score_dims(news_key);
+
+            CREATE TABLE IF NOT EXISTS scoring_dimension_versions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                version        TEXT NOT NULL,
+                dimensions_json TEXT NOT NULL,
+                created_at     TEXT NOT NULL,
+                created_by     TEXT DEFAULT 'system',
+                change_note    TEXT DEFAULT '',
+                is_active      INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_sdv_active ON scoring_dimension_versions(is_active);
         """)
         # Compat: add columns to existing DBs
         _news_compat = [
@@ -304,20 +315,125 @@ _DIM_DEFS = {
     '写真': ('图片','不计分'), '中年男照': ('图片','不计分'),
 }
 
-def upsert_score_dims(news_key: str, scores: dict):
+# ── 维度版本管理 ──
+
+_dim_cache = {"dims": [], "cached_created_at": ""}
+
+
+def init_dimension_versions():
+    """从 scoring_dimensions.json 初始化版本表（仅首次）"""
+    with _connect() as db:
+        existing = db.execute("SELECT COUNT(*) as n FROM scoring_dimension_versions").fetchone()
+        if existing["n"] > 0:
+            return
+    from pathlib import Path
+    import json as _json
+    json_path = Path(__file__).parent.parent / "config" / "scoring_dimensions.json"
+    try:
+        cfg = _json.loads(json_path.read_text(encoding="utf-8"))
+        dims_json = _json.dumps(cfg["dimensions"], ensure_ascii=False)
+        with _connect() as db:
+            db.execute(
+                "INSERT INTO scoring_dimension_versions (version, dimensions_json, created_at, created_by, is_active) VALUES (?,?,datetime('now','localtime'),'system',1)",
+                (cfg["version"], dims_json),
+            )
+    except Exception as e:
+        print(f"  ⚠️ 初始化维度版本失败: {e}")
+
+
+def load_active_dimensions() -> list[dict]:
+    """加载当前生效的维度定义，带进程级缓存"""
+    global _dim_cache
+    import json as _json
+    with _connect() as db:
+        row = db.execute(
+            "SELECT version, dimensions_json, created_at FROM scoring_dimension_versions WHERE is_active=1"
+        ).fetchone()
+        if not row:
+            init_dimension_versions()
+            row = db.execute(
+                "SELECT version, dimensions_json, created_at FROM scoring_dimension_versions WHERE is_active=1"
+            ).fetchone()
+        if not row:
+            return []
+        if row["created_at"] != _dim_cache["cached_created_at"]:
+            _dim_cache["dims"] = _json.loads(row["dimensions_json"])
+            _dim_cache["cached_created_at"] = row["created_at"]
+    return _dim_cache["dims"]
+
+
+def commit_dimension_version(dims: list[dict], change_note: str, created_by: str = "human"):
+    """提交新版本，自动递增 minor 版本号，清空缓存"""
+    global _dim_cache
+    import json as _json
+    with _connect() as db:
+        current = db.execute(
+            "SELECT version FROM scoring_dimension_versions WHERE is_active=1"
+        ).fetchone()
+        if current:
+            parts = current["version"].split(".")
+            parts[1] = str(int(parts[1]) + 1)
+            new_version = ".".join(parts)
+        else:
+            new_version = "1.0.0"
+        dims_json = _json.dumps(dims, ensure_ascii=False)
+        db.execute("UPDATE scoring_dimension_versions SET is_active=0")
+        db.execute(
+            "INSERT INTO scoring_dimension_versions (version, dimensions_json, created_at, created_by, change_note, is_active) VALUES (?,?,datetime('now','localtime'),?,?,1)",
+            (new_version, dims_json, created_by, change_note),
+        )
+    _dim_cache = {"dims": [], "cached_created_at": ""}
+
+
+def rollback_dimension_version(version: str) -> bool:
+    """回滚到指定版本"""
+    global _dim_cache
+    with _connect() as db:
+        exists = db.execute(
+            "SELECT id FROM scoring_dimension_versions WHERE version=?", (version,)
+        ).fetchone()
+        if not exists:
+            return False
+        db.execute("UPDATE scoring_dimension_versions SET is_active=0")
+        db.execute("UPDATE scoring_dimension_versions SET is_active=1 WHERE version=?", (version,))
+    _dim_cache = {"dims": [], "cached_created_at": ""}
+    return True
+
+
+def upsert_score_dims(news_key: str, scores: dict, dim_version: str = ""):
     """scores: {dimension: {"value": 0|1, "reason": "..."}}"""
     with _connect() as db:
         for dim, data in scores.items():
             v = data.get('value', 0) if isinstance(data, dict) else int(data)
             r = data.get('reason', '') if isinstance(data, dict) else ''
             db.execute(
-                "INSERT INTO score_dims (news_key, dimension, value, reason) VALUES (?,?,?,?) ON CONFLICT(news_key, dimension) DO UPDATE SET value=excluded.value, reason=excluded.reason",
-                (news_key, dim, v, r)
+                "INSERT INTO score_dims (news_key, dimension, value, reason, dim_version) VALUES (?,?,?,?,?) ON CONFLICT(news_key, dimension) DO UPDATE SET value=excluded.value, reason=excluded.reason, dim_version=excluded.dim_version",
+                (news_key, dim, v, r, dim_version)
             )
+
+def recalculate_scores(news_key: str) -> dict:
+    """根据 score_dims 重算 title_score/content_score，优先使用人工纠正值"""
+    dims = get_score_dims(news_key)
+    if not dims:
+        return {"title_score": 0, "content_score": 0}
+    by_name = {}
+    for d in dims:
+        val = d["human_value"] if d.get("human_override") else d["value"]
+        cat, calc = _DIM_DEFS.get(d["dimension"], ("其他", "不计分"))
+        by_name[d["dimension"]] = {"value": float(val or 0), "category": cat, "calc": calc}
+    title_score = sum(by_name[d]["value"] for d in by_name if by_name[d]["category"] == "标题" and by_name[d]["calc"] == "加分")
+    title_score -= sum(by_name[d]["value"] for d in by_name if by_name[d]["category"] == "标题" and by_name[d]["calc"] == "减分")
+    content_score = sum(by_name[d]["value"] for d in by_name if by_name[d]["category"] == "内容" and by_name[d]["calc"] == "加分")
+    content_score -= sum(by_name[d]["value"] for d in by_name if by_name[d]["category"] == "内容" and by_name[d]["calc"] == "减分")
+    title_score = max(0.0, min(5.0, title_score))
+    content_score = max(0.0, min(5.0, content_score))
+    update_news(news_key, {"title_score": title_score, "content_score": content_score})
+    return {"title_score": title_score, "content_score": content_score}
+
 
 def get_score_dims(news_key: str) -> list[dict]:
     with _connect() as db:
-        rows = db.execute("SELECT dimension, value, reason FROM score_dims WHERE news_key=?", (news_key,)).fetchall()
+        rows = db.execute("SELECT dimension, value, reason, human_override, human_value, override_note, llm_value, dim_version FROM score_dims WHERE news_key=?", (news_key,)).fetchall()
     result = []
     for r in rows:
         d = dict(r)
