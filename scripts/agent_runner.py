@@ -52,15 +52,61 @@ def run(dry_run: bool = False, live_preview: bool = False):
         logger.info(f"  计划: quota={plan.quota_total}, mode={plan.mode}, topics={len(plan.topics)}")
         set_state(f"runner_progress_{date_str}", {"phase": 2, "plan": asdict(plan)}, date=date_str)
 
+    plan_data = get_state(f"runner_progress_{date_str}", default={})
+    plan = plan_data.get("plan", {})
+    topics = [t["topic"] for t in plan.get("topics", [])]
+
     if dry_run or live_preview:
-        plan_data = get_state(f"runner_progress_{date_str}", default={})
         print(json.dumps(plan_data, ensure_ascii=False, indent=2))
         return
 
-    # Phase 3: 执行（P0 暂缺 fetch_by_keywords CDP 流程，留空待以后实现）
-    if progress.get("phase", 0) < 3:
+    # Phase 3: 执行
+    if progress.get("phase", 0) < 3 and topics:
         logger.info("=== Phase 3: 执行 ===")
-        set_state(f"runner_progress_{date_str}", {"phase": 3}, date=date_str)
+        try:
+            from scripts.yahoo_news_auto import fetch_news_via_cdp, KEYWORD_TAG_MAP
+            from scripts.yahoo_common import process_news_item, LITELLM_API_KEY
+            from scripts.sqlite_db import insert_news, upsert_score_dims, update_news, load_today_keys
+
+            existing_keys = load_today_keys()
+            total_fetched = 0
+
+            max_results = get_config("daily_quota", default=2)
+            for topic in topics[:plan.get("quota_total", 3)]:
+                extra_tags = KEYWORD_TAG_MAP.get(topic, [])
+                try:
+                    articles = fetch_news_via_cdp(
+                        topic, max_results=max_results,
+                        china_filter=False, existing_keys=existing_keys,
+                    )
+                except Exception as e:
+                    logger.warning(f"  fetch failed for '{topic}': {e}")
+                    continue
+
+                for art in articles:
+                    try:
+                        art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
+                        if art.get("_skip") or art.get("_discard"):
+                            continue
+                        insert_news(art)
+                        quality = art.get("_quality", {})
+                        if quality.get("scores"):
+                            upsert_score_dims(art["key"], quality["scores"],
+                                             dim_version=quality.get("_dim_version", ""))
+                            update_news(art["key"], {
+                                "title_score": quality.get("title_score", 0),
+                                "content_score": quality.get("content_score", 0),
+                            })
+                        total_fetched += 1
+                    except Exception as e:
+                        logger.warning(f"  process failed for {art.get('key','?')}: {e}")
+
+            logger.info(f"  执行完成: {total_fetched} articles")
+        except Exception as e:
+            logger.warning(f"  执行阶段失败: {e}")
+
+        set_state(f"runner_progress_{date_str}",
+                  {"phase": 3, "fetched": total_fetched}, date=date_str)
 
     # Phase 4: 通知
     if progress.get("phase", 0) < 4:

@@ -917,6 +917,23 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <div class="field-row" style="margin-bottom:3px"><label>原图</label><div class="value"><a href="{{news.original_image_url or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.original_image_url or ''}}">{{news.original_image_url or '-'}}</a></div></div>
     {% endif %}
     <div class="field-row"><label>图集</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
+    {% if news.publish_xhs %}
+    <hr class="sep-line">
+    <h3>📈 实发数据</h3>
+    <div class="meta-grid" style="margin-top:6px">
+      <span class="meta-item">👁 浏览 <b>{{news.xhs_views or 0}}</b></span>
+      <span class="meta-item">❤ 点赞 <b>{{news.xhs_likes or 0}}</b></span>
+      <span class="meta-item">⭐ 收藏 <b>{{news.xhs_saves or 0}}</b></span>
+      <span class="meta-item">💬 评论 <b>{{news.xhs_comments or 0}}</b></span>
+      {% if news.xhs_saves and news.xhs_views %}
+      <span class="meta-item">📊 收藏率 <b>{{"%.1f"|format(news.xhs_saves / news.xhs_views * 100)}}%</b></span>
+      {% endif %}
+    </div>
+    <div class="meta-grid" style="margin-top:4px">
+      <span class="meta-item">回收时间点 <b>{{news.xhs_collected_at or '未回收'}}</b></span>
+    </div>
+    <button class="btn btn-orange btn-sm" onclick="collectMetrics()" style="margin-top:8px">🔄 立即回收数据</button>
+    {% endif %}
   </div>
 
   <div class="card">
@@ -1289,6 +1306,17 @@ async function savePublishImages(){
     el.addEventListener('mouseleave',()=>ov.style.display='none');
   });
 })();
+async function collectMetrics(){
+  var btn=event.target;
+  btn.disabled=true;btn.textContent='⏳ 回收中...';
+  try{
+    var r=await fetch('/api/collect-metrics/'+key,{method:'POST'});
+    var d=await r.json();
+    if(d.ok){alert('回收完成: 浏览'+d.xhs_views+' 点赞'+d.xhs_likes+' 收藏'+d.xhs_saves+' 评论'+d.xhs_comments);location.reload()}
+    else{alert('回收失败: '+(d.error||'未知错误'))}
+  }catch(e){alert('请求失败: '+e.message)}
+  btn.disabled=false;btn.textContent='🔄 立即回收数据';
+}
 </script>
 </body></html>"""
 
@@ -1358,6 +1386,31 @@ def api_update(key):
     data = request.get_json()
     update_news(key, data)
     return jsonify({"ok": True})
+
+@app.route('/api/collect-metrics/<key>', methods=['POST'])
+def api_collect_metrics(key):
+    """手动触发单篇文章的实发数据回收"""
+    try:
+        from scripts.metrics_collector import collect_article
+        from scripts.cdp_publish import XiaohongshuPublisher
+        article = get_by_key(key)
+        if not article:
+            return jsonify({"error": "not found"}), 404
+        pub = XiaohongshuPublisher()
+        pub.connect()
+        ok = collect_article(pub, article, "manual")
+        if ok:
+            updated = get_by_key(key)
+            return jsonify({
+                "ok": True,
+                "xhs_views": updated.get("xhs_views", 0),
+                "xhs_likes": updated.get("xhs_likes", 0),
+                "xhs_saves": updated.get("xhs_saves", 0),
+                "xhs_comments": updated.get("xhs_comments", 0),
+            })
+        return jsonify({"error": "CDP failed to collect stats"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
