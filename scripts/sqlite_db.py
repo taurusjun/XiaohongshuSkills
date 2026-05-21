@@ -370,6 +370,7 @@ def get_config(key: str, default=None):
 
 
 def set_config(key: str, value) -> None:
+    global _dim_weights_cache
     import json as _json
     v = _json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
     with _connect() as db:
@@ -377,6 +378,8 @@ def set_config(key: str, value) -> None:
             "INSERT OR REPLACE INTO agent_config (key, value, updated_at) VALUES (?,?,datetime('now','localtime'))",
             (key, v),
         )
+    if key == "dim_weights":
+        _dim_weights_cache = {"weights": {}, "cached_updated_at": ""}
 
 
 def get_state(key: str, default=None):

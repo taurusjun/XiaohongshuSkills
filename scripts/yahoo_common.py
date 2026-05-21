@@ -680,8 +680,23 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
             else:
                 dim_scores[d] = {"value": 0.0, "reason": ""}
         # 计算
-        title_score = sum(dim_scores.get(d, {}).get("value", 0) for d in title_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in title_minus)
-        content_score = sum(dim_scores.get(d, {}).get("value", 0) for d in content_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in content_minus)
+        # 加权评分（权重缺失默认 1.0，行为等价于原等权）
+        try:
+            from scripts.sqlite_db import load_dim_weights
+            weights = load_dim_weights()
+        except Exception:
+            weights = {}
+
+        def weighted_sum(dim_list: list, minus: bool = False) -> float:
+            total = 0.0
+            for d in dim_list:
+                w = weights.get(d, 1.0)
+                v = dim_scores.get(d, {}).get("value", 0.0)
+                total += w * float(v)
+            return total if not minus else -total
+
+        title_score = weighted_sum(title_plus) + weighted_sum(title_minus, minus=True)
+        content_score = weighted_sum(content_plus) + weighted_sum(content_minus, minus=True)
         title_score = max(0.0, min(5.0, title_score))
         content_score = max(0.0, min(5.0, content_score))
         return {
