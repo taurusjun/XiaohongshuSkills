@@ -1,11 +1,12 @@
 ## 1. xhs-llm MCP server（优先，解决 temperature 和 JSON schema 根本问题）
 
 - [ ] 1.1 新建 `mcp/` 目录，安装 `fastmcp` 依赖（`pip install fastmcp`）
-- [ ] 1.2 新建 `mcp/xhs_llm_server.py`，实现 `translate_title` 工具：temperature=0.2，max_tokens=500，response_format=json_object，schema `{title_zh: str}`，2 次 retry
+- [ ] 1.2 新建 `mcp/xhs_llm_server.py`，实现 `translate_and_classify` 工具（原名 translate_title 已重命名）：temperature=0.2，max_tokens=500，response_format=json_object，schema `{title_zh, summary_zh, format_suitability: [str], reason}`，2 次 retry
 - [ ] 1.3 实现 `evaluate_content` 工具：temperature=0.1，从 `scoring_dimension_versions` 读活跃版本定义构造 prompt（含 definition/example_1/example_0/example_0_5），schema 含所有维度的 `{value: float, reason: str}`
 - [ ] 1.4 实现 `generate_content` 工具：temperature=0.7，schema 含 `seo_title/summary/content/comment/tags{precise/vertical/broad}`，精准标签调用前查询 `artist_name_map.json` NER
 - [ ] 1.5 实现 `analyze_overrides` 工具：temperature=0.3，先判断 `has_pattern`，有模式时生成 `edge_case` + `evidence`，无模式时直接返回 `{has_pattern: false}`
 - [ ] 1.6 实现 `score_cover_image` 工具：Pillow resize 到 512px 最长边 → base64 → DeepSeek 视觉；减分维度 prompt 显式标注方向；temperature=0.1
+- [ ] 1.7（新增）实现 `generate_video_caption` 工具：temperature=0.5，max_tokens=800，response_format=json_object，schema `{caption: str}`
 - [ ] 1.7 修改 `scripts/yahoo_common.py`：`call_litellm` 增加 `temperature` 参数（默认 0.7），`evaluate_quality` 调用时传 `temperature=0.1`，`translate_title` 调用时传 `temperature=0.2`
 - [ ] 1.8 验证：分别调用 `translate_title` 和 `evaluate_content`，确认 temperature 生效，返回严格 JSON
 
@@ -18,8 +19,12 @@
 - [ ] 2.5 实现 `activate_dimension_version(version)` 工具，切换 `is_active`，清空 SQLite 中的版本缓存标记
 - [ ] 2.6 实现 `get_topic_performance(vertical?, limit?, window_days?)` 工具
 - [ ] 2.7 实现 `get_weekly_stats(week_start?)` 工具，聚合本周发布/浏览/收藏/评论/各话题
-- [ ] 2.8 实现 `override_dim_score(news_key, dim_name, value, note)` 工具，写 `human_override=1 / human_value / override_note / llm_value`，重算综合分
-- [ ] 2.9 验证：在 Claude Code 对话中调用 `get_candidate_articles`，确认返回今日候选文章列表
+- [ ] 2.8 实现 `override_dim_score(news_key, dim_name, value, note)` 工具（文本维度），写 `human_override=1 / human_value / override_note / llm_value`，重算综合分
+- [ ] 2.9（新增）实现 `override_cover_score(news_key, image_url, dim_name, value, note)` 工具（封面图维度），写入 `cover_image_scores` 表
+- [ ] 2.10（新增）实现 `run_reflection(mode?)` 工具：subprocess 启动 `reflection_runner.py --mode=quick|full`，返回 `{started: true, task_id}` 异步执行
+- [ ] 2.11（新增）实现 `batch_update_articles(news_keys, status, note?)` 工具：批量更新文章状态
+- [ ] 2.12 所有工具统一 error 返回格式：`{"error": true, "code": "str", "message": "str"}`
+- [ ] 2.13 验证：在 Claude Code 对话中调用 `get_candidate_articles`，确认返回今日候选文章列表（含完整 schema 字段）
 
 ## 3. MCP 注册配置
 
