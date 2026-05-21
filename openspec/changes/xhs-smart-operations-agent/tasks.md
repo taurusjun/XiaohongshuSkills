@@ -1,15 +1,31 @@
+## Phase 0: 数据基础（先做，尽早启动数据积累）
+
+> 这是原 `xhs-feedback-loop` change 的全部内容，合并至此作为最优先的任务组。
+> **完成 Phase 0 后即可上线开始积累数据，无需等待后续任务完成。**
+
+- [ ] P0.1 在 `sqlite_db.py` 的 `_ensure_columns` 中新增 `xhs_views / xhs_likes / xhs_saves / xhs_comments / xhs_collected_at` 五个字段（ALTER TABLE 兼容模式）
+- [ ] P0.2 新建 `config/scoring_dimensions.json` 初始文件：包含「收藏驱动」维度的完整条目（`name/category/direction/default_weight/definition/example_1/example_0/edge_case`，内容见 `save-drive-dimension/spec.md`）；其余 18 个现有维度填基础字段（`name/category/direction/default_weight`），`definition` 等留空（触发降级为裸名，由后续任务补全）；文件头含 `"version": "1.0.0"`
+- [ ] P0.3 修改 `yahoo_common.py:evaluate_quality`：实现 `build_scoring_prompt(dims)` 从 `scoring_dimensions.json` 动态读取定义构造 prompt；「收藏驱动」以等权 +1 计入 `content_score`（不引入 `agent_strategy.json`，加权化由后续任务实现）；`score_dims.value` 写入时使用 `float()` 转换（不强制 `int()`）
+- [ ] P0.4 在 `sqlite_db.py:_DIM_DEFS` 中注册 `'收藏驱动': ('内容', '加分')`
+- [ ] P0.5 新建 `scripts/metrics_collector.py`：实现 `collect_pending_articles()`，按 4h/24h/72h 时间点判断需要回收的文章，调用 CDP `fetch_note_stats()` 抓取数据写回 SQLite，`xhs_collected_at` 按格式约定追加标记
+- [ ] P0.6 在 `cdp_publish.py` 中新增 `fetch_note_stats(note_url) -> dict`，通过 CDP 访问笔记页面提取浏览/点赞/收藏/评论数字
+- [ ] P0.7 配置 crontab：`0 * * * * cd /path && python scripts/metrics_collector.py >> logs/metrics.log 2>&1`
+- [ ] P0.8 新建 `scripts/dimension_analysis.py`：JOIN `news` 和 `score_dims`，对有效样本（含 72h 数据）分别计算各维度与 `xhs_saves` / `xhs_comments` / `xhs_views` 的 Pearson 相关性；支持 `--targets` 参数选择目标变量，`--output` 写入文件
+- [ ] P0.9 Web UI 列表页：新增「收藏率」列（`xhs_saves/xhs_views`），支持排序，无数据显示「—」
+- [ ] P0.10 Web UI 文章详情页：新增「实发数据」面板（展示浏览/点赞/收藏/评论 + 回收时间点）；新增「立即回收」按钮调用 `/api/collect-metrics/<key>` 端点
+- [ ] P0.11 验证：手动对一篇已发布文章运行 `python scripts/metrics_collector.py --key <key>`，确认数据回填正确；运行 `dimension_analysis.py`，确认三个目标变量均有输出
+
 ## 0. 前置确认（不写代码，人工检查 + 运营决策）
 
-> 这里有两类任务：技术前置检查（0.1-0.4）和**上线前必须完成的运营决策（0.5-0.7）**。
+> 这里有两类任务：技术前置检查和**上线前必须完成的运营决策**。
 > 运营决策不需要写代码，但直接影响系统上线后的内容质量方向。
 
-- [ ] 0.1 确认 `xhs-feedback-loop` change 已完成，`news` 表含 `xhs_saves` 字段且有数据
-- [ ] 0.2 在飞书开放平台创建应用，获取 App ID / App Secret，配置事件回调 URL
-- [ ] 0.3 确认飞书应用已申请权限：`im:message:send_as_bot`、`im:message.group_at_msg`、消息卡片权限
-- [ ] 0.4 将飞书凭证写入 `scripts/.env`：`FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_OPERATOR_OPEN_ID`
-- [ ] 0.5 **【运营决策】初始维度权重垂类校准**：在 `scoring_dimensions.json` 中为娱乐垂类设置初始权重——「有用信息」降至 0.4，「收藏驱动」写真/女星话题降至 0.5，「原创度」的 `definition` 改为「视角和组织方式是否有独特性」（而非素材原创性）。**不要等 reflection 来建议，这是运营判断。**
-- [ ] 0.6 **【运营决策】确认账号核心锚定话题**：在 `agent_strategy.json` 中设置 `focus_topics`（如 `["写真", "日本女星"]`）和 `growth_stage`（冷启动期设为 `cold_start`）
-- [ ] 0.7 **【运营决策】确认每日配额和体裁轮换序列**：在 `agent_strategy.json` 中设置 `cold_start_quota`（建议 3）和 `content_format_rotation`（建议 `["news", "story", "news", "ranking", "news", "story", "comparison"]`）
+- [ ] 0.1 在飞书开放平台创建应用，获取 App ID / App Secret，配置事件回调 URL
+- [ ] 0.2 确认飞书应用已申请权限：`im:message:send_as_bot`、`im:message.group_at_msg`、消息卡片权限
+- [ ] 0.3 将飞书凭证写入 `scripts/.env`：`FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_OPERATOR_OPEN_ID`
+- [ ] 0.4 **【运营决策】初始维度权重垂类校准**：在 `scoring_dimensions.json` 中为娱乐垂类设置初始权重——「有用信息」降至 0.4，「收藏驱动」写真/女星话题降至 0.5，「原创度」的 `definition` 改为「视角和组织方式是否有独特性」（而非素材原创性）。**不要等 reflection 来建议，这是运营判断。**
+- [ ] 0.5 **【运营决策】确认账号核心锚定话题**：在 `agent_strategy.json` 中设置 `focus_topics`（如 `["写真", "日本女星"]`）和 `growth_stage`（冷启动期设为 `cold_start`）
+- [ ] 0.6 **【运营决策】确认每日配额和体裁轮换序列**：在 `agent_strategy.json` 中设置 `cold_start_quota`（建议 3）和 `content_format_rotation`（建议 `["news", "story", "news", "ranking", "news", "story", "comparison"]`）
 
 ## 1. 维度注册表与版本管理
 
