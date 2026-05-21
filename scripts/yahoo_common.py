@@ -609,14 +609,28 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
                      title_ja: str = "", body_text: str = "") -> dict:
     """用 LLM 评估标题和内容质量，返回 {title_score, content_score, scores(维度+理由)}"""
     import json as _json
-    from pathlib import Path
 
-    # 动态加载维度定义
-    _dims_path = Path(__file__).parent.parent / "config" / "scoring_dimensions.json"
+    # 从 DB 加载活跃维度定义，DB 为空时回退到 JSON 文件
     try:
-        _dims_cfg = _json.loads(_dims_path.read_text(encoding="utf-8"))["dimensions"]
+        from scripts.sqlite_db import load_active_dimensions
+        _dims_cfg = load_active_dimensions()
+        _dim_version = ""
+        from scripts.sqlite_db import _connect
+        with _connect() as _db:
+            _vr = _db.execute("SELECT version FROM scoring_dimension_versions WHERE is_active=1").fetchone()
+            if _vr:
+                _dim_version = _vr["version"]
     except Exception:
         _dims_cfg = []
+        _dim_version = ""
+
+    if not _dims_cfg:
+        from pathlib import Path
+        _dims_path = Path(__file__).parent.parent / "config" / "scoring_dimensions.json"
+        try:
+            _dims_cfg = _json.loads(_dims_path.read_text(encoding="utf-8"))["dimensions"]
+        except Exception:
+            _dims_cfg = []
 
     # 从 JSON 配置推导硬编码的 plus/minus 分类
     title_plus = [d["name"] for d in _dims_cfg if d.get("category") == "标题" and d.get("direction") == "plus"]
@@ -649,7 +663,7 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 
     result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1)
     if not result:
-        return {"title_score": 0, "content_score": 0, "scores": {}}
+        return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
     try:
         raw = _json.loads(result)
@@ -674,10 +688,11 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
             "title_score": title_score,
             "content_score": content_score,
             "scores": dim_scores,
+            "_dim_version": _dim_version,
         }
     except (_json.JSONDecodeError, ValueError, KeyError) as e:
         print(f"    ⚠️ 评分JSON解析失败: {e} | 输出: {result[:150]}")
-        return {"title_score": 0, "content_score": 0, "scores": {}}
+        return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
 
 # ============ 分类 ============

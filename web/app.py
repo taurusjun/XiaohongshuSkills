@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 from flask import Flask, jsonify, render_template_string, request, send_file
 from config.yahoo_conf import STORAGE_BACKEND
-from sqlite_db import init_db, query_news, get_by_key, update_news, get_score_dims, upsert_score_dims, stats
+from sqlite_db import init_db, query_news, get_by_key, update_news, get_score_dims, upsert_score_dims, stats, recalculate_scores, _connect
 from web.gallery_downloader import trigger_download, get_status as gstatus, upload_selected
 
 import subprocess, json, glob, threading, time, shutil
@@ -304,6 +304,32 @@ def api_archive_bulk():
         for key in keys:
             update_news(key, {'status': 'archived'})
     return jsonify({"ok": True, "count": len(keys)})
+
+@app.route('/api/score-dim/<key>/<dimension>', methods=['PUT'])
+def api_score_dim_override(key, dimension):
+    """人工纠正评分维度"""
+    data = request.json or {}
+    human_value = data.get("human_value")
+    override_note = data.get("override_note", "")
+    if human_value is None or human_value not in (0, 0.5, 1):
+        return jsonify({"error": "human_value must be 0, 0.5, or 1"}), 400
+    dims = get_score_dims(key)
+    target = next((d for d in dims if d["dimension"] == dimension), None)
+    if not target:
+        return jsonify({"error": f"Dimension '{dimension}' not found for {key}"}), 404
+    # Move current value to llm_value, write human override
+    with _connect() as db:
+        db.execute("""UPDATE score_dims SET
+            llm_value = value,
+            human_value = ?,
+            human_override = 1,
+            override_note = ?,
+            value = ?
+            WHERE news_key = ? AND dimension = ?""",
+            (human_value, override_note, human_value, key, dimension))
+    new_scores = recalculate_scores(key)
+    return jsonify({"ok": True, "new_title_score": new_scores["title_score"],
+                    "new_content_score": new_scores["content_score"]})
 
 @app.route('/api/gallery-upload/<key>', methods=['POST'])
 def api_gallery_upload(key):
