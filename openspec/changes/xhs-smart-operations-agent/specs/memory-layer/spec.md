@@ -17,8 +17,9 @@
 - `topic_baseline_comments REAL`：同话题 XHS TOP 10 笔记的平均评论数（新增）
 - `discard_count INTEGER DEFAULT 0`：该话题累计被 DISCARD 的次数
 - `last_discard_reason TEXT`：最近一次丢弃的原因
-- `vertical TEXT`：所属垂类标签
 - `window_days INTEGER DEFAULT 90`：计算均值时使用的时间窗口
+
+> **不引入 `vertical` 字段**：当前只运营一个娱乐垂类，垂类过滤逻辑等同于无条件查询，属于过度设计。等需要运营第二个垂类时，以 migration 方式添加该字段（代价极小），届时数据量也足够支撑垂类隔离分析。
 
 #### Scenario: 文章发布后 7 天数据更新 topic_performance（成熟数据机制，带去重保护）
 - **WHEN** 文章发布满 7 天，`xhs_collected_at` 包含 `72h` 标记，且 `news.topic_perf_updated_at IS NULL`
@@ -32,11 +33,9 @@
 - **WHEN** 文章发布满 24 小时，且 `xhs_saves` 24h 数据远超同期其他文章（> 2 倍均值）
 - **THEN** 仅触发飞书告警「📈 《标题》24h 收藏 N，表现突出，可考虑追加相关话题发布」；不使用 24h 数据更新 `topic_performance`，等待 7 天稳定数据
 
-#### Scenario: 读取话题排名时按 engagement_score 排序，按垂类隔离
+#### Scenario: 读取话题排名时按 engagement_score 排序
 - **WHEN** `get_top_topics(n=10)` 被调用
-- **THEN** 只统计近 `window_days`（默认 90 天）内有发布记录的话题，**先按 `vertical` 过滤**（只取 `active_verticals` 配置中已激活垂类的话题），再按 `engagement_score DESC` 排序；超出窗口无新发布的话题自动降级到「探索配额」
-
-不同垂类的 `engagement_score` 不可跨类比较（娱乐资讯和美食攻略的收藏基准完全不同），必须在各自垂类内部排名。
+- **THEN** 只统计近 `window_days`（默认 90 天）内有发布记录的话题，按 `engagement_score DESC` 排序；超出窗口无新发布的话题自动降级到「探索配额」
 
 #### Scenario: 新话题无历史数据
 - **WHEN** planner 请求一个 `post_count=0` 的话题数据
@@ -76,66 +75,27 @@
 - **WHEN** `account_snapshots` 中没有今日的记录
 - **THEN** 跳过需要账号数据的配额动态调整逻辑，使用默认配额，飞书摘要中注明「账号快照获取失败，今日使用默认配额」
 
-### Requirement: active_verticals 多垂类并行配置
-系统 SHALL 支持在 `agent_strategy.json` 中配置 `active_verticals`（激活的垂类列表），各垂类的 `topic_performance` 数据独立统计，互不污染。
+> **多垂类设计暂不实现**：`active_verticals`、`dim_weights_by_vertical`、垂类专属 prompt 模板均推迟到运营第二个垂类时再引入，届时以 migration 方式添加（改动量极小）。当前所有话题默认属于同一垂类，无需过滤。
 
-`active_verticals` 配置示例：
-```json
-{
-  "active_verticals": [
-    {"id": "idol", "label": "日本女星/写真", "quota_share": 0.8, "prompt_template": "idol"},
-    {"id": "food",  "label": "日本美食",      "quota_share": 0.2, "prompt_template": "food"}
-  ]
-}
-```
+### Requirement: agent_config + agent_state 分离存储，避免配置和运行时状态混用
+系统 SHALL 将原 `agent_strategy` KV 表拆分为两张表，解决配置/状态/任务混用导致的可维护性问题：
 
-`quota_share`：该垂类在每日总配额中的占比（多垂类时生效，单垂类时为 1.0）。
-`prompt_template`：该垂类使用的内容生成 prompt 模板标识，对应 `config/prompts/<template>.txt`。
+**`agent_config`（长期配置，无 TTL）：**
+- 存储：`dim_weights`、`publish_threshold`、`retry_threshold`、`daily_quota`、`growth_stage`、`focus_topics`、`engagement_weights`、`default_post_times` 等
+- 修改方式：Web UI / CLI / 飞书采纳建议
 
-#### Scenario: 单垂类模式（默认）
-- **WHEN** `active_verticals` 只有一个条目
-- **THEN** 行为与无垂类配置时完全相同，`topic_performance` 所有话题默认归属该垂类
-
-#### Scenario: 多垂类并行，配额按占比分配
-- **WHEN** `active_verticals` 包含多个条目（如 idol 80% + food 20%）
-- **THEN** planner 先按 `quota_share` 分配每个垂类的配额（如总配额 3 篇 → idol 2篇 + food 1篇），再在各垂类内部独立排名话题
-
-#### Scenario: 内容生成按垂类加载不同 prompt 模板
-- **WHEN** 某文章属于 `food` 垂类
-- **THEN** 内容生成时加载 `config/prompts/food.txt` 模板（而非默认的 idol 模板），确保语气和结构适配美食攻略而非娱乐资讯风格
-
-#### Scenario: 跨垂类数据污染防护
-- **WHEN** `reflection_runner` 运行维度相关性分析
-- **THEN** 仅对同一垂类（`vertical` 字段相同）的文章做 Pearson 相关性计算，不混合不同垂类数据
-
-### Requirement: 维度权重支持垂类专属覆盖
-系统 SHALL 在 `agent_strategy.json` 中支持 `dim_weights_by_vertical`（垂类专属权重），评分时优先使用垂类专属权重，垂类未配置的维度 fallback 到全局 `dim_weights`，再 fallback 到默认值 1.0。
-
-```json
-{
-  "dim_weights": {"收藏驱动": 1.5},
-  "dim_weights_by_vertical": {
-    "idol": {"有用信息": 0.4, "收藏驱动": 0.5},
-    "food": {"有用信息": 1.5, "收藏驱动": 2.0}
-  }
-}
-```
-
-#### Scenario: 娱乐垂类使用垂类专属权重
-- **WHEN** 评分一篇 `vertical=idol` 的文章
-- **THEN** `有用信息` 权重使用 `0.4`（垂类专属），`收藏驱动` 使用 `0.5`（垂类专属），其他维度使用全局 `dim_weights` 或默认 1.0
-
-#### Scenario: reflection_runner 按垂类分别生成权重建议
-- **WHEN** `reflection_runner` 运行维度相关性分析
-- **THEN** 对每个激活的垂类分别计算 Pearson 相关性，权重建议也按垂类分别生成并写入 `dim_weights_by_vertical` 的对应条目
-
-### Requirement: agent_strategy 以 SQLite 为单一真相来源
-系统 SHALL 以 `agent_strategy` SQLite 表为策略参数的单一真相来源。`config/agent_strategy.json` 仅作为初始化导入格式，运行时不直接读取 JSON 文件。所有参数修改通过 Web UI 或 CLI 写入数据库。
+**`agent_state`（运行时状态，带 `date` 字段）：**
+- 存储：`daily_plan_YYYYMMDD`、`runner_progress_YYYYMMDD`、`pending_weight_suggestion`、`task_{task_id}` 等
+- 带 `date TEXT` 字段，7 天后可清理；不会与配置混淆
 
 #### Scenario: 读取维度权重
 - **WHEN** `evaluate_quality` 调用 `load_dim_weights()`
-- **THEN** 从 `agent_strategy` 表读取（内存缓存 1 分钟 TTL），表为空时读 `agent_strategy.json` 作为一次性初始化导入，导入后以数据库为准
+- **THEN** 从 `agent_config` 表读取（内存缓存 1 分钟 TTL），表为空时读 `agent_strategy.json` 作为一次性初始化导入，导入后以数据库为准
 
-#### Scenario: 飞书确认权重调整后写入
+#### Scenario: 今日计划存入 agent_state
+- **WHEN** `agent_planner` 生成今日计划
+- **THEN** 写入 `agent_state`（key=`daily_plan_YYYYMMDD`，date=今日），7 天前的旧状态在每次 `agent_runner` 启动时自动清理
+
+#### Scenario: 飞书确认权重调整后写入 agent_config
 - **WHEN** 运营者在飞书卡片点击「采纳建议」
-- **THEN** 系统写入 `agent_strategy` 表，清空内存缓存，不写 JSON 文件（JSON 仅在人工导出时生成）
+- **THEN** 系统写入 `agent_config` 表，清空内存缓存

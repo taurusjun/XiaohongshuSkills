@@ -129,5 +129,8 @@
 |---|---|
 | reflection-runner 的「统计分析 + 权重建议生成」 | 需要 40 篇有效样本 ≈ 20 周 |
 | `weighted-scoring` 的相关性校准 | 依赖 reflection-runner P2 结果 |
+| `scoring_dimension_versions` DB 版本管理 | 当前用 JSON + Git 足够；等运营者开始频繁改维度且需要追溯版本时再建 |
+| `xhs-llm` MCP server | 当前直接给 `call_litellm` 加 `temperature` 参数即可；等有跨语言客户端需求时再封装为 MCP |
+| 多垂类支持（active_verticals / vertical 字段 / dim_weights_by_vertical） | 等需要运营第二个垂类时以 migration 方式引入 |
 
 > **注意：** `memory-layer`（建表 + 基础 CRUD）是 **P0 必须完成项**——P0 的 `agent-runner`、`daily-planner`、`risk-control` 全部依赖 `topic_performance / account_snapshots / agent_strategy` 表存在。「数据积累」是 P1/P2 的事，「建表」是 P0 的事，两者不能混淆。

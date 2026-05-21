@@ -1,3 +1,26 @@
+## 任务组依赖关系
+
+```
+Phase 0（数据字段 + scoring_dimensions.json）
+    │
+    ├─→ A. 记忆层建表（agent_config/agent_state/topic_performance/account_snapshots）
+    │        │
+    │        ├─→ B. 评分加权化（依赖 agent_config）
+    │        │        └─→ C. 低分诊断（依赖 B）
+    │        │
+    │        ├─→ D. 趋势扫描（依赖 topic_performance 表）
+    │        │        └─→ E. 每日规划器（依赖 A + D）
+    │        │
+    │        └─→ MCP xhs-operations（依赖所有 DB 表）
+    │
+    ├─→ F. 飞书 Bot（独立，可并行）
+    │
+    └─→ G. 智能体主循环（依赖 A/B/C/D/E/F 全部完成）
+
+任务组 1（维度注册表 DB 版本管理）→ P2（推迟）
+任务组 8（reflection_runner 统计分析）→ P2（需要 40 篇有效样本）
+```
+
 ## Phase 0: 数据基础（先做，尽早启动数据积累）
 
 > 这是原 `xhs-feedback-loop` change 的全部内容，合并至此作为最优先的任务组。
@@ -47,32 +70,41 @@
 - [ ] 1.16 飞书「采纳定义建议」回调 / Web UI「发布新版本」按钮：调用 `commit_dimension_version()`，清空缓存
 - [ ] 1.17 验证：修改「原创度」为 0.5 + 填写理由，确认综合分更新；在版本管理页提交新版本，确认版本号递增；执行回滚，确认 prompt 使用旧定义
 
-## 2. 记忆层 — 数据库扩展
+## A. 记忆层 — 数据库扩展
 
-- [ ] 1.1 在 `sqlite_db.py` 新增 `topic_performance` 表（`topic / avg_saves / avg_views / post_count / avg_title_score / trend_signal / trend_updated_at / last_updated`）
-- [ ] 1.2 在 `sqlite_db.py` 新增 `account_snapshots` 表（`snapshot_date / week_views / week_saves / week_likes / top_note_key`）
-- [ ] 1.3 在 `sqlite_db.py` 新增 `agent_strategy` 表（`key TEXT PK / value TEXT / updated_at TEXT`）
-- [ ] 1.4 实现 `get_top_topics(n)` / `get_recent_performance(days)` / `upsert_topic_performance()` / `get_strategy(key)` / `set_strategy(key, value)` CRUD 函数
-- [ ] 1.5 创建 `config/agent_strategy.json` 默认配置（`dim_weights: {}` / `publish_threshold: 3.0` / `retry_threshold: 2.0` / `daily_quota: 2` / `max_daily_quota: 4` / `default_post_times: ["12:00", "18:00"]`）
-- [ ] 1.6 实现 `load_dim_weights()` 带 1 分钟内存 TTL 缓存（`scripts/yahoo_common.py` 或独立 `config_loader.py`）
-- [ ] 1.7 验证：启动服务，确认 3 张新表创建成功，`get_strategy` / `set_strategy` 读写正常
+> **依赖：** Phase 0 完成（news 表字段已有）。其他任务组均依赖本组完成。
 
-## 2. 评分加权化
+- [ ] A.1 在 `sqlite_db.py` 新增 `topic_performance` 表（`topic / avg_saves / avg_comments / engagement_score / avg_views / post_count / trend_signal / trend_updated_at / discard_count / last_discard_reason / window_days / topic_baseline_saves / competition_count / last_updated`）
+- [ ] A.2 在 `sqlite_db.py` 新增 `account_snapshots` 表（`snapshot_date / followers / week_views / week_saves / week_likes / top_note_key / data_completeness`）
+- [ ] A.3 在 `sqlite_db.py` 新增 `agent_config` 表（`key TEXT PK / value TEXT / updated_at TEXT`）和 `agent_state` 表（`key TEXT PK / value TEXT / date TEXT / updated_at TEXT`）代替原 `agent_strategy` 单表（配置和运行时状态分离）
+- [ ] A.4 实现 `get_top_topics(n)` / `get_recent_performance(days)` / `upsert_topic_performance()` / `get_config(key)` / `set_config(key, value)` / `get_state(key)` / `set_state(key, value, date)` / `cleanup_old_states(days=7)` CRUD 函数
+- [ ] A.5 创建 `config/agent_strategy.json` 默认配置（`dim_weights: {}` / `publish_threshold: 3.0` / `retry_threshold: 2.0` / `daily_quota: 2` / `max_daily_quota: 4` / `default_post_times: ["09:30", "12:00", "18:00"]`）
+- [ ] A.6 实现 `load_dim_weights()` 从 `agent_config` 表读取，带 1 分钟内存缓存（比较 DB `updated_at` 时间戳，不用 TTL）
+- [ ] A.7 验证：启动服务，确认 4 张新表创建成功；`set_config/get_config` 读写正常；`cleanup_old_states` 清理 8 天前的 state 记录
+
+## B. 评分加权化
+
+> **依赖：** Phase 0（scoring_dimensions.json 已创建），任务组 A 完成（agent_config 可读）
 
 - [ ] 2.1 修改 `yahoo_common.py:evaluate_quality` — 用 `load_dim_weights()` 读取权重，计算 `content_score` / `title_score` 改为加权求和后 clamp 到 [0, 5]
 - [ ] 2.2 确保权重缺失时默认 1.0，LLM 未返回维度时不报错（`scores.get(dim, 0)`）
 - [ ] 2.3 验证：修改 `agent_strategy.json` 设置 `"收藏驱动": 2.0`，对一篇文章 regenerate，确认 `content_score` 有变化且符合预期
 
-## 3. 低分诊断与重试逻辑
+## C. 低分诊断与重试逻辑
 
-- [ ] 3.1 新建 `scripts/agent_tools.py`，实现 `diagnose_low_score(article, scores) -> Action`（DISCARD / REGENERATE / WAIT_GALLERY / HUMAN_REVIEW）
+> **依赖：** Phase 0，任务组 B
+
+- [ ] C.1 新建 `scripts/scoring.py`，实现纯函数 `diagnose_low_score(article, scores) -> Action`（DISCARD / REGENERATE / WAIT_GALLERY / HUMAN_REVIEW），无副作用，方便单元测试
+- [ ] C.2 新建 `scripts/agent_tools.py`，实现
 - [ ] 3.2 实现 `regenerate_with_hint(article, failed_dims) -> updated_article`，根据 `failed_dims` 选择对应修正提示词注入 generate 调用
 - [ ] 3.3 在 `yahoo_common.py:process_news_item` 中，评分完成后调用 `diagnose_low_score`，实现最多 2 次重试循环
 - [ ] 3.4 DISCARD 的文章写 `status='discarded', discard_reason=...`；WAIT_GALLERY 写 `pending_gallery=True`；HUMAN_REVIEW 写 `needs_human_review=True`
 - [ ] 3.5 `agent_tools.py` 同时封装现有工具：`fetch_by_keywords` / `fetch_recommendations` / `run_gallery_download` / `run_publish_pipeline`（统一接口）
 - [ ] 3.6 验证：构造一篇 `啰嗦重复=1` 的测试文章，确认触发重生成；构造 `topic_potential=0` 的文章，确认直接 DISCARD
 
-## 4. XHS 趋势扫描
+## D. XHS 趋势扫描
+
+> **依赖：** 任务组 A（topic_performance 表已建）
 
 - [ ] 4.1 新建 `scripts/xhs_trend_scanner.py`，实现 `scan_topic_trends(keywords: list[str]) -> list[dict]`，内部调用 `search_feeds(sort="最多收藏", limit=10)`
 - [ ] 4.2 提取 TOP 10 笔记的：标题列表、`recommended_keywords`、图文/视频比例、平均标题长度
@@ -80,7 +112,9 @@
 - [ ] 4.4 CDP 未就绪时捕获异常，记录日志并返回空结果（不抛出）
 - [ ] 4.5 验证：手动运行 `python scripts/xhs_trend_scanner.py --keywords "写真集,美人"`，确认数据写入 DB
 
-## 5. 每日规划器
+## E. 每日规划器
+
+> **依赖：** 任务组 A（数据层）、任务组 D（趋势数据）
 
 - [ ] 5.1 新建 `scripts/agent_planner.py`，实现 `plan_today() -> DailyPlan` 数据类（`topics: list[TopicQuota], post_times: list[str], quota_total: int, mode: str`）
 - [ ] 5.2 实现话题分配逻辑：70% 高表现（`avg_saves DESC`）/ 20% 探索（`trend_signal` 有新话题）/ 10% 保底（默认关键词）
@@ -89,7 +123,9 @@
 - [ ] 5.5 实现今日计划幂等存储：写入 `agent_strategy` 表 key=`daily_plan_YYYYMMDD`
 - [ ] 5.6 验证：运行 `python scripts/agent_planner.py --date today --print`，确认输出合理计划
 
-## 6. 飞书 Bot 集成
+## F. 飞书 Bot 集成
+
+> **依赖：** 独立，可与其他任务组并行
 
 > 使用开放平台 Bot + 交互卡片。服务器有公网 IP，直接作为回调地址。
 
@@ -103,7 +139,9 @@
 - [ ] 6.8 在 `scripts/.env` 新增 `FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_OPERATOR_OPEN_ID / FEISHU_WEBHOOK_SECRET`，未配置时所有方法静默返回
 - [ ] 6.9 验证：手动运行 `send_text` 确认消息到达；发送测试卡片并点击按钮，确认回调触发且 DB 中 `publish_xhs` 字段正确更新
 
-## 7. 智能体主循环
+## G. 智能体主循环
+
+> **依赖：** 任务组 A/B/C/D/E/F 全部完成
 
 - [ ] 7.1 新建 `scripts/agent_runner.py`，实现主流程：感知（趋势扫描+账号快照）→ 规划（今日计划）→ 执行（按计划抓取+生成+低分处理）→ 通知（推送飞书审批卡片）
 - [ ] 7.2 实现进度持久化：每完成一个阶段写 `agent_strategy` 表（key=`runner_progress_YYYYMMDD`），重复运行时跳过已完成阶段
