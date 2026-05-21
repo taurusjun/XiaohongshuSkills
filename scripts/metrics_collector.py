@@ -120,7 +120,8 @@ def collect_all(dry_run: bool = False) -> dict:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
         # Match against DB
-        from scripts.sqlite_db import _connect, record_metrics
+        from scripts.sqlite_db import _connect, record_metrics, DB_PATH
+        logger.info(f"DB_PATH: {DB_PATH}")
 
         with _connect() as db:
             articles = db.execute(
