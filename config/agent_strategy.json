@@ -1,0 +1,19 @@
+{
+  "dim_weights": {},
+  "dim_weights_by_vertical": {},
+  "publish_threshold": 3.0,
+  "retry_threshold": 2.0,
+  "daily_quota": 2,
+  "cold_start_quota": 3,
+  "cold_start_max_quota": 4,
+  "max_daily_quota": 4,
+  "growth_stage": "cold_start",
+  "focus_topics": [],
+  "engagement_weights": {"saves": 0.6, "comments": 0.4},
+  "default_post_times": ["09:30", "12:00", "18:00"],
+  "exploration_ratio": 0.2,
+  "baseline_ratio": 0.1,
+  "active_verticals": [
+    {"id": "idol", "label": "日本女星/写真", "quota_share": 1.0}
+  ]
+}
