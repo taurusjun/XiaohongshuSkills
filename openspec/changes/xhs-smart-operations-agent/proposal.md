@@ -117,6 +117,7 @@
 
 | Capability | 说明 |
 |---|---|
+| `xhs-llm` MCP server | 服务于 Claude Code 对话场景（「帮我评估这篇文章」「重新生成这篇内容」），内部流水线仍直接调用 Python 函数，两条路径共用同一套底层逻辑 |
 | `low-score-handler` | 减少运营负担 |
 | `dimension-registry` | 初期手动维护 JSON 即可，版本管理上线后再启用 |
 | `trend-scanner` | 无历史数据时信号弱，一个月后才有意义 |
@@ -131,7 +132,7 @@
 | reflection-runner 的「统计分析 + 权重建议生成」 | 需要 40 篇有效样本 ≈ 20 周 |
 | `weighted-scoring` 的相关性校准 | 依赖 reflection-runner P2 结果 |
 | ~~`scoring_dimension_versions` DB 版本管理~~ | ~~当前用 JSON + Git 足够~~ → **已恢复至 P0**，评分维度是系统核心判断标准，版本追溯从 Day 1 开始 |
-| `xhs-llm` MCP server | 当前直接给 `call_litellm` 加 `temperature` 参数即可；等有跨语言客户端需求时再封装为 MCP |
+| ~~`xhs-llm` MCP server~~ | ~~推迟~~ → **恢复至 P1**，见下方说明 |
 | 多垂类支持（active_verticals / vertical 字段 / dim_weights_by_vertical） | 等需要运营第二个垂类时以 migration 方式引入 |
 
 > **注意：** `memory-layer`（建表 + 基础 CRUD）是 **P0 必须完成项**——P0 的 `agent-runner`、`daily-planner`、`risk-control` 全部依赖 `topic_performance / account_snapshots / agent_strategy` 表存在。「数据积累」是 P1/P2 的事，「建表」是 P0 的事，两者不能混淆。
