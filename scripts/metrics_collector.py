@@ -1,128 +1,150 @@
 #!/usr/bin/env python3
-"""metrics_collector.py — 发布后 4h/24h/72h 自动回收实发数据（浏览/点赞/收藏/评论）"""
+"""metrics_collector.py — 每小时通过 creator API 回收实发数据并追加历史快照"""
 
-import sys
-import os
-import logging
+import sys, os, json, time, logging, re
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [metrics] %(message)s")
 logger = logging.getLogger("metrics_collector")
 
-COLLECTION_WINDOWS = [("4h", 4), ("24h", 24), ("72h", 72)]
+CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
+CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
 
 
-def get_articles_pending_collection() -> list[dict]:
-    """查询需要回收的文章：publish_xhs=1, xhs_pub_time 非空"""
-    from scripts.sqlite_db import _connect
-    with _connect() as db:
-        rows = db.execute(
-            "SELECT * FROM news WHERE publish_xhs=1 AND xhs_pub_time IS NOT NULL AND xhs_pub_time!='' AND status='active'"
-        ).fetchall()
-    return [dict(r) for r in rows]
+def collect_all(dry_run: bool = False) -> dict:
+    """
+    通过 CDP Network 拦截 creator 页面的 analyze/list API 响应，
+    提取最近 7 天笔记数据，匹配 DB 中已发布文章，写入 metrics_history。
+    """
+    import requests as _requests
+    import websocket as _ws
 
-
-def needs_collection(article: dict, label: str, hours: int) -> bool:
-    """判断某文章在某时间点是否需要回收"""
-    pub_time_str = article.get("xhs_pub_time", "")
-    if not pub_time_str:
-        return False
+    # 获取 Chrome tab
     try:
-        pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M")
-    except ValueError:
-        try:
-            pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            return False
-    elapsed = (datetime.now() - pub_time).total_seconds() / 3600
-    if elapsed < hours:
-        return False
-    collected = article.get("xhs_collected_at", "")
-    if label in collected.split(","):
-        return False
-    return True
-
-
-def collect_article(publisher, article: dict, label: str) -> bool:
-    """对单篇文章发起 CDP 抓取并写回 DB"""
-    from scripts.sqlite_db import update_news
-
-    note_url = article.get("gallery_url", "")
-    if not note_url:
-        logger.warning(f"  {article.get('key')}: no gallery_url, skip")
-        return False
-
-    try:
-        stats = publisher.fetch_note_stats(note_url)
+        resp = _requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
+        tabs = resp.json()
+        if not tabs:
+            logger.warning("No Chrome tabs found")
+            return {"error": "no_tabs"}
+        ws_url = tabs[0].get("webSocketDebuggerUrl", "")
+        if not ws_url:
+            logger.warning("No WebSocket URL")
+            return {"error": "no_ws_url"}
     except Exception as e:
-        logger.warning(f"  {article.get('key')}: CDP fetch failed: {e}")
-        return False
+        logger.warning(f"Cannot connect to Chrome: {e}")
+        return {"error": str(e)}
 
-    if not stats:
-        return False
+    ws = _ws.create_connection(ws_url, timeout=15)
+    collected = 0
+    try:
+        ws.send(json.dumps({"id": 1, "method": "Network.enable"}))
+        ws.recv()
+        ws.send(json.dumps({"id": 2, "method": "Page.enable"}))
+        ws.recv()
+        ws.send(json.dumps({"id": 3, "method": "Page.navigate", "params": {
+            "url": "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"
+        }}))
+        ws.recv()
 
-    fields = {}
-    for field in ["xhs_views", "xhs_likes", "xhs_saves", "xhs_comments"]:
-        val = stats.get(field.replace("xhs_", ""))
-        if val is not None:
-            fields[field] = int(val)
+        # Intercept analyze/list response
+        request_ids = []
+        captured_body = ""
+        deadline = time.time() + 25
+        ws.settimeout(5)
+        while time.time() < deadline:
+            try:
+                raw = ws.recv()
+                msg = json.loads(raw)
+                m = msg.get("method", "")
+                pid = msg.get("params", {}).get("requestId", "")
 
-    if not fields:
-        return False
+                if m == "Network.responseReceived":
+                    url = msg.get("params", {}).get("response", {}).get("url", "")
+                    if "analyze/list" in url:
+                        request_ids.append(pid)
 
-    # Append collection mark
-    existing = article.get("xhs_collected_at", "")
-    new_val = ",".join(filter(None, [existing, label]))
-    fields["xhs_collected_at"] = new_val
+                if m == "Network.loadingFinished" and pid in request_ids:
+                    ws.send(json.dumps({"id": 200, "method": "Network.getResponseBody",
+                                        "params": {"requestId": pid}}))
+                    body_raw = json.loads(ws.recv())
+                    body = body_raw.get("result", {}).get("body", "")
+                    if body and '"note_infos"' in body:
+                        captured_body = body
+                        break
+            except Exception:
+                continue
 
-    update_news(article["key"], fields)
-    logger.info(f"  {article.get('key')}: collected ({label}) — {fields}")
-    return True
+        if not captured_body:
+            logger.warning("Could not capture analyze/list response")
+            return {"error": "no_response"}
 
+        data = json.loads(captured_body)
+        notes = data.get("data", {}).get("note_infos", [])
 
-def collect_pending_articles(dry_run: bool = False, single_key: Optional[str] = None) -> dict:
-    """遍历所有待回收文章，按时间点判断并回收"""
-    articles = get_articles_pending_collection()
-    if single_key:
-        articles = [a for a in articles if a["key"] == single_key]
-        if not articles:
-            logger.warning(f"Article {single_key} not found or not pending collection")
-            return {"checked": 0, "collected": 0}
+        # Filter: last 7 days
+        week_ago = (time.time() - 7 * 86400) * 1000
+        recent = [n for n in notes if n.get("post_time", 0) >= week_ago]
 
-    checked, collected = 0, 0
-    publisher = None if dry_run else _get_publisher()
+        if dry_run:
+            return {"dry_run": True, "notes_found": len(notes), "recent_7d": len(recent)}
 
-    for art in articles:
-        for label, hours in COLLECTION_WINDOWS:
-            if needs_collection(art, label, hours):
-                checked += 1
-                if dry_run:
-                    logger.info(f"  [dry-run] {art.get('key')} would collect ({label})")
+        # Match against DB by title
+        from scripts.sqlite_db import _connect, record_metrics
+        now_str = datetime.now().strftime("%Y-%m-%d %H:00")
+
+        with _connect() as db:
+            pub_articles = db.execute(
+                "SELECT key, title FROM news WHERE publish_xhs=1 AND status='active'"
+            ).fetchall()
+
+        for n in recent:
+            xhs_title = _normalize(n.get("title", ""))
+            if not xhs_title:
+                continue
+            for art in pub_articles:
+                art_title = _normalize(art["title"])
+                if _titles_match(xhs_title, art_title):
+                    if not dry_run:
+                        record_metrics(
+                            art["key"], now_str,
+                            views=n.get("read_count", 0),
+                            likes=n.get("like_count", 0),
+                            saves=n.get("fav_count", 0),
+                            comments=n.get("comment_count", 0),
+                        )
                     collected += 1
-                elif publisher and collect_article(publisher, art, label):
-                    collected += 1
+                    break
 
-    return {"checked": checked, "collected": collected}
+        logger.info(f"Collected: {collected} articles at {now_str}")
+    finally:
+        ws.close()
+
+    return {"collected": collected, "time": now_str}
 
 
-def _get_publisher():
-    """延迟初始化 CDP publisher"""
-    from scripts.cdp_publish import XiaohongshuPublisher
-    pub = XiaohongshuPublisher()
-    pub.connect()
-    return pub
+def _normalize(s: str) -> str:
+    return re.sub(r"[，。！？、\s「」『』【】（）\(\)\,\!\.\?\-—　]", "", str(s).lower())
+
+
+def _titles_match(a: str, b: str) -> bool:
+    """Fuzzy title match"""
+    if a == b:
+        return True
+    if a[:8] == b[:8]:
+        return True
+    if a in b or b in a:
+        return True
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a, b).ratio() >= 0.85
 
 
 if __name__ == "__main__":
     import argparse
-    p = argparse.ArgumentParser(description="XHS 实发数据回收器")
-    p.add_argument("--key", help="单篇回收（指定 news key）")
-    p.add_argument("--dry-run", action="store_true", help="仅检查，不执行 CDP")
+    p = argparse.ArgumentParser(description="XHS 实发数据回收器（每小时）")
+    p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
-    result = collect_pending_articles(dry_run=args.dry_run, single_key=args.key)
-    print(f"[metrics_collector] Done — checked={result['checked']}, collected={result['collected']}")
+    result = collect_all(dry_run=args.dry_run)
+    print(f"[metrics_collector] {result}")
