@@ -120,44 +120,45 @@ def collect_all(dry_run: bool = False) -> dict:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
         # Match against DB
-        from scripts.sqlite_db import _connect, record_metrics, DB_PATH
+        import sqlite3
+        from scripts.sqlite_db import DB_PATH
         logger.info(f"DB_PATH: {DB_PATH}")
 
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
         try:
-            conn = _connect()
-            conn.close()
-            logger.info("_connect OK")
-        except Exception as _e:
-            logger.error(f"_connect failed: {_e}")
-            raise
-
-        with _connect() as db:
-            articles = db.execute(
+            articles = conn.execute(
                 "SELECT key, title FROM news WHERE publish_xhs=1 AND status='active'"
             ).fetchall()
 
-        collected = 0
-        for _, row in df.iterrows():
-            xhs_title = _normalize(str(row["title"]))
-            if not xhs_title:
-                continue
-            for art in articles:
-                if _titles_match(xhs_title, _normalize(art["title"])):
-                    record_metrics(
-                        art["key"], now_str,
-                        views=int(row["views"]),
-                        likes=int(row["likes"]),
-                        saves=int(row["saves"]),
-                        comments=int(row["comments"]),
-                        shares=int(row.get("share", 0) or 0),
-                        fans_gained=int(row.get("fans", 0) or 0),
-                        impression=int(row.get("impression", 0) or 0),
-                        click_rate=float(row.get("click_rate", 0) or 0),
-                        watch_time=int(row.get("watch_time", 0) or 0),
-                        danmaku=int(row.get("danmaku", 0) or 0),
-                    )
-                    collected += 1
-                    break
+            collected = 0
+            for _, row in df.iterrows():
+                xhs_title = _normalize(str(row["title"]))
+                if not xhs_title:
+                    continue
+                for art in articles:
+                    if _titles_match(xhs_title, _normalize(art["title"])):
+                        key = art["key"]
+                        conn.execute(
+                            """INSERT OR REPLACE INTO metrics_history
+                               (news_key, collected_at, views, likes, saves, comments,
+                                shares, fans_gained, impression, click_rate, watch_time, danmaku)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (key, now_str,
+                             int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
+                             int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
+                             int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
+                             int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0)),
+                        )
+                        conn.execute(
+                            "UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?, updated_at=datetime('now','localtime') WHERE key=?",
+                            (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]), key),
+                        )
+                        collected += 1
+                        break
+            conn.commit()
+        finally:
+            conn.close()
 
         logger.info(f"Collected: {collected} articles at {now_str}")
     except Exception as e:
