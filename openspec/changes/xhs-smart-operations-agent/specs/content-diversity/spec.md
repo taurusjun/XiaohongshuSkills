@@ -85,9 +85,15 @@
 
 **合并 prompt 的 fallback 规则：** 翻译和体裁判断独立 fallback，互不影响——翻译失败重试，体裁判断失败仅降级为 `["news"]`（不触发翻译重试）。
 
-#### Scenario: 使用完整摘要判断体裁适用性
+#### Scenario: 使用完整摘要判断体裁适用性，prompt 包含各体裁边界示例
 - **WHEN** 调用 LLM 翻译日文原文时
-- **THEN** 同一 prompt 中追加体裁适用性判断，判断输入使用 `content_ja[:500]`（而非 `[:100]`）；一次请求返回 `{title_zh, summary_zh, format_suitability}`
+- **THEN** 同一 prompt 中追加体裁适用性判断，判断输入使用 `content_ja[:500]`；prompt 中为每种体裁提供边界示例，防止 LLM 把所有内容判为 `["news"]`；示例参考：
+  - `story` 适用：「从练习生到出道十年回顾」「写真集发售后粉丝反应超出预期的意外转折」
+  - `story` 不适用：「XX出席颁奖典礼，现场气氛热烈」（无时间弧度）
+  - `ranking` 适用：「XX代表作盘点」「年度最受期待写真Top5」
+  - `ranking` 不适用：「XX公布新作，官方介绍曲目」（无可排列元素）
+  - `comparison` 适用：「XX与YY同台，风格对比明显」「同一人debut前后对比」
+  - `comparison` 不适用：「XX独自出席活动」（只有单一主体）
 
 #### Scenario: 体裁判断失败时独立降级，含类型检查
 - **WHEN** LLM 返回的 JSON 中 `format_suitability` 字段缺失、格式错误、或返回字符串而非数组（如 `"news"` 而非 `["news"]`）

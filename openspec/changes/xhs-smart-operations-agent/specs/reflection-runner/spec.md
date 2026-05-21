@@ -92,9 +92,11 @@ Bonferroni 校正：p 阈值 = 0.05 / 维度数量（如 19 个维度则 p 阈�
 ### Requirement: 纠正记录聚合，推动维度定义版本迭代
 系统 SHALL 在每周 `reflection_runner` 中，聚合同一维度的 `override_note`，识别高频错误模式，生成 `edge_case` 更新建议，由运营者确认后提交为新版本。
 
-#### Scenario: 同维度纠正次数达到阈值
+#### Scenario: 同维度纠正次数达到阈值，先判断是否有共同模式
 - **WHEN** 某维度在过去 4 周内 `human_override=1` 的记录 ≥ 3 条
-- **THEN** 调用 LiteLLM 分析这批 `override_note`，提炼共同模式，生成建议措辞，在飞书周报中展示
+- **THEN** 调用 LiteLLM 分析这批 `override_note`，**先让 LLM 判断 `has_pattern`（是/否）**：若 override_note 本身不一致（如 3 条侧脸 + 1 条背光），LLM 应返回 `has_pattern=false`，不强行生成建议；只在 `has_pattern=true` 时生成 `edge_case` 建议和支持证据列表（`evidence: [原始note1, note2...]`），推送到飞书
+
+LLM 调用返回 schema：`{"has_pattern": bool, "edge_case": "string|null", "evidence": ["string"], "reason": "string"}`，`temperature=0.3`（分析任务需要偏确定性）
 
 #### Scenario: 运营者确认后提交新版本
 - **WHEN** 运营者在飞书点击「采纳定义建议」或 Web UI 点击「发布新版本」

@@ -119,7 +119,7 @@
 - [ ] 8.1 新建 `scripts/reflection_runner.py`，实现主流程：更新 `topic_performance` → 运行维度相关性分析 → 生成权重建议 → 用 LiteLLM 生成自然语言周报 → 推送飞书周报卡片
 - [ ] 8.2 实现 `update_topic_performance()`：对每个话题查询含 24h 数据的文章，滚动计算加权平均（近期权重 1.5，旧数据权重 1.0）
 - [ ] 8.3 实现权重建议生成逻辑：r > 0.4 且 p < 0.05 → weight + 0.5；r < 0.1 或 p > 0.05 → weight - 0.3（下限 0.1）；存 `agent_strategy` 表 key=`pending_weight_suggestion`
-- [ ] 8.4 实现 LiteLLM 周报生成 prompt（输入：数据指标字典；输出：200字内自然语言摘要）
+- [ ] 8.4 实现周报生成：**数值统计部分（发布篇数/总浏览/总收藏/话题对比表）用模板填充，不调用 LLM**；只有「本周亮点摘要」和「下周建议」两段（各 50-100 字）通过 LiteLLM 生成，temperature=0.5，返回 `{"highlights": "string", "suggestions": "string"}`
 - [ ] 8.5 配置 crontab：`0 23 * * 0 cd /path/to/project && python scripts/reflection_runner.py >> logs/reflection.log 2>&1`
 - [ ] 8.6 验证：手动运行 `python scripts/reflection_runner.py`，确认飞书收到周报卡片，点击「一键采纳」后 `agent_strategy.json` 的 `dim_weights` 更新
 
