@@ -15,7 +15,12 @@ import sys
 import time
 import socket
 import subprocess
+from pathlib import Path
 from typing import Optional
+
+# Add repo root to sys.path so in-script imports (config, etc.) work
+# regardless of whether the script is run from repo root or scripts/ dir.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 CDP_PORT = 9222
 PROFILE_DIR_NAME = "XiaohongshuProfile"
