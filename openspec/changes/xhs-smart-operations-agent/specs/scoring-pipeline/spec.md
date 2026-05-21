@@ -78,8 +78,8 @@
 
 ---
 
-### Requirement: evaluate_quality 评分上下文扩展，prompt 中声明 JSON schema
-`evaluate_quality` SHALL 将正文输入从 `content[:200]` 扩展至 `content[:400]`，并在 prompt 中明确声明期望的 JSON schema，而非仅靠 `response_format` 隐式约束。
+### Requirement: evaluate_quality 评分上下文使用动态 token budget，prompt 中声明 JSON schema
+`evaluate_quality` SHALL 将正文输入扩展至 `content_ja[:800]`（日文字符），并在 prompt 中明确声明期望的 JSON schema，而非仅靠 `response_format` 隐式约束。
 
 prompt 中 schema 声明示例：
 ```
