@@ -1309,12 +1309,16 @@ async function savePublishImages(){
   });
 })();
 async function toggleScore(el){
-  let dim=el.dataset.dim;
-  let cur=parseFloat(el.dataset.val)||0;
-  let next=cur===0?0.5:cur===0.5?1:0;
-  let note=prompt('纠正理由(可选):');
-  if(note===null)return;
-  let r=await fetch('/api/score-dim/'+key+'/'+encodeURIComponent(dim),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({human_value:next,override_note:note||''})});
+  document.getElementById('overrideDim').textContent=el.dataset.dim;
+  document.getElementById('overrideVal').value=el.dataset.val;
+  document.getElementById('overrideNote').value='';
+  document.getElementById('overrideModal').classList.add('active');
+}
+async function submitOverride(){
+  let dim=document.getElementById('overrideDim').textContent;
+  let val=parseFloat(document.getElementById('overrideVal').value);
+  let note=document.getElementById('overrideNote').value;
+  let r=await fetch('/api/score-dim/'+key+'/'+encodeURIComponent(dim),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({human_value:val,override_note:note})});
   if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
 }
 async function collectMetrics(){
@@ -1329,6 +1333,15 @@ async function collectMetrics(){
   btn.disabled=false;btn.textContent='🔄 立即回收数据';
 }
 </script>
+<div class="modal" id="overrideModal"><div class="modal-card" style="max-width:360px">
+  <h3 style="margin-bottom:12px">纠正 <span id="overrideDim"></span></h3>
+  <div class="field-row" style="margin-bottom:10px"><label>分值</label><div class="value"><select id="overrideVal" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;width:100%"><option value="0">0</option><option value="0.5">0.5</option><option value="1">1</option></select></div></div>
+  <div class="field-row"><label>理由</label><div class="value"><input id="overrideNote" class="url-input" placeholder="纠正理由（可选）" style="width:100%;padding:8px;font-size:13px"></div></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-gray" onclick="document.getElementById('overrideModal').classList.remove('active')">取消</button>
+    <button class="btn btn-red" onclick="submitOverride()">确认</button>
+  </div>
+</div></div>
 </body></html>"""
 
 @app.route('/')
