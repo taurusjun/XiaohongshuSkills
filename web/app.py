@@ -849,10 +849,12 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 #imgZoom{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;pointer-events:none}
 #imgZoom img{max-width:500px;max-height:500px;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.4)}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
-.score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500}
+.score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s}
+.score-item:hover{filter:brightness(.9)}
 .score-plus{background:#dcfce7;color:#15803d}
 .score-minus{background:#fee2e2;color:#b91c1c}
 .score-neutral{background:#f3f4f6;color:#888}
+.score-override{border:2px solid #f59e0b}
 .reason-tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#333;color:#fff;font-size:11px;padding:4px 8px;border-radius:4px;white-space:nowrap;z-index:10;margin-bottom:4px}
 .score-item:hover .reason-tip{display:block}
 .tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
@@ -976,7 +978,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     </div>
     <div class="score-grid" id="scoreGrid">
       {% for d in scores %}
-      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %}" data-cat="{{d.category}}" style="position:relative;{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
+      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %} {% if d.human_override %}score-override{% endif %}" data-cat="{{d.category}}" data-dim="{{d.dimension}}" data-val="{{d.value}}" onclick="toggleScore(this)" style="position:relative;{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
       {% endfor %}
     </div>
   </div>
@@ -1306,6 +1308,15 @@ async function savePublishImages(){
     el.addEventListener('mouseleave',()=>ov.style.display='none');
   });
 })();
+async function toggleScore(el){
+  let dim=el.dataset.dim;
+  let cur=parseFloat(el.dataset.val)||0;
+  let next=cur===0?0.5:cur===0.5?1:0;
+  let note=prompt('纠正理由(可选):');
+  if(note===null)return;
+  let r=await fetch('/api/score-dim/'+key+'/'+encodeURIComponent(dim),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({human_value:next,override_note:note||''})});
+  if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
+}
 async function collectMetrics(){
   var btn=event.target;
   btn.disabled=true;btn.textContent='⏳ 回收中...';
