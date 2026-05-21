@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastmcp import FastMCP
 from scripts.yahoo_common import call_litellm, build_scoring_prompt
 from scripts.sqlite_db import load_active_dimensions, get_score_dims
-from config.yahoo_conf import GALLERY_CACHE_DIR
+from config.yahoo_conf import GALLERY_CACHE_DIR, VISION_ENABLED
 
 mcp = FastMCP("xhs-llm")
 
@@ -223,36 +223,28 @@ def analyze_overrides(dim_name: str, override_notes: list[str]) -> dict:
 
 @mcp.tool()
 def score_cover_image(image_path: str) -> dict:
-    """对封面图进行 6 个客观维度评分（使用 DeepSeek 视觉模型）
+    """对封面图进行 6 个客观维度评分（视觉模型，由 VISION_ENABLED 开关控制）
 
     维度：清晰度/构图/情绪吸引力/色彩表现力/信息传达/品牌一致性
     每维度 value: 0/0.5/1
     """
-    # TODO: VISION_MODEL 暂不可用，跳过图片评分逻辑
-    # 当前 LiteLLM 代理的 deepseek-v4-flash 不支持图片输入。
-    # 后续配置支持视觉的模型后（如 gpt-4o / deepseek-vl2），
-    # 设置 VISION_MODEL 环境变量即可启用。
-    return _error("NOT_IMPLEMENTED",
-                  "封面图评分暂不可用：VISION_MODEL 未配置或当前模型不支持视觉。"
-                  "请在 scripts/.env 中设置 VISION_MODEL 指向支持图片输入的模型。")
+    if not VISION_ENABLED:
+        return _error("NOT_IMPLEMENTED",
+                      "封面图评分未启用。设置 VISION_ENABLED=1 并配置 VISION_MODEL 后重试。")
 
-    # --- 以下逻辑留待 VISION_MODEL 就绪后启用 ---
-    # 安全检查：路径必须在 GALLERY_CACHE_DIR 内
-    _abs_path = os.path.abspath(os.path.expanduser(image_path))
-    _cache_dir = os.path.abspath(os.path.expanduser(GALLERY_CACHE_DIR))
-    if not _abs_path.startswith(_cache_dir):
+    abs_path = os.path.abspath(os.path.expanduser(image_path))
+    cache_dir = os.path.abspath(os.path.expanduser(GALLERY_CACHE_DIR))
+    if not abs_path.startswith(cache_dir):
         return _error("INVALID_VALUE", f"Image path must be under {GALLERY_CACHE_DIR}")
 
-    if not os.path.isfile(_abs_path):
-        return _error("NOT_FOUND", f"Image not found: {_abs_path}")
+    if not os.path.isfile(abs_path):
+        return _error("NOT_FOUND", f"Image not found: {abs_path}")
 
     try:
         from PIL import Image
-        img = Image.open(_abs_path)
-        # 转换 RGBA → RGB
+        img = Image.open(abs_path)
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
-        # 缩放到最长边 512px
         w, h = img.size
         if max(w, h) > 512:
             ratio = 512.0 / max(w, h)
@@ -300,8 +292,6 @@ def score_cover_image(image_path: str) -> dict:
 }}"""
 
     try:
-        # 使用 call_litellm 但传入图片（需要构建 vision 消息格式）
-        # DeepSeek 视觉模型使用 content 数组格式
         import requests
         LITELLM_URL = os.environ.get("LITELLM_URL", "").rstrip("/")
         LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
@@ -310,7 +300,6 @@ def score_cover_image(image_path: str) -> dict:
         if not LITELLM_API_KEY:
             return _error("LLM_UNAVAILABLE", "LITELLM_API_KEY not configured")
 
-        # 使用通用视觉模型（不一定是 deepseek-v4-flash，视觉需单独指定）
         vision_model = os.environ.get("VISION_MODEL", LITELLM_MODEL)
 
         body = {
