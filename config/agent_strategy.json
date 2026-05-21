@@ -1,19 +1,53 @@
 {
-  "dim_weights": {},
-  "dim_weights_by_vertical": {},
-  "publish_threshold": 3.0,
-  "retry_threshold": 2.0,
-  "daily_quota": 2,
+  "growth_stage": "cold_start",
+
+  "focus_topics": ["乃木坂46", "AKB48", "日向坂46", "写真"],
+
   "cold_start_quota": 3,
   "cold_start_max_quota": 4,
+  "daily_quota": 2,
   "max_daily_quota": 4,
-  "growth_stage": "cold_start",
-  "focus_topics": [],
-  "engagement_weights": {"saves": 0.6, "comments": 0.4},
-  "default_post_times": ["09:30", "12:00", "18:00"],
-  "exploration_ratio": 0.2,
+
+  "default_post_times": ["12:00", "18:00"],
+
+  "content_format_rotation": ["news", "story", "news", "story", "ranking", "news", "news"],
+
+  "engagement_weights": {"saves": 0.5, "comments": 0.5},
+
+  "publish_threshold": 2.5,
+  "retry_threshold": 1.5,
+  "exploration_ratio": 0.25,
   "baseline_ratio": 0.1,
+
+  "dim_weights": {
+    "猎奇感": 1.8,
+    "名人": 1.5,
+    "剧情感": 1.3,
+    "冲突感": 1.2,
+    "用户共鸣": 1.2,
+    "有用信息": 0.3,
+    "收藏驱动": 0.3,
+    "视频": 0.3
+  },
+
+  "dim_weights_by_vertical": {},
+
+  "candidate_weights": {
+    "w1": 0.35,
+    "w2": 0.25,
+    "w3": 0.40
+  },
+
   "active_verticals": [
-    {"id": "idol", "label": "日本女星/写真", "quota_share": 1.0}
-  ]
+    {"id": "idol", "label": "日本偶像/写真", "quota_share": 1.0}
+  ],
+
+  "ai_banned_phrases": [
+    "不容错过", "干货满满", "强烈推荐", "值得关注",
+    "精心整理", "满满干货", "绝对值得", "必须收藏"
+  ],
+
+  "ai_phrase_threshold": 15,
+
+  "competitor_accounts": []
 }
