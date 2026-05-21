@@ -29,12 +29,14 @@
 - **WHEN** 文章含「这3点值得关注」但内容只是事实陈述
 - **THEN** LLM 依据 `edge_case` 判断：无推荐/建议/方法属性 → 给 0
 
-### Requirement: 收藏驱动计入加权内容评分
-系统 SHALL 将「收藏驱动」维度参与 `content_score` 加权求和，权重从注册表 `default_weight` 读取（默认 1.0），可被 `agent_strategy.json` 覆盖。
+### Requirement: 收藏驱动以等权 +1 计入内容评分（本 change 范围）
+系统 SHALL 将「收藏驱动」维度以等权 +1 计入 `content_score`，与现有维度逻辑完全一致。
+
+> **权重配置说明：** `agent_strategy.json` 及其权重覆盖机制由 `xhs-smart-operations-agent` 统一创建，本 change 不依赖该文件。本 change 实施完成时，「收藏驱动」以 `default_weight=1.0` 参与等权计算。加权求和由后续 change 统一实现。
 
 #### Scenario: 收藏驱动为 1 时内容分提升
-- **WHEN** `收藏驱动 = 1`，当前权重 = 1.0
-- **THEN** `content_score` 加权计算时该维度贡献 +1.0，上限 5
+- **WHEN** `收藏驱动 = 1`
+- **THEN** `content_score` 以等权 +1 计算，上限 5
 
 #### Scenario: 旧文章缺少该维度
 - **WHEN** `score_dims` 中无「收藏驱动」记录的旧文章
