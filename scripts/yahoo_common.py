@@ -164,44 +164,54 @@ def is_china_related(title: str) -> bool:
 
 
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
-                 response_format: dict | None = None) -> str:
+                 response_format: dict | None = None, temperature: float = 0.7) -> str:
     """调用 LiteLLM API，返回文本；未配置或失败时返回空字符串"""
     if not LITELLM_API_KEY:
         return ""
-    try:
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    import time as _time
+    for attempt, wait in enumerate([0, 5, 15]):
+        if wait:
+            _time.sleep(wait)
+        try:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
 
-        body = {"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7}
-        if response_format:
-            body["response_format"] = response_format
+            body = {"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+            if response_format:
+                body["response_format"] = response_format
 
-        resp = _direct_session.post(
-            f"{LITELLM_URL}/chat/completions",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_API_KEY}"},
-            json=body,
-            timeout=(30, 600),
-        )
-        if resp.status_code == 200:
-            msg = resp.json().get("choices", [{}])[0].get("message", {})
-            # 优先取 content（最终回答），不存在时才取 reasoning_content
-            content = msg.get("content", "").strip()
-            if not content:
-                reasoning = msg.get("reasoning_content", "").strip()
-                if reasoning:
-                    # 尝试从 reasoning 中提取 JSON
-                    import re as _re2
-                    m = _re2.search(r'\{[^{}]*\}', reasoning)
-                    if m:
-                        content = m.group(0)
-                    if not content:
-                        content = reasoning
-            return content.strip()
-        print(f"    ⚠️ LiteLLM 错误: {resp.status_code}")
-    except Exception as e:
-        print(f"    ⚠️ LiteLLM 调用失败: {e}")
+            resp = _direct_session.post(
+                f"{LITELLM_URL}/chat/completions",
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_API_KEY}"},
+                json=body,
+                timeout=(30, 600),
+            )
+            if resp.status_code == 200:
+                msg = resp.json().get("choices", [{}])[0].get("message", {})
+                content = msg.get("content", "").strip()
+                if not content:
+                    reasoning = msg.get("reasoning_content", "").strip()
+                    if reasoning:
+                        # 多层 try 提取 JSON
+                        import re as _re2
+                        try:
+                            import json as _json2
+                            _json2.loads(reasoning)
+                            content = reasoning
+                        except Exception:
+                            m = _re2.search(r'\{.*\}', reasoning, _re2.DOTALL)
+                            if m:
+                                content = m.group(0)
+                        if not content:
+                            content = reasoning
+                return content.strip()
+            if resp.status_code < 500:
+                break  # 4xx 不重试
+        except Exception as e:
+            if attempt == 2:
+                print(f"    ⚠️ LiteLLM 调用失败(最终): {e}")
     return ""
 
 
@@ -579,23 +589,65 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 # ============ 质量评分 ============
 
+def build_scoring_prompt(dims: list[dict]) -> str:
+    """从维度定义列表构造 prompt 片段"""
+    lines = []
+    for d in dims:
+        if d.get("definition"):
+            lines.append(
+                f"【{d['name']}】判断标准：{d['definition']}\n"
+                f"  ✅ 给1示例：{d.get('example_1','')}\n"
+                f"  ❌ 给0示例：{d.get('example_0','')}\n"
+                f"  ⚠️ 边界说明：{d.get('edge_case','')}"
+            )
+        else:
+            lines.append(f"【{d['name']}】")
+    return "\n".join(lines)
+
+
 def evaluate_quality(title_zh: str, content: str, comment: str,
                      title_ja: str = "", body_text: str = "") -> dict:
     """用 LLM 评估标题和内容质量，返回 {title_score, content_score, scores(维度+理由)}"""
-    dims = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点',
-            '简单通知','震惊体','概括全部','原创度','趣味性','有用信息',
-            '对立信息','视频','离题','啰嗦重复','主动讨赏','负面情绪']
-    prompt = f"""评估笔记，18个维度各判0或1，每维度附一句理由(15-50字)，外加title_score(0-5)和content_score(0-5)。
+    import json as _json
+    from pathlib import Path
 
-维度：{','.join(dims)}
+    # 动态加载维度定义
+    _dims_path = Path(__file__).parent.parent / "config" / "scoring_dimensions.json"
+    try:
+        _dims_cfg = _json.loads(_dims_path.read_text(encoding="utf-8"))["dimensions"]
+    except Exception:
+        _dims_cfg = []
+
+    # 从 JSON 配置推导硬编码的 plus/minus 分类
+    title_plus = [d["name"] for d in _dims_cfg if d.get("category") == "标题" and d.get("direction") == "plus"]
+    title_minus = [d["name"] for d in _dims_cfg if d.get("category") == "标题" and d.get("direction") == "minus"]
+    content_plus = [d["name"] for d in _dims_cfg if d.get("category") == "内容" and d.get("direction") == "plus"]
+    content_minus = [d["name"] for d in _dims_cfg if d.get("category") == "内容" and d.get("direction") == "minus"]
+    all_dims = title_plus + title_minus + content_plus + content_minus
+    # 回退到硬编码
+    if not all_dims:
+        title_plus = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点']
+        title_minus = ['简单通知','震惊体','概括全部']
+        content_plus = ['原创度','趣味性','有用信息','对立信息','视频','收藏驱动','评论引导性']
+        content_minus = ['离题','啰嗦重复','主动讨赏','负面情绪']
+        all_dims = title_plus + title_minus + content_plus + content_minus
+
+    dim_prompt = build_scoring_prompt(_dims_cfg) if _dims_cfg else ""
+    body_snippet = (body_text or content)[:800]
+
+    prompt = f"""评估笔记，{len(all_dims)}个维度各判0、0.5或1，每维度附一句理由(15-50字)。
+
+{dim_prompt}
+
 标题：{title_zh}
-正文：{content[:200]}
+正文：{body_snippet}
 解读：{comment[:150]}
 
-严格JSON格式，每维度为{{"value":0或1,"reason":"理由说明"}}，无其他文字。"""
+返回严格 JSON，格式为：
+{{"维度名": {{"value": 0或0.5或1, "reason": "15-50字理由"}}, ...}}
+所有 {len(all_dims)} 个维度都必须出现，value 只能是 0、0.5、1 三个值之一。"""
 
-    import json as _json
-    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=3000, response_format={"type": "json_object"})
+    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1)
     if not result:
         return {"title_score": 0, "content_score": 0, "scores": {}}
 
@@ -603,27 +655,21 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
         raw = _json.loads(result)
         raw.pop("title_score", None)
         raw.pop("content_score", None)
-        # 维度定义
-        title_plus = ['剧情感','冲突感','猎奇感','用户共鸣','名人','热点']
-        title_minus = ['简单通知','震惊体','概括全部']
-        content_plus = ['原创度','趣味性','有用信息','对立信息','视频']
-        content_minus = ['离题','啰嗦重复','主动讨赏','负面情绪']
-        all_dims = title_plus + title_minus + content_plus + content_minus
         # 解析 value + reason
         dim_scores = {}
         for d in all_dims:
             v = raw.get(d)
             if isinstance(v, dict):
-                dim_scores[d] = {"value": int(v.get("value", 0) or 0), "reason": v.get("reason", "")}
+                dim_scores[d] = {"value": float(v.get("value", 0) or 0), "reason": v.get("reason", "")}
             elif isinstance(v, (int, float)):
-                dim_scores[d] = {"value": int(v), "reason": ""}
+                dim_scores[d] = {"value": float(v), "reason": ""}
             else:
-                dim_scores[d] = {"value": 0, "reason": ""}
+                dim_scores[d] = {"value": 0.0, "reason": ""}
         # 计算
         title_score = sum(dim_scores.get(d, {}).get("value", 0) for d in title_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in title_minus)
         content_score = sum(dim_scores.get(d, {}).get("value", 0) for d in content_plus) - sum(dim_scores.get(d, {}).get("value", 0) for d in content_minus)
-        title_score = max(0, min(5, title_score))
-        content_score = max(0, min(5, content_score))
+        title_score = max(0.0, min(5.0, title_score))
+        content_score = max(0.0, min(5.0, content_score))
         return {
             "title_score": title_score,
             "content_score": content_score,
