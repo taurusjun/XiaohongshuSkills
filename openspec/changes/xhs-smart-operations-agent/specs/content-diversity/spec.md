@@ -89,13 +89,13 @@
 - **WHEN** 调用 LLM 翻译日文原文时
 - **THEN** 同一 prompt 中追加体裁适用性判断，判断输入使用 `content_ja[:500]`（而非 `[:100]`）；一次请求返回 `{title_zh, summary_zh, format_suitability}`
 
-#### Scenario: 体裁判断失败时独立降级
-- **WHEN** LLM 返回的 JSON 中 `format_suitability` 字段缺失或格式错误
-- **THEN** `format_suitability` 降级为 `["news"]`，翻译结果正常使用，不触发整体重试
+#### Scenario: 体裁判断失败时独立降级，含类型检查
+- **WHEN** LLM 返回的 JSON 中 `format_suitability` 字段缺失、格式错误、或返回字符串而非数组（如 `"news"` 而非 `["news"]`）
+- **THEN** 代码层做 `isinstance(v, list)` 检查，字符串时自动 wrap 为列表 `[v]`；字段缺失时降级为 `["news"]`；翻译结果正常使用，不触发整体重试
 
 #### Scenario: Q&A 格式长文不自动注入 story
-- **WHEN** 文章 `is_long_form=True`，但正文中含有 ≥ 3 个 Q&A 标识（「Q:」「—」「質問：」「聞：」等采访问答格式）
-- **THEN** `story` 不自动注入 `format_suitability`（Q&A 结构定死，难以改写成叙事体），仍由 LLM 判断；`ranking` 作为候选（访谈中通常有多个可并列的话题点）
+- **WHEN** 文章 `is_long_form=True`，但正文中含有 ≥ 3 个 Q&A 组合标识（「Q:」后紧跟非空内容、「質問：」、「聞：」——注意「—」单独出现不算，避免日文破折号误判）
+- **THEN** `story` 不自动注入 `format_suitability`（Q&A 结构定死，难以改写成叙事体），仍由 LLM 判断；`ranking` 作为候选
 
 #### Scenario: 体裁判断结果持久化
 - **WHEN** LLM 返回 `format_suitability`
