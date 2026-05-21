@@ -29,7 +29,11 @@
 ### 4. 抓取 → 翻译 → 生成 → 评分
 
 ```bash
-.venv/bin/python scripts/yahoo_news_auto.py
+# 并行版，无需交互，关键词+数量通过 JSON 传入
+.venv/bin/python scripts/yahoo_news_auto_sqlite.py --keywords '[{"keyword":"乃木坂","max":3},{"keyword":"AKB","max":3},{"keyword":"日向坂","max":2}]'
+
+# 不传 --keywords 则使用 DEFAULT_KEYWORDS
+.venv/bin/python scripts/yahoo_news_auto_sqlite.py
 ```
 
 ### 5. Web UI 审核
