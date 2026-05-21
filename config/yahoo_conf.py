@@ -7,7 +7,7 @@ STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
 # SQLite 数据库路径（默认开发库 data/news_dev.db）
 DB_PATH = os.environ.get("SQLITE_PATH",
-    str(Path(__file__).parent.parent / "data" / "news_dev.db"))
+    str(Path(__file__).resolve().parent.parent / "data" / "news_dev.db"))
 
 # 图集下载缓存目录
 GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.cache/xhs_images"))
