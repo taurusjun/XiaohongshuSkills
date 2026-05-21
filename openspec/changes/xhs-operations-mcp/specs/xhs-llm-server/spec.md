@@ -9,11 +9,11 @@
 | 工具名 | temperature | max_tokens | 输入参数 | 输出 schema |
 |---|---|---|---|---|
 | `translate_and_classify` | 0.2 | 500 | `title_ja, content_ja` | `{title_zh, summary_zh, format_suitability: [str], reason}` |
-| `evaluate_content` | 0.1 | 4000 | `title, content_ja, comment, dim_version?` | `{dim_name: {value: float, reason: str}, ...}` |
+| `evaluate_content` | 0.1 | 4000 | `title, content_ja, comment, dim_version?（默认使用 is_active=1 版本）` | `{dim_name: {value: float, reason: str}, ...}` |
 | `generate_content` | 0.7 | 6000 | `title_ja, body_text, format?, style?` | `{seo_title, summary, content, comment, tags: {precise, vertical, broad}}` |
 | `generate_video_caption` | 0.5 | 800 | `video_context, style?` | `{caption: str}` |
 | `analyze_overrides` | 0.3 | 1000 | `dim_name, override_notes: [str]` | `{has_pattern: bool, edge_case: str\|null, evidence: [str], reason: str}` |
-| `score_cover_image` | 0.1 | 500 | `image_path` | `{dim_name: {value: float, reason: str}, ...}` |
+| `score_cover_image` | 0.1 | 500 | `image_path（绝对路径，基于本地 gallery cache 目录）` | `{dim_name: {value: float, reason: str}, ...}` |
 
 > **注意：** `translate_title` 已重命名为 `translate_and_classify`，单次调用同时完成标题翻译、正文摘要翻译和体裁适用性判断，返回 schema 对齐 content-diversity spec 要求。
 
@@ -41,6 +41,10 @@
 #### Scenario: evaluate_content 以 temperature=0.1 返回稳定评分
 - **WHEN** 调用 `evaluate_content(title, content_ja[:800], comment, dim_version="1.2.0")`
 - **THEN** server 从 `scoring_dimension_versions` 表读取 v1.2.0 维度定义，构造含四段结构和 example_0_5 的 prompt，返回所有维度的 `{value, reason}` JSON
+
+#### Scenario: dim_version 不传时使用当前生效版本
+- **WHEN** 调用 `evaluate_content(title, content_ja[:800], comment)`（不传 dim_version）
+- **THEN** server 查询 `scoring_dimension_versions WHERE is_active=1`，使用当前生效版本；同时在返回结果中附加 `_dim_version: "str"` 字段，供调用方写入 `score_dims.dim_version`
 
 #### Scenario: analyze_overrides 不一致时不强行生成
 - **WHEN** 调用 `analyze_overrides("face_clarity", ["侧脸，主体不清晰", "侧面角度看不清", "背光过强"])` — 前两条关于侧脸，第三条关于背光

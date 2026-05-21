@@ -88,14 +88,27 @@
 
 **`run_reflection(mode?)`** — 新增，支持从 SKILL 触发反思
 ```json
-// 输入: mode = "quick"（只分析，不修改权重）| "full"（完整周报+权重建议）
-// 输出: {"started": true, "task_id": "str"} — 异步执行，通过 task_id 查询结果
+// 输入: mode = "quick"（只分析，不修改权重）| "full"（完整周报+权重建议），默认 "quick"
+// 输出: {"started": true, "task_id": "str"} — 异步执行，结果通过飞书推送
 ```
 
-**`batch_update_articles(news_keys: [str], status, note?)`** — 新增，批量操作
+**`get_task_status(task_id)`** — 新增，查询异步任务状态
+```json
+// 输出: {"task_id": "str", "status": "running"|"done"|"failed", "result_summary": "str|null", "started_at": "str", "completed_at": "str|null"}
+```
+用途：`run_reflection` 启动后，SKILL 可通过此工具轮询状态；若飞书推送失败，也可在对话中直接查询。
+
+**`batch_update_articles(news_keys: [str], status, note?)`** — 新增，批量状态更新
 ```json
 // 输出: {"updated": "int", "failed": [{"news_key": "str", "reason": "str"}]}
 ```
+> **副作用说明：** `batch_update_articles` 只做状态字段更新（`news.status`），**不触发** low-score-handler 的 DISCARD 副作用（如写回 `topic_performance.discard_count`）。要触发完整副作用需通过正常抓取评分流程。
+
+**`update_dim_weights(weights: {dim_name: float})`** — 新增，直接更新维度权重
+```json
+// 输出: {"ok": true, "updated_dims": ["str"], "new_version_note": "str"}
+```
+将 `dim_weights` 写入 `agent_strategy` 表并写入新维度版本记录。SKILL 处理「调整维度权重」场景时调用此工具，无需运营者手动编辑 JSON。
 
 所有工具的错误输出统一格式：`{"error": true, "code": "str", "message": "str"}`
 
@@ -113,9 +126,13 @@
 - **WHEN** 运营者说「第一张图的人脸清晰度判错了，侧脸应该是 0.5」
 - **THEN** 调用 `override_cover_score(news_key, image_url, "face_clarity", 0.5, "侧脸，主体不清晰")`
 
-#### Scenario: 从 SKILL 触发快速反思
+#### Scenario: 从 SKILL 触发快速反思，可追问进度
 - **WHEN** 运营者说「运行一次快速反思分析」
-- **THEN** 调用 `run_reflection(mode="quick")`，返回 `task_id`，SKILL 提示运营者「反思分析已启动，完成后会推送飞书」
+- **THEN** 调用 `run_reflection(mode="quick")`，返回 `task_id`，SKILL 提示「已启动，task_id=xxx，完成后会推送飞书。如需查询进度，说「反思分析完了吗」」
+
+#### Scenario: 运营者追问反思进度
+- **WHEN** 运营者说「反思分析完了吗」
+- **THEN** SKILL 调用 `get_task_status(task_id)`，返回当前状态；`status=done` 时展示 `result_summary`；`status=failed` 时提示查看日志
 
 #### Scenario: 工具返回 error 时 SKILL 的处理
 - **WHEN** `override_dim_score` 返回 `{"error": true, "code": "NOT_FOUND", "message": "文章 key=xxx 不存在"}`
