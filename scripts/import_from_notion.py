@@ -73,13 +73,13 @@ def _extract_blocks(page_id: str) -> dict:
         if not line:
             continue
 
-        if line == "📰 新闻要点":
+        if "新闻要点" in line or "News Points" in line:
             mode = "content"
             continue
-        if line == "💭 我的解读":
+        if "我的解读" in line or "My Interpretation" in line:
             mode = "comment"
             continue
-        if line == "📰 原文":
+        if "原文" in line or "Source" in line:
             mode = "original"
             continue
         if line.startswith("💡"):
