@@ -1404,7 +1404,19 @@ def api_list():
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),
     )
-    return jsonify({"rows": rows, **s})
+    # Count filtered rows (without LIMIT) for correct pagination
+    filtered_total = len(query_news(
+        date_from=request.args.get('date_from',''),
+        date_to=request.args.get('date_to',''),
+        category=request.args.get('category',''),
+        status=request.args.get('status','active'),
+        search=request.args.get('search',''),
+        publish_xhs=request.args.get('publish_xhs',''),
+        sort_by=request.args.get('sort_by','created_at'),
+        sort_dir=request.args.get('sort_dir','DESC'),
+        limit=10000,
+    ))
+    return jsonify({"rows": rows, "total": filtered_total, "today": s["today"], "pending": s["pending"], "published": s["published"]})
 
 @app.route('/api/news/<key>')
 def api_detail(key):
