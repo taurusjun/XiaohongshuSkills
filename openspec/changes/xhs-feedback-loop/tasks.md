@@ -1,0 +1,48 @@
+## 1. 数据库 Schema 迁移
+
+- [ ] 1.1 在 `sqlite_db.py` 的 `_ensure_columns` 中新增 `xhs_views / xhs_likes / xhs_saves / xhs_comments / xhs_collected_at` 五个字段（ALTER TABLE 兼容模式）
+- [ ] 1.2 验证：启动 web 服务，确认 `news` 表新字段已添加且不影响现有数据
+
+## 2. 收藏驱动评分维度
+
+- [ ] 2.1 修改 `yahoo_common.py:evaluate_quality` — 在 18 维度 prompt 末尾追加「收藏驱动」维度说明
+- [ ] 2.2 修改 `_CONTENT_PLUS` 列表（或等效逻辑），将「收藏驱动」加入 `content_score` 加分项
+- [ ] 2.3 在 `sqlite_db.py:_DIM_DEFS` 中注册 `'收藏驱动': ('内容', '加分')`
+- [ ] 2.4 验证：对一篇文章调用 regenerate，确认 `score_dims` 中出现「收藏驱动」记录，`content_score` 有相应变化
+
+## 3. XHS 实发数据回收模块
+
+- [ ] 3.1 新建 `scripts/metrics_collector.py`，实现 `collect_pending_articles()` 函数：查询需要回收的文章（按 4h/24h/72h 时间点判断）
+- [ ] 3.2 在 `cdp_publish.py` 中新增 `fetch_note_stats(note_url) -> dict` 方法，通过 CDP 访问笔记页面，提取浏览/点赞/收藏/评论数字
+- [ ] 3.3 在 `metrics_collector.py` 中实现写回逻辑：调用 `fetch_note_stats`，更新 SQLite，追加 `xhs_collected_at` 标记
+- [ ] 3.4 添加随机抖动（±5min）和错误重试逻辑，失败时记录日志不中断
+- [ ] 3.5 验证：手动对一篇已发布文章运行 `python scripts/metrics_collector.py --key <key>`，确认数据回填正确
+
+## 4. Web UI — 列表页收藏率列
+
+- [ ] 4.1 修改 `web/app.py` 的 `/api/news` 接口，在返回 JSON 中追加 `save_rate` 字段（`xhs_saves / xhs_views`，保留两位小数）
+- [ ] 4.2 在列表页 HTML 模板中新增「收藏率」列，无数据时显示「—」
+- [ ] 4.3 实现列表按收藏率排序（前端 JS 排序，无数据行排末尾）
+- [ ] 4.4 验证：浏览器打开列表页，点击收藏率列表头，确认排序生效
+
+## 5. Web UI — 详情页实发数据面板
+
+- [ ] 5.1 修改 `/api/news/<key>` 接口，返回 `xhs_views / xhs_likes / xhs_saves / xhs_comments / xhs_collected_at`
+- [ ] 5.2 在文章详情页 HTML 中新增「实发数据」面板区块，展示各指标数字和最后回收时间
+- [ ] 5.3 面板中新增「立即回收」按钮，调用新增的 `/api/collect-metrics/<key>` 后端接口
+- [ ] 5.4 新增 `/api/collect-metrics/<key>` 端点：启动后台任务，调用 `metrics_collector.py` 抓取单篇文章数据，返回 task_id
+- [ ] 5.5 前端轮询任务状态（复用现有 `/api/task/<tid>` 机制），完成后刷新面板数字
+- [ ] 5.6 验证：打开一篇已发布文章详情页，点击「立即回收」，确认数据刷新
+
+## 6. 维度相关性分析工具
+
+- [ ] 6.1 新建 `scripts/dimension_analysis.py`，实现查询逻辑：JOIN `news` 和 `score_dims`，过滤 `xhs_saves > 0` 的样本
+- [ ] 6.2 实现 Pearson 相关性计算（使用 `scipy.stats.pearsonr`），输出 r 值、p 值、样本数
+- [ ] 6.3 实现双目标输出：分别对 `xhs_saves` 和 `xhs_views` 计算，输出 Markdown 格式表格
+- [ ] 6.4 实现 `--output <file>` 参数，支持将报告写入文件
+- [ ] 6.5 验证：用现有数据（哪怕样本少）运行脚本，确认无报错且格式正确，样本不足时显示警告
+
+## 7. Cron 定时任务配置
+
+- [ ] 7.1 在 `README.md` 或项目文档中补充 crontab 配置示例：`0 * * * * cd /path/to/project && python scripts/metrics_collector.py`
+- [ ] 7.2 验证：手动执行 cron 命令，确认脚本可在非交互式环境下正常运行（CDP 连接、日志输出）
