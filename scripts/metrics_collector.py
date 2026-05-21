@@ -126,6 +126,7 @@ def collect_all(dry_run: bool = False) -> dict:
 
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
         try:
             articles = conn.execute(
                 "SELECT key, title FROM news WHERE publish_xhs=1 AND status='active'"
@@ -163,6 +164,9 @@ def collect_all(dry_run: bool = False) -> dict:
                         collected += 1
                         break
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
