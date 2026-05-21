@@ -4,8 +4,7 @@
 import sqlite3, os, json
 from datetime import datetime
 
-DB_PATH = os.environ.get("SQLITE_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "news.db"))
+from config.yahoo_conf import DB_PATH
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -45,6 +44,12 @@ def init_db():
                 publish_xhs INTEGER DEFAULT 0,
                 publish_time TEXT,
                 xhs_pub_time TEXT DEFAULT '',
+                xhs_views          INTEGER DEFAULT 0,
+                xhs_likes          INTEGER DEFAULT 0,
+                xhs_saves          INTEGER DEFAULT 0,
+                xhs_comments       INTEGER DEFAULT 0,
+                xhs_collected_at   TEXT DEFAULT '',
+                topic_perf_updated_at TEXT DEFAULT NULL,
                 status      TEXT DEFAULT 'active',
                 created_at  TEXT DEFAULT (datetime('now','localtime')),
                 updated_at  TEXT DEFAULT (datetime('now','localtime')),
@@ -55,27 +60,89 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_status ON news(status);
             CREATE INDEX IF NOT EXISTS idx_publish_xhs ON news(publish_xhs);
 
+            CREATE TABLE IF NOT EXISTS topic_performance (
+                topic                   TEXT PRIMARY KEY,
+                avg_saves               REAL DEFAULT 0,
+                avg_comments            REAL DEFAULT 0,
+                avg_views               REAL DEFAULT 0,
+                engagement_score        REAL DEFAULT 0,
+                post_count              INTEGER DEFAULT 0,
+                discard_count           INTEGER DEFAULT 0,
+                last_discard_reason     TEXT DEFAULT '',
+                topic_baseline_saves    REAL DEFAULT 0,
+                topic_baseline_comments REAL DEFAULT 0,
+                trend_signal            TEXT DEFAULT '',
+                trend_updated_at        TEXT DEFAULT '',
+                window_days             INTEGER DEFAULT 90,
+                vertical                TEXT DEFAULT 'idol',
+                competition_count       INTEGER DEFAULT 0,
+                last_updated            TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS account_snapshots (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_date    TEXT NOT NULL UNIQUE,
+                followers        INTEGER,
+                week_views       INTEGER DEFAULT 0,
+                week_saves       INTEGER DEFAULT 0,
+                week_likes       INTEGER DEFAULT 0,
+                top_note_key     TEXT DEFAULT '',
+                data_completeness TEXT DEFAULT 'full',
+                created_at       TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_config (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_state (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                date       TEXT DEFAULT '',
+                updated_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS score_dims (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 news_key    TEXT NOT NULL,
                 dimension   TEXT NOT NULL,
                 value       INTEGER DEFAULT 0,
                 reason      TEXT DEFAULT '',
+                human_override INTEGER DEFAULT 0,
+                human_value    REAL,
+                override_note  TEXT DEFAULT '',
+                llm_value      REAL,
+                dim_version    TEXT DEFAULT '',
                 UNIQUE(news_key, dimension)
             );
             CREATE INDEX IF NOT EXISTS idx_score_dims_key ON score_dims(news_key);
         """)
-        # Compat: add fetch_by / publish_images to existing DBs
-        try: db.execute("ALTER TABLE news ADD COLUMN fetch_by TEXT DEFAULT ''")
-        except: pass
-        try: db.execute("ALTER TABLE news ADD COLUMN publish_images TEXT DEFAULT ''")
-        except: pass
-        try: db.execute("ALTER TABLE news ADD COLUMN publish_video TEXT DEFAULT ''")
-        except: pass
-        try: db.execute("ALTER TABLE news ADD COLUMN content_ja TEXT DEFAULT ''")
-        except: pass
-        try: db.execute("ALTER TABLE news ADD COLUMN xhs_pub_time TEXT DEFAULT ''")
-        except: pass
+        # Compat: add columns to existing DBs
+        _news_compat = [
+            ("fetch_by", "TEXT DEFAULT ''"),
+            ("publish_images", "TEXT DEFAULT ''"),
+            ("publish_video", "TEXT DEFAULT ''"),
+            ("content_ja", "TEXT DEFAULT ''"),
+            ("xhs_pub_time", "TEXT DEFAULT ''"),
+            ("xhs_views", "INTEGER DEFAULT 0"),
+            ("xhs_likes", "INTEGER DEFAULT 0"),
+            ("xhs_saves", "INTEGER DEFAULT 0"),
+            ("xhs_comments", "INTEGER DEFAULT 0"),
+            ("xhs_collected_at", "TEXT DEFAULT ''"),
+            ("topic_perf_updated_at", "TEXT DEFAULT NULL"),
+        ]
+        for col, col_type in _news_compat:
+            try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+            except: pass
+        for col, col_type in [("human_override", "INTEGER DEFAULT 0"),
+                               ("human_value", "REAL"),
+                               ("override_note", "TEXT DEFAULT ''"),
+                               ("llm_value", "REAL"),
+                               ("dim_version", "TEXT DEFAULT ''")]:
+            try: db.execute(f"ALTER TABLE score_dims ADD COLUMN {col} {col_type}")
+            except: pass
 
 # ── 新闻 CRUD ──
 
@@ -175,7 +242,8 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
 def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
                'video_path','video_caption','gallery_images','publish_images','gallery_video','publish_video','gallery_url','content_ja',
-               'publish_xhs','publish_time','xhs_pub_time','status','title_score','content_score','fetch_by'}
+               'publish_xhs','publish_time','xhs_pub_time','status','title_score','content_score','fetch_by',
+               'xhs_views','xhs_likes','xhs_saves','xhs_comments','xhs_collected_at','topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
@@ -230,6 +298,8 @@ _DIM_DEFS = {
     '对立信息': ('内容','加分'), '视频': ('内容','加分'),
     '离题': ('内容','减分'), '啰嗦重复': ('内容','减分'), '主动讨赏': ('内容','减分'),
     '负面情绪': ('内容','减分'),
+    '收藏驱动': ('内容','加分'),
+    '评论引导性': ('内容','加分'),
     '生活照': ('图片','不计分'), '搞怪照': ('图片','不计分'), '宣传照': ('图片','不计分'),
     '写真': ('图片','不计分'), '中年男照': ('图片','不计分'),
 }
