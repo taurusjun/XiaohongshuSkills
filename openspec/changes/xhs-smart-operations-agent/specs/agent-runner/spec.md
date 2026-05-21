@@ -15,9 +15,13 @@
 - **WHEN** 趋势扫描失败（CDP 未就绪）
 - **THEN** 跳过趋势扫描，使用缓存数据继续规划，飞书推送降级告警，不中断整个流程
 
-#### Scenario: dry-run 模式
+#### Scenario: dry-run 模式（使用 fixture 数据，可重复自动化测试）
 - **WHEN** `python scripts/agent_runner.py --dry-run`
-- **THEN** 执行所有步骤但不写数据库、不推送飞书、不触发实际发布，仅打印计划内容到 stdout
+- **THEN** 使用 `tests/fixtures/sample_news.json`（5 篇预设文章）作为抓取结果，写入临时内存 SQLite（不影响真实 DB），完整走所有业务逻辑（规划/评分/低分诊断），打印含话题/配额/推荐发布时间的计划摘要，**不**依赖 CDP/XHS 连接，可在 CI 环境重复运行
+
+#### Scenario: live-preview 模式（使用真实数据，只读不写，人工验证）
+- **WHEN** `python scripts/agent_runner.py --live-preview`
+- **THEN** 连接真实 CDP/XHS，用真实数据走完整流程，但只读不写（不触发飞书推送、不写 DB），最后打印「如果今天正式运行会做什么」的预览报告
 
 ### Requirement: 发布回调处理
 系统 SHALL 在收到飞书 approve 回调后，将文章标记为已批准并写入计划发布时间，由现有 `yahoo_news_publish.py` 在到时执行发布。
