@@ -4,6 +4,9 @@
 import sys
 import os
 import logging
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from datetime import datetime, timedelta
 from typing import Optional
 
