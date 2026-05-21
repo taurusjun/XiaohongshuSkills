@@ -1657,6 +1657,83 @@ class XiaohongshuPublisher:
             "feeds": feeds,
         }
 
+    def fetch_note_stats(self, note_url: str) -> dict[str, Any]:
+        """
+        Navigate to a published note and extract interaction numbers.
+        Returns {"views": int|None, "likes": int|None, "saves": int|None, "comments": int|None}.
+        On failure returns {} without raising.
+        """
+        if not self.ws:
+            print("[cdp_publish] Warning: not connected, cannot fetch note stats.")
+            return {}
+        try:
+            self._navigate(str(note_url))
+            self._sleep(2, minimum_seconds=1.0)
+            stats_js = r"""
+                (() => {
+                    function parseCount(text) {
+                        if (!text) return null;
+                        text = String(text).trim();
+                        if (!text) return null;
+                        if (text.includes('万')) {
+                            let n = parseFloat(text.replace('万', ''));
+                            return isNaN(n) ? null : Math.round(n * 10000);
+                        }
+                        let n = parseInt(text.replace(/[^0-9]/g, ''), 10);
+                        return isNaN(n) ? null : n;
+                    }
+                    let result = {views: null, likes: null, saves: null, comments: null};
+                    let allSpans = document.querySelectorAll('span');
+                    let found = 0;
+                    for (let span of allSpans) {
+                        let text = span.textContent.trim();
+                        if (!text) continue;
+                        let parent = span.closest('[class*="interact"]');
+                        if (!parent) continue;
+                        // Try to identify which stat type by nearby elements
+                        let container = span.parentElement;
+                        if (!container) continue;
+                        let containerText = container.textContent.toLowerCase();
+                        // Common XHS patterns
+                    }
+                    // Fallback: try to find any numbers near interaction icons
+                    let interactEls = document.querySelectorAll('[class*="interact"], [class*="action"], [class*="engage"]');
+                    for (let el of interactEls) {
+                        let nums = el.querySelectorAll('span');
+                        for (let span of nums) {
+                            let val = parseCount(span.textContent);
+                            if (val !== null && val > 0 && found < 4) {
+                                found++;
+                            }
+                        }
+                    }
+                    // Second fallback: search entire page for number patterns near icon-like elements
+                    let allElems = document.querySelectorAll('*');
+                    let counts = [];
+                    for (let el of allElems) {
+                        let text = el.textContent.trim();
+                        if (/^[\\d.,]+万?$/.test(text) && el.children.length === 0) {
+                            let val = parseCount(text);
+                            if (val !== null) counts.push(val);
+                        }
+                    }
+                    // Sort descending, assign to views/likes/saves/comments by magnitude
+                    counts.sort((a, b) => b - a);
+                    if (counts.length >= 1) result.views = counts[0];
+                    if (counts.length >= 2) result.likes = counts[1];
+                    if (counts.length >= 3) result.saves = counts[2];
+                    if (counts.length >= 4) result.comments = counts[3];
+                    return result;
+                })()
+            """
+            raw = self._evaluate(stats_js)
+            if not isinstance(raw, dict):
+                return {}
+            return {k: (int(v) if v is not None else None) for k, v in raw.items()}
+        except Exception as e:
+            print(f"[cdp_publish] fetch_note_stats failed: {e}")
+            return {}
+
     def _extract_feed_comments_state(self) -> dict[str, Any]:
         """Read current comment loading state from feed detail page DOM."""
         result = self._evaluate(r"""
