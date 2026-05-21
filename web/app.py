@@ -783,8 +783,9 @@ async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
-// Default date range to today
-const today=new Date().toISOString().split('T')[0];
+// Default date range to today (local timezone)
+const d=new Date();
+const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 if(!S('dateFrom').value)S('dateFrom').value=today;
 if(!S('dateTo').value)S('dateTo').value=today;
 loadList();loadCategories();checkActiveTasks();
