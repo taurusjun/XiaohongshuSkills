@@ -50,6 +50,12 @@ def init_db():
                 xhs_saves          INTEGER DEFAULT 0,
                 xhs_comments       INTEGER DEFAULT 0,
                 xhs_collected_at   TEXT DEFAULT '',
+                xhs_shares         INTEGER DEFAULT 0,
+                xhs_fans_gained    INTEGER DEFAULT 0,
+                xhs_impression     INTEGER DEFAULT 0,
+                xhs_click_rate     REAL DEFAULT 0,
+                xhs_watch_time     INTEGER DEFAULT 0,
+                xhs_danmaku        INTEGER DEFAULT 0,
                 topic_perf_updated_at TEXT DEFAULT NULL,
                 status      TEXT DEFAULT 'active',
                 created_at  TEXT DEFAULT (datetime('now','localtime')),
@@ -163,6 +169,12 @@ def init_db():
             ("xhs_comments", "INTEGER DEFAULT 0"),
             ("xhs_collected_at", "TEXT DEFAULT ''"),
             ("topic_perf_updated_at", "TEXT DEFAULT NULL"),
+            ("xhs_shares", "INTEGER DEFAULT 0"),
+            ("xhs_fans_gained", "INTEGER DEFAULT 0"),
+            ("xhs_impression", "INTEGER DEFAULT 0"),
+            ("xhs_click_rate", "REAL DEFAULT 0"),
+            ("xhs_watch_time", "INTEGER DEFAULT 0"),
+            ("xhs_danmaku", "INTEGER DEFAULT 0"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -282,7 +294,9 @@ def update_news(key: str, fields: dict) -> bool:
     allowed = {'title','content','comment','summary','category','tags','image_url',
                'video_path','video_caption','gallery_images','publish_images','gallery_video','publish_video','gallery_url','content_ja',
                'publish_xhs','publish_time','xhs_pub_time','status','title_score','content_score','fetch_by',
-               'xhs_views','xhs_likes','xhs_saves','xhs_comments','xhs_collected_at','topic_perf_updated_at'}
+               'xhs_views','xhs_likes','xhs_saves','xhs_comments','xhs_collected_at',
+               'xhs_shares','xhs_fans_gained','xhs_impression','xhs_click_rate','xhs_watch_time','xhs_danmaku',
+               'topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
@@ -458,8 +472,10 @@ def record_metrics(news_key: str, collected_at: str,
              shares, fans_gained, impression, click_rate, watch_time, danmaku),
         )
         db.execute(
-            "UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?, updated_at=datetime('now','localtime') WHERE key=?",
-            (views, likes, saves, comments, news_key),
+            """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
+               xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
+               xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
+            (views, likes, saves, comments, shares, fans_gained, impression, click_rate, watch_time, danmaku, news_key),
         )
 
 
