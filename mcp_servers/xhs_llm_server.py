@@ -228,18 +228,27 @@ def score_cover_image(image_path: str) -> dict:
     维度：清晰度/构图/情绪吸引力/色彩表现力/信息传达/品牌一致性
     每维度 value: 0/0.5/1
     """
+    # TODO: VISION_MODEL 暂不可用，跳过图片评分逻辑
+    # 当前 LiteLLM 代理的 deepseek-v4-flash 不支持图片输入。
+    # 后续配置支持视觉的模型后（如 gpt-4o / deepseek-vl2），
+    # 设置 VISION_MODEL 环境变量即可启用。
+    return _error("NOT_IMPLEMENTED",
+                  "封面图评分暂不可用：VISION_MODEL 未配置或当前模型不支持视觉。"
+                  "请在 scripts/.env 中设置 VISION_MODEL 指向支持图片输入的模型。")
+
+    # --- 以下逻辑留待 VISION_MODEL 就绪后启用 ---
     # 安全检查：路径必须在 GALLERY_CACHE_DIR 内
-    abs_path = os.path.abspath(os.path.expanduser(image_path))
-    cache_dir = os.path.abspath(os.path.expanduser(GALLERY_CACHE_DIR))
-    if not abs_path.startswith(cache_dir):
+    _abs_path = os.path.abspath(os.path.expanduser(image_path))
+    _cache_dir = os.path.abspath(os.path.expanduser(GALLERY_CACHE_DIR))
+    if not _abs_path.startswith(_cache_dir):
         return _error("INVALID_VALUE", f"Image path must be under {GALLERY_CACHE_DIR}")
 
-    if not os.path.isfile(abs_path):
-        return _error("NOT_FOUND", f"Image not found: {abs_path}")
+    if not os.path.isfile(_abs_path):
+        return _error("NOT_FOUND", f"Image not found: {_abs_path}")
 
     try:
         from PIL import Image
-        img = Image.open(abs_path)
+        img = Image.open(_abs_path)
         # 转换 RGBA → RGB
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
