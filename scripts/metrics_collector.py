@@ -123,6 +123,14 @@ def collect_all(dry_run: bool = False) -> dict:
         from scripts.sqlite_db import _connect, record_metrics, DB_PATH
         logger.info(f"DB_PATH: {DB_PATH}")
 
+        try:
+            conn = _connect()
+            conn.close()
+            logger.info("_connect OK")
+        except Exception as _e:
+            logger.error(f"_connect failed: {_e}")
+            raise
+
         with _connect() as db:
             articles = db.execute(
                 "SELECT key, title FROM news WHERE publish_xhs=1 AND status='active'"
