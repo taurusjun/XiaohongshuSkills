@@ -1,8 +1,21 @@
 ## Why
 
-当前系统是一条手动流水线：运营者每天需要亲手触发抓取、逐篇勾选、手动发布，缺乏对账号目标的感知、对历史数据的学习、以及对内容质量的自主判断。随着 `xhs-feedback-loop` 建立起实发数据回收能力，现在具备了构建完整运营智能体的数据基础——让系统从「听指令执行」升级为「有目标、能规划、会反思、人工把关」。
+当前系统是一条手动流水线：运营者每天需要亲手触发抓取、逐篇勾选、手动发布，缺乏对账号目标的感知、对历史数据的学习、以及对内容质量的自主判断。本 change 从零开始建立完整的数据反馈闭环，并在此基础上构建完整运营智能体——让系统从「听指令执行」升级为「有目标、能规划、会反思、人工把关」。
+
+> **说明：** 原 `xhs-feedback-loop` change 的全部内容已合并至本 change 的 Phase 0，不再单独实施。
 
 ## What Changes
+
+### Phase 0 — 数据基础（原 xhs-feedback-loop 内容，先于智能体层实施）
+
+- **新增** 实发数据回收：`metrics_collector.py` 在发布后 4h/24h/72h 自动抓取浏览/点赞/收藏/评论，写回 SQLite
+- **新增** `news` 表字段：`xhs_views / xhs_likes / xhs_saves / xhs_comments / xhs_collected_at`
+- **新增** 「收藏驱动」评分维度（第 19 个），以等权 +1 计入 `content_score`（加权化由 Phase 1 统一处理）
+- **新增** `config/scoring_dimensions.json` 初始文件（含「收藏驱动」完整定义，其余 18 个维度基础字段）
+- **新增** `dimension_analysis.py`：计算各评分维度与 `xhs_saves` / `xhs_comments` / `xhs_views` 的 Pearson 相关性
+- **新增** Web UI：列表页收藏率列 + 文章详情页实发数据面板 + 手动触发回收按钮
+
+### Phase 1+ — 智能体层
 
 - **新增** 感知层扩展：`xhs_trend_scanner.py` 每日扫描 XHS 各话题高收藏内容，提取标题模式和标签分布
 - **新增** 记忆层扩展：3 张新 SQLite 表（`topic_performance` / `account_snapshots` / `agent_strategy`）+ `config/agent_strategy.json`
@@ -47,7 +60,12 @@
 
 ## Impact
 
-**新增文件：**
+**新增文件（Phase 0）：**
+- `scripts/metrics_collector.py`
+- `scripts/dimension_analysis.py`
+- `config/scoring_dimensions.json`
+
+**新增文件（Phase 1+）：**
 - `scripts/xhs_trend_scanner.py`
 - `scripts/agent_planner.py`
 - `scripts/agent_tools.py`
@@ -55,21 +73,27 @@
 - `scripts/reflection_runner.py`
 - `scripts/feishu_bot.py`
 - `config/agent_strategy.json`
-- `config/scoring_dimensions.json`
+- `config/artist_name_map.json`
 
 **修改文件：**
-- `scripts/yahoo_common.py` — `evaluate_quality` 加权化
-- `scripts/sqlite_db.py` — 新增 3 张表的 schema + CRUD
-- `web/app.py` — 新增 `/webhook/feishu` 回调路由
+- `scripts/yahoo_common.py` — 新增「收藏驱动」维度、`evaluate_quality` prompt 动态构造、加权化
+- `scripts/sqlite_db.py` — `news` 表新增 5 个实发字段 + 3 张新表（topic_performance / account_snapshots / agent_strategy）+ `scoring_dimension_versions` 表
+- `web/app.py` — 收藏率列、实发数据面板、`/webhook/feishu` 回调路由
 
 **外部依赖：**
 - 飞书开放平台应用（App ID / App Secret / Webhook URL，配置在 `.env`）
-- `scipy`（相关性分析，已在 `xhs-feedback-loop` 引入）
-
-**前置依赖：**
-- `xhs-feedback-loop` change 必须完成（依赖 `xhs_saves` 数据 + `metrics_collector.py`）
+- `scipy`（相关性分析）
 
 ## 业务优先级
+
+### Phase 0 — 数据基础（上线前第一步，启动数据积累时钟）
+
+| Capability | 业务理由 |
+|---|---|
+| `metrics-collector` | 没有实发数据，所有评分校准和智能规划都是空壳；越早开始积累越好 |
+| `metrics-ui` | 运营者需要看到数据才能做人工纠正和决策 |
+| `save-drive-dimension`（收藏驱动） | 第 19 个维度，也是与收藏相关性最强的维度，数据积累从一开始就要有 |
+| `dimension-correlation-analysis` | 离线分析工具，数据到位后立即可用 |
 
 ### P0 — 上线前必须完成（关乎系统能否正确运转）
 
