@@ -141,6 +141,12 @@ def init_db():
                 likes        INTEGER DEFAULT 0,
                 saves        INTEGER DEFAULT 0,
                 comments     INTEGER DEFAULT 0,
+                shares       INTEGER DEFAULT 0,
+                fans_gained  INTEGER DEFAULT 0,
+                impression   INTEGER DEFAULT 0,
+                click_rate   REAL DEFAULT 0,
+                watch_time   INTEGER DEFAULT 0,
+                danmaku      INTEGER DEFAULT 0,
                 UNIQUE(news_key, collected_at)
             );
             CREATE INDEX IF NOT EXISTS idx_mh_key ON metrics_history(news_key);
@@ -162,6 +168,14 @@ def init_db():
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+            except: pass
+        for col, col_type in [("shares", "INTEGER DEFAULT 0"),
+                               ("fans_gained", "INTEGER DEFAULT 0"),
+                               ("impression", "INTEGER DEFAULT 0"),
+                               ("click_rate", "REAL DEFAULT 0"),
+                               ("watch_time", "INTEGER DEFAULT 0"),
+                               ("danmaku", "INTEGER DEFAULT 0")]:
+            try: db.execute(f"ALTER TABLE metrics_history ADD COLUMN {col} {col_type}")
             except: pass
         for col, col_type in [("human_override", "INTEGER DEFAULT 0"),
                                ("human_value", "REAL"),
@@ -431,12 +445,19 @@ def cleanup_old_states(days: int = 7):
 
 def record_metrics(news_key: str, collected_at: str,
                    views: int = 0, likes: int = 0,
-                   saves: int = 0, comments: int = 0):
+                   saves: int = 0, comments: int = 0,
+                   shares: int = 0, fans_gained: int = 0,
+                   impression: int = 0, click_rate: float = 0,
+                   watch_time: int = 0, danmaku: int = 0):
     """写入 metrics_history + 更新 news 最新值"""
     with _connect() as db:
         db.execute(
-            "INSERT OR IGNORE INTO metrics_history (news_key, collected_at, views, likes, saves, comments) VALUES (?,?,?,?,?,?)",
-            (news_key, collected_at, views, likes, saves, comments),
+            """INSERT OR REPLACE INTO metrics_history
+               (news_key, collected_at, views, likes, saves, comments,
+                shares, fans_gained, impression, click_rate, watch_time, danmaku)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (news_key, collected_at, views, likes, saves, comments,
+             shares, fans_gained, impression, click_rate, watch_time, danmaku),
         )
         db.execute(
             "UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?, updated_at=datetime('now','localtime') WHERE key=?",
