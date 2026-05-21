@@ -17,7 +17,7 @@ Phase 0（数据字段 + scoring_dimensions.json）
     │
     └─→ G. 智能体主循环（依赖 A/B/C/D/E/F 全部完成）
 
-任务组 1（维度注册表 DB 版本管理）→ P2（推迟）
+任务组 1（维度注册表 + scoring_dimension_versions DB 版本管理）→ P0（评分维度是系统核心，版本追溯从 Day 1 开始）
 任务组 8（reflection_runner 统计分析）→ P2（需要 40 篇有效样本）
 ```
 

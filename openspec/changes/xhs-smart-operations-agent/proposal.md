@@ -99,6 +99,7 @@
 
 | Capability | 业务理由 |
 |---|---|
+| `dimension-registry`（含 scoring_dimension_versions 版本管理） | 评分维度是系统核心判断标准，版本追溯从 Day 1 开始，否则无法解释任何历史评分 |
 | `content-diversity` | 内容同质化是「越晚越难修」的风险，必须 Day 1 就有 |
 | `risk-control` | 账号被封等于一切归零 |
 | `agent-runner` | 系统主循环 |
@@ -129,7 +130,7 @@
 |---|---|
 | reflection-runner 的「统计分析 + 权重建议生成」 | 需要 40 篇有效样本 ≈ 20 周 |
 | `weighted-scoring` 的相关性校准 | 依赖 reflection-runner P2 结果 |
-| `scoring_dimension_versions` DB 版本管理 | 当前用 JSON + Git 足够；等运营者开始频繁改维度且需要追溯版本时再建 |
+| ~~`scoring_dimension_versions` DB 版本管理~~ | ~~当前用 JSON + Git 足够~~ → **已恢复至 P0**，评分维度是系统核心判断标准，版本追溯从 Day 1 开始 |
 | `xhs-llm` MCP server | 当前直接给 `call_litellm` 加 `temperature` 参数即可；等有跨语言客户端需求时再封装为 MCP |
 | 多垂类支持（active_verticals / vertical 字段 / dim_weights_by_vertical） | 等需要运营第二个垂类时以 migration 方式引入 |
 
