@@ -43,9 +43,11 @@ Bonferroni 校正：p 阈值 = 0.05 / 维度数量（如 19 个维度则 p 阈�
 - r > 0.4 且 p < 0.003 → 建议权重 +0.5（上限为 `max_dim_weight`，默认 3.0）
 - r < 0.1 或 p > 0.003 → 建议权重 -0.3（下限 0.1）
 
-#### Scenario: 有效样本充足时生成权重建议
+#### Scenario: 有效样本充足时生成权重建议，按 dim_version 分组分析
 - **WHEN** 有效样本 ≥ 40 篇
-- **THEN** 生成 `{dim_name: {current: 1.0, suggested: 1.5, r: 0.61, p: 0.002, bonferroni_passed: true}}` 格式建议；标注整体置信度（样本量 40-80 为「低」，80-150 为「中」，>150 为「高」）；存入 `agent_strategy` 表 key=`pending_weight_suggestion`
+- **THEN** 生成 `{dim_name: {current: 1.0, suggested: 1.5, r: 0.61, p: 0.002, bonferroni_passed: true}}` 格式建议；标注整体置信度；**按 `dim_version` 分组分析**，只对同一版本内的数据做相关性计算，避免不同定义版本的维度数据混淆；若某版本样本量不足（< 20 篇）则在报告中注明「v{X} 样本不足（N={Y}），建议积累后再分析」
+
+> **多版本数据隔离：** `score_dims.dim_version` 字段记录了每次评分使用的维度定义版本。当维度定义更新后（如 `face_clarity` 的 edge_case 更新），新旧版本对同一张图的评分标准不同，混合分析会产生统计噪音。必须按版本隔离后分别分析。
 
 #### Scenario: 样本不足时不生成权重建议
 - **WHEN** 有效样本 < 40 篇

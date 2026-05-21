@@ -24,6 +24,7 @@ CREATE TABLE scoring_dimension_versions (
   "default_weight": 1.0,
   "definition": "判断标准文字",
   "example_1": "给 1 的典型样本",
+  "example_0_5": "给 0.5 的典型样本（部分符合的边界情况）",
   "example_0": "给 0 的典型样本",
   "edge_case": "边界情况说明"
 }
@@ -62,9 +63,11 @@ CREATE TABLE scoring_dimension_versions (
 
 这样形成了与文本维度对称的闭环：**DeepSeek 打分 → 人工纠正 → 定义版本迭代 → DeepSeek 打分更准确**。
 
-#### Scenario: 系统启动时加载当前生效版本
-- **WHEN** `evaluate_quality` 首次加载维度定义
-- **THEN** 查询 `scoring_dimension_versions WHERE is_active=1`，解析 `dimensions_json`，写入内存缓存（TTL 5 分钟）
+#### Scenario: 系统启动时加载当前生效版本（多进程安全）
+- **WHEN** `evaluate_quality` 需要维度定义
+- **THEN** 查询 `scoring_dimension_versions WHERE is_active=1`，比较记录的 `created_at` 与本进程内存中缓存的 `cached_version_created_at`，若不同则重新加载；否则使用缓存
+
+> **多进程一致性说明：** Flask、cron job、agent_runner 各自是独立进程，无法共享内存缓存。不使用 TTL（5 分钟 TTL 会导致版本切换后最多有 3 个进程各自等待 5 分钟），改用 DB 版本号时间戳判断：每次调用时从 DB 读取 `is_active=1` 行的 `created_at`，与内存缓存的时间戳比较，不一致时重新加载。这样版本切换后所有进程在下次调用时即刻感知，延迟仅为一次 SQLite 读（毫秒级）。
 
 #### Scenario: 数据库无记录时从文件引导初始化
 - **WHEN** `scoring_dimension_versions` 表为空
