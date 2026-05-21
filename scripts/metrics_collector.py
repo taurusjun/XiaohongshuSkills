@@ -83,12 +83,8 @@ def collect_all(dry_run: bool = False) -> dict:
         data = json.loads(captured_body)
         notes = data.get("data", {}).get("note_infos", [])
 
-        # Filter: last 7 days
-        week_ago = (time.time() - 7 * 86400) * 1000
-        recent = [n for n in notes if n.get("post_time", 0) >= week_ago]
-
         if dry_run:
-            return {"dry_run": True, "notes_found": len(notes), "recent_7d": len(recent)}
+            return {"dry_run": True, "notes_found": len(notes)}
 
         # Match against DB by title
         from scripts.sqlite_db import _connect, record_metrics
@@ -99,7 +95,7 @@ def collect_all(dry_run: bool = False) -> dict:
                 "SELECT key, title FROM news WHERE publish_xhs=1 AND status='active'"
             ).fetchall()
 
-        for n in recent:
+        for n in notes:
             xhs_title = _normalize(n.get("title", ""))
             if not xhs_title:
                 continue
