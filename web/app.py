@@ -1018,7 +1018,6 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
         <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
         <div id="blockEditor" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg)"></div>
         <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
-          <button class="btn btn-gray btn-sm" onclick="saveBlockContent()">💾 保存</button>
           <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff">👁 预览</button>
         </div>
         {# 图片选择浮层 #}
@@ -1192,6 +1191,10 @@ document.querySelectorAll('.auto-resize').forEach(function(ta){
 });
 
 document.getElementById('saveBtn').addEventListener('click',async()=>{
+  // 若块编辑器激活，先序列化内容同步到隐藏 textarea
+  if(typeof _serializeBlocks==='function'&&document.getElementById('blockEditor')){
+    document.getElementById('contentHidden').value=_serializeBlocks();
+  }
   const data={};
   ['title','summary','content','comment','category','video_caption','gallery_url','image_url'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
   data.tags=tags;
