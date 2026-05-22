@@ -240,7 +240,7 @@ def _update_topic_performance_for_mature_articles():
             "AND status='active'"
         ).fetchall()
     for r in rows:
-        tags = (r["tags"] or "").split(",") if r.get("tags") else []
+        tags = (r["tags"] or "").split(",") if r["tags"] else []
         for tag in tags:
             tag = tag.strip()
             if tag:
