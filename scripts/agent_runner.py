@@ -234,7 +234,7 @@ def _update_topic_performance_for_mature_articles():
     with _connect() as db:
         rows = db.execute(
             "SELECT key, category, tags, xhs_saves, xhs_comments, xhs_views FROM news "
-            "WHERE pub_time <= date('now','localtime','-7 days') "
+            "WHERE substr(replace(pub_time,'.','-'),1,10) <= date('now','localtime','-7 days') "
             "AND topic_perf_updated_at IS NULL "
             "AND xhs_collected_at LIKE '%72h%' "
             "AND status='active'"
