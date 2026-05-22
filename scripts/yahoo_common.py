@@ -1611,6 +1611,22 @@ def process_news_item(news: dict, no_translate: bool = False,
         print(f"    📊 评分: 标题{quality['title_score']} 内容{quality['content_score']} → {final_action.value}")
         if final_action == Action.DISCARD:
             news['_discard'] = True
+        elif final_action == Action.HUMAN_REVIEW:
+            news['_needs_review'] = True
+            print(f"    ⚠️ 需要人工审核（评分边界，原因不明确）")
+            # 异步通知飞书（fire-and-forget，失败不影响主流程）
+            try:
+                from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
+                if FEISHU_OPERATOR_OPEN_ID:
+                    msg = (
+                        f"⚠️ 文章需要人工审核\n"
+                        f"标题：{news.get('title_zh', news.get('title_ja', ''))[:40]}\n"
+                        f"评分：标题{quality['title_score']:.1f} / 内容{quality['content_score']:.1f}\n"
+                        f"key：{news.get('key', '')[:16]}..."
+                    )
+                    send_text(FEISHU_OPERATOR_OPEN_ID, msg)
+            except Exception as _fe:
+                print(f"    ℹ️ 飞书通知失败（不影响处理）: {_fe}")
         if quality['title_score'] < 2.0:
             print(f"    ⚠️ 标题质量偏低，建议人工复审")
         news['video_caption'] = ""  # 先占位，tags 确定后再填

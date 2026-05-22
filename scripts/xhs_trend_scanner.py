@@ -100,7 +100,8 @@ def update_trend_signals(trend_results: list[dict]) -> None:
             comments=r.get("baseline_comments", 0),
             topic_baseline_saves=r.get("baseline_saves", 0),
             topic_baseline_comments=r.get("baseline_comments", 0),
-            trend_signal={"top_titles": r.get("top_titles", []),
+            trend_signal={"is_fresh": r.get("is_fresh", False),
+                          "top_titles": r.get("top_titles", []),
                           "recommended_keywords": r.get("recommended_keywords", [])},
             trend_updated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
