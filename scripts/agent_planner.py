@@ -78,9 +78,12 @@ def plan_today(date: str = "") -> DailyPlan:
         for ft in rotated[:focus_quota]:
             plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf", target_format=target_format))
 
-        # Explore: pick from trend data
-        explore_candidates = [t for t in historic_topics if t["topic"] not in focus_topics
-                              and t.get("discard_count", 0) < 3]
+        # Explore: is_fresh=True 优先，再按 engagement_score 降序
+        explore_candidates = sorted(
+            [t for t in historic_topics if t["topic"] not in focus_topics
+             and t.get("discard_count", 0) < 3],
+            key=lambda t: (0 if _topic_is_fresh(t) else 1, -t.get("engagement_score", 0))
+        )
         for ec in explore_candidates[:explore_quota]:
             plan.topics.append(TopicQuota(
                 topic=ec["topic"], quota=1, source="explore",
@@ -128,11 +131,17 @@ def plan_today(date: str = "") -> DailyPlan:
 
 
 def recommend_post_times(topics: list[TopicQuota], date: str) -> list[str]:
-    """推荐发布时间"""
+    """推荐发布时间。is_fresh=True 的话题优先分配最早时段。"""
     from scripts.sqlite_db import get_config
     defaults = get_config("default_post_times", default=["09:30", "12:00", "18:00"])
-    # 简化版：历史 < 50 篇时返回默认时间；TODO: 按历史最优时间分析
-    return defaults[:len(topics)] if len(defaults) >= len(topics) else defaults
+    n = len(topics)
+    slots = (defaults * ((n // len(defaults)) + 1))[:n] if defaults else ["12:00"] * n
+    # is_fresh 话题排前面，占最早时段
+    order = sorted(range(n), key=lambda i: (0 if topics[i].is_fresh else 1))
+    result = [""] * n
+    for slot_idx, topic_idx in enumerate(order):
+        result[topic_idx] = slots[slot_idx]
+    return result
 
 
 def _topic_is_fresh(topic: dict) -> bool:

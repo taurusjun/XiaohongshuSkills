@@ -1,9 +1,10 @@
 ## 1. 验证 cdp_publish sort 参数行为（先做，避免基于错误假设实现）
 
-- [ ] 1.1 在服务器上测试 search_feeds(sort="newest")，打印前5条的 pub_time，确认是否真的按最新排序
-- [ ] 1.2 在服务器上测试 search_feeds(sort="general")，确认与默认行为相同
-- [ ] 1.3 如果 sort="newest" 实际无效，调查 _select_sort_newest() 是否需要先调用才能生效
-- [ ] 1.4 记录验证结论，决定实现方案
+- [x] 1.1 在服务器上测试 search_feeds(sort="newest")，打印前5条的 pub_time，确认是否真的按最新排序
+- [x] 1.2 在服务器上测试 search_feeds(sort="general")，确认与默认行为相同
+- [x] 1.3 如果 sort="newest" 实际无效，调查 _select_sort_newest() 是否需要先调用才能生效
+- [x] 1.4 记录验证结论，决定实现方案
+      结论：sort="newest" 有效（30min→1h→2h...），sort="general" = 综合排序。方案可直接实施。
 
 ## 2. _is_recent 辅助函数（scripts/xhs_trend_scanner.py）
 
