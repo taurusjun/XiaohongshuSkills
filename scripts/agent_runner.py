@@ -146,6 +146,10 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         art, topic = f.result()
                         if art.get("_skip"):
                             continue
+                        # 空标题或空 key → 跳过，避免插入无效记录
+                        if not art.get("title_zh", "").strip() or not art.get("key", "").strip():
+                            logger.warning(f"  ⚠️ 跳过无效文章（空标题或空key）: {art.get('title_ja','')[:40]}")
+                            continue
                         if art.get("_discard"):
                             increment_topic_discard(topic, reason=art.get("_discard_reason", ""))
                             continue
