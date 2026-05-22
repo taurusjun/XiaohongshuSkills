@@ -385,7 +385,8 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 
 
 def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
-                                  keyword: str = "", body_text: str = "") -> Tuple[str, str, str, str, str, list]:
+                                  keyword: str = "", body_text: str = "",
+                                  hint: str = "") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
@@ -426,7 +427,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 新闻标题：{title_zh}
 日文原文：{title_ja}{context}{tsundere_instruction}
-
+{f"【修正要求】{hint}" if hint else ""}
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
@@ -983,13 +984,14 @@ def process_news_item(news: dict, no_translate: bool = False,
                 failed = get_failed_dims(quality["scores"])
                 print(f"    🔄 低分重试 (attempt {attempt+1}/3): {failed}")
                 news = regenerate_with_hint(news, failed)
-                hint = news.get("_regen_hint", "")
+                regen_hint = news.get("_regen_hint", "")
                 # 重新生成内容（注入修正提示）
                 generated = generate_content_and_comment(
                     news['title_ja'], news['title_zh'],
                     ja_summary=news.get('ja_summary', ''),
                     keyword=keyword,
                     body_text=news.get('body_text', ''),
+                    hint=regen_hint,
                 )
                 if generated is None:
                     print("    ⚠️ 重生成失败，保留当前内容")

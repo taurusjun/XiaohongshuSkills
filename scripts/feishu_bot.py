@@ -89,6 +89,27 @@ def send_alert(text: str) -> bool:
     return send_text(FEISHU_OPERATOR_OPEN_ID, text)
 
 
+def send_daily_summary(candidates: list[dict], date_str: str = "") -> bool:
+    """发送每日候选摘要（纯通知 + Web UI 链接，不依赖飞书回调）"""
+    if not FEISHU_OPERATOR_OPEN_ID:
+        return False
+
+    web_ui_url = "http://localhost:5000/"
+    if not candidates:
+        return send_text(FEISHU_OPERATOR_OPEN_ID,
+                         f"📋 {date_str} 今日无新候选文章，请检查抓取任务")
+
+    lines = [f"📋 {date_str} 今日候选 {len(candidates)} 篇，请前往 Web UI 审批：\n{web_ui_url}\n"]
+    for i, c in enumerate(candidates[:5], 1):
+        ts = c.get("title_score", 0)
+        cs = c.get("content_score", 0)
+        lines.append(f"{i}. [{ts:.1f}/{cs:.1f}] {c.get('title', '')}")
+    if len(candidates) > 5:
+        lines.append(f"... 还有 {len(candidates)-5} 篇")
+
+    return send_text(FEISHU_OPERATOR_OPEN_ID, "\n".join(lines))
+
+
 def build_daily_approval_card(candidates: list[dict]) -> dict:
     """构建每日审批交互卡片"""
     elements = []

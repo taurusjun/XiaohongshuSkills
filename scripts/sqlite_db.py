@@ -399,6 +399,40 @@ def upsert_topic_performance(topic: str, saves: float = 0, comments: float = 0,
         )
 
 
+def increment_topic_discard(topic: str, reason: str = ""):
+    """递增 topic_performance 的 discard_count，不影响其他字段"""
+    with _connect() as db:
+        existing = db.execute(
+            "SELECT discard_count FROM topic_performance WHERE topic=?", (topic,)
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE topic_performance SET discard_count=discard_count+1, last_discard_reason=? WHERE topic=?",
+                (reason, topic),
+            )
+        else:
+            db.execute(
+                "INSERT INTO topic_performance (topic, discard_count, last_discard_reason, vertical) VALUES (?,1,?,'idol')",
+                (topic, reason),
+            )
+
+
+def insert_account_snapshot(snapshot_date: str, week_views: int = 0,
+                             week_saves: int = 0, week_likes: int = 0,
+                             top_note_key: str = "", followers: int = None,
+                             data_completeness: str = "full"):
+    """插入或更新账号每日快照"""
+    with _connect() as db:
+        db.execute(
+            """INSERT OR REPLACE INTO account_snapshots
+               (snapshot_date, followers, week_views, week_saves, week_likes,
+                top_note_key, data_completeness)
+               VALUES (?,?,?,?,?,?,?)""",
+            (snapshot_date, followers, week_views, week_saves, week_likes,
+             top_note_key, data_completeness),
+        )
+
+
 def get_config(key: str, default=None):
     import json as _json
     with _connect() as db:

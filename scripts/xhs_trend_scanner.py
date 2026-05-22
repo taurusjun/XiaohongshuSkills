@@ -53,8 +53,9 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             avg_title_len = sum(len(t) for t in titles) / len(titles) if titles else 0
 
             # is_fresh: >50% 发布时间是今天或昨天
+            from datetime import timedelta
             today = datetime.now().strftime("%Y-%m-%d")
-            yesterday = datetime.now().replace(day=datetime.now().day - 1).strftime("%Y-%m-%d")
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             fresh_count = sum(1 for pt in pub_times if pt and (today in str(pt) or yesterday in str(pt)))
             is_fresh = fresh_count > len(pub_times) / 2 if pub_times else False
 
