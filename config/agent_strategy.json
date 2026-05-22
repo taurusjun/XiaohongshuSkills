@@ -5,8 +5,8 @@
 
   "cold_start_quota": 3,
   "cold_start_max_quota": 4,
-  "daily_quota": 2,
-  "max_daily_quota": 4,
+  "daily_quota": 5,
+  "max_daily_quota": 8,
 
   "default_post_times": ["12:00", "18:00"],
 
