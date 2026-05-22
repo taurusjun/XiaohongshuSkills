@@ -995,16 +995,19 @@ def fetch_article_details(url: str) -> dict:
         if pub_time:
             result["pub_time"] = pub_time
 
-        # 正文：提取 article 内所有段落，给 LLM 提供更多上下文
+        # 正文：提取段落 + 小标题，保留 h2/h3 结构
         body_text = ""
         article_images = []
         article = soup.find("article") or soup.find(class_="article")
         if article:
-            paras = article.find_all("p")
             body_parts = []
-            for p in paras:
-                t = p.get_text(strip=True)
-                if len(t) > 20:
+            for elem in article.find_all(['p', 'h2', 'h3', 'h4']):
+                t = elem.get_text(strip=True)
+                if not t:
+                    continue
+                if elem.name in ('h2', 'h3', 'h4'):
+                    body_parts.append(f'## {t}')  # 用 ## 标记小标题
+                elif len(t) > 20:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
 
@@ -1096,7 +1099,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 2-3句话，提炼文章最核心的冲突或意义，引发读者继续阅读的欲望。不剧透结局，不写成摘要。
 
 【正文要求】
-完整翻译原文，保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{img_note}
+完整翻译原文，保留叙事结构、因果逻辑和原文的小标题。原文中以 ## 开头的行是小标题（section header），翻译时在对应位置保留并用 ## 前缀标记（如 ## 小标题译文）。用简洁有力的句子，避免口语化。{img_note}
 
 【结语要求】
 1-2句话，点睛式收尾。可以是作者的判断、对行业的启示、或留给读者的问题。不得是「欢迎评论」等套话。
