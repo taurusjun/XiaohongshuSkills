@@ -84,11 +84,13 @@ def run(dry_run: bool = False, min_samples: int = 30) -> dict:
     corr_df = compute_correlations(df)
     correlations = {}
     if corr_df is not None and not corr_df.empty:
-        for _, row in corr_df.iterrows():
-            if "dimension" in corr_df.columns and "r_saves" in corr_df.columns:
-                correlations[row["dimension"]] = round(float(row.get("r_saves", 0) or 0), 4)
-            elif hasattr(row, "name"):
-                correlations[str(row.name)] = round(float(row.get("r_saves", 0) or 0), 4)
+        # corr_df columns: dimension, target, r, p, n
+        # Use xhs_saves correlations (primary engagement signal)
+        saves_corr = corr_df[corr_df["target"] == "xhs_saves"] if "target" in corr_df.columns else corr_df
+        for _, row in saves_corr.iterrows():
+            dim = str(row.get("dimension") or row.name)
+            r_val = float(row.get("r", 0) or 0)
+            correlations[dim] = round(r_val, 4)
     report["correlations"] = correlations
     logger.info(f"Correlations computed for {len(correlations)} dimensions")
 
