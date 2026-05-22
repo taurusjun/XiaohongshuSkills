@@ -1429,10 +1429,10 @@ function _ejsBlocksToText(blocks){
     else if(b.type==='header'&&b.data.text){
       parts.push((b.data.level===3?'### ':'## ')+b.data.text);
     } else if(b.type==='galleryImage'){
-      const paths=b.data.paths||[];
+      const paths=(b.data.paths||[]).filter(p=>p);
+      if(!paths.length){imgN++;continue;}  // 图片已全部删除，跳过此块
       // 将真实路径编码进 caption，加载时可精确还原（以 / 开头判断是路径还是描述）
-      const inner=paths.length?paths.join('|'):(b.data.caption||`图片${imgN}`).replace(/^【.*：/,'').replace(/】$/,'');
-      parts.push(`【图片${imgN}：${inner}】`); imgN++;
+      parts.push(`【图片${imgN}：${paths.join('|')}】`); imgN++;
     } else if(b.type==='image'){
       // 兼容旧 ImageTool blocks
       const cap=b.data.caption||(b.data.file?.url?`【图片${imgN}：图片${imgN}】`:'');
@@ -1465,7 +1465,8 @@ class GalleryImageBlock {
   _rebuild(){
     const wrap=this._el; if(!wrap) return;
     wrap.innerHTML='';
-    const paths=this.data.paths;
+    const paths=this.data.paths.filter(p=>p);
+    this.data.paths=paths;  // 清理空路径
     if(paths.length){
       // 图片展示区
       const row=document.createElement('div');
@@ -1480,7 +1481,18 @@ class GalleryImageBlock {
         del.textContent='✕';
         del.title='移除此图';
         del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;padding:0';
-        del.onclick=()=>{this.data.paths.splice(idx,1);this._rebuild();};
+        del.onclick=()=>{
+          this.data.paths.splice(idx,1);
+          if(this.data.paths.length===0){
+            // 全部删除后自动移除此 block
+            try{
+              const bi=this.api.blocks.getCurrentBlockIndex();
+              this.api.blocks.delete(bi);
+            }catch(e){this._rebuild();}
+          } else {
+            this._rebuild();
+          }
+        };
         cell.appendChild(img);cell.appendChild(del);
         row.appendChild(cell);
       });
