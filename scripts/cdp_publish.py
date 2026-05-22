@@ -319,6 +319,10 @@ class CDPError(Exception):
     """Error communicating with Chrome via CDP."""
 
 
+class XHSRateLimitError(CDPError):
+    """小红书触发频率限制（安全验证弹窗），需等待后重试。"""
+
+
 class XiaohongshuPublisher:
     """Automates publishing to Xiaohongshu via CDP."""
 
@@ -1670,9 +1674,8 @@ class XiaohongshuPublisher:
 })()
 """)
         if rate_limited:
-            raise CDPError(
-                f"search_feeds: 触发小红书频率限制（安全验证弹窗），"
-                f"keyword='{keyword}'。请等待 5-10 分钟后重试。"
+            raise XHSRateLimitError(
+                f"search_feeds: 触发小红书频率限制（安全验证弹窗），keyword='{keyword}'"
             )
 
         # Select sort order and optional time filter via filter panel
