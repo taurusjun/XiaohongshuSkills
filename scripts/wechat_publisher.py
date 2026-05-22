@@ -96,18 +96,102 @@ def _upload_image_for_content(token: str, img_path: str) -> str:
 
 _IMG_RE = re.compile(r'【(?:图片|推文)\d+：([^】]*)】')
 
-_STYLE = {
-    "h2": 'font-size:18px;font-weight:700;color:#1a1a1a;margin:24px 0 10px;border-left:4px solid #ff2442;padding-left:10px',
-    "h3": 'font-size:16px;font-weight:600;color:#333;margin:18px 0 8px',
-    "p":  'font-size:15px;line-height:1.9;color:#333;margin:0 0 14px',
-    "img": 'max-width:100%;border-radius:8px;display:block;margin:12px auto',
-    "caption": 'font-size:12px;color:#999;text-align:center;margin:-8px 0 16px',
+# ── 主题定义（内联样式，WeChat 会剥离 <style> 块）─────────────
+# 每个主题包含：primary 色、各元素内联 style 字符串
+THEMES: dict[str, dict] = {
+    "news": {
+        "name": "新闻蓝",
+        "primary": "#0F4C81",
+        "desc": "经典新闻配色，权威感强",
+        "h2": ("font-size:18px;font-weight:700;color:#fff;background:#0F4C81;"
+               "padding:6px 16px;border-radius:4px;margin:28px 0 14px;display:inline-block"),
+        "h3": ("font-size:16px;font-weight:700;color:#0F4C81;"
+               "padding-left:10px;border-left:4px solid #0F4C81;margin:20px 0 10px"),
+        "p":  "font-size:16px;line-height:1.9;color:#1a1a1a;margin:0 0 16px;letter-spacing:0.05em",
+        "blockquote": ("font-size:15px;line-height:1.8;color:#555;"
+                       "background:rgba(15,76,129,0.06);border-left:4px solid #0F4C81;"
+                       "padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0"),
+        "img": "max-width:100%;border-radius:6px;display:block;margin:14px auto",
+        "caption": "font-size:12px;color:#999;text-align:center;margin:-10px 0 16px",
+        "hr": "border:none;border-top:2px solid rgba(15,76,129,0.2);margin:24px 0",
+    },
+    "elegant": {
+        "name": "优雅紫",
+        "primary": "#92617E",
+        "desc": "优雅文艺，适合深度报道",
+        "h2": ("font-size:18px;font-weight:700;color:#fff;background:#92617E;"
+               "padding:8px 20px;border-radius:8px;margin:28px 0 14px;"
+               "box-shadow:0 4px 10px rgba(146,97,126,0.3);display:inline-block"),
+        "h3": ("font-size:16px;font-weight:700;color:#92617E;"
+               "padding-left:10px;border-left:4px solid #92617E;"
+               "border-bottom:1px dashed rgba(146,97,126,0.3);margin:20px 0 10px;padding-bottom:4px"),
+        "p":  "font-size:16px;line-height:1.95;color:#2d2d2d;margin:0 0 16px;letter-spacing:0.05em",
+        "blockquote": ("font-style:italic;font-size:15px;line-height:1.8;color:#666;"
+                       "border-left:4px solid #92617E;padding:12px 16px;"
+                       "box-shadow:0 4px 12px rgba(0,0,0,0.06);border-radius:0 8px 8px 0;margin:16px 0"),
+        "img": ("max-width:100%;border-radius:10px;display:block;margin:14px auto;"
+                "box-shadow:0 4px 12px rgba(0,0,0,0.12)"),
+        "caption": "font-size:12px;color:#aaa;text-align:center;margin:-10px 0 16px;font-style:italic",
+        "hr": ("border:none;height:1px;margin:28px 0;"
+               "background:linear-gradient(to right,rgba(0,0,0,0),rgba(146,97,126,0.4),rgba(0,0,0,0))"),
+    },
+    "fresh": {
+        "name": "活力橘",
+        "primary": "#FA5151",
+        "desc": "活力感强，适合娱乐/偶像内容",
+        "h2": ("font-size:18px;font-weight:700;color:#FA5151;"
+               "padding:6px 0 6px 14px;border-left:5px solid #FA5151;"
+               "background:linear-gradient(to right,rgba(250,81,81,0.08),transparent);"
+               "margin:28px 0 14px;border-radius:0 6px 6px 0"),
+        "h3": ("font-size:16px;font-weight:700;color:#333;"
+               "padding-left:10px;border-left:3px solid #FA5151;margin:20px 0 10px"),
+        "p":  "font-size:16px;line-height:1.9;color:#222;margin:0 0 16px;letter-spacing:0.04em",
+        "blockquote": ("font-size:15px;line-height:1.8;color:#555;"
+                       "background:#fff8f8;border-left:4px solid #FA5151;"
+                       "padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0"),
+        "img": ("max-width:100%;border-radius:10px;display:block;margin:14px auto;"
+                "box-shadow:0 2px 10px rgba(0,0,0,0.08)"),
+        "caption": "font-size:12px;color:#aaa;text-align:center;margin:-10px 0 16px",
+        "hr": ("border:none;height:2px;margin:24px 0;"
+               "background:linear-gradient(to right,#FA5151,#FFB347,rgba(0,0,0,0))"),
+    },
+    "minimal": {
+        "name": "简洁黑",
+        "primary": "#333333",
+        "desc": "极简长文，严肃媒体风格",
+        "h2": ("font-size:19px;font-weight:700;color:#111;"
+               "padding-bottom:8px;border-bottom:2px solid #333;margin:32px 0 16px"),
+        "h3": ("font-size:17px;font-weight:700;color:#333;"
+               "margin:24px 0 12px"),
+        "p":  ("font-size:16px;line-height:2.0;color:#222;margin:0 0 18px;letter-spacing:0.06em;"
+               "font-family:Georgia,'Songti SC','Noto Serif SC',serif"),
+        "blockquote": ("font-size:15px;line-height:1.8;color:#666;"
+                       "border-left:3px solid rgba(0,0,0,0.3);padding:10px 16px;"
+                       "background:rgba(0,0,0,0.03);margin:16px 0"),
+        "img": "max-width:100%;display:block;margin:16px auto",
+        "caption": "font-size:12px;color:#999;text-align:center;margin:-12px 0 18px",
+        "hr": "border:none;border-top:1px solid rgba(0,0,0,0.15);margin:28px 0",
+    },
 }
 
+# 默认主题
+DEFAULT_THEME = "fresh"  # 活力橘，适合偶像内容
 
-def _render_html_preview(content: str, title: str) -> str:
+
+def _get_styles(theme_name: str) -> dict:
+    return THEMES.get(theme_name, THEMES[DEFAULT_THEME])
+
+
+def _theme_buttons(active: str) -> str:
+    parts = []
+    for k, v in THEMES.items():
+        bg = f'background:{v["primary"]};color:#fff;border-color:transparent' if k == active else ""
+        parts.append(f'<span class="theme-btn" style="{bg}">{v["name"]}</span>')
+    return " ".join(parts)
+
+
+def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THEME) -> str:
     """用本地图片路径渲染 HTML 预览页面（不上传微信，用于本地浏览器预览）。"""
-    # 把 【图片N：/path/...】 中的路径映射为 file:// URL
     img_url_map = {}
     for m in _IMG_RE.finditer(content):
         inner = m.group(1)
@@ -116,7 +200,10 @@ def _render_html_preview(content: str, title: str) -> str:
                 if p.startswith("/") and p not in img_url_map:
                     img_url_map[p] = f"file://{p}"
 
-    body = _render_html(content, img_url_map)
+    body = _render_html(content, img_url_map, theme_name)
+    theme = _get_styles(theme_name)
+    primary = theme["primary"]
+    theme_label = theme["name"]
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -125,37 +212,61 @@ def _render_html_preview(content: str, title: str) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
-  body{{background:#f5f5f5;margin:0;padding:20px;font-family:-apple-system,sans-serif}}
-  .preview-wrap{{max-width:680px;margin:0 auto;background:#fff;border-radius:12px;
-    padding:32px;box-shadow:0 2px 20px rgba(0,0,0,.08)}}
-  .preview-title{{font-size:22px;font-weight:700;color:#111;margin:0 0 24px;
-    line-height:1.4;border-bottom:2px solid #ff2442;padding-bottom:14px}}
-  .preview-meta{{font-size:12px;color:#999;margin-bottom:20px}}
-  .preview-actions{{position:fixed;bottom:24px;right:24px;display:flex;gap:10px}}
-  .btn{{padding:10px 22px;border-radius:24px;border:none;cursor:pointer;font-size:14px;font-weight:600}}
-  .btn-publish{{background:#ff2442;color:#fff}}
-  .btn-cancel{{background:#eee;color:#666}}
+  body{{background:#f0f0f0;margin:0;padding:20px 16px;
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}}
+  .phone-frame{{max-width:390px;margin:0 auto;background:#fff;border-radius:16px;
+    overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.15)}}
+  .phone-header{{background:#f7f7f7;padding:12px 16px;display:flex;align-items:center;
+    border-bottom:1px solid #e8e8e8}}
+  .phone-header .dot{{width:8px;height:8px;border-radius:50%;margin-right:4px}}
+  .phone-header .account{{font-size:13px;font-weight:600;color:#1a1a1a;margin-left:8px}}
+  .article-body{{padding:20px 16px 80px}}
+  .article-title{{font-size:20px;font-weight:700;color:#111;line-height:1.4;
+    margin:0 0 8px}}
+  .article-meta{{font-size:12px;color:#999;margin-bottom:20px;padding-bottom:16px;
+    border-bottom:1px solid #f0f0f0}}
   img{{max-width:100%!important}}
+  /* Theme switcher bar */
+  .theme-bar{{position:fixed;top:16px;right:16px;background:#fff;border-radius:10px;
+    padding:10px 14px;box-shadow:0 4px 16px rgba(0,0,0,.12);font-size:13px}}
+  .theme-bar strong{{display:block;margin-bottom:6px;color:#333}}
+  .theme-btn{{display:inline-block;padding:3px 10px;border-radius:12px;margin:2px;
+    border:1px solid #ddd;cursor:pointer;font-size:12px;background:#f8f8f8;
+    text-decoration:none;color:#444}}
+  .theme-btn.active{{color:#fff;border-color:transparent}}
 </style>
 </head>
 <body>
-<div class="preview-wrap">
-  <h1 class="preview-title">{title}</h1>
-  <div class="preview-meta">📱 微信公众号预览 · 图片来自本地缓存</div>
-  {body}
+<div class="phone-frame">
+  <div class="phone-header">
+    <div class="dot" style="background:{primary}"></div>
+    <div class="dot" style="background:#ccc"></div>
+    <span class="account">日本娱乐报道</span>
+    <span style="margin-left:auto;font-size:11px;color:#999">主题：{theme_label}</span>
+  </div>
+  <div class="article-body">
+    <h1 class="article-title">{title}</h1>
+    <div class="article-meta">📖 阅读约需 5 分钟 &nbsp;·&nbsp; 微信预览</div>
+    {body}
+  </div>
 </div>
-<div class="preview-actions">
-  <button class="btn btn-cancel" onclick="window.close()">✕ 关闭</button>
-  <p style="font-size:12px;color:#999;margin:auto 8px">确认无误后运行<br><code>--key</code> 正式发布</p>
+<div class="theme-bar">
+  <strong>切换主题预览</strong>
+  {_theme_buttons(theme_name)}
+  <div style="margin-top:8px;font-size:11px;color:#999">
+    确认后运行 --key 发布<br>当前：<code>--theme {theme_name}</code>
+  </div>
 </div>
 </body>
 </html>"""
 
 
-def _render_html(content: str, img_url_map: dict) -> str:
-    """将文章内容渲染为微信 HTML。
+def _render_html(content: str, img_url_map: dict,
+                 theme_name: str = DEFAULT_THEME) -> str:
+    """将文章内容渲染为微信内联样式 HTML。
     img_url_map: {"/local/path.jpg": "https://mmbiz.qpic.cn/..."}
     """
+    S = _get_styles(theme_name)
     parts = []
     last = 0
 
@@ -165,11 +276,11 @@ def _render_html(content: str, img_url_map: dict) -> str:
             if not s:
                 continue
             if s.startswith("### "):
-                parts.append(f'<h3 style="{_STYLE["h3"]}">{s[4:]}</h3>')
+                parts.append(f'<h3 style="{S["h3"]}">{s[4:]}</h3>')
             elif s.startswith("## "):
-                parts.append(f'<h2 style="{_STYLE["h2"]}">{s[3:]}</h2>')
+                parts.append(f'<h2 style="{S["h2"]}">{s[3:]}</h2>')
             else:
-                parts.append(f'<p style="{_STYLE["p"]}">{s}</p>')
+                parts.append(f'<p style="{S["p"]}">{s}</p>')
 
     for m in _IMG_RE.finditer(content):
         _flush_text(content[last:m.start()])
@@ -193,9 +304,9 @@ def _render_html(content: str, img_url_map: dict) -> str:
                     # 取 caption 描述（非路径部分）
                     full_cap = m.group(0)
                     cap_text = _IMG_RE.sub("", full_cap).strip() or Path(paths[0]).name
-                    parts.append(f'<img src="{url}" style="{_STYLE["img"]}">')
+                    parts.append(f'<img src="{url}" style="{S["img"]}">')
                     if cap_text and not cap_text.startswith("/"):
-                        parts.append(f'<p style="{_STYLE["caption"]}">{cap_text}</p>')
+                        parts.append(f'<p style="{S["caption"]}">{cap_text}</p>')
         else:
             # 无图，只保留描述作注释
             pass
@@ -210,7 +321,8 @@ def _render_html(content: str, img_url_map: dict) -> str:
 </section>"""
 
 
-def publish_article(article_key: str, publish: bool = False):
+def publish_article(article_key: str, publish: bool = False,
+                    theme_name: str = DEFAULT_THEME):
     """完整流程：读取文章 → 上传图片 → 创建草稿。"""
     from scripts.sqlite_db import _connect
 
@@ -276,7 +388,9 @@ def publish_article(article_key: str, publish: bool = False):
 
     # ── 渲染 HTML ─────────────────────────────────────────────
     print(f"\n[3] 渲染文章 HTML...")
-    html_content = _render_html(content, img_url_map)
+    theme = _get_styles(theme_name)
+    print(f"  主题: {theme['name']} ({theme['desc']})")
+    html_content = _render_html(content, img_url_map, theme_name)
     print(f"  HTML 长度: {len(html_content)} 字符")
 
     # ── 创建草稿 ──────────────────────────────────────────────
@@ -336,17 +450,26 @@ def delete_all_drafts():
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="发布文章到微信公众号草稿箱")
     p.add_argument("--key", help="文章 key（DB 中的 key 字段）")
+    _theme_help = " / ".join(f"{k}={v['name']}" for k, v in THEMES.items())
+    p.add_argument("--theme", default=DEFAULT_THEME,
+                   choices=list(THEMES.keys()),
+                   help=f"排版主题 ({_theme_help})，默认 {DEFAULT_THEME}")
     p.add_argument("--preview", action="store_true", help="本地 HTML 预览（不发布，用浏览器打开）")
     p.add_argument("--publish", action="store_true", help="直接发布（默认只创建草稿）")
     p.add_argument("--delete-drafts", action="store_true", help="清空草稿箱")
+    p.add_argument("--list-themes", action="store_true", help="列出所有主题")
     args = p.parse_args()
 
     os.chdir(Path(__file__).parent.parent)
 
-    if args.delete_drafts:
+    if args.list_themes:
+        print("可用主题：")
+        for k, v in THEMES.items():
+            mark = " ← 默认" if k == DEFAULT_THEME else ""
+            print(f"  {k:10} {v['name']}  — {v['desc']}{mark}")
+    elif args.delete_drafts:
         delete_all_drafts()
     elif args.key and args.preview:
-        # 预览模式：渲染 HTML，用浏览器打开
         import tempfile, webbrowser
         os.environ.setdefault("SQLITE_PATH", "data/news_dev.db")
         from scripts.sqlite_db import _connect
@@ -354,14 +477,14 @@ if __name__ == "__main__":
             r = db.execute("SELECT title, content FROM news WHERE key=?", (args.key,)).fetchone()
         if not r:
             print(f"文章 {args.key} 不存在"); sys.exit(1)
-        html = _render_html_preview(r["content"], r["title"])
+        html = _render_html_preview(r["content"], r["title"], args.theme)
         tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8")
         tmp.write(html); tmp.close()
-        print(f"预览文件: {tmp.name}")
+        print(f"预览文件: {tmp.name}  主题: {THEMES[args.theme]['name']}")
         webbrowser.open(f"file://{tmp.name}")
-        print("✅ 已在浏览器打开预览，确认后运行：")
-        print(f"   python scripts/wechat_publisher.py --key {args.key}")
+        print(f"✅ 已在浏览器打开，确认后运行：")
+        print(f"   python scripts/wechat_publisher.py --key {args.key} --theme {args.theme}")
     elif args.key:
-        publish_article(args.key, publish=args.publish)
+        publish_article(args.key, publish=args.publish, theme_name=args.theme)
     else:
         p.print_help()
