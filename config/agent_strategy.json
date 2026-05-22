@@ -1,7 +1,7 @@
 {
   "growth_stage": "cold_start",
 
-  "focus_topics": ["乃木坂46", "AKB48", "日向坂46", "写真"],
+  "focus_topics": ["乃木坂46", "AKB48", "日向坂46", "日本写真集", "日本偶像", "濑户环奈"],
 
   "cold_start_quota": 3,
   "cold_start_max_quota": 4,
