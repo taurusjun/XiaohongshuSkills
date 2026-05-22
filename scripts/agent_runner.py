@@ -15,6 +15,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [agent] %(message)s"
 logger = logging.getLogger("agent_runner")
 
 
+def _alert(phase: str, e: Exception, context: str = "") -> None:
+    """统一异常通知：打印 ERROR 日志 + 飞书消息（fire-and-forget）。"""
+    msg = f"❌ agent_runner Phase {phase} 异常\n原因：{e}"
+    if context:
+        msg += f"\n上下文：{context}"
+    logger.error(f"  ❌ Phase {phase} 失败: {e}")
+    try:
+        from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
+        if FEISHU_OPERATOR_OPEN_ID:
+            send_text(FEISHU_OPERATOR_OPEN_ID, msg)
+    except Exception as fe:
+        logger.warning(f"  飞书告警发送失败: {fe}")
+
+
 def run(dry_run: bool = False, live_preview: bool = False):
     """智能体主循环：感知→规划→执行→通知"""
     if dry_run:
@@ -52,7 +66,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
             update_trend_signals(trends)
             logger.info(f"  趋势扫描完成: {len(trends)} topics")
         except Exception as e:
-            logger.error(f"  ❌ 趋势扫描失败: {e}")
+            _alert("1-趋势扫描", e, "请确认 Chrome 已打开并登录小红书")
 
         # 账号快照：返回0行也应明确报错（说明 CDP 未能读取创作者数据）
         try:
@@ -77,7 +91,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
             )
             logger.info(f"  账号快照: views={week_views} saves={week_saves} (from {len(rows)} 篇)")
         except Exception as e:
-            logger.error(f"  ❌ 账号快照失败: {e}")
+            _alert("1-账号快照", e, "请确认已登录小红书创作者后台")
 
         set_state(f"runner_progress_{date_str}", {"phase": 1}, date=date_str)
 
@@ -157,7 +171,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags,
                                       "target_format": topic_format_map.get(topic, "news")})
                 except Exception as e:
-                    logger.warning(f"  fetch failed for '{topic}': {e}")
+                    _alert("3-抓取", e, f"话题: {topic}")
 
             logger.info(f"  抓取完成: {len(tasks)} 篇待处理，并行度={max_workers}")
 
@@ -207,7 +221,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
 
             logger.info(f"  执行完成: {total_fetched} articles saved")
         except Exception as e:
-            logger.warning(f"  执行阶段失败: {e}")
+            _alert("3-执行", e)
 
         set_state(f"runner_progress_{date_str}",
                   {"phase": 3, "fetched": total_fetched}, date=date_str)
@@ -234,7 +248,10 @@ def run(dry_run: bool = False, live_preview: bool = False):
         set_state(f"runner_progress_{date_str}", {"phase": 4}, date=date_str)
 
     # Phase 5: topic_performance 更新
-    _update_topic_performance_for_mature_articles()
+    try:
+        _update_topic_performance_for_mature_articles()
+    except Exception as e:
+        _alert("5-topic_performance更新", e)
 
     logger.info("Agent run complete.")
 
