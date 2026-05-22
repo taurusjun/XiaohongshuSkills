@@ -1281,7 +1281,7 @@ def _get_tweet_image_urls(tweet_id: str) -> list[str]:
                    f"?id={tweet_id}&lang=ja"
                    f"&features=tfw_timeline_list%3A%3Btfw_follower_count_sunset%3Atrue"
                    f"&token=4")
-        resp = _direct_session.get(api_url, headers={
+        resp = requests.get(api_url, headers={
             "User-Agent": "Mozilla/5.0",
             "Referer": "https://platform.twitter.com/",
         }, timeout=10)
@@ -1320,10 +1320,11 @@ def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
         img_urls = _get_tweet_image_urls(tweet_id)
         for img_url in img_urls:
             try:
-                resp = _direct_session.get(img_url, headers={
+                # pbs.twimg.com 需要走代理，使用系统代理（不用 _direct_session）
+                resp = requests.get(img_url, headers={
                     "User-Agent": "Mozilla/5.0",
                     "Referer": "https://twitter.com/",
-                }, timeout=15)
+                }, timeout=20)
                 if resp.status_code != 200 or len(resp.content) < 20_000:
                     continue
                 fpath = cache_dir / f"tweet_{file_idx:02d}.jpg"
