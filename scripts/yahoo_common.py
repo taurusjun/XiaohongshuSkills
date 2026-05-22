@@ -953,18 +953,18 @@ def fetch_article_details(url: str) -> dict:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
 
-            # 提取文章内嵌图片（过滤 icon/小图/广告）
+            # 提取文章内嵌图片（优先用 #uamods-article 精确容器）
+        story_container = soup.find("article", id="uamods-article") or article
+        if story_container:
             skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
                        "avatar", "profile", "favicon", "tracking", "pixel",
-                       "h30.png", "h20.png", "h16.png"]  # Yahoo icon 命名规律
-            for img in article.find_all("img"):
+                       "h30.png", "h20.png", "h16.png"]
+            for img in story_container.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if not src or not src.startswith("http"):
                     continue
-                src_lower = src.lower()
-                if any(k in src_lower for k in skip_kw):
+                if any(k in src.lower() for k in skip_kw):
                     continue
-                # 有尺寸属性时过滤过小的图
                 try:
                     w = int(img.get("width", 0))
                     h = int(img.get("height", 0))
@@ -975,6 +975,18 @@ def fetch_article_details(url: str) -> dict:
                 if src not in article_images:
                     article_images.append(src)
 
+        # 提取 Twitter/X 嵌入推文链接（记录位置，供翻译时插入占位符）
+        twitter_embeds = []
+        story_container2 = soup.find("article", id="uamods-article") or article
+        if story_container2:
+            for bq in story_container2.find_all("blockquote", class_="twitter-tweet"):
+                links = bq.find_all("a", href=True)
+                tweet_url = next((a["href"] for a in reversed(links)
+                                  if "twitter.com" in a["href"] or "x.com" in a["href"]), "")
+                if tweet_url:
+                    twitter_embeds.append(tweet_url)
+        result["twitter_embeds"] = twitter_embeds
+
         # 長文（>800字）放寬到4000字，提供足夠上下文給體裁判斷
         body_limit = 4000 if len(body_text) > 800 else 2000
         result["body_text"] = body_text[:body_limit]
@@ -982,6 +994,61 @@ def fetch_article_details(url: str) -> dict:
     except Exception as e:
         print(f"    ⚠️ 抓取文章详情失败: {e}")
     return result
+
+
+def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
+                           twitter_embeds: list[str] | None = None) -> dict | None:
+    """生成故事体文章（导语 + 翻译正文 + 结语），风格对齐严肃新闻媒体。
+
+    与 generate_content_and_comment 完全不同的格式，不含娱乐化语气和词汇教学。
+    返回 {"title": str, "intro": str, "body": str, "outro": str}
+    """
+    if not LITELLM_API_KEY:
+        return None
+
+    twitter_note = ""
+    if twitter_embeds:
+        twitter_note = f"\n\n原文中嵌入了 {len(twitter_embeds)} 条推文，在翻译正文中用【推文X：简要描述推文内容】形式插入在对应位置。"
+
+    prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
+
+请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章，格式如下：
+
+【标题】
+{title_zh}（可在此基础上微调，保持故事感）
+
+【导语】
+2-3句话，提炼文章最核心的冲突或意义，引发读者继续阅读的欲望。不剧透结局，不写成摘要。
+
+【正文】
+完整翻译原文。保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{twitter_note}
+
+【结语】
+1-2句话，点睛式收尾。可以是作者的判断、对行业的启示、或留给读者的问题。不得是「欢迎评论」等套话。
+
+---
+日文原文标题：{title_ja}
+日文正文：
+{body_ja[:4000]}
+---
+
+严格按格式输出 JSON：
+{{"title": "微调后的标题", "intro": "导语文字", "body": "正文译文（纯文本，推文用[推文X:描述]插入）", "outro": "结语文字"}}"""
+
+    result = call_litellm(
+        prompt,
+        system_prompt="你是严肃新闻媒体编辑，输出简体中文，JSON格式。",
+        max_tokens=3000,
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    if not result:
+        return None
+    try:
+        import json as _j
+        return _j.loads(result)
+    except Exception:
+        return None
 
 
 def _download_article_images(news: dict, image_urls: list[str]) -> None:
@@ -1064,6 +1131,8 @@ def process_news_item(news: dict, no_translate: bool = False,
         # 日文原文同步写入 content_ja（供后续评分和体裁判断使用）
         if details.get("body_text") and not news.get('content_ja'):
             news['content_ja'] = details['body_text']
+        # Twitter 嵌入推文记录
+        news['_twitter_embeds'] = details.get("twitter_embeds", [])
 
         # 长文文章：将文章内嵌图片下载到本地缓存（gallery_images 已有内容则跳过）
         article_images = details.get("article_images", [])
@@ -1110,24 +1179,56 @@ def process_news_item(news: dict, no_translate: bool = False,
 
         print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
         print("    生成内容...")
-        generated = generate_content_and_comment(
-            news['title_ja'], news['title_zh'],
-            ja_summary=news.get('ja_summary', ''),
-            keyword=keyword,
-            body_text=news.get('body_text', ''),
-            hint=news.get('_regen_hint', ''),
-            content_format=selected_format,
-        )
-        if generated is None:
-            print("    ⚠️ LLM 调用失败，跳过此条新闻")
-            news['_skip'] = True
-            return news
-        seo_title, summary, content, comment, _, topic_tags = generated
-        news['title_zh'] = seo_title
-        news['title'] = seo_title  # title 字段同步，供 Web UI 和 DB 查询使用
-        news['summary']  = summary
-        news['content']  = content
-        news['comment']  = comment
+
+        # story 体裁：用独立的严肃新闻生成路径
+        if selected_format == 'story':
+            story = generate_story_article(
+                news['title_ja'], news['title_zh'],
+                body_ja=news.get('content_ja', '') or news.get('body_text', ''),
+                twitter_embeds=news.get('_twitter_embeds', []),
+            )
+            if story:
+                news['title']    = story.get('title', news['title_zh'])
+                news['title_zh'] = story.get('title', news['title_zh'])
+                news['content']  = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
+                news['comment']  = story.get('outro', '')
+                news['summary']  = story.get('intro', '')[:100]
+                news['tags']     = keyword_tags
+                news['category'] = '新闻'
+                print(f"    故事体生成完成: {len(news['content'])} 字")
+                # 跳过后续的 generate_content_and_comment 流程，直接去评分
+                # （仍需评分以决定是否发布）
+                from scripts.yahoo_common import evaluate_quality as _eq
+                quality = _eq(news['title_zh'], news['content'], news['comment'])
+                news['_quality'] = quality
+                news['title_score']   = quality.get('title_score', 0)
+                news['content_score'] = quality.get('content_score', 0)
+                print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
+                # 图片和其他后处理继续走常规流程（goto equivalent via flag）
+                news['_story_done'] = True
+            else:
+                print("    ⚠️ 故事体生成失败，回退到资讯体")
+                selected_format = 'news'
+
+        if not news.get('_story_done'):
+            generated = generate_content_and_comment(
+                news['title_ja'], news['title_zh'],
+                ja_summary=news.get('ja_summary', ''),
+                keyword=keyword,
+                body_text=news.get('body_text', ''),
+                hint=news.get('_regen_hint', ''),
+                content_format=selected_format,
+            )
+            if generated is None:
+                print("    ⚠️ LLM 调用失败，跳过此条新闻")
+                news['_skip'] = True
+                return news
+            seo_title, summary, content, comment, _, topic_tags = generated
+            news['title_zh'] = seo_title
+            news['title'] = seo_title  # title 字段同步，供 Web UI 和 DB 查询使用
+            news['summary']  = summary
+            news['content']  = content
+            news['comment']  = comment
         # 质量评分 + 低分诊断 + 最多 2 次重试
         from scripts.scoring import diagnose_low_score, Action, get_failed_dims
         from scripts.agent_tools import regenerate_with_hint
