@@ -234,6 +234,13 @@ def publish_article(article_key: str, publish: bool = False):
 
     # ── 创建草稿 ──────────────────────────────────────────────
     print(f"\n[4] 创建微信草稿...")
+    # 微信标题限制 64 字节（UTF-8），超出截断
+    title_bytes = title.encode("utf-8")
+    if len(title_bytes) > 64:
+        while len(title.encode("utf-8")) > 61:  # 留 3 字节给 …
+            title = title[:-1]
+        title += "…"
+        print(f"  标题截断为: {title}")
     article = {
         "title": title,
         "content": html_content,
