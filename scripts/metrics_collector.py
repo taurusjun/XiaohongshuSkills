@@ -133,36 +133,45 @@ def collect_all(dry_run: bool = False) -> dict:
             ).fetchall()
 
             collected = 0
-            for _, row in df.iterrows():
-                xhs_title = _normalize(str(row["title"]))
-                if not xhs_title:
-                    continue
-                for art in articles:
-                    if _titles_match(xhs_title, _normalize(art["title"])):
-                        key = art["key"]
-                        conn.execute(
-                            """INSERT OR REPLACE INTO metrics_history
-                               (news_key, collected_at, views, likes, saves, comments,
-                                shares, fans_gained, impression, click_rate, watch_time, danmaku)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (key, now_str,
-                             int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
-                             int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
-                             int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
-                             int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0)),
-                        )
-                        conn.execute(
-                            """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
-                               xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
-                               xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
-                            (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
-                             int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
-                             int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
-                             int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0),
-                             key),
-                        )
-                        collected += 1
-                        break
+            from difflib import SequenceMatcher
+            # For each DB article, find the BEST matching Excel row
+            for art in articles:
+                art_title = _normalize(art["title"])
+                best_row = None
+                best_score = 0
+                for _, row in df.iterrows():
+                    xhs_title = _normalize(str(row["title"]))
+                    if not xhs_title:
+                        continue
+                    score = SequenceMatcher(None, xhs_title, art_title).ratio()
+                    if score > best_score and _titles_match(xhs_title, art_title):
+                        best_score = score
+                        best_row = row
+                if best_row is not None:
+                    row = best_row
+                    key = art["key"]
+                    conn.execute(
+                        """INSERT OR REPLACE INTO metrics_history
+                           (news_key, collected_at, views, likes, saves, comments,
+                            shares, fans_gained, impression, click_rate, watch_time, danmaku)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (key, now_str,
+                         int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
+                         int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
+                         int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
+                         int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0)),
+                    )
+                    conn.execute(
+                        """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
+                           xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
+                           xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
+                        (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
+                         int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
+                         int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
+                         int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0),
+                         key),
+                    )
+                    collected += 1
             conn.commit()
         except Exception:
             conn.rollback()
