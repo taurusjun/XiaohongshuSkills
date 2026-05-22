@@ -261,64 +261,162 @@ def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THE
 </html>"""
 
 
+_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+_SECTION_BREAK_RE = re.compile(r'^(##|【(?:图片|推文)\d+)', re.MULTILINE)
+
+
+def _split_intro_body_outro(content: str) -> tuple[str, str, str]:
+    """将正文拆分为 导语 / 主体 / 结语。
+    导语：第一个 ## 标题或图片标记之前的文字
+    结语：最后一个 ## 标题或图片标记之后的文字
+    """
+    breaks = list(_SECTION_BREAK_RE.finditer(content))
+    if not breaks:
+        return content.strip(), "", ""
+
+    intro = content[:breaks[0].start()].strip()
+    after_last = content[breaks[-1].start():]
+    # 结语：最后一个 break 之后的第一个非标题、非图片段落
+    tail_lines = after_last.split("\n")
+    body_end = after_last
+    outro_lines = []
+    # 跳过最后一个 break 所在的行，从其后找纯文字段落
+    for i, line in enumerate(reversed(tail_lines)):
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("##") or _IMG_RE.match(s):
+            break
+        outro_lines.insert(0, line)
+
+    if outro_lines:
+        outro_text = "\n".join(outro_lines).strip()
+        # 从 body 末尾去掉 outro 部分
+        body_text = content[breaks[0].start():content.rfind(outro_text)].strip()
+    else:
+        outro_text = ""
+        body_text = content[breaks[0].start():].strip()
+
+    return intro, body_text, outro_text
+
+
+def _render_inline(text: str, S: dict) -> str:
+    """处理行内 Markdown: **bold** → colored strong, 其余原样。"""
+    return _BOLD_RE.sub(
+        lambda m: f'<strong style="color:{S.get("primary","#333")};font-weight:700">{m.group(1)}</strong>',
+        text
+    )
+
+
 def _render_html(content: str, img_url_map: dict,
                  theme_name: str = DEFAULT_THEME) -> str:
-    """将文章内容渲染为微信内联样式 HTML。
-    img_url_map: {"/local/path.jpg": "https://mmbiz.qpic.cn/..."}
-    """
+    """将文章内容渲染为微信内联样式 HTML（含导语卡片、结语区、pull quote）。"""
     S = _get_styles(theme_name)
+    primary = S.get("primary", "#333")
+    intro, body, outro = _split_intro_body_outro(content)
+
     parts = []
+
+    # ── 导语卡片（无"导语"标签，用视觉区分）─────────────────────
+    if intro:
+        intro_lines = [l.strip() for l in intro.split("\n") if l.strip()]
+        intro_html = "".join(
+            f'<p style="margin:0 0 8px;font-size:16px;line-height:1.9;color:#1a1a1a">'
+            f'{_render_inline(l, S)}</p>'
+            for l in intro_lines
+        )
+        parts.append(
+            f'<div style="background:{_hex_tint(primary,0.08)};'
+            f'border-left:4px solid {primary};'
+            f'border-radius:0 10px 10px 0;'
+            f'padding:16px 18px;margin:0 0 24px">'
+            f'{intro_html}'
+            f'</div>'
+        )
+
+    # ── 正文 ──────────────────────────────────────────────────────
     last = 0
 
-    def _flush_text(text: str):
+    def _flush_text(text: str, is_outro: bool = False):
         for line in text.split("\n"):
             s = line.strip()
             if not s:
                 continue
             if s.startswith("### "):
-                parts.append(f'<h3 style="{S["h3"]}">{s[4:]}</h3>')
+                parts.append(f'<h3 style="{S["h3"]}">{_render_inline(s[4:], S)}</h3>')
             elif s.startswith("## "):
-                parts.append(f'<h2 style="{S["h2"]}">{s[3:]}</h2>')
+                # h2 前加分隔空间
+                parts.append(f'<div style="height:8px"></div>')
+                parts.append(f'<h2 style="{S["h2"]}">{_render_inline(s[3:], S)}</h2>')
+            elif s.startswith(">>") and s.endswith("<<"):
+                # 显式 pull quote: >>金句<<
+                q = s[2:-2].strip()
+                parts.append(
+                    f'<blockquote style="{S.get("blockquote", S["p"])};'
+                    f'font-size:18px;font-weight:600;color:{primary};'
+                    f'text-align:center;padding:20px 16px;margin:20px 0">'
+                    f'{q}</blockquote>'
+                )
             else:
-                parts.append(f'<p style="{S["p"]}">{s}</p>')
+                p_style = S["p"] if not is_outro else (
+                    S["p"] + f";color:#666;font-style:italic"
+                )
+                parts.append(f'<p style="{p_style}">{_render_inline(s, S)}</p>')
 
-    for m in _IMG_RE.finditer(content):
-        _flush_text(content[last:m.start()])
-
+    for m in _IMG_RE.finditer(body):
+        _flush_text(body[last:m.start()])
         inner = m.group(1)
-        # inner 可能是 /path1|/path2 或描述文字
         if inner.startswith("/"):
             paths = [p for p in inner.split("|") if p.startswith("/")]
-            # 多图用 flex 横排
             if len(paths) > 1:
-                cells = ""
-                for p in paths:
-                    url = img_url_map.get(p, "")
-                    if url:
-                        cells += f'<img src="{url}" style="width:{96//len(paths)}%;border-radius:6px;margin:2px">'
+                w = 96 // len(paths)
+                cells = "".join(
+                    f'<img src="{img_url_map.get(p,"")}" style="width:{w}%;border-radius:6px;margin:2px">'
+                    for p in paths if img_url_map.get(p)
+                )
                 if cells:
-                    parts.append(f'<div style="display:flex;gap:4px;margin:12px 0">{cells}</div>')
+                    parts.append(f'<div style="display:flex;gap:4px;margin:16px 0">{cells}</div>')
             elif paths:
                 url = img_url_map.get(paths[0], "")
                 if url:
-                    # 取 caption 描述（非路径部分）
-                    full_cap = m.group(0)
-                    cap_text = _IMG_RE.sub("", full_cap).strip() or Path(paths[0]).name
+                    cap = _IMG_RE.sub("", m.group(0)).strip()
                     parts.append(f'<img src="{url}" style="{S["img"]}">')
-                    if cap_text and not cap_text.startswith("/"):
-                        parts.append(f'<p style="{S["caption"]}">{cap_text}</p>')
-        else:
-            # 无图，只保留描述作注释
-            pass
-
+                    if cap and not cap.startswith("/"):
+                        parts.append(f'<p style="{S["caption"]}">{cap}</p>')
         last = m.end()
 
-    _flush_text(content[last:])
+    _flush_text(body[last:])
 
-    body = "\n".join(parts)
-    return f"""<section style="max-width:680px;margin:0 auto;font-family:-apple-system,sans-serif">
-{body}
-</section>"""
+    # ── 结语区（装饰分隔线 + 浅底色，无"结语"标签）──────────────
+    if outro:
+        hr = S.get("hr", f'border:none;border-top:1px solid {primary};opacity:.3;margin:28px 0 20px')
+        outro_lines = [l.strip() for l in outro.split("\n") if l.strip()]
+        outro_html = "".join(
+            f'<p style="margin:0 0 8px;font-size:15px;line-height:1.9;'
+            f'color:#555;font-style:italic">{_render_inline(l, S)}</p>'
+            for l in outro_lines
+        )
+        parts.append(
+            f'<hr style="{hr}">'
+            f'<div style="background:{_hex_tint(primary,0.04)};'
+            f'border-radius:8px;padding:16px 18px;margin-top:8px">'
+            f'{outro_html}'
+            f'</div>'
+        )
+
+    body_html = "\n".join(parts)
+    return (f'<section style="max-width:680px;margin:0 auto;'
+            f'font-family:-apple-system,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">'
+            f'\n{body_html}\n</section>')
+
+
+def _hex_tint(hex_color: str, alpha: float) -> str:
+    """将 #RRGGBB 颜色与白色混合，返回 rgba() 字符串。"""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c*2 for c in h)
+    r, g, b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
+    return f"rgba({r},{g},{b},{alpha:.2f})"
 
 
 def publish_article(article_key: str, publish: bool = False,
