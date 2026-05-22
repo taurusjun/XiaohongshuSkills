@@ -163,7 +163,48 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
                 "fresh_count_24h": fresh_count_24h,
             })
         except Exception as e:
-            logger.warning(f"扫描 '{keyword}' 失败: {e}")
+            from scripts.cdp_publish import XHSRateLimitError
+            if isinstance(e, XHSRateLimitError):
+                # 安全验证需要人工介入，不重试，直接上抛让 agent_runner _alert 处理
+                raise
+            # 其他错误（超时等）：飞书告警 + 等待 5 分钟重试一次
+            logger.warning(f"扫描 '{keyword}' 失败: {e}，5分钟后重试...")
+            try:
+                from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
+                if FEISHU_OPERATOR_OPEN_ID:
+                    send_text(FEISHU_OPERATOR_OPEN_ID,
+                              f"⚠️ 趋势扫描失败，5分钟后自动重试\n话题: {keyword}\n原因: {e}")
+            except Exception:
+                pass
+            import time as _time
+            _time.sleep(300)  # 等待 5 分钟
+            # 重试一次
+            try:
+                feeds_retry = _search_with_ratelimit_check(keyword, sort="general")
+                feeds_r = feeds_retry.get("feeds", [])
+                if feeds_r:
+                    data_r = _extract_feeds_data(feeds_r)
+                    is_fresh_r = False
+                    fresh_count_r = 0
+                    try:
+                        feeds_newest_r = _search_with_ratelimit_check(keyword, sort="newest", time_filter="1day")
+                        feeds_n_r = feeds_newest_r.get("feeds", [])
+                        fresh_count_r = len(feeds_n_r)
+                        is_fresh_r = fresh_count_r >= 5
+                    except Exception:
+                        pass
+                    results.append({
+                        "topic": keyword, "top_titles": data_r["titles"][:5],
+                        "recommended_keywords": [keyword],
+                        "image_ratio": data_r["image_ratio"],
+                        "avg_title_len": data_r["avg_title_len"],
+                        "baseline_saves": data_r["baseline_saves"],
+                        "baseline_comments": data_r["baseline_comments"],
+                        "is_fresh": is_fresh_r, "fresh_count_24h": fresh_count_r,
+                    })
+                    logger.info(f"  [{keyword}] 重试成功")
+            except Exception as e2:
+                logger.error(f"扫描 '{keyword}' 重试失败: {e2}")
 
         # 话题间随机延时，避免连续请求触发频率限制
         if keyword != keywords[-1]:
