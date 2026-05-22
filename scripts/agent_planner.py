@@ -82,23 +82,42 @@ def plan_today(date: str = "") -> DailyPlan:
         focus_quota = max(1, int(quota * 0.8))
         explore_quota = quota - focus_quota
 
-        # 轮转 + 热度替换：按天轮转选基础话题，若全不 fresh 则用 is_fresh=True 的话题替换末位
+        # 热点优先策略：先锁定今日最热话题，剩余槽位按轮转补充覆盖
+        import json as _json
+
+        def _fresh_count(ft: str) -> int:
+            td = topic_trend_map.get(ft, {})
+            ts_raw = td.get("trend_signal", "")
+            if isinstance(ts_raw, str) and ts_raw:
+                try:
+                    ts = _json.loads(ts_raw)
+                    return int(ts.get("fresh_count_24h") or 0)
+                except Exception:
+                    pass
+            return 0
+
+        # 1. 按 fresh_count_24h 降序排列所有 focus_topics（有热度数据的排前面）
+        sorted_by_heat = sorted(
+            focus_topics,
+            key=lambda ft: _fresh_count(ft),
+            reverse=True
+        )
+
+        # 2. 热点槽（第1位）：取今天 fresh_count 最高的话题
+        hot_slot = sorted_by_heat[0] if sorted_by_heat else None
+
+        # 3. 轮转槽（剩余位）：从日期轮转序列里取，排除热点槽已选的话题
         day_offset = int(date) % len(focus_topics) if focus_topics else 0
         rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
-        selected = rotated[:focus_quota]
+        rotation_pool = [ft for ft in rotated if ft != hot_slot]
 
-        # 检查 selected 里有没有 is_fresh=True 的话题
-        has_fresh = any(_topic_is_fresh(topic_trend_map.get(ft, {})) for ft in selected)
-        if not has_fresh:
-            # 从所有 focus_topics 里找一个 is_fresh=True 的，替换 selected 末位
-            fresh_candidate = next(
-                (ft for ft in rotated[focus_quota:] + rotated[:focus_quota]
-                 if ft not in selected and _topic_is_fresh(topic_trend_map.get(ft, {}))),
-                None
-            )
-            if fresh_candidate:
-                selected = list(selected[:-1]) + [fresh_candidate]
-                logger.info(f"  热度替换：{selected[-2] if len(selected)>1 else '?'} → {fresh_candidate}（is_fresh=True）")
+        # 4. 合并：热点优先 + 轮转补充
+        selected = ([hot_slot] if hot_slot else []) + rotation_pool
+        selected = selected[:focus_quota]
+
+        hot_fresh_count = _fresh_count(hot_slot) if hot_slot else 0
+        logger.info(f"  热点话题: {hot_slot}（24h帖数={hot_fresh_count}）"
+                    f"  轮转补充: {selected[1:] if len(selected) > 1 else []}")
 
         for ft in selected:
             trend_data = topic_trend_map.get(ft, {})
