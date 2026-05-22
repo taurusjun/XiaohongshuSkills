@@ -104,12 +104,14 @@ def run(dry_run: bool = False, live_preview: bool = False):
                                             update_news, load_today_keys,
                                             increment_topic_discard)
 
+            from scripts.yahoo_common import extract_key_from_url
             existing_keys = load_today_keys()
             max_results = get_config("daily_quota", default=2)
             max_workers = get_config("fetch_parallel", default=3)
 
-            # Step 1: 串行抓取（CDP 不支持并发）
+            # Step 1: 串行抓取（CDP 不支持并发），跨话题合并去重
             tasks = []
+            seen_keys = set()  # 跨话题去重，同 yahoo_news_auto_sqlite.py 的逻辑
             for topic in topics[:plan.get("quota_total", 3)]:
                 extra_tags = KEYWORD_TAG_MAP.get(topic, [])
                 try:
@@ -118,6 +120,10 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         china_filter=False, existing_keys=existing_keys,
                     )
                     for art in articles:
+                        key = extract_key_from_url(art.get("link", ""))
+                        if not key or key in seen_keys:
+                            continue  # 跳过空key或已见过的文章
+                        seen_keys.add(key)
                         tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags})
                 except Exception as e:
                     logger.warning(f"  fetch failed for '{topic}': {e}")
