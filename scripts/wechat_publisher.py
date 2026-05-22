@@ -249,7 +249,10 @@ def publish_article(article_key: str, publish: bool = False):
 
     url = f"{WX_API}/draft/add?access_token={token}"
     payload = {"articles": [article]}
-    resp = requests.post(url, json=payload, timeout=30).json()
+    # ensure_ascii=False 保留中文，避免微信后台显示 \uXXXX 乱码
+    resp = requests.post(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                         headers={"Content-Type": "application/json; charset=utf-8"},
+                         timeout=30).json()
 
     if resp.get("errcode", 0) != 0:
         print(f"  ❌ 创建草稿失败: {resp}")
@@ -261,11 +264,40 @@ def publish_article(article_key: str, publish: bool = False):
     return media_id
 
 
+def delete_all_drafts():
+    """清空草稿箱（用于清理测试产生的多余草稿）。"""
+    conf = _load_conf()
+    token = _get_access_token(conf)
+    deleted = 0
+    while True:
+        r = requests.get(f"{WX_API}/draft/batchget?access_token={token}",
+                         params={"offset": 0, "count": 20, "no_content": 1}, timeout=15).json()
+        items = r.get("item", [])
+        if not items:
+            break
+        for item in items:
+            mid = item.get("media_id", "")
+            if mid:
+                dr = requests.post(f"{WX_API}/draft/delete?access_token={token}",
+                                   data=json.dumps({"media_id": mid}),
+                                   headers={"Content-Type": "application/json"}, timeout=10).json()
+                print(f"  删除草稿 {mid[:16]}... → {dr}")
+                deleted += 1
+    print(f"共删除 {deleted} 篇草稿")
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="发布文章到微信公众号草稿箱")
-    p.add_argument("--key", required=True, help="文章 key（DB 中的 key 字段）")
+    p.add_argument("--key", help="文章 key（DB 中的 key 字段）")
     p.add_argument("--publish", action="store_true", help="直接发布（默认只创建草稿）")
+    p.add_argument("--delete-drafts", action="store_true", help="清空草稿箱")
     args = p.parse_args()
 
     os.chdir(Path(__file__).parent.parent)
-    publish_article(args.key, publish=args.publish)
+
+    if args.delete_drafts:
+        delete_all_drafts()
+    elif args.key:
+        publish_article(args.key, publish=args.publish)
+    else:
+        p.print_help()
