@@ -12,6 +12,13 @@ import requests
 
 logger = logging.getLogger("feishu_bot")
 
+# 加载 .env 文件（若 dotenv 可用）
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+except ImportError:
+    pass
+
 FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID", "")
 FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
 FEISHU_OPERATOR_OPEN_ID = os.environ.get("FEISHU_OPERATOR_OPEN_ID", "")
