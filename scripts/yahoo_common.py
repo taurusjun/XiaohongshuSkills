@@ -1071,6 +1071,64 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     return None
 
 
+def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
+    """故事体文章的完整独立处理路径：生成 → 评分 → 分类 → 图片 → 返回。"""
+    story = generate_story_article(
+        news['title_ja'], news['title_zh'],
+        body_ja=news.get('content_ja', '') or news.get('body_text', ''),
+        twitter_embeds=news.get('_twitter_embeds', []),
+    )
+    if not story:
+        print("    ⚠️ 故事体生成失败，回退到资讯体")
+        return generate_content_and_comment.__module__ and _fallback_to_news(news, keyword, extra_tags)
+
+    news['title']    = story.get('title', news['title_zh'])
+    news['title_zh'] = story.get('title', news['title_zh'])
+    news['content']  = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
+    news['comment']  = story.get('outro', '')
+    news['summary']  = story.get('intro', '')[:100]
+    news['category'] = '新闻'
+    print(f"    故事体生成完成: {len(news['content'])} 字")
+
+    # 评分
+    quality = evaluate_quality(news['title_zh'], news['content'], news['comment'])
+    news['_quality']      = quality
+    news['title_score']   = quality.get('title_score', 0)
+    news['content_score'] = quality.get('content_score', 0)
+    print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
+
+    # 分类 + 标签
+    from scripts.yahoo_common import auto_classify as _ac  # 避免前向引用
+    category, tags = auto_classify(news['title_ja'], news.get('content', ''), keyword=keyword)
+    news['category'] = category or '新闻'
+    news['tags'] = list({*tags, *extra_tags, *(news.get('tags') or [])})
+
+    # 封面图（与资讯体一致）
+    if news.get('original_image_url') and not news.get('image_url'):
+        news['image_url'] = news['original_image_url']
+
+    # 文章内嵌图片下载
+    article_images = news.get('_article_images', [])
+    if article_images:
+        _download_article_images(news, article_images)
+
+    # 生成短配文
+    try:
+        news['video_caption'] = generate_video_caption(
+            news['title_zh'], news.get('content', ''))
+    except Exception:
+        news['video_caption'] = ""
+
+    return news
+
+
+def _fallback_to_news(news: dict, keyword: str, extra_tags: list) -> dict:
+    """故事体失败时的回退：用标准资讯体路径处理。"""
+    news['format_suitability'] = ['news']
+    news['is_long_form'] = False
+    return process_news_item(news, keyword=keyword, extra_tags=extra_tags)
+
+
 def _download_article_images(news: dict, image_urls: list[str]) -> None:
     """将 Yahoo 文章内嵌图片下载到本地缓存，写入 news['gallery_images']。
     保护逻辑：gallery_images 已有内容则跳过（不依赖 meta.json，以 DB 字段为准）。
@@ -1151,8 +1209,9 @@ def process_news_item(news: dict, no_translate: bool = False,
         # 日文原文同步写入 content_ja（供后续评分和体裁判断使用）
         if details.get("body_text") and not news.get('content_ja'):
             news['content_ja'] = details['body_text']
-        # Twitter 嵌入推文记录
-        news['_twitter_embeds'] = details.get("twitter_embeds", [])
+        # Twitter 嵌入推文 + 文章内嵌图片（供 story 路径使用）
+        news['_twitter_embeds']  = details.get("twitter_embeds", [])
+        news['_article_images']  = details.get("article_images", [])
 
         # 长文文章：将文章内嵌图片下载到本地缓存（gallery_images 已有内容则跳过）
         article_images = details.get("article_images", [])
@@ -1200,51 +1259,30 @@ def process_news_item(news: dict, no_translate: bool = False,
         print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
         print("    生成内容...")
 
-        # story 体裁：用独立的严肃新闻生成路径
+        # ── story 体裁：完全独立路径，生成完直接返回 ──────────────────────
         if selected_format == 'story':
-            story = generate_story_article(
-                news['title_ja'], news['title_zh'],
-                body_ja=news.get('content_ja', '') or news.get('body_text', ''),
-                twitter_embeds=news.get('_twitter_embeds', []),
-            )
-            if story:
-                news['title']    = story.get('title', news['title_zh'])
-                news['title_zh'] = story.get('title', news['title_zh'])
-                news['content']  = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
-                news['comment']  = story.get('outro', '')
-                news['summary']  = story.get('intro', '')[:100]
-                news['category'] = '新闻'
-                print(f"    故事体生成完成: {len(news['content'])} 字")
-                # 评分（直接调用模块内函数，无需 import）
-                quality = evaluate_quality(news['title_zh'], news['content'], news['comment'])
-                news['_quality'] = quality
-                news['title_score']   = quality.get('title_score', 0)
-                news['content_score'] = quality.get('content_score', 0)
-                print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
-                news['_story_done'] = True
-            else:
-                print("    ⚠️ 故事体生成失败，回退到资讯体")
-                selected_format = 'news'
+            return _process_story_path(news, keyword, extra_tags or [])
 
-        if not news.get('_story_done'):
-            generated = generate_content_and_comment(
-                news['title_ja'], news['title_zh'],
-                ja_summary=news.get('ja_summary', ''),
-                keyword=keyword,
-                body_text=news.get('body_text', ''),
-                hint=news.get('_regen_hint', ''),
-                content_format=selected_format,
-            )
-            if generated is None:
-                print("    ⚠️ LLM 调用失败，跳过此条新闻")
-                news['_skip'] = True
-                return news
-            seo_title, summary, content, comment, _, topic_tags = generated
-            news['title_zh'] = seo_title
-            news['title'] = seo_title  # title 字段同步，供 Web UI 和 DB 查询使用
-            news['summary']  = summary
-            news['content']  = content
-            news['comment']  = comment
+        # ── 资讯体 / 盘点体 / 对比体：原有路径 ──────────────────────────────
+        generated = generate_content_and_comment(
+            news['title_ja'], news['title_zh'],
+            ja_summary=news.get('ja_summary', ''),
+            keyword=keyword,
+            body_text=news.get('body_text', ''),
+            hint=news.get('_regen_hint', ''),
+            content_format=selected_format,
+        )
+        if generated is None:
+            print("    ⚠️ LLM 调用失败，跳过此条新闻")
+            news['_skip'] = True
+            return news
+        seo_title, summary, content, comment, _, topic_tags = generated
+        news['title_zh'] = seo_title
+        news['title'] = seo_title
+        news['summary']  = summary
+        news['content']  = content
+        news['comment']  = comment
+
         # 质量评分 + 低分诊断 + 最多 2 次重试
         from scripts.scoring import diagnose_low_score, Action, get_failed_dims
         from scripts.agent_tools import regenerate_with_hint
@@ -1254,7 +1292,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         retry_threshold = get_config("retry_threshold", default=2.0)
         final_action = Action.PUBLISH
 
-        for attempt in range(3):  # 原始 + 最多 2 次重试
+        for attempt in range(3):
             quality = evaluate_quality(seo_title, content, comment,
                                        news.get('title_ja', ''), news.get('body_text', ''))
             action = diagnose_low_score(
