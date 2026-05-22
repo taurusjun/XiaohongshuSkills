@@ -63,3 +63,4 @@ data/news_dev.db-shm
 data/news_dev.db-wal
 data/news_dev.db
 data/logs/
+config/wechat_conf.json
