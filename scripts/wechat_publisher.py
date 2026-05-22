@@ -105,6 +105,53 @@ _STYLE = {
 }
 
 
+def _render_html_preview(content: str, title: str) -> str:
+    """用本地图片路径渲染 HTML 预览页面（不上传微信，用于本地浏览器预览）。"""
+    # 把 【图片N：/path/...】 中的路径映射为 file:// URL
+    img_url_map = {}
+    for m in _IMG_RE.finditer(content):
+        inner = m.group(1)
+        if inner.startswith("/"):
+            for p in inner.split("|"):
+                if p.startswith("/") and p not in img_url_map:
+                    img_url_map[p] = f"file://{p}"
+
+    body = _render_html(content, img_url_map)
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+  body{{background:#f5f5f5;margin:0;padding:20px;font-family:-apple-system,sans-serif}}
+  .preview-wrap{{max-width:680px;margin:0 auto;background:#fff;border-radius:12px;
+    padding:32px;box-shadow:0 2px 20px rgba(0,0,0,.08)}}
+  .preview-title{{font-size:22px;font-weight:700;color:#111;margin:0 0 24px;
+    line-height:1.4;border-bottom:2px solid #ff2442;padding-bottom:14px}}
+  .preview-meta{{font-size:12px;color:#999;margin-bottom:20px}}
+  .preview-actions{{position:fixed;bottom:24px;right:24px;display:flex;gap:10px}}
+  .btn{{padding:10px 22px;border-radius:24px;border:none;cursor:pointer;font-size:14px;font-weight:600}}
+  .btn-publish{{background:#ff2442;color:#fff}}
+  .btn-cancel{{background:#eee;color:#666}}
+  img{{max-width:100%!important}}
+</style>
+</head>
+<body>
+<div class="preview-wrap">
+  <h1 class="preview-title">{title}</h1>
+  <div class="preview-meta">📱 微信公众号预览 · 图片来自本地缓存</div>
+  {body}
+</div>
+<div class="preview-actions">
+  <button class="btn btn-cancel" onclick="window.close()">✕ 关闭</button>
+  <p style="font-size:12px;color:#999;margin:auto 8px">确认无误后运行<br><code>--key</code> 正式发布</p>
+</div>
+</body>
+</html>"""
+
+
 def _render_html(content: str, img_url_map: dict) -> str:
     """将文章内容渲染为微信 HTML。
     img_url_map: {"/local/path.jpg": "https://mmbiz.qpic.cn/..."}
@@ -289,6 +336,7 @@ def delete_all_drafts():
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="发布文章到微信公众号草稿箱")
     p.add_argument("--key", help="文章 key（DB 中的 key 字段）")
+    p.add_argument("--preview", action="store_true", help="本地 HTML 预览（不发布，用浏览器打开）")
     p.add_argument("--publish", action="store_true", help="直接发布（默认只创建草稿）")
     p.add_argument("--delete-drafts", action="store_true", help="清空草稿箱")
     args = p.parse_args()
@@ -297,6 +345,22 @@ if __name__ == "__main__":
 
     if args.delete_drafts:
         delete_all_drafts()
+    elif args.key and args.preview:
+        # 预览模式：渲染 HTML，用浏览器打开
+        import tempfile, webbrowser
+        os.environ.setdefault("SQLITE_PATH", "data/news_dev.db")
+        from scripts.sqlite_db import _connect
+        with _connect() as db:
+            r = db.execute("SELECT title, content FROM news WHERE key=?", (args.key,)).fetchone()
+        if not r:
+            print(f"文章 {args.key} 不存在"); sys.exit(1)
+        html = _render_html_preview(r["content"], r["title"])
+        tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8")
+        tmp.write(html); tmp.close()
+        print(f"预览文件: {tmp.name}")
+        webbrowser.open(f"file://{tmp.name}")
+        print("✅ 已在浏览器打开预览，确认后运行：")
+        print(f"   python scripts/wechat_publisher.py --key {args.key}")
     elif args.key:
         publish_article(args.key, publish=args.publish)
     else:
