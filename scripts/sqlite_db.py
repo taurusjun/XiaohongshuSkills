@@ -193,7 +193,9 @@ def init_db():
                                ("human_value", "REAL"),
                                ("override_note", "TEXT DEFAULT ''"),
                                ("llm_value", "REAL"),
-                               ("dim_version", "TEXT DEFAULT ''")]:
+                               ("dim_version", "TEXT DEFAULT ''"),
+                               ("action", "TEXT DEFAULT ''"),
+                               ("category", "TEXT DEFAULT ''")]:
             try: db.execute(f"ALTER TABLE score_dims ADD COLUMN {col} {col_type}")
             except: pass
 

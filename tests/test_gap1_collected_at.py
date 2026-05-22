@@ -69,7 +69,10 @@ def test_tc_fl2_collected_at_appended(fresh_db):
 
 def test_tc_fl3_72h_triggers_update(fresh_db):
     """TC-FL-3: xhs_collected_at 含72h的文章触发_update_topic_performance"""
-    # Insert article with 72h data and tags
+    import scripts.sqlite_db as db_module
+    # Ensure agent_runner uses the same test DB
+    original_path = db_module.DB_PATH
+
     with fresh_db._connect() as conn:
         conn.execute(
             """INSERT INTO news (key, title, link, publish_xhs, pub_time, xhs_pub_time,
@@ -80,7 +83,7 @@ def test_tc_fl3_72h_triggers_update(fresh_db):
                '2026-05-22 14:00 (72h)', '日本偶像', NULL, 'active', '娱乐')"""
         )
 
-    # Simulate the mature articles update
+    # Run the mature articles update using the test DB path
     from scripts.agent_runner import _update_topic_performance_for_mature_articles
     _update_topic_performance_for_mature_articles()
 
@@ -97,12 +100,7 @@ def test_tc_fl3_72h_triggers_update(fresh_db):
 
 def test_threshold_lowered():
     """TC-FL-3b: 相似度0.70以上匹配成功（旧阈值0.85下失败）"""
-    a = "桥本环奈一夜爆红的秘密"
-    b = "桥本环奈意外走红的背后"
-    # These are ~0.75 similar, should match with 0.70 threshold
-    assert _titles_match(_normalize_str(a), _normalize_str(b))
-
-
-def _normalize_str(s):
-    import re
-    return re.sub(r"[，。！？、\s「」『』【】（）\(\)\,\!\.\?\-—　\"\"]", "", str(s).lower())
+    from scripts.metrics_collector import _normalize
+    a = _normalize("桥本环奈一夜爆红的秘密")
+    b = _normalize("桥本环奈意外走红的背后")
+    assert _titles_match(a, b), f"Expected match: '{a}' vs '{b}'"
