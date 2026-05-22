@@ -110,8 +110,9 @@ def test_tc_p4_is_fresh_threshold():
 
 # ── TC-PL1/PL2: 规划层排序 ───────────────────────────────────
 
-def test_tc_pl1_fresh_topics_get_earliest_slot():
+def test_tc_pl1_fresh_topics_get_earliest_slot(fresh_db):
     """TC-PL1: is_fresh=True 的话题分配最早时段"""
+    fresh_db.set_config("default_post_times", ["09:30", "12:00", "18:00"])
     from scripts.agent_planner import TopicQuota, recommend_post_times
     topics = [
         TopicQuota(topic="A", quota=1, source="baseline", is_fresh=False),
@@ -120,7 +121,6 @@ def test_tc_pl1_fresh_topics_get_earliest_slot():
     ]
     times = recommend_post_times(topics, "20260522")
     idx_B = next(i for i, t in enumerate(topics) if t.topic == "B")
-    # B (is_fresh=True) should get the earliest time slot
     all_times = sorted(times)
     assert times[idx_B] == all_times[0], f"Fresh topic B should get earliest slot, got {times[idx_B]}"
 
