@@ -953,9 +953,10 @@ def fetch_article_details(url: str) -> dict:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
 
-            # 提取文章内嵌图片（过滤小图/图标/广告）
-            skip_kw = ["logo", "icon", "banner", "ad/", "sprite", "dummy",
-                       "avatar", "profile", "favicon", "tracking", "pixel"]
+            # 提取文章内嵌图片（过滤 icon/小图/广告）
+            skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
+                       "avatar", "profile", "favicon", "tracking", "pixel",
+                       "h30.png", "h20.png", "h16.png"]  # Yahoo icon 命名规律
             for img in article.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if not src or not src.startswith("http"):
@@ -963,11 +964,11 @@ def fetch_article_details(url: str) -> dict:
                 src_lower = src.lower()
                 if any(k in src_lower for k in skip_kw):
                     continue
-                # 过滤过小的图片（有 width/height 属性时）
+                # 有尺寸属性时过滤过小的图
                 try:
                     w = int(img.get("width", 0))
                     h = int(img.get("height", 0))
-                    if (w and w < 100) or (h and h < 100):
+                    if (w and w < 200) or (h and h < 150):
                         continue
                 except (ValueError, TypeError):
                     pass
@@ -1003,8 +1004,14 @@ def _download_article_images(news: dict, image_urls: list[str]) -> None:
     local_paths = []
     for i, url in enumerate(image_urls[:10]):
         try:
-            resp = _direct_session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            resp = _direct_session.get(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://news.yahoo.co.jp/",
+            }, timeout=15)
             if resp.status_code != 200:
+                continue
+            # 过滤过小的文件（< 20KB 通常是 icon/缩略图）
+            if len(resp.content) < 20_000:
                 continue
             ext = url.rsplit('.', 1)[-1].split('?')[0]
             if ext not in ('jpg', 'jpeg', 'png', 'webp'):
@@ -1012,7 +1019,7 @@ def _download_article_images(news: dict, image_urls: list[str]) -> None:
             fpath = cache_dir / f"article_{i:02d}.{ext}"
             fpath.write_bytes(resp.content)
             local_paths.append(str(fpath))
-            print(f"    📷 文章图片[{i}]: {fpath.name}")
+            print(f"    📷 文章图片[{i}]: {fpath.name} ({len(resp.content)//1024}KB)")
         except Exception as e:
             print(f"    ⚠️ 文章图片下载失败: {e}")
 
