@@ -59,11 +59,21 @@ def plan_today(date: str = "") -> DailyPlan:
     baseline_ratio = get_config("baseline_ratio", default=0.1)
 
     historic_topics = get_top_topics(n=20)
+    # 构建 topic → trend 数据的快速查找表（用于 focus topics 读取 is_fresh）
+    topic_trend_map = {t["topic"]: t for t in historic_topics}
+
     plan = DailyPlan(date=date, mode=growth_stage)
 
     if growth_stage == "cold_start":
         quota = cold_start_quota
-        fresh_count = sum(1 for t in historic_topics if _topic_is_fresh(t))
+
+        # is_fresh 计算：用今日轮转的 focus_topics 里有 trend 数据的话题
+        day_offset_tmp = int(date) % len(focus_topics) if focus_topics else 0
+        rotated_tmp = focus_topics[day_offset_tmp:] + focus_topics[:day_offset_tmp]
+        fresh_count = sum(
+            1 for ft in rotated_tmp
+            if _topic_is_fresh(topic_trend_map.get(ft, {}))
+        )
         if fresh_count >= 2:
             quota = min(quota + 1, cold_start_max_quota)
         plan.quota_total = quota
@@ -76,12 +86,20 @@ def plan_today(date: str = "") -> DailyPlan:
         day_offset = int(date) % len(focus_topics) if focus_topics else 0
         rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
         for ft in rotated[:focus_quota]:
-            plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf", target_format=target_format))
+            # 从 topic_performance 读取 is_fresh，而不是默认 False
+            trend_data = topic_trend_map.get(ft, {})
+            ft_is_fresh = _topic_is_fresh(trend_data) if trend_data else False
+            plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf",
+                                          is_fresh=ft_is_fresh, target_format=target_format))
 
-        # Explore: is_fresh=True 优先，再按 engagement_score 降序
+        # Explore: 只考虑最近30天有趋势扫描记录的非focus话题，is_fresh=True 优先
+        from datetime import datetime as _dt, timedelta as _td
+        cutoff = (_dt.now() - _td(days=30)).strftime("%Y-%m-%d")
         explore_candidates = sorted(
-            [t for t in historic_topics if t["topic"] not in focus_topics
-             and t.get("discard_count", 0) < 3],
+            [t for t in historic_topics
+             if t["topic"] not in focus_topics
+             and t.get("discard_count", 0) < 3
+             and t.get("trend_updated_at", "") >= cutoff],  # 必须有近期趋势数据
             key=lambda t: (0 if _topic_is_fresh(t) else 1, -t.get("engagement_score", 0))
         )
         for ec in explore_candidates[:explore_quota]:
