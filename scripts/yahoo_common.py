@@ -575,11 +575,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 【话题标签】
 （5-8个标签，#开头。优先从以下热门标签中选择合适的：
-日本资讯类：#日本新闻 #日本资讯 #看新闻学日语
-综合类：#日本文化 #日本生活
-时尚穿搭类（内容涉及时尚/穿搭时用）：#日系穿搭 #日本穿搭 #穿搭分享 #今日穿搭 #日系风格
-美妆护肤类（内容涉及化妆/护肤时用）：#日系妆容 #日本化妆 #日本美妆 #日本护肤 #护肤分享
-再根据内容补充行业相关标签）"""
+偶像/艺人类（首选）：#乃木坂46 #AKB48 #日向坂46 #欅坂46 #日本偶像 #日本艺人 #日本写真集 #日本性感女星
+娱乐资讯类：#日本娱乐 #日本综艺 #日本明星 #日本演员
+写真/グラビア类：#日本写真 #グラビア #日本模特
+仅当内容明确涉及时，才可使用：#日本新闻 #日本文化 #日本生活
+禁止使用：#看新闻学日语 #日语学习（这是偶像内容账号，非语言学习账号）
+再根据文章中的具体人名/团体名补充精准标签）"""
 
     result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000))
     if not result:
@@ -1517,11 +1518,17 @@ def process_news_item(news: dict, no_translate: bool = False,
             if qa_markers < 3 and 'story' not in news['format_suitability']:
                 news['format_suitability'] = ['story'] + news['format_suitability']
 
-        # 从 format_suitability 中取第一个适用体裁
-        selected_format = news['format_suitability'][0] if news['format_suitability'] else 'news'
+        # 从 format_suitability 中取体裁：
+        # 优先使用规划层指定的 target_format（若 LLM 认为适用），否则用 LLM 的第一推荐
+        target_fmt = news.get('_target_format', '')
+        suitability = news['format_suitability'] or ['news']
+        if target_fmt and target_fmt in suitability:
+            selected_format = target_fmt
+        else:
+            selected_format = suitability[0]
         news['_selected_format'] = selected_format
 
-        print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
+        print(f"    体裁: {selected_format} (适用: {suitability}, 目标: {target_fmt or '无'})")
         print("    生成内容...")
 
         # pub_time 在 story/非story 路径前统一处理，避免 story 提前 return 导致遗漏

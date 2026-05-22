@@ -15,6 +15,7 @@ class TopicQuota:
     quota: int
     source: str  # "high_perf" | "explore" | "baseline"
     is_fresh: bool = False
+    target_format: str = "news"  # 今日目标体裁，来自 content_format_rotation
 
 
 @dataclass
@@ -45,6 +46,10 @@ def plan_today(date: str = "") -> DailyPlan:
 
     growth_stage = get_config("growth_stage", default="cold_start")
     focus_topics = get_config("focus_topics", default=[]) or ["乃木坂", "AKB", "日向坂"]
+    format_rotation = get_config("content_format_rotation", default=["news", "story", "news", "story", "ranking", "news", "news"])
+    # 今日目标体裁：按天轮转 content_format_rotation
+    day_idx = int(date) % len(format_rotation) if format_rotation else 0
+    target_format = format_rotation[day_idx]
     cold_start_quota = get_config("cold_start_quota", default=3)
     cold_start_max_quota = get_config("cold_start_max_quota", default=4)
     daily_quota = get_config("daily_quota", default=2)
@@ -71,7 +76,7 @@ def plan_today(date: str = "") -> DailyPlan:
         day_offset = int(date) % len(focus_topics) if focus_topics else 0
         rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
         for ft in rotated[:focus_quota]:
-            plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf"))
+            plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf", target_format=target_format))
 
         # Explore: pick from trend data
         explore_candidates = [t for t in historic_topics if t["topic"] not in focus_topics
@@ -79,13 +84,13 @@ def plan_today(date: str = "") -> DailyPlan:
         for ec in explore_candidates[:explore_quota]:
             plan.topics.append(TopicQuota(
                 topic=ec["topic"], quota=1, source="explore",
-                is_fresh=_topic_is_fresh(ec)))
+                is_fresh=_topic_is_fresh(ec), target_format=target_format))
 
         # Fallback if not enough
         fallback_topics = focus_topics or ["写真集"]
         while len(plan.topics) < quota:
             fallback = fallback_topics[len(plan.topics) % len(fallback_topics)]
-            plan.topics.append(TopicQuota(topic=fallback, quota=1, source="baseline"))
+            plan.topics.append(TopicQuota(topic=fallback, quota=1, source="baseline", target_format=target_format))
 
     else:
         # Standard planning: 70% high_perf + 20% explore + 10% baseline
