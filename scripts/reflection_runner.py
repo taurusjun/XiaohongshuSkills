@@ -105,7 +105,19 @@ def run(dry_run: bool = False, min_samples: int = 30) -> dict:
     for dim, new_w in changed.items():
         logger.info(f"  {dim}: {current_weights.get(dim, 1.0):.2f} → {new_w:.3f} (r={correlations.get(dim, 0):.3f})")
 
-    # 4. 发送飞书（非dry-run）
+    # 4. LLM 误判分析（独立于权重建议，使用人工校正数据）
+    from scripts.dimension_analysis import analyze_llm_calibration, format_calibration_report
+    cal = analyze_llm_calibration(min_corrections=3)
+    report["llm_calibration"] = cal
+    if cal["sample_count"] > 0:
+        cal_report = format_calibration_report(cal)
+        logger.info(f"LLM 误判分析：{cal['sample_count']} 条校正记录，{len(cal['dims'])} 个维度有统计意义")
+        for d in cal["dims"][:3]:
+            logger.info(f"  {d['dimension']}: 均值偏差={d['mean_error']:+.3f} {d['suggestion'][:40]}")
+    else:
+        logger.info("LLM 误判分析：暂无人工校正记录")
+
+    # 5. 发送飞书（非dry-run）
     if not dry_run:
         _send_feishu_report(report, weight_suggestions=suggestions)
 
@@ -137,10 +149,20 @@ def _send_feishu_report(report: dict, weight_suggestions: dict) -> None:
                 1 for d, w in weight_suggestions.items()
                 if abs(w - current_weights.get(d, 1.0)) > 0.001
             )
+            # LLM 误判摘要
+            cal = report.get("llm_calibration", {})
+            cal_lines = ""
+            if cal.get("dims"):
+                worst = cal["dims"][:2]
+                cal_lines = "\n\nLLM 误判（Top 2）：\n" + "\n".join(
+                    f"  • {d['dimension']}：均值偏差{d['mean_error']:+.2f}  {d['suggestion'][:35]}"
+                    for d in worst
+                )
             msg = (
                 f"📊 周报反思 {report['generated_at'][:10]}\n"
-                f"样本：{sample_count} 篇  调整：{changed_count} 个维度\n\n"
-                f"Top 相关维度：\n{corr_lines}\n\n"
+                f"样本：{sample_count} 篇  权重调整：{changed_count} 个维度\n\n"
+                f"Top 相关维度：\n{corr_lines}"
+                f"{cal_lines}\n\n"
                 f"运营者可在 Web UI → 配置 中手动采纳权重建议"
             )
 
