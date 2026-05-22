@@ -112,6 +112,10 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             data_g = _extract_feeds_data(feeds_g)
 
             # ── Pass 2: 最新+一天内，活跃度检测（方案B）─────────────
+            # 两次搜索之间随机等待，避免触发频率限制
+            import time as _time, random as _random
+            _time.sleep(_random.uniform(3.0, 6.0))
+
             is_fresh = False
             fresh_count_24h = 0
             try:
@@ -155,6 +159,11 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             })
         except Exception as e:
             logger.warning(f"扫描 '{keyword}' 失败: {e}")
+
+        # 话题间随机延时，避免连续请求触发频率限制
+        if keyword != keywords[-1]:
+            import time as _time, random as _random
+            _time.sleep(_random.uniform(5.0, 10.0))
 
     return results
 

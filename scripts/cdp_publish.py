@@ -1662,6 +1662,19 @@ class XiaohongshuPublisher:
         self._navigate(search_url)
         self._sleep(2, minimum_seconds=1.0)
 
+        # 检测「安全验证/频率限制」弹窗
+        rate_limited = self._evaluate("""
+(function(){
+    var texts = document.body?.innerText || '';
+    return texts.includes('请勿频繁操作') || texts.includes('安全验证') || texts.includes('稍后重试');
+})()
+""")
+        if rate_limited:
+            raise CDPError(
+                f"search_feeds: 触发小红书频率限制（安全验证弹窗），"
+                f"keyword='{keyword}'。请等待 5-10 分钟后重试。"
+            )
+
         # Select sort order and optional time filter via filter panel
         need_panel = (sort == "newest") or bool(time_filter)
         if need_panel:
