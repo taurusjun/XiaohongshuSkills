@@ -910,7 +910,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 </head>
 <body>
 <div class="topbar">
-  <a href="/">← 返回</a>
+  <a href="javascript:history.back()">← 返回</a>
   {% if news.fetch_by %}<span class="badge badge-gray">{{news.fetch_by}}</span>{% endif %}
   <span class="title">{{news.title}}</span>
   <button class="btn btn-gray" id="regenBtn" onclick="regenerateContent()">🔄 重新生成</button>
