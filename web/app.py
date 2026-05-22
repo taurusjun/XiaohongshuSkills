@@ -1020,7 +1020,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
   <div class="card">
     <h3 style="margin-bottom:8px">📰 原文</h3>
     {% if news.title_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文标题</p><p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">{{news.title_ja}}</p>{% endif %}
-    {% if news.content_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文摘要</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.6">{{news.content_ja[:2000]}}</p>{% endif %}
+    {% if news.content_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文摘要</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.6">{{news.content_ja}}</p>{% endif %}
   </div>
   {% endif %}
 
