@@ -49,5 +49,15 @@
 
   "ai_phrase_threshold": 15,
 
-  "competitor_accounts": []
+  "competitor_accounts": [],
+
+  "_comment_yahoo_keyword_map": "focus_topics 对应的 Yahoo Japan 搜索词（日语），未配置的 topic 直接用原词",
+  "yahoo_keyword_map": {
+    "乃木坂46":  "乃木坂",
+    "AKB48":     "AKB",
+    "日向坂46":  "日向坂",
+    "日本写真集": "グラビア",
+    "日本偶像":  "アイドル",
+    "濑户环奈":  "瀬戸環奈"
+  }
 }

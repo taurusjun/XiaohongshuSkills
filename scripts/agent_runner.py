@@ -110,13 +110,18 @@ def run(dry_run: bool = False, live_preview: bool = False):
             max_workers = get_config("fetch_parallel", default=3)
 
             # Step 1: 串行抓取（CDP 不支持并发），跨话题合并去重
+            # yahoo_keyword_map: focus_topics（中文）→ Yahoo Japan 搜索词（日语）
+            yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             tasks = []
             seen_keys = set()  # 跨话题去重，同 yahoo_news_auto_sqlite.py 的逻辑
             for topic in topics[:plan.get("quota_total", 3)]:
-                extra_tags = KEYWORD_TAG_MAP.get(topic, [])
+                extra_tags = KEYWORD_TAG_MAP.get(topic, [topic])
+                yahoo_kw = yahoo_kw_map.get(topic, topic)  # 转换为日语搜索词
+                if yahoo_kw != topic:
+                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}'")
                 try:
                     articles = fetch_news_via_cdp(
-                        topic, max_results=max_results,
+                        yahoo_kw, max_results=max_results,
                         china_filter=False, existing_keys=existing_keys,
                     )
                     for art in articles:
