@@ -1627,6 +1627,11 @@ class XiaohongshuPublisher:
         except FeedExplorerError as e:
             raise CDPError(str(e)) from e
 
+        if not feeds:
+            raise CDPError(
+                f"search_feeds: keyword='{keyword}' 返回0条结果。"
+                "可能原因：未登录小红书、关键词无内容、或页面加载超时。"
+            )
         print(
             f"[cdp_publish] Search completed. keyword={keyword}, "
             f"recommended_keywords={len(recommended_keywords)}, feeds={len(feeds)}"
@@ -3971,11 +3976,18 @@ class XiaohongshuPublisher:
             raise CDPError("--page-num must be >= 1.")
         if page_size < 1:
             raise CDPError("--page-size must be >= 1.")
-        return self._capture_content_data_from_page_request(
+        result = self._capture_content_data_from_page_request(
             page_num=page_num,
             page_size=page_size,
             note_type=note_type,
         )
+        rows = result.get("rows", [])
+        if not rows:
+            raise CDPError(
+                "get_content_data: 返回0行数据。"
+                "可能原因：未登录创作者后台、账号无已发布内容、或 API 请求超时。"
+            )
+        return result
 
     # ------------------------------------------------------------------
     # Publishing actions
