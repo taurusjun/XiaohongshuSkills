@@ -1168,8 +1168,8 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     news['content_score'] = quality.get('content_score', 0)
     print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
 
-    # 分类 + 标签（story 体裁：用日文原文做关键词匹配，中文 content 无日文关键词）
-    classify_text = news.get('content_ja', '') or news.get('title_ja', '')
+    # 分类 + 标签（story 体裁：用日文原文前500字做关键词匹配，避免长文噪音误匹配）
+    classify_text = (news.get('content_ja', '') or '')[:500]
     category, tags = auto_classify(news['title_ja'], classify_text, keyword=keyword)
     news['category'] = category or '新闻'
     news['tags'] = list({*tags, *extra_tags, *(news.get('tags') or [])})
