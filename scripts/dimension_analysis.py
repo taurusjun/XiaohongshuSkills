@@ -12,26 +12,69 @@ from scipy.stats import pearsonr
 
 
 def load_analysis_data(min_window: str = "72h") -> pd.DataFrame:
-    """JOIN news + score_dims，过滤有实发数据且有评分的文章，PIVOT 为宽表。
+    """JOIN news + score_dims，使用 metrics_history 中对应窗口的快照值，PIVOT 为宽表。
 
-    权重调整使用 LLM 原始分（s.value），因为权重在运行时作用于 LLM 的打分，
-    必须用同一套数据校准才有意义。
-    min_window: 数据窗口下限，只纳入已达该成熟度的文章（"72h" 表示至少收集过72h数据）。
+    关键设计：使用 metrics_history 中 collected_at LIKE '%72h%' 的快照，
+    而非 news.xhs_saves（最新累计值）。原因：
+    - news.xhs_saves 是「发布至今的累计总值」，受文章寿命影响
+    - metrics_history 72h 快照是「发布后72小时内容爆发力」，跨文章可比较
+    权重调整使用 LLM 原始分（s.value），因为权重在运行时作用于 LLM 的打分。
+    min_window: 快照窗口标签（"72h"/"24h"/"4h"），留空时回退到 news.xhs_* 列。
     """
     from scripts.sqlite_db import _connect
     with _connect() as db:
-        rows = db.execute("""
-            SELECT n.key, n.xhs_views, n.xhs_likes, n.xhs_saves, n.xhs_comments,
-                   n.xhs_shares, n.xhs_fans_gained, n.xhs_impression, n.xhs_click_rate,
-                   n.xhs_watch_time, n.xhs_danmaku,
-                   s.dimension,
-                   s.value as effective_value
-            FROM news n
-            JOIN score_dims s ON n.key = s.news_key
-            WHERE n.xhs_views > 0
-              AND n.status = 'active'
-              AND (? = '' OR n.xhs_collected_at LIKE ?)
-        """, (min_window, f"%{min_window}%")).fetchall()
+        if min_window:
+            # 优先从 metrics_history 取对应窗口的快照（标准化窗口，可跨文章比较）
+            rows = db.execute("""
+                SELECT n.key,
+                       mh.views    AS xhs_views,
+                       mh.likes    AS xhs_likes,
+                       mh.saves    AS xhs_saves,
+                       mh.comments AS xhs_comments,
+                       mh.shares   AS xhs_shares,
+                       mh.fans_gained AS xhs_fans_gained,
+                       mh.impression  AS xhs_impression,
+                       mh.click_rate  AS xhs_click_rate,
+                       mh.watch_time  AS xhs_watch_time,
+                       mh.danmaku     AS xhs_danmaku,
+                       s.dimension,
+                       s.value AS effective_value
+                FROM news n
+                JOIN score_dims s ON n.key = s.news_key
+                JOIN (
+                    SELECT news_key,
+                           MAX(collected_at) AS snap_at,
+                           views, likes, saves, comments, shares,
+                           fans_gained, impression, click_rate, watch_time, danmaku
+                    FROM metrics_history
+                    WHERE collected_at LIKE ?
+                    GROUP BY news_key
+                ) mh ON n.key = mh.news_key
+                WHERE n.status = 'active'
+            """, (f"%({min_window})%",)).fetchall()
+
+            if not rows:
+                # metrics_history 无此窗口数据（历史文章未迁移）→ 回退到 news.xhs_*
+                rows = db.execute("""
+                    SELECT n.key, n.xhs_views, n.xhs_likes, n.xhs_saves, n.xhs_comments,
+                           n.xhs_shares, n.xhs_fans_gained, n.xhs_impression, n.xhs_click_rate,
+                           n.xhs_watch_time, n.xhs_danmaku,
+                           s.dimension, s.value AS effective_value
+                    FROM news n
+                    JOIN score_dims s ON n.key = s.news_key
+                    WHERE n.xhs_views > 0 AND n.status = 'active'
+                      AND n.xhs_collected_at LIKE ?
+                """, (f"%{min_window}%",)).fetchall()
+        else:
+            rows = db.execute("""
+                SELECT n.key, n.xhs_views, n.xhs_likes, n.xhs_saves, n.xhs_comments,
+                       n.xhs_shares, n.xhs_fans_gained, n.xhs_impression, n.xhs_click_rate,
+                       n.xhs_watch_time, n.xhs_danmaku,
+                       s.dimension, s.value AS effective_value
+                FROM news n
+                JOIN score_dims s ON n.key = s.news_key
+                WHERE n.xhs_views > 0 AND n.status = 'active'
+            """).fetchall()
 
     if not rows:
         return pd.DataFrame()
