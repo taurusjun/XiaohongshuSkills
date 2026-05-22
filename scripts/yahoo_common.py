@@ -1081,7 +1081,6 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
     img_note = ""
     if twitter_embeds:
-        # 获取每条推文的作者和内容，让 LLM 能在占位符描述和图片说明中注明来源
         tweet_info_lines = []
         for i, url in enumerate(twitter_embeds, 1):
             tweet_id = re.search(r'/status/(\d+)', url)
@@ -1090,19 +1089,19 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
                 continue
             meta = _get_tweet_metadata(tweet_id.group(1))
             if meta:
-                author = meta.get('author', '')
                 screen = meta.get('screen_name', '')
                 text = meta.get('text', '')
-                tweet_info_lines.append(f"  推文{i}：@{screen}（{author}）— {text}")
+                tweet_info_lines.append(f"  推文{i}：@{screen} — {text}")
             else:
                 tweet_info_lines.append(f"  推文{i}：（无法获取内容）")
 
         tweet_list = "\n".join(tweet_info_lines)
         img_note = (
             f"\n\n原文共嵌入 {len(twitter_embeds)} 条推文，内容如下：\n{tweet_list}\n\n"
-            "翻译正文时，在每条推文对应的叙事位置插入图片占位符。"
-            "格式：【图片N：@screen_name（作者名）— 一句话说明这条推文为何出现在这里】\n"
-            "占位符使用全角括号【】，与上下文用换行隔开。"
+            "⚠️ 重要：翻译正文时，每条推文必须在其对应的叙事段落后立即插入图片占位符，"
+            "分散分布在全文各处，绝不能将所有占位符集中堆放在正文末尾。\n"
+            "格式：【图片N：@screen_name — 一句话说明】（N从1开始按出现顺序递增）\n"
+            "占位符单独成行，上下各留一个空行。"
         )
 
     prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
