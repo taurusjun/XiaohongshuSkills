@@ -1080,7 +1080,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     )
     if not story:
         print("    ⚠️ 故事体生成失败，回退到资讯体")
-        return generate_content_and_comment.__module__ and _fallback_to_news(news, keyword, extra_tags)
+        return _fallback_to_news(news, keyword, extra_tags)
 
     news['title']    = story.get('title', news['title_zh'])
     news['title_zh'] = story.get('title', news['title_zh'])
@@ -1098,7 +1098,6 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
 
     # 分类 + 标签
-    from scripts.yahoo_common import auto_classify as _ac  # 避免前向引用
     category, tags = auto_classify(news['title_ja'], news.get('content', ''), keyword=keyword)
     news['category'] = category or '新闻'
     news['tags'] = list({*tags, *extra_tags, *(news.get('tags') or [])})
