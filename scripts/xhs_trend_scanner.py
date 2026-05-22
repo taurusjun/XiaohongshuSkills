@@ -39,12 +39,20 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             if not feeds:
                 continue
 
-            titles = [f.get("title", "") for f in feeds[:10]]
-            likes = [f.get("likes", 0) or 0 for f in feeds]
-            saves = [f.get("saves", 0) or 0 for f in feeds]
-            comments = [f.get("comments", 0) or 0 for f in feeds]
-            types = [f.get("type", "image") for f in feeds]
-            pub_times = [f.get("pub_time", "") for f in feeds]
+            def _nc(f): return f.get("noteCard", {})
+            def _ii(f): return _nc(f).get("interactInfo", {})
+            def _pub_time(f):
+                for tag in _nc(f).get("cornerTagInfo", []):
+                    if tag.get("type") == "publish_time":
+                        return tag.get("text", "")
+                return ""
+
+            titles = [_nc(f).get("displayTitle", "") for f in feeds[:10]]
+            likes = [int(_ii(f).get("likedCount", 0) or 0) for f in feeds]
+            saves = [int(_ii(f).get("collectedCount", 0) or 0) for f in feeds]
+            comments = [int(_ii(f).get("commentCount", 0) or 0) for f in feeds]
+            types = [_nc(f).get("type", "normal") for f in feeds]
+            pub_times = [_pub_time(f) for f in feeds]
 
             avg_saves = sum(saves) / len(saves) if saves else 0
             avg_comments = sum(comments) / len(comments) if comments else 0
