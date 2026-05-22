@@ -12,7 +12,12 @@ from scipy.stats import pearsonr
 
 
 def load_analysis_data(min_window: str = "72h") -> pd.DataFrame:
-    """JOIN news + score_dims，过滤有实发数据且有评分的文章，PIVOT 为宽表"""
+    """JOIN news + score_dims，过滤有实发数据且有评分的文章，PIVOT 为宽表。
+
+    权重调整使用 LLM 原始分（s.value），因为权重在运行时作用于 LLM 的打分，
+    必须用同一套数据校准才有意义。
+    min_window: 数据窗口下限，只纳入已达该成熟度的文章（"72h" 表示至少收集过72h数据）。
+    """
     from scripts.sqlite_db import _connect
     with _connect() as db:
         rows = db.execute("""
@@ -20,11 +25,13 @@ def load_analysis_data(min_window: str = "72h") -> pd.DataFrame:
                    n.xhs_shares, n.xhs_fans_gained, n.xhs_impression, n.xhs_click_rate,
                    n.xhs_watch_time, n.xhs_danmaku,
                    s.dimension,
-                   CASE WHEN s.human_override=1 THEN s.human_value ELSE s.value END as effective_value
+                   s.value as effective_value
             FROM news n
             JOIN score_dims s ON n.key = s.news_key
-            WHERE n.xhs_views > 0 AND n.status = 'active'
-        """).fetchall()
+            WHERE n.xhs_views > 0
+              AND n.status = 'active'
+              AND (? = '' OR n.xhs_collected_at LIKE ?)
+        """, (min_window, f"%{min_window}%")).fetchall()
 
     if not rows:
         return pd.DataFrame()
