@@ -67,7 +67,10 @@ def plan_today(date: str = "") -> DailyPlan:
         focus_quota = max(1, int(quota * 0.8))
         explore_quota = quota - focus_quota
 
-        for ft in focus_topics[:focus_quota]:
+        # 按天轮转 focus_topics，确保所有话题都有机会出现
+        day_offset = int(date) % len(focus_topics) if focus_topics else 0
+        rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
+        for ft in rotated[:focus_quota]:
             plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf"))
 
         # Explore: pick from trend data
