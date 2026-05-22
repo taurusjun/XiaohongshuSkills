@@ -101,11 +101,30 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
         logger.warning(f"CDP 未就绪，跳过趋势扫描: {e}")
         return []
 
+    def _search_with_ratelimit_retry(kw: str, **kwargs) -> dict:
+        """调 search_feeds，遇到频率限制时发飞书告警，等待5分钟后重试一次。"""
+        from scripts.cdp_publish import XHSRateLimitError
+        try:
+            return publisher.search_feeds(keyword=kw, **kwargs)
+        except XHSRateLimitError as e:
+            logger.warning(f"  触发频率限制: {e}，等待 5 分钟后重试...")
+            try:
+                from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
+                if FEISHU_OPERATOR_OPEN_ID:
+                    send_text(FEISHU_OPERATOR_OPEN_ID,
+                              f"⚠️ XHS 趋势扫描频率限制\nkeyword='{kw}'\n等待5分钟后自动重试")
+            except Exception:
+                pass
+            import time as _t
+            _t.sleep(300)  # 等待 5 分钟
+            logger.info("  重试搜索...")
+            return publisher.search_feeds(keyword=kw, **kwargs)  # 重试一次，失败则上抛
+
     results = []
     for keyword in keywords:
         try:
             # ── Pass 1: 综合排序，质量基线 ─────────────────────────
-            feeds_general = publisher.search_feeds(keyword=keyword, sort="general")
+            feeds_general = _search_with_ratelimit_retry(keyword, sort="general")
             feeds_g = feeds_general.get("feeds", [])
             if not feeds_g:
                 raise ValueError(f"XHS 搜索「{keyword}」返回0条结果，可能未登录或关键词无效")
@@ -119,8 +138,8 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             is_fresh = False
             fresh_count_24h = 0
             try:
-                feeds_newest = publisher.search_feeds(
-                    keyword=keyword, sort="newest", time_filter="1day"
+                feeds_newest = _search_with_ratelimit_retry(
+                    keyword, sort="newest", time_filter="1day"
                 )
                 feeds_n = feeds_newest.get("feeds", [])
                 fresh_count_24h = len(feeds_n)
