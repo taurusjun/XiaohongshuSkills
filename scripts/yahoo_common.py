@@ -942,6 +942,7 @@ def fetch_article_details(url: str) -> dict:
 
         # 正文：提取 article 内所有段落，给 LLM 提供更多上下文
         body_text = ""
+        article_images = []
         article = soup.find("article") or soup.find(class_="article")
         if article:
             paras = article.find_all("p")
@@ -951,10 +952,71 @@ def fetch_article_details(url: str) -> dict:
                 if len(t) > 20:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
+
+            # 提取文章内嵌图片（过滤小图/图标/广告）
+            skip_kw = ["logo", "icon", "banner", "ad/", "sprite", "dummy",
+                       "avatar", "profile", "favicon", "tracking", "pixel"]
+            for img in article.find_all("img"):
+                src = img.get("src") or img.get("data-src") or ""
+                if not src or not src.startswith("http"):
+                    continue
+                src_lower = src.lower()
+                if any(k in src_lower for k in skip_kw):
+                    continue
+                # 过滤过小的图片（有 width/height 属性时）
+                try:
+                    w = int(img.get("width", 0))
+                    h = int(img.get("height", 0))
+                    if (w and w < 100) or (h and h < 100):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+                if src not in article_images:
+                    article_images.append(src)
+
         result["body_text"] = body_text[:2000]
+        result["article_images"] = article_images[:10]  # 最多10张
     except Exception as e:
         print(f"    ⚠️ 抓取文章详情失败: {e}")
     return result
+
+
+def _download_article_images(news: dict, image_urls: list[str]) -> None:
+    """将 Yahoo 文章内嵌图片下载到本地缓存，写入 news['gallery_images']。
+    保护逻辑：gallery_images 已有内容则跳过（不依赖 meta.json，以 DB 字段为准）。
+    gallery_fetch.py 的「重新下载」功能走自己的 meta.json 路径，互不干扰。
+    """
+    # 已有图片 → 不覆盖
+    existing = news.get('gallery_images')
+    if existing and (isinstance(existing, list) and len(existing) > 0):
+        return
+
+    key = news.get('key', '') or extract_key_from_url(news.get('link', ''))
+    if not key:
+        return
+
+    cache_dir = Path(os.path.expanduser(GALLERY_CACHE_DIR)) / key
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    local_paths = []
+    for i, url in enumerate(image_urls[:10]):
+        try:
+            resp = _direct_session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            if resp.status_code != 200:
+                continue
+            ext = url.rsplit('.', 1)[-1].split('?')[0]
+            if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+                ext = 'jpg'
+            fpath = cache_dir / f"article_{i:02d}.{ext}"
+            fpath.write_bytes(resp.content)
+            local_paths.append(str(fpath))
+            print(f"    📷 文章图片[{i}]: {fpath.name}")
+        except Exception as e:
+            print(f"    ⚠️ 文章图片下载失败: {e}")
+
+    if local_paths:
+        news['gallery_images'] = local_paths
+        print(f"    ✅ 文章图片缓存完成: {len(local_paths)} 张")
 
 
 def upload_cover_image(image_url: str) -> str:
@@ -990,6 +1052,11 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['ja_summary']         = details.get("summary", "")
         news['original_image_url'] = details.get("image_url", "")
         news['body_text']          = details.get("body_text", "")
+
+        # 长文文章：将文章内嵌图片下载到本地缓存，写 meta.json（gallery_fetch 会跳过已缓存的）
+        article_images = details.get("article_images", [])
+        if article_images and news.get('is_long_form'):
+            _download_article_images(news, article_images)
 
         og_title = details.get("original_title", "")
         if og_title and len(og_title) > 10:
