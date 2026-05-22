@@ -83,6 +83,23 @@ def run(dry_run: bool = False, live_preview: bool = False):
         logger.info(f"  计划: quota={plan.quota_total}, mode={plan.mode}, topics={len(plan.topics)}")
         set_state(f"runner_progress_{date_str}", {"phase": 2, "plan": asdict(plan)}, date=date_str)
 
+        # 告知运营者今日计划（非阻塞，失败不影响后续流程）
+        try:
+            from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
+            if FEISHU_OPERATOR_OPEN_ID:
+                topic_lines = "\n".join(
+                    f"  • {t['topic']} × {t['quota']} 篇  [{t['source']}{'🔥' if t.get('is_fresh') else ''}]"
+                    for t in plan.topics
+                )
+                send_text(FEISHU_OPERATOR_OPEN_ID,
+                    f"📋 {date_str} 今日运营计划\n"
+                    f"模式：{plan.mode}  配额：{plan.quota_total} 篇\n"
+                    f"{topic_lines}\n"
+                    f"发布时间：{' / '.join(plan.post_times)}"
+                )
+        except Exception as e:
+            logger.warning(f"  飞书计划通知失败（不影响执行）: {e}")
+
     plan_data = get_state(f"runner_progress_{date_str}", default={})
     plan = plan_data.get("plan", {})
     topics = [t["topic"] for t in plan.get("topics", [])]
