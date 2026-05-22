@@ -1388,13 +1388,15 @@ function _initBlockEditor(){
 }
 
 function _parseBlocks(text){
-  const blocks=[], re=/【(?:推文\d+|图片\d*)：[^】]*】|【IMG:[^】]+】/g;
+  // 匹配新格式【图片N：描述】和旧格式【推文N：描述】
+  const blocks=[], re=/【(?:图片|推文)\d+：[^】]*】/g;
   let last=0, imgIdx=0, m;
   while((m=re.exec(text))!==null){
     const before=text.slice(last,m.index).trim();
     if(before) blocks.push({type:'text',content:before});
-    blocks.push({type:'image',path:_tweetImgs[imgIdx]||'',cap:m[0]});
-    if(_tweetImgs[imgIdx]) imgIdx++;
+    // 图片来源：全部 gallery_images（文章图 + 推文图）
+    blocks.push({type:'image',path:_allImgs[imgIdx]||'',cap:m[0]});
+    if(_allImgs[imgIdx]) imgIdx++;
     last=m.index+m[0].length;
   }
   const tail=text.slice(last).trim();
@@ -1610,19 +1612,21 @@ def detail(key):
     news['format_label'] = _fmt_labels.get(news['primary_format'], news['primary_format'])
 
     # story 体裁：构建含行内图片的预览片段
+    # 支持新格式【图片N：描述】和旧格式【推文N：描述】
+    _IMG_RE = _re.compile(r'【(?:图片|推文)\d+：[^】]*】')
     story_parts = []
     if news['primary_format'] == 'story' and news.get('content'):
-        tweet_imgs = [p for p in news['gallery_images']
-                      if 'tweet_' in os.path.basename(p)]
+        # 所有 gallery_images 均可作为行内图片（文章图 + 推文图）
+        all_imgs = news['gallery_images']
         img_idx = 0
         last = 0
         content = news['content']
-        for m in _re.finditer(r'【推文\d+：[^】]*】', content):
+        for m in _IMG_RE.finditer(content):
             text = content[last:m.start()].strip()
             if text:
                 story_parts.append({'t': 'text', 'v': text})
-            img_path = tweet_imgs[img_idx] if img_idx < len(tweet_imgs) else None
-            story_parts.append({'t': 'tweet', 'v': img_path, 'cap': m.group(0)})
+            img_path = all_imgs[img_idx] if img_idx < len(all_imgs) else None
+            story_parts.append({'t': 'img', 'v': img_path, 'cap': m.group(0)})
             if img_path:
                 img_idx += 1
             last = m.end()
@@ -1630,8 +1634,8 @@ def detail(key):
         if tail:
             story_parts.append({'t': 'text', 'v': tail})
 
-    # story 体裁：推文图片路径列表（按当前 slot 顺序），供 JS 使用
-    story_tweet_imgs = [p['v'] for p in story_parts if p['t'] == 'tweet' and p.get('v')]
+    # 已使用的行内图片路径列表，供 JS 初始化块编辑器
+    story_tweet_imgs = [p['v'] for p in story_parts if p['t'] == 'img' and p.get('v')]
 
     return rts(DETAIL_HTML, news=news, scores=scores,
                story_parts=story_parts, story_tweet_imgs=story_tweet_imgs)

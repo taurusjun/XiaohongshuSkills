@@ -1076,12 +1076,12 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     if not LITELLM_API_KEY:
         return None
 
-    twitter_note = ""
+    img_note = ""
     if twitter_embeds:
-        twitter_note = (
-            f"\n\n原文共嵌入 {len(twitter_embeds)} 条推文。"
-            "翻译正文时，在对应位置插入占位符 【推文1：一句话描述该推文内容】、【推文2：...】……依此类推。"
-            "占位符必须使用全角括号【】，冒号后跟简短描述，与周围文字用换行隔开。"
+        img_note = (
+            f"\n\n原文共嵌入 {len(twitter_embeds)} 张图片/推文，已按顺序编号。"
+            "翻译正文时，在对应叙事位置插入图片占位符：【图片1：一句话描述该图内容】、【图片2：...】……"
+            "占位符使用全角括号【】，与上下文用换行隔开。"
         )
 
     prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
@@ -1096,7 +1096,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 2-3句话，提炼文章最核心的冲突或意义，引发读者继续阅读的欲望。不剧透结局，不写成摘要。
 
 【正文要求】
-完整翻译原文，保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{twitter_note}
+完整翻译原文，保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{img_note}
 
 【结语要求】
 1-2句话，点睛式收尾。可以是作者的判断、对行业的启示、或留给读者的问题。不得是「欢迎评论」等套话。
@@ -1110,8 +1110,8 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 {body_ja}
 ---
 
-严格按如下 JSON 格式输出（body 中推文占位符示例：【推文1：橋本環奈14岁现场照爆红】）：
-{{"title": "标题", "intro": "导语", "body": "正文（含【推文N：描述】占位符）", "outro": "结语", "persons": "人物1,人物2,团体名"}}"""
+严格按如下 JSON 格式输出（body 中图片占位符示例：【图片1：橋本環奈14岁现场照爆红】）：
+{{"title": "标题", "intro": "导语", "body": "正文（有图片时含【图片N：描述】占位符）", "outro": "结语", "persons": "人物1,人物2,团体名"}}"""
 
     result = call_litellm(
         prompt,
