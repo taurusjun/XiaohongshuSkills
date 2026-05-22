@@ -49,6 +49,7 @@
 
   "ai_phrase_threshold": 15,
 
+  "my_user_id": "69e099cb00000000330241c7",
   "competitor_accounts": ["63d8d8d20000000026004e37"],
 
   "_comment_yahoo_keyword_map": "focus_topics 对应的 Yahoo Japan 搜索词（日语），未配置的 topic 直接用原词",
