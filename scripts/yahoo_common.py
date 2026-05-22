@@ -1028,16 +1028,28 @@ def fetch_article_details(url: str) -> dict:
                 if src not in article_images:
                     article_images.append(src)
 
-        # 提取 Twitter/X 嵌入推文链接（记录位置，供翻译时插入占位符）
+        # 提取 Twitter/X 嵌入推文链接
+        # CDP 渲染后 blockquote 被替换为 iframe，优先从 iframe src 的 ?id= 参数提取
         twitter_embeds = []
         story_container2 = soup.find("article", id="uamods-article") or article
         if story_container2:
-            for bq in story_container2.find_all("blockquote", class_="twitter-tweet"):
-                links = bq.find_all("a", href=True)
-                tweet_url = next((a["href"] for a in reversed(links)
-                                  if "twitter.com" in a["href"] or "x.com" in a["href"]), "")
-                if tweet_url:
-                    twitter_embeds.append(tweet_url)
+            from urllib.parse import parse_qs, urlparse as _urlparse
+            # 方案A：CDP 渲染后，从 platform.twitter.com iframe 的 id 参数提取
+            for iframe in story_container2.find_all("iframe"):
+                src = iframe.get("src", "")
+                if "platform.twitter.com/embed" in src:
+                    qs = parse_qs(_urlparse(src).query)
+                    tweet_id = qs.get("id", [""])[0]
+                    if tweet_id:
+                        twitter_embeds.append(f"https://x.com/i/web/status/{tweet_id}")
+            # 方案B：静态 HTML，从 blockquote 提取（CDP 未替换时的回退）
+            if not twitter_embeds:
+                for bq in story_container2.find_all("blockquote", class_="twitter-tweet"):
+                    links = bq.find_all("a", href=True)
+                    tweet_url = next((a["href"] for a in reversed(links)
+                                      if "twitter.com" in a["href"] or "x.com" in a["href"]), "")
+                    if tweet_url:
+                        twitter_embeds.append(tweet_url)
         result["twitter_embeds"] = twitter_embeds
 
         result["body_text"] = body_text  # 完整正文，不截断（SQLite TEXT 无长度限制）
@@ -1157,10 +1169,15 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     if news.get('original_image_url') and not news.get('image_url'):
         news['image_url'] = news['original_image_url']
 
-    # 文章内嵌图片下载
+    # 文章内嵌图片下载（Yahoo 文章本体图片）
     article_images = news.get('_article_images', [])
     if article_images:
         _download_article_images(news, article_images)
+
+    # Twitter 嵌入推文媒体下载
+    twitter_embeds = news.get('_twitter_embeds', [])
+    if twitter_embeds:
+        _download_twitter_embeds(news, twitter_embeds)
 
     # 生成短配文
     try:
@@ -1254,6 +1271,37 @@ def upload_cover_image(image_url: str) -> str:
         pass
     print(f"    封面图(原始): {image_url[:60]}...")
     return image_url
+
+
+def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
+    """下载嵌入推文的媒体（图片/视频），追加到 news['gallery_images']。"""
+    key = news.get('key', '') or extract_key_from_url(news.get('link', ''))
+    if not key:
+        return
+    cache_dir = Path(os.path.expanduser(GALLERY_CACHE_DIR)) / key
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = news.get('gallery_images') or []
+    new_paths = []
+    try:
+        from scripts.unified_media_downloader import download_twitter
+    except ImportError:
+        print("    ⚠️ unified_media_downloader 不可用，跳过推文媒体下载")
+        return
+
+    for i, tweet_url in enumerate(tweet_urls[:7]):  # 最多7条推文
+        try:
+            files = download_twitter(tweet_url, cache_dir)
+            for fname in files:
+                fpath = cache_dir / fname
+                if fpath.exists() and fpath.stat().st_size >= 20_000:
+                    new_paths.append(str(fpath))
+        except Exception as e:
+            print(f"    ⚠️ 推文媒体下载失败[{i+1}]: {e}")
+
+    if new_paths:
+        news['gallery_images'] = list(existing) + new_paths
+        print(f"    ✅ 推文媒体缓存: {len(new_paths)} 个文件")
 
 
 def process_news_item(news: dict, no_translate: bool = False,
