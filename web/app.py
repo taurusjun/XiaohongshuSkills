@@ -618,10 +618,12 @@ async function loadList(){
     pager+=`<button class="btn btn-gray" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>›</button>`;
   }
   S('pager').innerHTML=pager;
-  // Save current state for back-navigation
-  sessionStorage.setItem('listState',JSON.stringify({sortBy,sortDir,page,
-    search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
-    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value}));
+  // Push state to URL so browser back button restores filters
+  const up=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,page:page,
+    date_from:S('dateFrom').value,date_to:S('dateTo').value,
+    search:S('search').value,category:S('category').value,
+    status:S('status').value,publish_xhs:S('publishXhs').value});
+  history.replaceState(null,'','/?'+up.toString());
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
   if(sy){requestAnimationFrame(()=>{window.scrollTo(0,parseInt(sy));sessionStorage.removeItem('listScrollY')})}
@@ -788,31 +790,21 @@ async function loadCategories(){
   const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
   S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
 }
-// Default date range to today (local timezone)
-const d=new Date();
-const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-if(!S('dateFrom').value)S('dateFrom').value=today;
-if(!S('dateTo').value)S('dateTo').value=today;
-
-function restoreListState(){
-  const saved=sessionStorage.getItem('listState');
-  if(!saved) return;
-  try{const s=JSON.parse(saved);
-    sortBy=s.sortBy||'created_at';sortDir=s.sortDir||'DESC';page=s.page||0;
-    if(s.date_from)S('dateFrom').value=s.date_from;
-    if(s.date_to)S('dateTo').value=s.date_to;
-    if(s.search)S('search').value=s.search;
-    if(s.category)S('category').value=s.category;
-    if(s.status)S('status').value=s.status;
-    if(s.publish_xhs)S('publishXhs').value=s.publish_xhs;
-    loadList();loadCategories();
-  }catch(e){}
-}
-// Handle browser back/forward (bfcache restore)
-window.addEventListener('pageshow',e=>{if(e.persisted)restoreListState()});
-// First load: restore if coming from detail page
-if(sessionStorage.getItem('listState')){restoreListState()}else{loadList();loadCategories()}
-checkActiveTasks();
+	// Read state from URL params (set by loadList via history.replaceState)
+	const d=new Date();
+	const today=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+	const qp=new URLSearchParams(location.search);
+	sortBy=qp.get("sort_by")||"created_at";
+	sortDir=qp.get("sort_dir")||"DESC";
+	page=parseInt(qp.get("page"))||0;
+	S("search").value=qp.get("search")||"";
+	S("category").value=qp.get("category")||"";
+	S("status").value=qp.get("status")||"active";
+	S("publishXhs").value=qp.get("publish_xhs")||"";
+	// date: empty URL param means user cleared it — don't override with today
+	S("dateFrom").value=qp.has("date_from")?qp.get("date_from"):today;
+	S("dateTo").value=qp.has("date_to")?qp.get("date_to"):today;
+	loadList();loadCategories();checkActiveTasks();
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
 // Quick time buttons for publish schedule
