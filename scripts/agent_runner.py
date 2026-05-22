@@ -49,6 +49,30 @@ def run(dry_run: bool = False, live_preview: bool = False):
                 logger.info(f"  趋势扫描完成: {len(trends)} topics")
         except Exception as e:
             logger.warning(f"  趋势扫描失败: {e}")
+
+        # 账号快照（用 get_content_data 获取近期数据）
+        try:
+            from scripts.sqlite_db import insert_account_snapshot
+            from scripts.cdp_publish import XiaohongshuPublisher
+            pub = XiaohongshuPublisher()
+            pub.connect()
+            stats = pub.get_content_data(page_num=1, page_size=50)
+            rows = stats.get("rows", [])
+            week_views = sum(r.get("观看", 0) or 0 for r in rows if isinstance(r.get("观看"), int))
+            week_saves = sum(r.get("收藏", 0) or 0 for r in rows if isinstance(r.get("收藏"), int))
+            week_likes = sum(r.get("点赞", 0) or 0 for r in rows if isinstance(r.get("点赞"), int))
+            top_note = max(rows, key=lambda r: r.get("观看", 0) or 0, default={}).get("_id", "")
+            insert_account_snapshot(
+                snapshot_date=date_str,
+                week_views=week_views,
+                week_saves=week_saves,
+                week_likes=week_likes,
+                top_note_key=top_note,
+            )
+            logger.info(f"  账号快照: views={week_views} saves={week_saves}")
+        except Exception as e:
+            logger.warning(f"  账号快照失败: {e}")
+
         set_state(f"runner_progress_{date_str}", {"phase": 1}, date=date_str)
 
     # Phase 2: 规划
@@ -93,7 +117,15 @@ def run(dry_run: bool = False, live_preview: bool = False):
                 for art in articles:
                     try:
                         art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
-                        if art.get("_skip") or art.get("_discard"):
+                        if art.get("_skip"):
+                            continue
+                        if art.get("_discard"):
+                            # DISCARD：递增 topic 的 discard_count
+                            try:
+                                from scripts.sqlite_db import increment_topic_discard
+                                increment_topic_discard(topic, reason=art.get("_discard_reason", ""))
+                            except Exception:
+                                pass
                             continue
                         insert_news(art)
                         quality = art.get("_quality", {})
@@ -115,12 +147,23 @@ def run(dry_run: bool = False, live_preview: bool = False):
         set_state(f"runner_progress_{date_str}",
                   {"phase": 3, "fetched": total_fetched}, date=date_str)
 
-    # Phase 4: 通知
+    # Phase 4: 通知（飞书纯通知 + Web UI 链接，不依赖回调）
     if progress.get("phase", 0) < 4:
         logger.info("=== Phase 4: 通知 ===")
         try:
-            from scripts.feishu_bot import send_alert
-            send_alert(f"今日运营计划已生成：quota={plan_data.get('quota_total', 'N/A')}")
+            from scripts.feishu_bot import send_daily_summary
+            from scripts.sqlite_db import _connect
+            with _connect() as db:
+                candidates = db.execute(
+                    "SELECT key, title, title_score, content_score FROM news "
+                    "WHERE publish_xhs=0 AND status='active' AND title_score > 0 "
+                    "AND DATE(created_at)=DATE('now','localtime') "
+                    "ORDER BY title_score + content_score DESC LIMIT 10"
+                ).fetchall()
+            send_daily_summary(
+                candidates=[dict(c) for c in candidates],
+                date_str=date_str,
+            )
         except Exception as e:
             logger.warning(f"  飞书通知失败: {e}")
         set_state(f"runner_progress_{date_str}", {"phase": 4}, date=date_str)
