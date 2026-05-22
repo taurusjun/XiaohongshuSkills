@@ -910,6 +910,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:12px;color:var(--text2)">分类</span>
       <input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:120px">
+      <span style="background:{% if news.primary_format=='story' %}#7c3aed{% elif news.primary_format=='ranking' %}#0891b2{% elif news.primary_format=='comparison' %}#059669{% else %}#6b7280{% endif %};color:#fff;font-size:11px;padding:2px 7px;border-radius:10px">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
       <span style="color:var(--border)">|</span>
       <span style="font-size:12px;color:var(--text2)">发布XHS</span>
       <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
@@ -1011,7 +1012,23 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
-      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea></div></div>
+      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea>
+      {% if story_parts %}
+      <div style="margin-top:10px;padding:12px;background:var(--bg2,#f7f7f7);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">📖 故事体预览（含嵌入图片）</div>
+        {% for part in story_parts %}
+          {% if part.t == 'text' %}
+            <p style="white-space:pre-wrap;font-size:13px;line-height:1.8;margin:0 0 12px">{{part.v}}</p>
+          {% else %}
+            <div style="margin:14px 0;text-align:center">
+              {% if part.v %}<img src="/local-image?path={{part.v}}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)">{% endif %}
+              <p style="font-size:11px;color:var(--text3);margin:4px 0 0">{{part.cap}}</p>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      </div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
     </div>
   </div>
@@ -1388,7 +1405,40 @@ def detail(key):
                 news['gallery_url'] = meta.get('gallery_url', '')
             except: pass
     scores = get_score_dims(key)
-    return rts(DETAIL_HTML, news=news, scores=scores)
+
+    # 解析体裁
+    import re as _re
+    fs_raw = news.get('format_suitability', '["news"]')
+    try:
+        fs_list = json.loads(fs_raw) if isinstance(fs_raw, str) else (fs_raw or ['news'])
+    except Exception:
+        fs_list = ['news']
+    news['primary_format'] = fs_list[0] if fs_list else 'news'
+    _fmt_labels = {'news': '资讯', 'story': '故事体', 'ranking': '盘点', 'comparison': '对比'}
+    news['format_label'] = _fmt_labels.get(news['primary_format'], news['primary_format'])
+
+    # story 体裁：构建含行内图片的预览片段
+    story_parts = []
+    if news['primary_format'] == 'story' and news.get('content'):
+        tweet_imgs = [p for p in news['gallery_images']
+                      if 'tweet_' in os.path.basename(p)]
+        img_idx = 0
+        last = 0
+        content = news['content']
+        for m in _re.finditer(r'【推文\d+：[^】]*】', content):
+            text = content[last:m.start()].strip()
+            if text:
+                story_parts.append({'t': 'text', 'v': text})
+            img_path = tweet_imgs[img_idx] if img_idx < len(tweet_imgs) else None
+            story_parts.append({'t': 'tweet', 'v': img_path, 'cap': m.group(0)})
+            if img_path:
+                img_idx += 1
+            last = m.end()
+        tail = content[last:].strip()
+        if tail:
+            story_parts.append({'t': 'text', 'v': tail})
+
+    return rts(DETAIL_HTML, news=news, scores=scores, story_parts=story_parts)
 
 @app.route('/api/news')
 def api_list():
