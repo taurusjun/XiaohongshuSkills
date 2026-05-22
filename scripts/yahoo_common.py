@@ -1080,7 +1080,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 ---
 日文原文标题：{title_ja}
 日文正文：
-{body_ja[:8000]}
+{body_ja}
 ---
 
 严格按格式输出 JSON：
