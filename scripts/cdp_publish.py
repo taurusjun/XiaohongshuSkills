@@ -1561,11 +1561,60 @@ class XiaohongshuPublisher:
         self._sleep(0.3, minimum_seconds=0.2)
         return True
 
+    def _select_time_filter_1day(self) -> bool:
+        """在筛选面板中点击「一天内」发布时间筛选。需要面板已打开。"""
+        coords = self._evaluate("""
+(function(){
+    var panel = document.querySelector('.filter-panel');
+    if (!panel) return null;
+    var target = Array.from(panel.querySelectorAll('.tags')).find(function(el){
+        return (el.innerText || '').trim() === '一天内';
+    });
+    if (!target) return null;
+    var r = target.getBoundingClientRect();
+    if (r.width === 0) return null;
+    return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+})()
+""")
+        if not coords or not coords.get("x"):
+            return False
+        self._mouse_click(coords["x"], coords["y"])
+        self._sleep(0.5, minimum_seconds=0.3)
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 50, "y": 300})
+        self._sleep(0.3, minimum_seconds=0.2)
+        return True
+
+    def _open_filter_panel(self) -> bool:
+        """打开搜索筛选面板，返回是否成功。"""
+        clicked = self._evaluate("""
+(function(){
+    var btn = document.querySelector('.filter');
+    if (!btn) return false;
+    btn.click();
+    return true;
+})()
+""")
+        if not clicked:
+            return False
+        self._sleep(0.8, minimum_seconds=0.6)
+        for _ in range(8):
+            visible = self._evaluate(
+                "(function(){"
+                "var p=document.querySelector('.filter-panel');"
+                "return !!(p && window.getComputedStyle(p).display !== 'none');"
+                "})()"
+            )
+            if visible:
+                return True
+            self._sleep(0.3, minimum_seconds=0.2)
+        return False
+
     def search_feeds(
         self,
         keyword: str,
         filters: SearchFilters | None = None,
         sort: str = "newest",
+        time_filter: str = "",
     ) -> dict[str, Any]:
         """
         Search Xiaohongshu feeds by keyword and optional filters.
@@ -1613,14 +1662,43 @@ class XiaohongshuPublisher:
         self._navigate(search_url)
         self._sleep(2, minimum_seconds=1.0)
 
-        # Select sort order via filter panel click
-        if sort == "newest":
-            ok = self._select_sort_newest()
-            if ok:
-                print("[cdp_publish] Sort set to 最新.")
-                self._sleep(1.5, minimum_seconds=1.0)
+        # Select sort order and optional time filter via filter panel
+        need_panel = (sort == "newest") or bool(time_filter)
+        if need_panel:
+            panel_ok = self._open_filter_panel()
+            if panel_ok:
+                if sort == "newest":
+                    sort_ok = self._evaluate("""
+(function(){
+    var panel = document.querySelector('.filter-panel');
+    if (!panel) return false;
+    var target = Array.from(panel.querySelectorAll('.tags')).find(function(el){
+        return (el.innerText || '').trim() === '最新';
+    });
+    if (!target) return null;
+    var r = target.getBoundingClientRect();
+    return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+})()
+""")
+                    if sort_ok and sort_ok.get("x"):
+                        self._mouse_click(sort_ok["x"], sort_ok["y"])
+                        self._sleep(0.5, minimum_seconds=0.3)
+                        print("[cdp_publish] Sort set to 最新.")
+                    else:
+                        print("[cdp_publish] Warning: failed to select 最新 sort, using default.")
+
+                if time_filter == "1day":
+                    tf_ok = self._select_time_filter_1day()
+                    if tf_ok:
+                        print("[cdp_publish] Time filter set to 一天内.")
+                    else:
+                        print("[cdp_publish] Warning: failed to select 一天内 time filter.")
+
+                # Dismiss panel
+                self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 50, "y": 300})
+                self._sleep(1.0, minimum_seconds=0.8)
             else:
-                print("[cdp_publish] Warning: failed to select 最新 sort, using default.")
+                print("[cdp_publish] Warning: failed to open filter panel.")
 
         try:
             feeds = explorer.search_feeds(keyword=keyword, filters=filters)
