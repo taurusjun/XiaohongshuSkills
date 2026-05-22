@@ -968,13 +968,25 @@ def fetch_article_details(url: str) -> dict:
                 return f"{now.year}-{int(month):02d}-{int(day):02d}T{int(hour):02d}:{minute}:00"
             return ""
         pub_time = ""
+        # 优先：article:published_time meta
         pub_meta = soup.find("meta", property="article:published_time")
         if pub_meta and pub_meta.get("content"):
             pub_time = pub_meta["content"]
+        # 次选：ld+json datePublished（Yahoo Expert 文章的主要来源）
+        if not pub_time:
+            import json as _json
+            for sc in soup.find_all("script", type="application/ld+json"):
+                try:
+                    d = _json.loads(sc.string or "")
+                    if d.get("datePublished"):
+                        pub_time = d["datePublished"]; break
+                except Exception:
+                    pass
+        # 兜底：<time> 标签文本
         if not pub_time:
             for time_tag in soup.find_all("time"):
-                dt_attr = time_tag.get("datetime")
-                if dt_attr:
+                dt_attr = time_tag.get("datetime", "")
+                if dt_attr and dt_attr != "datetime":  # 排除 datetime="datetime" 无效值
                     pub_time = dt_attr; break
                 txt = time_tag.get_text(strip=True)
                 pub_time = _parse_time_text(txt)
@@ -1073,7 +1085,8 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章，格式如下：
 
 【标题】
-{title_zh}（可在此基础上微调，保持故事感）
+重新创作一个中文标题：聚焦文章核心冲突或转折，用具体细节代替抽象概念，让读者一眼看出"为什么值得读"。
+参考：{title_zh}
 
 【导语】
 2-3句话，提炼文章最核心的冲突或意义，引发读者继续阅读的欲望。不剧透结局，不写成摘要。
@@ -1155,8 +1168,9 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     news['content_score'] = quality.get('content_score', 0)
     print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
 
-    # 分类 + 标签
-    category, tags = auto_classify(news['title_ja'], news.get('content', ''), keyword=keyword)
+    # 分类 + 标签（story 体裁：用日文原文做关键词匹配，中文 content 无日文关键词）
+    classify_text = news.get('content_ja', '') or news.get('title_ja', '')
+    category, tags = auto_classify(news['title_ja'], classify_text, keyword=keyword)
     news['category'] = category or '新闻'
     news['tags'] = list({*tags, *extra_tags, *(news.get('tags') or [])})
 
@@ -1405,6 +1419,18 @@ def process_news_item(news: dict, no_translate: bool = False,
         print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
         print("    生成内容...")
 
+        # pub_time 在 story/非story 路径前统一处理，避免 story 提前 return 导致遗漏
+        _raw_time = details.get('pub_time', '')
+        if _raw_time:
+            try:
+                from datetime import datetime as _dt
+                _t = _dt.fromisoformat(_raw_time.replace('Z', '+00:00'))
+                news['pub_time'] = _t.strftime('%Y.%m.%d %H:%M')
+            except Exception:
+                news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
+        elif not news.get('pub_time'):
+            news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
+
         # ── story 体裁：完全独立路径，生成完直接返回 ──────────────────────
         if selected_format == 'story':
             return _process_story_path(news, keyword, extra_tags or [])
@@ -1509,25 +1535,20 @@ def process_news_item(news: dict, no_translate: bool = False,
             news['title_zh'], news.get('summary', ''),
             news.get('content', ''), tags,
         )
-    # pub_time：SQLite 精确到分钟，Notion 仅日期
-    raw_time = details.get('pub_time', '')
-    if raw_time and STORAGE_BACKEND == 'sqlite':
-        try:
-            from datetime import datetime as dt
-            t = dt.fromisoformat(raw_time.replace('Z', '+00:00'))
-            news['pub_time'] = t.strftime('%Y.%m.%d %H:%M')
-        except Exception:
-            news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
-    elif raw_time and STORAGE_BACKEND == 'notion':
-        try:
-            from datetime import datetime as dt
-            t = dt.fromisoformat(raw_time.replace('Z', '+00:00'))
-            news['pub_time'] = t.strftime('%Y.%m.%d')
-        except Exception:
-            news['pub_time'] = datetime.now().strftime('%Y.%m.%d')
-    else:
-        date_fmt = '%Y.%m.%d %H:%M' if STORAGE_BACKEND == 'sqlite' else '%Y.%m.%d'
-        news['pub_time'] = datetime.now().strftime(date_fmt)
+    # pub_time：story 路径已提前设置，此处仅处理非 story 路径
+    if not news.get('pub_time'):
+        raw_time = details.get('pub_time', '')
+        if raw_time:
+            try:
+                from datetime import datetime as dt
+                t = dt.fromisoformat(raw_time.replace('Z', '+00:00'))
+                fmt = '%Y.%m.%d %H:%M' if STORAGE_BACKEND == 'sqlite' else '%Y.%m.%d'
+                news['pub_time'] = t.strftime(fmt)
+            except Exception:
+                news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
+        else:
+            date_fmt = '%Y.%m.%d %H:%M' if STORAGE_BACKEND == 'sqlite' else '%Y.%m.%d'
+            news['pub_time'] = datetime.now().strftime(date_fmt)
     if keyword:
         news['keyword'] = keyword
 
