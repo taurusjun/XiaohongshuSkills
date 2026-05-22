@@ -321,7 +321,7 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
     import re as _re, json as _json
     FORMAT_TYPES = ["news", "story", "ranking", "comparison"]
 
-    body_snippet = body_ja[:500] if body_ja else ""
+    body_snippet = body_ja if body_ja else ""  # 長度由調用方控制
     format_guide = (
         "体裁判断标准：\n"
         "- news（资讯体）：任何内容都适用，是兜底选项\n"
@@ -974,7 +974,9 @@ def fetch_article_details(url: str) -> dict:
                 if src not in article_images:
                     article_images.append(src)
 
-        result["body_text"] = body_text[:2000]
+        # 長文（>800字）放寬到4000字，提供足夠上下文給體裁判斷
+        body_limit = 4000 if len(body_text) > 800 else 2000
+        result["body_text"] = body_text[:body_limit]
         result["article_images"] = article_images[:10]  # 最多10张
     except Exception as e:
         print(f"    ⚠️ 抓取文章详情失败: {e}")
@@ -1080,7 +1082,12 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['title_zh'] = tc['title_zh']
         news['format_suitability'] = tc['format_suitability']  # list[str]
 
-        # 长文检测（分页文章 is_long_form=True，自动注入 story）
+        # 长文检测：分页文章 OR 正文超过800字的单页长文
+        body_len = len(news.get('body_text', '') or news.get('content_ja', ''))
+        if not news.get('is_long_form') and body_len > 800:
+            news['is_long_form'] = True
+            print(f"    📄 检测为长文（正文{body_len}字）")
+
         if news.get('is_long_form'):
             qa_markers = sum(1 for _ in __import__('re').finditer(
                 r'(?:^|\n)\s*[Ｑq][:：]', news.get('content_ja', '')))
@@ -1107,6 +1114,7 @@ def process_news_item(news: dict, no_translate: bool = False,
             return news
         seo_title, summary, content, comment, _, topic_tags = generated
         news['title_zh'] = seo_title
+        news['title'] = seo_title  # title 字段同步，供 Web UI 和 DB 查询使用
         news['summary']  = summary
         news['content']  = content
         news['comment']  = comment
