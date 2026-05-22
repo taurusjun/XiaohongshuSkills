@@ -929,18 +929,11 @@ def fetch_article_details(url: str) -> dict:
     对 Yahoo Expert 长文（/expert/articles/）优先走 CDP 以获取 JS 渲染后的图片。"""
     result = {"image_url": "", "original_title": "", "summary": ""}
     try:
-        # Yahoo Expert 文章用 CDP 获取完整渲染 HTML（解决懒加载图片问题）
-        is_expert = "/expert/articles/" in url
-        html = ""
-        if is_expert:
-            print("    📡 Expert 文章，用 CDP 获取渲染 HTML...")
-            html = _fetch_html_via_cdp(url, wait_sec=4.0)
-        if not html:
-            resp = _direct_session.get(url, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            }, timeout=15)
-            html = resp.text
-        soup = BeautifulSoup(html, "html.parser")
+        # Yahoo 始终用直连（无代理），用代理会被 block
+        resp = _direct_session.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
 
         og = soup.find("meta", property="og:image")
         if og and og.get("content"):
@@ -1035,21 +1028,23 @@ def fetch_article_details(url: str) -> dict:
         if story_container2:
             from urllib.parse import parse_qs, urlparse as _urlparse
             # 方案A：CDP 渲染后，从 platform.twitter.com iframe 的 id 参数提取
-            for iframe in story_container2.find_all("iframe"):
-                src = iframe.get("src", "")
-                if "platform.twitter.com/embed" in src:
-                    qs = parse_qs(_urlparse(src).query)
-                    tweet_id = qs.get("id", [""])[0]
-                    if tweet_id:
-                        twitter_embeds.append(f"https://x.com/i/web/status/{tweet_id}")
-            # 方案B：静态 HTML，从 blockquote 提取（CDP 未替换时的回退）
+            # 静态 HTML：从 blockquote.twitter-tweet 提取推文 URL
+            for bq in story_container2.find_all("blockquote", class_="twitter-tweet"):
+                links = bq.find_all("a", href=True)
+                tweet_url = next((a["href"] for a in reversed(links)
+                                  if "twitter.com" in a["href"] or "x.com" in a["href"]), "")
+                if tweet_url:
+                    twitter_embeds.append(tweet_url)
+            # CDP 渲染后 blockquote 被替换为 iframe：从 platform.twitter.com iframe 的 id 参数提取
             if not twitter_embeds:
-                for bq in story_container2.find_all("blockquote", class_="twitter-tweet"):
-                    links = bq.find_all("a", href=True)
-                    tweet_url = next((a["href"] for a in reversed(links)
-                                      if "twitter.com" in a["href"] or "x.com" in a["href"]), "")
-                    if tweet_url:
-                        twitter_embeds.append(tweet_url)
+                from urllib.parse import parse_qs, urlparse as _urlparse
+                for iframe in story_container2.find_all("iframe"):
+                    src = iframe.get("src", "")
+                    if "platform.twitter.com/embed" in src:
+                        qs = parse_qs(_urlparse(src).query)
+                        tweet_id = qs.get("id", [""])[0]
+                        if tweet_id:
+                            twitter_embeds.append(f"https://x.com/i/web/status/{tweet_id}")
         result["twitter_embeds"] = twitter_embeds
 
         result["body_text"] = body_text  # 完整正文，不截断（SQLite TEXT 无长度限制）
