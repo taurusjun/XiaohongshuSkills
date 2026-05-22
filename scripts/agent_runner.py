@@ -82,14 +82,29 @@ def run(dry_run: bool = False, live_preview: bool = False):
             week_saves = sum(r.get("收藏", 0) or 0 for r in rows if isinstance(r.get("收藏"), int))
             week_likes = sum(r.get("点赞", 0) or 0 for r in rows if isinstance(r.get("点赞"), int))
             top_note = max(rows, key=lambda r: r.get("观看", 0) or 0, default={}).get("_id", "")
+
+            # 从自己的主页抓粉丝数
+            followers = None
+            my_user_id = get_config("my_user_id", default="")
+            if my_user_id:
+                try:
+                    profile = pub.get_profile_snapshot(user_id=my_user_id)
+                    followers = profile.get("user", {}).get("followers")
+                    if followers is not None:
+                        followers = int(str(followers).replace(",", "").replace("万", "0000")) if isinstance(followers, str) else int(followers)
+                    logger.info(f"  粉丝数: {followers}")
+                except Exception as pe:
+                    logger.warning(f"  粉丝数获取失败（不影响快照写入）: {pe}")
+
             insert_account_snapshot(
                 snapshot_date=date_str,
                 week_views=week_views,
                 week_saves=week_saves,
                 week_likes=week_likes,
                 top_note_key=top_note,
+                followers=followers,
             )
-            logger.info(f"  账号快照: views={week_views} saves={week_saves} (from {len(rows)} 篇)")
+            logger.info(f"  账号快照: views={week_views} saves={week_saves} followers={followers} (from {len(rows)} 篇)")
         except Exception as e:
             _alert("1-账号快照", e, "请确认已登录小红书创作者后台")
 
