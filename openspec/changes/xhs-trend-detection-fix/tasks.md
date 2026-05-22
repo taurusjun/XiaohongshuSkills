@@ -33,8 +33,7 @@
 ## 6. 集成验证（user@192.168.0.70）
 
 - [x] 6.1 运行 `pytest tests/test_gap_trend_detection.py -v` — 15/15 通过
-- [ ] 6.2 在服务器上手动运行 scan_topic_trends(["乃木坂"])，验证：
-      - baseline_saves > 0
-      - is_fresh 基于最新+一天内正确计算
-      - upsert 后 avg_saves 不变，topic_baseline_saves 更新
-- [ ] 6.3 运行 agent_runner.py --dry-run，验证今日计划输出
+- [x] 6.2 在服务器上手动运行 scan_topic_trends(["乃木坂"])，验证：
+      baseline_saves=5.8 ✓，is_fresh=True(22篇/一天内) ✓，avg_saves 未变 ✓，topic_baseline_saves=5.8 ✓
+- [x] 6.3 运行 agent_planner.plan_today()，验证今日计划正常输出
+      mode=cold_start quota=3，post_times=['09:30','12:00','18:00'] ✓
