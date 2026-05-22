@@ -1043,11 +1043,19 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
         response_format={"type": "json_object"},
     )
     if not result:
+        print(f"    ⚠️ 故事体 LLM 调用返回空")
         return None
     try:
         import json as _j
-        return _j.loads(result)
-    except Exception:
+        data = _j.loads(result)
+        # 验证必要字段
+        if not data.get('body'):
+            print(f"    ⚠️ 故事体 LLM 返回缺少 body 字段: {list(data.keys())}")
+            return None
+        return data
+    except Exception as e:
+        print(f"    ⚠️ 故事体 JSON 解析失败: {e}")
+        print(f"    原始返回前200: {result[:200]}")
         return None
 
 
@@ -1193,18 +1201,14 @@ def process_news_item(news: dict, no_translate: bool = False,
                 news['content']  = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
                 news['comment']  = story.get('outro', '')
                 news['summary']  = story.get('intro', '')[:100]
-                news['tags']     = keyword_tags
                 news['category'] = '新闻'
                 print(f"    故事体生成完成: {len(news['content'])} 字")
-                # 跳过后续的 generate_content_and_comment 流程，直接去评分
-                # （仍需评分以决定是否发布）
-                from scripts.yahoo_common import evaluate_quality as _eq
-                quality = _eq(news['title_zh'], news['content'], news['comment'])
+                # 评分（直接调用模块内函数，无需 import）
+                quality = evaluate_quality(news['title_zh'], news['content'], news['comment'])
                 news['_quality'] = quality
                 news['title_score']   = quality.get('title_score', 0)
                 news['content_score'] = quality.get('content_score', 0)
                 print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
-                # 图片和其他后处理继续走常规流程（goto equivalent via flag）
                 news['_story_done'] = True
             else:
                 print("    ⚠️ 故事体生成失败，回退到资讯体")
