@@ -1584,8 +1584,17 @@ async function openStoryPreview(){
     else if(b.type==='header'&&b.data.text){
       const tag=b.data.level===3?'h3':'h2';
       html+=`<${tag} style="font-size:${b.data.level===3?'14':'16'}px;font-weight:700;margin:16px 0 6px;color:#111">${esc(b.data.text)}</${tag}>`;
+    } else if(b.type==='galleryImage'){
+      // 支持多图横排
+      const paths=(b.data.paths||[]).filter(p=>p);
+      if(!paths.length) continue;
+      const cols=paths.length===1?'1fr':paths.map(()=>'1fr').join(' ');
+      const imgs=paths.map(p=>`<img src="/local-image?path=${encodeURIComponent(p)}" style="width:100%;border-radius:8px;display:block;object-fit:cover">`).join('');
+      html+=`<div style="display:grid;grid-template-columns:${cols};gap:4px;margin:12px 0">${imgs}</div>`;
+      if(b.data.caption&&!b.data.caption.startsWith('/'))
+        html+=`<p style="font-size:11px;color:#aaa;margin:2px 0 12px;text-align:center">${esc(b.data.caption)}</p>`;
     } else if(b.type==='image'&&b.data.file?.url)
-      html+=`<div style="margin:12px 0"><img src="${b.data.file.url}" style="width:100%;border-radius:10px;display:block"><p style="font-size:11px;color:#aaa;margin:4px 0">${esc(b.data.caption||'')}</p></div>`;
+      html+=`<div style="margin:12px 0"><img src="${b.data.file.url}" style="width:100%;border-radius:10px;display:block"></div>`;
   }
   document.getElementById('storyPreviewBody').innerHTML=html;
   document.getElementById('storyPreviewModal').style.display='block';
