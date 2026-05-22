@@ -1012,22 +1012,37 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
-      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value"><textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea>
-      {% if story_parts %}
-      <div style="margin-top:10px;padding:12px;background:var(--bg2,#f7f7f7);border-radius:8px;border:1px solid var(--border)">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">📖 故事体预览（含嵌入图片）</div>
-        {% for part in story_parts %}
-          {% if part.t == 'text' %}
-            <p style="white-space:pre-wrap;font-size:13px;line-height:1.8;margin:0 0 12px">{{part.v}}</p>
-          {% else %}
-            <div style="margin:14px 0;text-align:center">
-              {% if part.v %}<img src="/local-image?path={{part.v}}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15)">{% endif %}
-              <p style="font-size:11px;color:var(--text3);margin:4px 0 0">{{part.cap}}</p>
+      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value">
+        <textarea class="inline-textarea auto-resize" name="content" id="storyContent" style="min-height:120px">{{news.content or ''}}</textarea>
+        {% if story_parts %}
+        <div style="margin-top:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:11px;color:var(--text3)">🖼 图片顺序（拖拽调整）</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-gray btn-sm" onclick="saveImgOrder()" style="font-size:11px">💾 保存顺序</button>
+              <button class="btn btn-sm" onclick="openStoryPreview()" style="font-size:11px;background:#7c3aed;color:#fff">👁 预览</button>
             </div>
-          {% endif %}
-        {% endfor %}
-      </div>
-      {% endif %}
+          </div>
+          <div id="imgSlotList" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px;background:var(--bg2,#f5f5f5);border-radius:8px;min-height:60px">
+            {% for part in story_parts %}{% if part.t == 'tweet' %}
+            <div class="img-slot" draggable="true"
+                 data-path="{{part.v or ''}}"
+                 data-cap="{{part.cap}}"
+                 ondragstart="slotDragStart(event)"
+                 ondragover="event.preventDefault()"
+                 ondrop="slotDrop(event)"
+                 style="cursor:grab;width:80px;text-align:center;padding:4px;background:#fff;border-radius:6px;border:1px solid #ddd;user-select:none;position:relative">
+              {% if part.v %}
+              <img src="/local-image?path={{part.v}}" style="width:72px;height:72px;object-fit:cover;border-radius:4px;display:block">
+              {% else %}
+              <div style="width:72px;height:72px;background:#2a2a2a;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#555;font-size:10px">无图</div>
+              {% endif %}
+              <div style="font-size:9px;color:#888;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{part.cap[:8]}}</div>
+            </div>
+            {% endif %}{% endfor %}
+          </div>
+        </div>
+        {% endif %}
       </div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
     </div>
@@ -1044,6 +1059,17 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 </div>
 
 <div class="toast" id="toast">已保存</div>
+
+<!-- Story 预览 Modal -->
+<div id="storyPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;overflow-y:auto;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:420px;margin:0 auto;background:#fff;border-radius:16px;padding:0 0 24px;position:relative;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0">
+      <span style="font-size:13px;font-weight:600;color:#333">📱 小红书预览</span>
+      <button onclick="document.getElementById('storyPreviewModal').style.display='none'" style="background:none;border:none;font-size:18px;cursor:pointer;color:#999;line-height:1">✕</button>
+    </div>
+    <div id="storyPreviewBody" style="padding:16px;font-family:-apple-system,sans-serif"></div>
+  </div>
+</div>
 
 <div class="modal" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
   <div class="modal-card" style="max-width:750px;background:#1e1e1e;color:#0f0">
@@ -1355,6 +1381,63 @@ async function submitOverride(){
   let note=document.getElementById('overrideNote').value;
   let r=await fetch('/api/score-dim/'+key+'/'+encodeURIComponent(dim),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({human_value:val,override_note:note})});
   if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
+}
+
+// ── Story 图片拖拽排序 ─────────────────────────────────────
+let _dragSrc=null;
+function slotDragStart(e){
+  _dragSrc=e.currentTarget;
+  e.dataTransfer.effectAllowed='move';
+}
+function slotDrop(e){
+  e.preventDefault();
+  const target=e.currentTarget;
+  if(!_dragSrc||_dragSrc===target)return;
+  const list=document.getElementById('imgSlotList');
+  const nodes=[...list.querySelectorAll('.img-slot')];
+  const si=nodes.indexOf(_dragSrc), ti=nodes.indexOf(target);
+  if(si<ti) list.insertBefore(_dragSrc,target.nextSibling);
+  else list.insertBefore(_dragSrc,target);
+}
+async function saveImgOrder(){
+  const slots=[...document.querySelectorAll('#imgSlotList .img-slot')];
+  // Keep article images first, then tweet images in new order
+  const articleImgs={% if story_parts %}{{[p.v for p in story_parts if p.t=='tweet' and p.v]|tojson}}{% else %}[]{% endif %};
+  const allGallery={% if news.gallery_images %}{{news.gallery_images|tojson}}{% else %}[]{% endif %};
+  const nonTweet=allGallery.filter(p=>!p.includes('tweet_'));
+  const newTweetOrder=slots.map(s=>s.dataset.path).filter(p=>p);
+  const newOrder=[...nonTweet,...newTweetOrder];
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:newOrder})});
+  const t=document.getElementById('toast');t.textContent='图片顺序已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1500);
+}
+function openStoryPreview(){
+  const slots=[...document.querySelectorAll('#imgSlotList .img-slot')];
+  const imgPaths=slots.map(s=>s.dataset.path);
+  let imgIdx=0;
+  const text=document.getElementById('storyContent').value;
+  const title='{{news.title|e}}';
+  // Split text by 【推文N：...】 markers
+  const parts=[];let last=0;
+  const re=/【推文\d+：[^】]*】/g;let m;
+  while((m=re.exec(text))!==null){
+    if(m.index>last)parts.push({t:'text',v:text.slice(last,m.index).trim()});
+    parts.push({t:'img',cap:m[0],path:imgPaths[imgIdx]||''});
+    if(imgPaths[imgIdx])imgIdx++;
+    last=m.index+m[0].length;
+  }
+  if(last<text.length)parts.push({t:'text',v:text.slice(last).trim()});
+  // Render
+  let html=`<h2 style="font-size:17px;font-weight:700;line-height:1.5;margin:0 0 14px;color:#111">${esc(title)}</h2>`;
+  parts.forEach(p=>{
+    if(p.t==='text'&&p.v){
+      html+=`<p style="white-space:pre-wrap;font-size:14px;line-height:1.9;color:#222;margin:0 0 14px">${esc(p.v)}</p>`;
+    } else if(p.t==='img'){
+      if(p.path) html+=`<div style="margin:14px 0"><img src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;border-radius:10px;display:block"></div>`;
+      html+=`<p style="font-size:11px;color:#aaa;text-align:center;margin:4px 0 14px">${esc(p.cap)}</p>`;
+    }
+  });
+  document.getElementById('storyPreviewBody').innerHTML=html;
+  document.getElementById('storyPreviewModal').style.display='block';
 }
 </script>
 <div class="modal" id="overrideModal"><div class="modal-card" style="max-width:360px">
