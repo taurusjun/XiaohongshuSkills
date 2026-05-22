@@ -1390,7 +1390,6 @@ let _pickerCb = null;
 
 // ── Editor.js 初始化 ──────────────────────────────────────────
 function _textToEjsBlocks(text, imgs){
-  // 将 plain text（含 ## 小标题 和 【图片N：desc】 标记）转为 Editor.js blocks
   const blocks=[]; let imgIdx=0, last=0;
   const re=/【(?:图片|推文)\d+：[^】]*】/g; let m;
   function _addText(t){
@@ -1398,20 +1397,16 @@ function _textToEjsBlocks(text, imgs){
     for(const line of t.split('\n')){
       const s=line.trim();
       if(!s) continue;
-      if(s.startsWith('## ')){
-        blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
-      } else if(s.startsWith('### ')){
-        blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
-      } else {
-        blocks.push({type:'paragraph',data:{text:s}});
-      }
+      if(s.startsWith('### ')) blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
+      else if(s.startsWith('## ')) blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
+      else blocks.push({type:'paragraph',data:{text:s}});
     }
   }
   while((m=re.exec(text))!==null){
     _addText(text.slice(last,m.index));
-    const url=imgs[imgIdx]?'/local-image?path='+encodeURIComponent(imgs[imgIdx]):'';
-    blocks.push({type:'image',data:{file:{url},caption:m[0],withBorder:false,withBackground:false,stretched:false}});
-    if(imgs[imgIdx]) imgIdx++;
+    const path=imgs[imgIdx]||'';
+    blocks.push({type:'galleryImage',data:{paths:path?[path]:[],caption:m[0]}});
+    if(path) imgIdx++;
     last=m.index+m[0].length;
   }
   _addText(text.slice(last));
@@ -1420,20 +1415,86 @@ function _textToEjsBlocks(text, imgs){
 }
 
 function _ejsBlocksToText(blocks){
-  // 将 Editor.js blocks 序列化回 plain text 格式
   const parts=[]; let imgN=1;
   for(const b of blocks){
     if(b.type==='paragraph'&&b.data.text) parts.push(b.data.text);
     else if(b.type==='header'&&b.data.text){
-      const prefix=b.data.level===3?'### ':'## ';
-      parts.push(prefix+b.data.text);
+      parts.push((b.data.level===3?'### ':'## ')+b.data.text);
+    } else if(b.type==='galleryImage'){
+      const cap=b.data.caption||`【图片${imgN}：图片${imgN}】`;
+      parts.push(cap); imgN++;
     } else if(b.type==='image'){
+      // 兼容旧 ImageTool blocks
       const cap=b.data.caption||(b.data.file?.url?`【图片${imgN}：图片${imgN}】`:'');
-      if(cap) parts.push(cap);
-      imgN++;
+      if(cap){parts.push(cap);imgN++;}
     }
   }
   return parts.filter(s=>s&&s.trim()).join('\n\n');
+}
+
+// ── 自定义图片块 ──────────────────────────────────────────────
+class GalleryImageBlock {
+  static get toolbox(){return{title:'图片',icon:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="15" viewBox="0 0 336 276"><path d="M291 150V79c0-19-15-34-34-34H79c-19 0-34 15-34 34v42l67-44 81 72 56-29 42 30zm0 52l-43-30-56 30-81-72-66 44v30c0 19 15 34 34 34h178c17 0 31-13 34-29zM79 0h178c44 0 79 35 79 79v118c0 44-35 79-79 79H79c-44 0-79-35-79-79V79C0 35 35 0 79 0z"/></svg>'};}
+  static get isReadOnlySupported(){return true;}
+
+  constructor({data,api}){
+    this.api=api;
+    this.data={paths:data.paths||[],caption:data.caption||''};
+    this._el=null;
+  }
+
+  render(){
+    const wrap=document.createElement('div');
+    wrap.className='gb-wrap';
+    wrap.style.cssText='border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';
+    this._el=wrap;
+    this._rebuild();
+    return wrap;
+  }
+
+  _rebuild(){
+    const wrap=this._el; if(!wrap) return;
+    wrap.innerHTML='';
+    const paths=this.data.paths;
+    if(paths.length){
+      // 图片展示区
+      const row=document.createElement('div');
+      row.style.cssText=`display:flex;gap:4px;padding:6px;background:#f0f0f0;justify-content:center`;
+      paths.forEach((p,idx)=>{
+        const cell=document.createElement('div');
+        cell.style.cssText=`position:relative;flex:${paths.length===1?'0 0 auto':'1 1 0'};max-width:${paths.length===1?'100%':'50%'}`;
+        const img=document.createElement('img');
+        img.src='/local-image?path='+encodeURIComponent(p);
+        img.style.cssText='width:100%;max-height:320px;object-fit:contain;border-radius:4px;display:block';
+        const del=document.createElement('button');
+        del.textContent='✕';
+        del.title='移除此图';
+        del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;padding:0';
+        del.onclick=()=>{this.data.paths.splice(idx,1);this._rebuild();};
+        cell.appendChild(img);cell.appendChild(del);
+        row.appendChild(cell);
+      });
+      wrap.appendChild(row);
+    }
+    // 操作栏
+    const bar=document.createElement('div');
+    bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;flex-wrap:wrap;background:#fff';
+    const addBtn=document.createElement('button');
+    addBtn.textContent=paths.length?'+ 添加图片':'📷 从图库选图';
+    addBtn.style.cssText='font-size:11px;padding:3px 10px;border:1px dashed #999;border-radius:12px;background:none;cursor:pointer;color:#555';
+    addBtn.onclick=()=>openImgPicker(p=>{this.data.paths.push(p);this._rebuild();});
+    bar.appendChild(addBtn);
+    // Caption
+    const cap=document.createElement('input');
+    cap.placeholder='图片说明（图片标记）';
+    cap.value=this.data.caption;
+    cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888;min-width:80px';
+    cap.oninput=()=>{this.data.caption=cap.value;};
+    bar.appendChild(cap);
+    wrap.appendChild(bar);
+  }
+
+  save(){return{paths:this.data.paths,caption:this.data.caption};}
 }
 
 function _initEditorJs(){
@@ -1444,25 +1505,13 @@ function _initEditorJs(){
   _ejsEditor=new EditorJS({
     holder:'editorjs',
     minHeight:100,
-    placeholder:'输入正文内容...',
+    placeholder:'输入正文内容... （用 / 插入小标题或图片块）',
     tools:{
-      header:{
-        class:Header,
-        config:{levels:[2,3],defaultLevel:2},
-        inlineToolbar:true
-      },
-      image:{
-        class:ImageTool,
-        config:{
-          uploader:{
-            uploadByUrl(url){return Promise.resolve({success:1,file:{url}});}
-          }
-        }
-      }
+      header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+      galleryImage:{class:GalleryImageBlock}
     },
     data:{blocks:initBlocks},
     onChange:async()=>{
-      // 实时同步到隐藏 textarea
       try{
         const out=await _ejsEditor.save();
         document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);
@@ -1471,7 +1520,10 @@ function _initEditorJs(){
   });
 }
 
-function openImgPicker(){
+let _imgPickerCb=null;
+// cb 有值时：选完后调 cb(path)；无值时：插入到 Editor.js 当前光标位置
+function openImgPicker(cb){
+  _imgPickerCb=cb||null;
   const grid=document.getElementById('imgPickerGrid');
   grid.innerHTML='';
   _allImgs.forEach(p=>{
@@ -1481,13 +1533,13 @@ function openImgPicker(){
     d.onmouseleave=()=>d.style.borderColor='transparent';
     d.onclick=async()=>{
       closeImgPicker();
+      if(_imgPickerCb){_imgPickerCb(p);return;}
       if(!_ejsEditor) return;
       _ejsImgCounter++;
       const url='/local-image?path='+encodeURIComponent(p);
       const cap=`【图片${_ejsImgCounter}：${p.split('/').pop()}】`;
-      // 在当前光标块后插入图片
       const curIdx=_ejsEditor.blocks.getCurrentBlockIndex();
-      _ejsEditor.blocks.insert('image',{file:{url},caption:cap,withBorder:false,withBackground:false,stretched:false},{},curIdx+1,true);
+      _ejsEditor.blocks.insert('galleryImage',{paths:[p],caption:cap},{},curIdx+1,true);
     };
     const img=document.createElement('img');
     img.src='/local-image?path='+encodeURIComponent(p);

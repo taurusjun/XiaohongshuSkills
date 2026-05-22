@@ -1295,8 +1295,9 @@ def upload_cover_image(image_url: str) -> str:
 
 
 def _get_tweet_image_urls(tweet_id: str) -> list[str]:
-    """调 Twitter syndication API 获取推文图片 URL 列表（无需认证）。"""
-    import re as _re
+    """调 Twitter syndication API 获取推文图片 URL 列表（无需认证）。
+    支持：mediaDetails（photo/gif）、Twitter Card 缩略图（card_img）。
+    """
     try:
         api_url = (f"https://cdn.syndication.twimg.com/tweet-result"
                    f"?id={tweet_id}&lang=ja"
@@ -1310,11 +1311,34 @@ def _get_tweet_image_urls(tweet_id: str) -> list[str]:
             return []
         data = resp.json()
         urls = []
+
+        # 1. mediaDetails: photo 类型（主要图片）
         for m in data.get("mediaDetails", []):
-            if m.get("type") == "photo":
+            if m.get("type") in ("photo", "animated_gif"):
                 base = m.get("media_url_https", "")
                 if base:
-                    urls.append(f"{base}:large")  # 请求大图
+                    urls.append(f"{base}:large")
+
+        # 2. Twitter Card 缩略图（card_img — 链接预览图，适用于没有 photo 的推文）
+        # 结构：card.legacy.binding_values[key=thumbnail_image*].value.image_value.url
+        if not urls:
+            card = data.get("card", {})
+            bvs = (card.get("legacy") or {}).get("binding_values", [])
+            for bv in bvs:
+                bv_key = bv.get("key", "")
+                if "thumbnail_image" not in bv_key:
+                    continue
+                iv = (bv.get("value") or {}).get("image_value", {})
+                img_url = iv.get("url", "")
+                w = iv.get("width", 0)
+                h = iv.get("height", 0)
+                # 请求 large 尺寸
+                if img_url:
+                    img_url = re.sub(r'name=\w+', 'name=large', img_url)
+                if img_url and w >= 200 and h >= 150:
+                    urls.append(img_url)
+                    break  # 只取最高分辨率的那张
+
         return urls
     except Exception:
         return []
