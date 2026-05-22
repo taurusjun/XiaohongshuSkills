@@ -15,7 +15,6 @@ class TopicQuota:
     quota: int
     source: str  # "high_perf" | "explore" | "baseline"
     is_fresh: bool = False
-    planned_format: str = "news"  # 规划层指定的目标体裁
 
 
 @dataclass
@@ -114,20 +113,6 @@ def plan_today(date: str = "") -> DailyPlan:
 
         for ft in focus_topics[:baseline_n]:
             plan.topics.append(TopicQuota(topic=ft, quota=1, source="baseline"))
-
-    # 体裁轮换：按 content_format_rotation 依次分配目标体裁
-    format_rotation = get_config("content_format_rotation",
-                                  default=["news", "story", "news", "story", "ranking", "news", "news"])
-    # 计算今日在轮换序列中的位置（按已存在的 plan 状态累计）
-    from scripts.sqlite_db import get_state as _gs
-    rotation_idx = _gs("format_rotation_idx") or 0
-    if isinstance(rotation_idx, dict):
-        rotation_idx = rotation_idx.get("idx", 0)
-    for i, tq in enumerate(plan.topics):
-        tq.planned_format = format_rotation[(rotation_idx + i) % len(format_rotation)]
-    # 更新轮换索引（推进 quota_total 步）
-    from scripts.sqlite_db import set_state as _ss
-    _ss("format_rotation_idx", {"idx": (rotation_idx + plan.quota_total) % len(format_rotation)})
 
     plan.post_times = recommend_post_times(plan.topics, date)
     set_state(f"daily_plan_{date}", asdict(plan), date=date)
