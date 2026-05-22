@@ -791,21 +791,28 @@ async function loadCategories(){
 // Default date range to today (local timezone)
 const d=new Date();
 const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-// Restore state when returning from detail page
-const saved=sessionStorage.getItem('listState');
-if(saved){try{const s=JSON.parse(saved);sortBy=s.sortBy||'created_at';sortDir=s.sortDir||'DESC';page=s.page||0;
-  if(s.date_from)S('dateFrom').value=s.date_from;else S('dateFrom').value=today;
-  if(s.date_to)S('dateTo').value=s.date_to;else S('dateTo').value=today;
-  if(s.search)S('search').value=s.search;
-  if(s.category)S('category').value=s.category;
-  if(s.status)S('status').value=s.status;
-  if(s.publish_xhs)S('publishXhs').value=s.publish_xhs;
-  sessionStorage.removeItem('listState');
-}catch(e){}}else{
-  if(!S('dateFrom').value)S('dateFrom').value=today;
-  if(!S('dateTo').value)S('dateTo').value=today;
+if(!S('dateFrom').value)S('dateFrom').value=today;
+if(!S('dateTo').value)S('dateTo').value=today;
+
+function restoreListState(){
+  const saved=sessionStorage.getItem('listState');
+  if(!saved) return;
+  try{const s=JSON.parse(saved);
+    sortBy=s.sortBy||'created_at';sortDir=s.sortDir||'DESC';page=s.page||0;
+    if(s.date_from)S('dateFrom').value=s.date_from;
+    if(s.date_to)S('dateTo').value=s.date_to;
+    if(s.search)S('search').value=s.search;
+    if(s.category)S('category').value=s.category;
+    if(s.status)S('status').value=s.status;
+    if(s.publish_xhs)S('publishXhs').value=s.publish_xhs;
+    loadList();loadCategories();
+  }catch(e){}
 }
-loadList();loadCategories();checkActiveTasks();
+// Handle browser back/forward (bfcache restore)
+window.addEventListener('pageshow',e=>{if(e.persisted)restoreListState()});
+// First load: restore if coming from detail page
+if(sessionStorage.getItem('listState')){restoreListState()}else{loadList();loadCategories()}
+checkActiveTasks();
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
 // Quick time buttons for publish schedule
