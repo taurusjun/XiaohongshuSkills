@@ -1054,6 +1054,9 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['ja_summary']         = details.get("summary", "")
         news['original_image_url'] = details.get("image_url", "")
         news['body_text']          = details.get("body_text", "")
+        # 日文原文同步写入 content_ja（供后续评分和体裁判断使用）
+        if details.get("body_text") and not news.get('content_ja'):
+            news['content_ja'] = details['body_text']
 
         # 长文文章：将文章内嵌图片下载到本地缓存（gallery_images 已有内容则跳过）
         article_images = details.get("article_images", [])
