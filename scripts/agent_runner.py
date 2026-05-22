@@ -42,16 +42,19 @@ def run(dry_run: bool = False, live_preview: bool = False):
     if progress.get("phase", 0) < 1:
         logger.info("=== Phase 1: 感知 ===")
         focus_topics = get_config("focus_topics", default=[])
+
+        # 趋势扫描：任何话题返回0条均抛异常，由外层 except 记录为 ERROR 而非 warning
         try:
             from scripts.xhs_trend_scanner import scan_topic_trends, update_trend_signals
             trends = scan_topic_trends(focus_topics[:5] or ["写真集"])
-            if trends:
-                update_trend_signals(trends)
-                logger.info(f"  趋势扫描完成: {len(trends)} topics")
+            if not trends:
+                raise RuntimeError("趋势扫描返回空列表（所有话题均无结果），请确认 Chrome 已登录小红书")
+            update_trend_signals(trends)
+            logger.info(f"  趋势扫描完成: {len(trends)} topics")
         except Exception as e:
-            logger.warning(f"  趋势扫描失败: {e}")
+            logger.error(f"  ❌ 趋势扫描失败: {e}")
 
-        # 账号快照（用 get_content_data 获取近期数据）
+        # 账号快照：返回0行也应明确报错（说明 CDP 未能读取创作者数据）
         try:
             from scripts.sqlite_db import insert_account_snapshot
             from scripts.cdp_publish import XiaohongshuPublisher
@@ -59,6 +62,8 @@ def run(dry_run: bool = False, live_preview: bool = False):
             pub.connect()
             stats = pub.get_content_data(page_num=1, page_size=50)
             rows = stats.get("rows", [])
+            if not rows:
+                raise RuntimeError("get_content_data 返回0行，创作者数据读取失败（请确认已登录创作者后台）")
             week_views = sum(r.get("观看", 0) or 0 for r in rows if isinstance(r.get("观看"), int))
             week_saves = sum(r.get("收藏", 0) or 0 for r in rows if isinstance(r.get("收藏"), int))
             week_likes = sum(r.get("点赞", 0) or 0 for r in rows if isinstance(r.get("点赞"), int))
@@ -70,9 +75,9 @@ def run(dry_run: bool = False, live_preview: bool = False):
                 week_likes=week_likes,
                 top_note_key=top_note,
             )
-            logger.info(f"  账号快照: views={week_views} saves={week_saves}")
+            logger.info(f"  账号快照: views={week_views} saves={week_saves} (from {len(rows)} 篇)")
         except Exception as e:
-            logger.warning(f"  账号快照失败: {e}")
+            logger.error(f"  ❌ 账号快照失败: {e}")
 
         set_state(f"runner_progress_{date_str}", {"phase": 1}, date=date_str)
 

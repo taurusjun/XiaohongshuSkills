@@ -37,7 +37,7 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             feeds_result = publisher.search_feeds(keyword=keyword, sort="最多收藏")
             feeds = feeds_result.get("feeds", [])
             if not feeds:
-                continue
+                raise ValueError(f"XHS 搜索「{keyword}」返回0条结果，可能未登录或关键词无效")
 
             def _nc(f): return f.get("noteCard", {})
             def _ii(f): return _nc(f).get("interactInfo", {})
