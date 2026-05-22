@@ -375,7 +375,7 @@ def get_top_topics(n: int = 10, window_days: int = 90) -> list[dict]:
 def get_recent_performance(days: int = 7) -> dict:
     with _connect() as db:
         rows = db.execute(
-            "SELECT * FROM account_snapshots WHERE snapshot_date >= date('now','localtime',?) AND followers IS NOT NULL ORDER BY snapshot_date DESC LIMIT ?",
+            "SELECT * FROM account_snapshots WHERE snapshot_date >= date('now','localtime',?) ORDER BY snapshot_date DESC LIMIT ?",
             (f'-{days} days', days),
         ).fetchall()
     if not rows:
