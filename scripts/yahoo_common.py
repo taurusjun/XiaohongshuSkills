@@ -1081,9 +1081,27 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
     img_note = ""
     if twitter_embeds:
+        # 获取每条推文的作者和内容，让 LLM 能在占位符描述和图片说明中注明来源
+        tweet_info_lines = []
+        for i, url in enumerate(twitter_embeds, 1):
+            tweet_id = re.search(r'/status/(\d+)', url)
+            if not tweet_id:
+                tweet_info_lines.append(f"  推文{i}：（来源未知）")
+                continue
+            meta = _get_tweet_metadata(tweet_id.group(1))
+            if meta:
+                author = meta.get('author', '')
+                screen = meta.get('screen_name', '')
+                text = meta.get('text', '')
+                tweet_info_lines.append(f"  推文{i}：@{screen}（{author}）— {text}")
+            else:
+                tweet_info_lines.append(f"  推文{i}：（无法获取内容）")
+
+        tweet_list = "\n".join(tweet_info_lines)
         img_note = (
-            f"\n\n原文共嵌入 {len(twitter_embeds)} 张图片/推文，已按顺序编号。"
-            "翻译正文时，在对应叙事位置插入图片占位符：【图片1：一句话描述该图内容】、【图片2：...】……"
+            f"\n\n原文共嵌入 {len(twitter_embeds)} 条推文，内容如下：\n{tweet_list}\n\n"
+            "翻译正文时，在每条推文对应的叙事位置插入图片占位符。"
+            "格式：【图片N：@screen_name（作者名）— 一句话说明这条推文为何出现在这里】\n"
             "占位符使用全角括号【】，与上下文用换行隔开。"
         )
 
@@ -1344,6 +1362,33 @@ def _get_tweet_image_urls(tweet_id: str) -> list[str]:
         return []
 
 
+def _get_tweet_metadata(tweet_id: str) -> dict:
+    """调 syndication API 获取推文作者名、screen_name、正文摘要。
+    返回 {"author": str, "screen_name": str, "text": str}，失败返回空 dict。
+    """
+    try:
+        api_url = (f"https://cdn.syndication.twimg.com/tweet-result"
+                   f"?id={tweet_id}&lang=ja"
+                   f"&features=tfw_timeline_list%3A%3Btfw_follower_count_sunset%3Atrue"
+                   f"&token=4")
+        resp = requests.get(api_url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://platform.twitter.com/",
+        }, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+        user = data.get("user", {})
+        author = user.get("name", "")
+        screen_name = user.get("screen_name", "")
+        text = data.get("text", "").strip()
+        # 去掉末尾的 t.co 短链
+        text = re.sub(r'\s*https://t\.co/\S+$', '', text).strip()
+        return {"author": author, "screen_name": screen_name, "text": text[:80]}
+    except Exception:
+        return {}
+
+
 def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
     """通过 syndication API 获取推文图片 URL，直接下载，追加到 news['gallery_images']。"""
     import re as _re
@@ -1357,15 +1402,24 @@ def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
     new_paths = []
     file_idx = len(existing)
 
+    tweet_meta_map = news.get('_tweet_meta', {})  # {tweet_id: {author, screen_name, text}}
+
     for tweet_url in tweet_urls[:7]:
-        tweet_id = re.search(r'/status/(\d+)', tweet_url)
-        if not tweet_id:
+        m_id = re.search(r'/status/(\d+)', tweet_url)
+        if not m_id:
             continue
-        tweet_id = tweet_id.group(1)
+        tweet_id = m_id.group(1)
+
+        # 获取推文元数据（作者 + 正文）
+        meta = _get_tweet_metadata(tweet_id)
+        if meta:
+            tweet_meta_map[tweet_id] = meta
+            screen = meta.get('screen_name', tweet_id)
+            print(f"    📝 推文元数据: @{screen} — {meta.get('text','')[:40]}")
+
         img_urls = _get_tweet_image_urls(tweet_id)
         for img_url in img_urls:
             try:
-                # pbs.twimg.com 需要走代理，使用系统代理（不用 _direct_session）
                 resp = requests.get(img_url, headers={
                     "User-Agent": "Mozilla/5.0",
                     "Referer": "https://twitter.com/",
@@ -1376,9 +1430,12 @@ def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
                 fpath.write_bytes(resp.content)
                 new_paths.append(str(fpath))
                 file_idx += 1
-                print(f"    🐦 推文图片: {fpath.name} ({len(resp.content)//1024}KB) tweet={tweet_id}")
+                screen = meta.get('screen_name', tweet_id) if meta else tweet_id
+                print(f"    🐦 推文图片: {fpath.name} ({len(resp.content)//1024}KB) @{screen}")
             except Exception as e:
                 print(f"    ⚠️ 推文图片下载失败: {e}")
+
+    news['_tweet_meta'] = tweet_meta_map  # 保存元数据供后续使用
 
     if new_paths:
         news['gallery_images'] = existing + new_paths
