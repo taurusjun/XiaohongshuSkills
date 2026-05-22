@@ -266,38 +266,36 @@ _SECTION_BREAK_RE = re.compile(r'^(##|【(?:图片|推文)\d+)', re.MULTILINE)
 
 
 def _split_intro_body_outro(content: str) -> tuple[str, str, str]:
-    """将正文拆分为 导语 / 主体 / 结语。
-    导语：第一个 ## 标题或图片标记之前的文字
-    结语：最后一个 ## 标题或图片标记之后的文字
+    """将正文拆分为 导语（第一段）/ 主体 / 结语（最后一段）。
+    按双换行分段，首段为导语，尾段为结语，中间为主体。
+    首/尾段如果以 ## 或 【图片 开头则不作为导语/结语。
     """
-    breaks = list(_SECTION_BREAK_RE.finditer(content))
-    if not breaks:
-        return content.strip(), "", ""
+    # 按空行分段
+    paras = [p.strip() for p in re.split(r'\n{2,}', content) if p.strip()]
+    if not paras:
+        return "", content.strip(), ""
 
-    intro = content[:breaks[0].start()].strip()
-    after_last = content[breaks[-1].start():]
-    # 结语：最后一个 break 之后的第一个非标题、非图片段落
-    tail_lines = after_last.split("\n")
-    body_end = after_last
-    outro_lines = []
-    # 跳过最后一个 break 所在的行，从其后找纯文字段落
-    for i, line in enumerate(reversed(tail_lines)):
-        s = line.strip()
-        if not s:
-            continue
-        if s.startswith("##") or _IMG_RE.match(s):
-            break
-        outro_lines.insert(0, line)
+    def _is_body_para(s: str) -> bool:
+        return s.startswith("##") or bool(_IMG_RE.match(s))
 
-    if outro_lines:
-        outro_text = "\n".join(outro_lines).strip()
-        # 从 body 末尾去掉 outro 部分
-        body_text = content[breaks[0].start():content.rfind(outro_text)].strip()
+    # 导语：第一段（非标题/图片才算导语）
+    if len(paras) >= 1 and not _is_body_para(paras[0]):
+        intro = paras[0]
+        rest = paras[1:]
     else:
-        outro_text = ""
-        body_text = content[breaks[0].start():].strip()
+        intro = ""
+        rest = paras
 
-    return intro, body_text, outro_text
+    # 结语：最后一段（非标题/图片才算结语）
+    if len(rest) >= 2 and not _is_body_para(rest[-1]):
+        outro = rest[-1]
+        body_paras = rest[:-1]
+    else:
+        outro = ""
+        body_paras = rest
+
+    body = "\n\n".join(body_paras)
+    return intro, body, outro
 
 
 def _render_inline(text: str, S: dict) -> str:
