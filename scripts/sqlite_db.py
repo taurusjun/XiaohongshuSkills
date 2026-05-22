@@ -12,6 +12,11 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path, uri=True if DB_PATH == ":memory:" else False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=OFF")
+    # Python 3.12+ 改变了 isolation_level 默认行为，显式设置确保 with conn: 能自动提交
+    # autocommit=False (legacy mode) + isolation_level="" 保证 with 块退出时调用 commit()
+    if hasattr(conn, 'autocommit'):  # Python 3.12+
+        pass  # 保持默认 LEGACY_TRANSACTION_CONTROL，with conn: 仍会提交
+    conn.isolation_level = ""  # deferred — 确保 with conn: 触发 commit/rollback
     return conn
 
 def init_db():
