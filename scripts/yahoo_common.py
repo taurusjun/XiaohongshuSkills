@@ -314,6 +314,68 @@ def _normalize_kanji(text: str) -> str:
     """将日式汉字（旧字体/繁体）转为简体中文"""
     return text.translate(_SHINJITAI_MAP)
 
+def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
+    """翻译标题 + 判断体裁适用性，一次 LLM 调用完成。
+    返回 {"title_zh": str, "format_suitability": list[str], "is_long_form": bool}
+    """
+    import re as _re, json as _json
+    FORMAT_TYPES = ["news", "story", "ranking", "comparison"]
+
+    body_snippet = body_ja[:500] if body_ja else ""
+    format_guide = (
+        "体裁判断标准：\n"
+        "- news（资讯体）：任何内容都适用，是兜底选项\n"
+        "- story（故事体）：内容有时间弧度或前后变化，如「从默默无闻到走红」「克服困难最终成功」「意外转折」。适用示例：长访谈/周年回顾/突发反转新闻\n"
+        "- ranking（盘点体）：可以提炼出≥3个并列元素，如代表作Top5/历代比较。适用示例：周年精选/历代比较/分类推荐\n"
+        "- comparison（对比体）：含两个或以上可比较对象，如两人对比/前后对比。适用示例：同一人不同时期/两位艺人对比\n"
+    )
+
+    prompt = (
+        f"任务1：将以下日文标题翻译为中文（一行，不加解释）\n"
+        f"任务2：判断这篇文章适合哪些体裁\n\n"
+        f"日文标题：{title_ja}\n"
+        f"正文摘要（前500字）：{body_snippet}\n\n"
+        f"{format_guide}\n"
+        f"返回严格JSON（两个任务独立）：\n"
+        f'{{\"title_zh\": \"中文标题\", \"format_suitability\": [\"news\"], \"reason\": \"简短说明\"}}'
+    )
+
+    result_str = call_litellm(
+        prompt, max_tokens=300, temperature=0.2,
+        response_format={"type": "json_object"},
+    ) if LITELLM_API_KEY else None
+
+    title_zh = ""
+    formats = ["news"]
+    if result_str:
+        try:
+            data = _json.loads(result_str)
+            title_zh = data.get("title_zh", "").strip()
+            fs = data.get("format_suitability", ["news"])
+            if isinstance(fs, str):
+                fs = [fs]
+            formats = [f for f in fs if f in FORMAT_TYPES] or ["news"]
+        except Exception:
+            pass
+
+    # fallback：仅翻译
+    if not title_zh:
+        title_zh = translate_title(title_ja)
+
+    # Q&A格式检测：不自动注入 story
+    qa_markers = sum(1 for m in _re.finditer(r'(?:^|\n)\s*[Ｑq][:：]', body_ja or ""))
+    if qa_markers >= 3 and "story" in formats:
+        formats = [f for f in formats if f != "story"]
+        if not formats:
+            formats = ["news"]
+
+    return {
+        "title_zh": _normalize_kanji(title_zh),
+        "format_suitability": formats,
+        "is_long_form": False,
+    }
+
+
 def translate_title(title_ja: str) -> str:
     """将日文标题翻译为中文（默认用 LLM，可开关切回 Google）"""
     use_google = os.environ.get("USE_GOOGLE_TRANSLATE", "").lower() in ("1", "true", "yes")
@@ -386,7 +448,7 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 
 def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
                                   keyword: str = "", body_text: str = "",
-                                  hint: str = "") -> Tuple[str, str, str, str, str, list]:
+                                  hint: str = "", content_format: str = "news") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
@@ -555,9 +617,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
             break
         return s[:cut]
 
+    # story 体裁标题上限 64 字符权重，其他 20
+    title_max_w = 64.0 if content_format == "story" else 20.0
+
     raw_seo = last_section("SEO标题")
     if raw_seo:
-        seo_title = _truncate_title(raw_seo.split('\n')[0].strip())
+        seo_title = _truncate_title(raw_seo.split('\n')[0].strip(), max_w=title_max_w)
         # 兜底：日式汉字 → 简体中文
         jis_to_sc = str.maketrans({
             '実': '实', '愛': '爱', '黒': '黑', '會': '会', '園': '园',
@@ -939,16 +1004,39 @@ def process_news_item(news: dict, no_translate: bool = False,
             news['_skip'] = True
             return news
 
-        # 用清洗后的标题翻译
-        print("    翻译...")
-        news['title_zh'] = translate_title(news['title_ja'])
+        # 翻译 + 体裁前置判断（一次 LLM 调用）
+        print("    翻译+体裁判断...")
+        tc = translate_and_classify(
+            news['title_ja'],
+            body_ja=news.get('content_ja', '') or news.get('body_text', ''),
+        )
+        news['title_zh'] = tc['title_zh']
+        news['format_suitability'] = tc['format_suitability']  # list[str]
 
+        # 长文检测（分页文章 is_long_form=True，自动注入 story）
+        if news.get('is_long_form'):
+            qa_markers = sum(1 for _ in __import__('re').finditer(
+                r'(?:^|\n)\s*[Ｑq][:：]', news.get('content_ja', '')))
+            if qa_markers < 3 and 'story' not in news['format_suitability']:
+                news['format_suitability'] = ['story'] + news['format_suitability']
+
+        # 从 format_suitability 中选当前体裁（优先规划层指定的，否则用第一个适用的）
+        planned_format = news.get('_planned_format', '')
+        if planned_format and planned_format in news['format_suitability']:
+            selected_format = planned_format
+        else:
+            selected_format = news['format_suitability'][0] if news['format_suitability'] else 'news'
+        news['_selected_format'] = selected_format
+
+        print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
         print("    生成内容...")
         generated = generate_content_and_comment(
             news['title_ja'], news['title_zh'],
             ja_summary=news.get('ja_summary', ''),
             keyword=keyword,
             body_text=news.get('body_text', ''),
+            hint=news.get('_regen_hint', ''),
+            content_format=selected_format,
         )
         if generated is None:
             print("    ⚠️ LLM 调用失败，跳过此条新闻")
