@@ -1053,7 +1053,7 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['original_image_url'] = details.get("image_url", "")
         news['body_text']          = details.get("body_text", "")
 
-        # 长文文章：将文章内嵌图片下载到本地缓存，写 meta.json（gallery_fetch 会跳过已缓存的）
+        # 长文文章：将文章内嵌图片下载到本地缓存（gallery_images 已有内容则跳过）
         article_images = details.get("article_images", [])
         if article_images and news.get('is_long_form'):
             _download_article_images(news, article_images)
@@ -1087,12 +1087,8 @@ def process_news_item(news: dict, no_translate: bool = False,
             if qa_markers < 3 and 'story' not in news['format_suitability']:
                 news['format_suitability'] = ['story'] + news['format_suitability']
 
-        # 从 format_suitability 中选当前体裁（优先规划层指定的，否则用第一个适用的）
-        planned_format = news.get('_planned_format', '')
-        if planned_format and planned_format in news['format_suitability']:
-            selected_format = planned_format
-        else:
-            selected_format = news['format_suitability'][0] if news['format_suitability'] else 'news'
+        # 从 format_suitability 中取第一个适用体裁
+        selected_format = news['format_suitability'][0] if news['format_suitability'] else 'news'
         news['_selected_format'] = selected_format
 
         print(f"    体裁: {selected_format} (适用: {news['format_suitability']})")
