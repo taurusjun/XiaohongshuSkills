@@ -884,6 +884,12 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .modal.active{display:flex}
 .modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
 .sep-line{border:none;border-top:1px solid var(--border);margin:10px 0}
+/* Editor.js overrides */
+#editorjs .ce-block__content{max-width:none}
+#editorjs .codex-editor__redactor{padding-bottom:20px!important}
+#editorjs h2.ce-header{font-size:16px;font-weight:700;margin:16px 0 6px;color:var(--text)}
+#editorjs h3.ce-header{font-size:14px;font-weight:600;margin:14px 0 4px;color:var(--text)}
+#editorjs .image-tool__image-picture{max-width:100%;border-radius:8px}
 </style>
 </head>
 <body>
@@ -1013,23 +1019,24 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
       <div class="field-row field-row-ta"><label>新闻要点</label><div class="value">
-        {# story 体裁：块状多媒体编辑器；其他体裁：普通 textarea #}
-        {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
         <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
-        <div id="blockEditor" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg)"></div>
-        <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
-          <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff">👁 预览</button>
+        {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
+        {# story 体裁：Editor.js 富文本编辑器 #}
+        <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end;align-items:center">
+          <button class="btn btn-gray btn-sm" onclick="openImgPicker()" style="font-size:11px">📷 插入图片</button>
+          <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff;font-size:11px">👁 预览</button>
         </div>
         {# 图片选择浮层 #}
-        <div id="imgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:340px;max-height:70vh;overflow-y:auto">
+        <div id="imgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:360px;max-height:70vh;overflow-y:auto">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span style="font-size:13px;font-weight:600">选择图片</span>
+            <span style="font-size:13px;font-weight:600">选择图片插入</span>
             <button onclick="closeImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999">✕</button>
           </div>
           <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
         {% else %}
-        <textarea class="inline-textarea auto-resize" name="content" id="contentHidden" style="min-height:120px">{{news.content or ''}}</textarea>
+        <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea>
         {% endif %}
       </div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
@@ -1191,9 +1198,9 @@ document.querySelectorAll('.auto-resize').forEach(function(ta){
 });
 
 document.getElementById('saveBtn').addEventListener('click',async()=>{
-  // 若块编辑器激活，先序列化内容同步到隐藏 textarea
-  if(typeof _serializeBlocks==='function'&&document.getElementById('blockEditor')){
-    document.getElementById('contentHidden').value=_serializeBlocks();
+  // 若 Editor.js 激活，先序列化内容到隐藏 textarea
+  if(_ejsEditor){
+    try{const out=await _ejsEditor.save();document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);}catch(e){}
   }
   const data={};
   ['title','summary','content','comment','category','video_caption','gallery_url','image_url'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
@@ -1375,197 +1382,153 @@ async function submitOverride(){
   if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
 }
 
-// ── 块状多媒体编辑器 ────────────────────────────────────────
+// ── Editor.js 富文本编辑器 ────────────────────────────────────
 const _allImgs = {% if news.gallery_images %}{{news.gallery_images|tojson}}{% else %}[]{% endif %};
-const _tweetImgs = _allImgs.filter(p=>p.includes('tweet_'));
-let _blocks = [];   // [{type:'text',content:str}|{type:'image',path:str,cap:str}]
+let _ejsEditor = null;
+let _ejsImgCounter = 0;
 let _pickerCb = null;
 
-function _initBlockEditor(){
-  const raw = document.getElementById('contentHidden').value;
-  _blocks = _parseBlocks(raw);
-  _renderBlocks();
-}
-
-function _parseBlocks(text){
-  // 匹配新格式【图片N：描述】和旧格式【推文N：描述】
-  const blocks=[], re=/【(?:图片|推文)\d+：[^】]*】/g;
-  let last=0, imgIdx=0, m;
+// ── Editor.js 初始化 ──────────────────────────────────────────
+function _textToEjsBlocks(text, imgs){
+  // 将 plain text（含 ## 小标题 和 【图片N：desc】 标记）转为 Editor.js blocks
+  const blocks=[]; let imgIdx=0, last=0;
+  const re=/【(?:图片|推文)\d+：[^】]*】/g; let m;
+  function _addText(t){
+    if(!t.trim()) return;
+    for(const line of t.split('\n')){
+      const s=line.trim();
+      if(!s) continue;
+      if(s.startsWith('## ')){
+        blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
+      } else if(s.startsWith('### ')){
+        blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
+      } else {
+        blocks.push({type:'paragraph',data:{text:s}});
+      }
+    }
+  }
   while((m=re.exec(text))!==null){
-    const before=text.slice(last,m.index).trim();
-    if(before) blocks.push({type:'text',content:before});
-    // 图片来源：全部 gallery_images（文章图 + 推文图）
-    blocks.push({type:'image',path:_allImgs[imgIdx]||'',cap:m[0]});
-    if(_allImgs[imgIdx]) imgIdx++;
+    _addText(text.slice(last,m.index));
+    const url=imgs[imgIdx]?'/local-image?path='+encodeURIComponent(imgs[imgIdx]):'';
+    blocks.push({type:'image',data:{file:{url},caption:m[0],withBorder:false,withBackground:false,stretched:false}});
+    if(imgs[imgIdx]) imgIdx++;
     last=m.index+m[0].length;
   }
-  const tail=text.slice(last).trim();
-  if(tail) blocks.push({type:'text',content:tail});
-  if(!blocks.length) blocks.push({type:'text',content:text});
+  _addText(text.slice(last));
+  if(!blocks.length) blocks.push({type:'paragraph',data:{text:text}});
   return blocks;
 }
 
-function _syncFromDOM(){
-  // 序列化前先把 DOM textarea 内容同步回 _blocks，避免 oninput 未触发导致内容丢失
-  const ed=document.getElementById('blockEditor');
-  if(!ed) return;
-  const tas=[...ed.querySelectorAll('textarea')];
-  let taIdx=0;
-  _blocks.forEach(b=>{
-    if(b.type==='text'){
-      if(tas[taIdx]) b.content=tas[taIdx].value;
-      taIdx++;
+function _ejsBlocksToText(blocks){
+  // 将 Editor.js blocks 序列化回 plain text 格式
+  const parts=[]; let imgN=1;
+  for(const b of blocks){
+    if(b.type==='paragraph'&&b.data.text) parts.push(b.data.text);
+    else if(b.type==='header'&&b.data.text){
+      const prefix=b.data.level===3?'### ':'## ';
+      parts.push(prefix+b.data.text);
+    } else if(b.type==='image'){
+      const cap=b.data.caption||(b.data.file?.url?`【图片${imgN}：图片${imgN}】`:'');
+      if(cap) parts.push(cap);
+      imgN++;
+    }
+  }
+  return parts.filter(s=>s&&s.trim()).join('\n\n');
+}
+
+function _initEditorJs(){
+  const el=document.getElementById('editorjs');
+  if(!el||typeof EditorJS==='undefined') return;
+  const raw=document.getElementById('contentHidden').value;
+  const initBlocks=_textToEjsBlocks(raw,_allImgs);
+  _ejsEditor=new EditorJS({
+    holder:'editorjs',
+    minHeight:100,
+    placeholder:'输入正文内容...',
+    tools:{
+      header:{
+        class:Header,
+        config:{levels:[2,3],defaultLevel:2},
+        inlineToolbar:true
+      },
+      image:{
+        class:ImageTool,
+        config:{
+          uploader:{
+            uploadByUrl(url){return Promise.resolve({success:1,file:{url}});}
+          }
+        }
+      }
+    },
+    data:{blocks:initBlocks},
+    onChange:async()=>{
+      // 实时同步到隐藏 textarea
+      try{
+        const out=await _ejsEditor.save();
+        document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);
+      }catch(e){}
     }
   });
 }
 
-function _serializeBlocks(){
-  _syncFromDOM();
-  let imgN=1;
-  return _blocks.map(b=>{
-    if(b.type==='text') return b.content;
-    const fname=b.path?b.path.split('/').pop():'';
-    const cap=b.cap||`【图片${imgN}：${fname}】`;
-    imgN++;
-    return cap;
-  }).filter(s=>s!==undefined&&s!==null).join('\n\n');
-}
-
-function _renderBlocks(){
-  _syncFromDOM(); // 重建前先同步，防止移动时内容丢失
-  const ed=document.getElementById('blockEditor');
-  if(!ed) return;
-  ed.innerHTML='';
-  _blocks.forEach((b,i)=>{
-    ed.appendChild(_makeInsertRow(i));
-    if(b.type==='text') ed.appendChild(_makeTextBlock(b,i));
-    else ed.appendChild(_makeImgBlock(b,i));
-  });
-  ed.appendChild(_makeInsertRow(_blocks.length));
-}
-
-function _makeInsertRow(idx){
-  const d=document.createElement('div');
-  d.style.cssText='display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2,#f7f7f7)';
-  d.innerHTML=`<div style="flex:1;height:1px;background:var(--border)"></div>
-    <button onclick="insertImgBlock(${idx})" style="font-size:11px;padding:2px 8px;border:1px dashed #aaa;background:none;border-radius:12px;cursor:pointer;color:#888;white-space:nowrap">📷 插入图片</button>
-    <div style="flex:1;height:1px;background:var(--border)"></div>`;
-  return d;
-}
-
-function _makeTextBlock(b,i){
-  const d=document.createElement('div');
-  d.style.cssText='position:relative;background:var(--bg)';
-  const ta=document.createElement('textarea');
-  ta.style.cssText='width:100%;box-sizing:border-box;border:none;outline:none;resize:none;padding:10px 36px 10px 10px;font-size:13px;line-height:1.8;background:transparent;font-family:inherit;min-height:60px';
-  ta.value=b.content;
-  ta.oninput=()=>{b.content=ta.value;ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'}; // 绑定对象引用，不受 index 变化影响
-  setTimeout(()=>{ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'},0);
-  // Move buttons
-  const ctrl=document.createElement('div');
-  ctrl.style.cssText='position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;opacity:0;transition:opacity .15s';
-  ctrl.innerHTML=`<button onclick="moveBlock(${i},-1)" title="上移" style="${_btnS()}">↑</button>
-    <button onclick="moveBlock(${i},1)" title="下移" style="${_btnS()}">↓</button>`;
-  d.onmouseenter=()=>ctrl.style.opacity='1';
-  d.onmouseleave=()=>ctrl.style.opacity='0';
-  d.appendChild(ta);d.appendChild(ctrl);
-  return d;
-}
-
-function _makeImgBlock(b,i){
-  const d=document.createElement('div');
-  d.style.cssText='position:relative;background:var(--bg2,#f7f7f7);padding:8px;text-align:center';
-  if(b.path){
-    const img=document.createElement('img');
-    img.src='/local-image?path='+encodeURIComponent(b.path);
-    img.style.cssText='max-width:100%;max-height:240px;border-radius:8px;object-fit:contain';
-    d.appendChild(img);
-  } else {
-    const ph=document.createElement('div');
-    ph.style.cssText='height:80px;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px';
-    ph.textContent='未选择图片';
-    d.appendChild(ph);
-  }
-  const ctrl=document.createElement('div');
-  ctrl.style.cssText='display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:wrap';
-  ctrl.innerHTML=`<button onclick="swapImgBlock(${i})" style="${_btnS2()}">🔄 换图</button>
-    <button onclick="moveBlock(${i},-1)" style="${_btnS2()}">↑ 上移</button>
-    <button onclick="moveBlock(${i},1)" style="${_btnS2()}">↓ 下移</button>
-    <button onclick="removeBlock(${i})" style="${_btnS2('red')}">✕ 删除</button>`;
-  d.appendChild(ctrl);
-  return d;
-}
-
-function _btnS(){return 'font-size:10px;padding:1px 4px;background:#eee;border:1px solid #ccc;border-radius:3px;cursor:pointer;line-height:1.4'}
-function _btnS2(c){return `font-size:11px;padding:2px 8px;background:${c==='red'?'#fee':'#eee'};border:1px solid ${c==='red'?'#fcc':'#ccc'};border-radius:4px;cursor:pointer`}
-
-function insertImgBlock(idx){
-  openImgPicker(path=>{
-    _blocks.splice(idx,0,{type:'image',path,cap:''});
-    _renderBlocks();
-  });
-}
-function swapImgBlock(idx){
-  openImgPicker(path=>{
-    _blocks[idx].path=path;
-    _renderBlocks();
-  });
-}
-function removeBlock(idx){
-  _blocks.splice(idx,1);
-  _renderBlocks();
-}
-function moveBlock(idx,dir){
-  const ni=idx+dir;
-  if(ni<0||ni>=_blocks.length) return;
-  [_blocks[idx],_blocks[ni]]=[_blocks[ni],_blocks[idx]];
-  _renderBlocks();
-}
-
-function openImgPicker(cb){
-  _pickerCb=cb;
+function openImgPicker(){
   const grid=document.getElementById('imgPickerGrid');
   grid.innerHTML='';
   _allImgs.forEach(p=>{
     const d=document.createElement('div');
-    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden';
+    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;flex-shrink:0';
     d.onmouseenter=()=>d.style.borderColor='#7c3aed';
     d.onmouseleave=()=>d.style.borderColor='transparent';
-    d.onclick=()=>{closeImgPicker();_pickerCb(p)};
+    d.onclick=async()=>{
+      closeImgPicker();
+      if(!_ejsEditor) return;
+      _ejsImgCounter++;
+      const url='/local-image?path='+encodeURIComponent(p);
+      const cap=`【图片${_ejsImgCounter}：${p.split('/').pop()}】`;
+      // 在当前光标块后插入图片
+      const curIdx=_ejsEditor.blocks.getCurrentBlockIndex();
+      _ejsEditor.blocks.insert('image',{file:{url},caption:cap,withBorder:false,withBackground:false,stretched:false},{},curIdx+1,true);
+    };
     const img=document.createElement('img');
     img.src='/local-image?path='+encodeURIComponent(p);
     img.style.cssText='width:88px;height:88px;object-fit:cover;display:block';
     img.title=p.split('/').pop();
-    d.appendChild(img);
-    grid.appendChild(d);
+    d.appendChild(img);grid.appendChild(d);
   });
   document.getElementById('imgPicker').style.display='block';
 }
 function closeImgPicker(){document.getElementById('imgPicker').style.display='none'}
 
-async function saveBlockContent(){
-  const text=_serializeBlocks();
-  document.getElementById('contentHidden').value=text;
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:text})});
-  const t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1200);
-}
-
-function openStoryPreview(){
+async function openStoryPreview(){
   const title='{{news.title|e}}';
   let html=`<h2 style="font-size:17px;font-weight:700;line-height:1.5;margin:0 0 14px;color:#111">${esc(title)}</h2>`;
-  _blocks.forEach(b=>{
-    if(b.type==='text'&&b.content.trim()){
-      html+=`<p style="white-space:pre-wrap;font-size:14px;line-height:1.9;color:#222;margin:0 0 14px">${esc(b.content)}</p>`;
-    } else if(b.type==='image'&&b.path){
-      html+=`<div style="margin:12px 0"><img src="/local-image?path=${encodeURIComponent(b.path)}" style="width:100%;border-radius:10px;display:block"></div>`;
-    }
-  });
+  let blocks=[];
+  if(_ejsEditor){try{const out=await _ejsEditor.save();blocks=out.blocks||[];}catch(e){}}
+  for(const b of blocks){
+    if(b.type==='paragraph'&&b.data.text)
+      html+=`<p style="font-size:14px;line-height:1.9;color:#222;margin:0 0 12px">${b.data.text}</p>`;
+    else if(b.type==='header'&&b.data.text){
+      const tag=b.data.level===3?'h3':'h2';
+      html+=`<${tag} style="font-size:${b.data.level===3?'14':'16'}px;font-weight:700;margin:16px 0 6px;color:#111">${esc(b.data.text)}</${tag}>`;
+    } else if(b.type==='image'&&b.data.file?.url)
+      html+=`<div style="margin:12px 0"><img src="${b.data.file.url}" style="width:100%;border-radius:10px;display:block"><p style="font-size:11px;color:#aaa;margin:4px 0">${esc(b.data.caption||'')}</p></div>`;
+  }
   document.getElementById('storyPreviewBody').innerHTML=html;
   document.getElementById('storyPreviewModal').style.display='block';
 }
 
-// Init on load
-if(document.getElementById('blockEditor')) _initBlockEditor();
+// Init on load (load Editor.js from CDN first)
+(function loadEditorJs(){
+  if(!document.getElementById('editorjs')) return;
+  function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
+  loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
+    loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
+      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.9.0/dist/index.umd.min.js',()=>{
+        _initEditorJs();
+      });
+    });
+  });
+})();
 </script>
 <div class="modal" id="overrideModal"><div class="modal-card" style="max-width:360px">
   <h3 style="margin-bottom:8px">纠正 <span id="overrideDim"></span></h3>
