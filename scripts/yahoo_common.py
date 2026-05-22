@@ -1037,26 +1037,38 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
     result = call_litellm(
         prompt,
-        system_prompt="你是严肃新闻媒体编辑，输出简体中文，JSON格式。",
-        max_tokens=3000,
+        system_prompt="你是严肃新闻媒体编辑。直接输出JSON，不要任何前置说明或思考过程。",
+        max_tokens=6000,
         temperature=0.4,
         response_format={"type": "json_object"},
     )
     if not result:
         print(f"    ⚠️ 故事体 LLM 调用返回空")
         return None
+    import json as _j, re as _re
+    # 先尝试直接解析
     try:
-        import json as _j
         data = _j.loads(result)
-        # 验证必要字段
-        if not data.get('body'):
-            print(f"    ⚠️ 故事体 LLM 返回缺少 body 字段: {list(data.keys())}")
-            return None
-        return data
-    except Exception as e:
-        print(f"    ⚠️ 故事体 JSON 解析失败: {e}")
-        print(f"    原始返回前200: {result[:200]}")
-        return None
+        if data.get('body'):
+            return data
+    except Exception:
+        pass
+    # LLM 可能先输出思考过程，再输出 JSON——从文本中提取最后一个完整 JSON 对象
+    try:
+        # 找最后一个 { ... } 包含 "body" 关键字的块
+        matches = list(_re.finditer(r'\{[\s\S]*?"body"[\s\S]*?\}(?=\s*$|\s*\n)', result))
+        if not matches:
+            # 宽松匹配：找所有 {...} 取最长的
+            matches = list(_re.finditer(r'\{[\s\S]+\}', result))
+        if matches:
+            candidate = matches[-1].group()
+            data = _j.loads(candidate)
+            if data.get('body'):
+                return data
+    except Exception:
+        pass
+    print(f"    ⚠️ 故事体 JSON 解析失败，原始返回前300: {result[:300]}")
+    return None
 
 
 def _download_article_images(news: dict, image_urls: list[str]) -> None:
