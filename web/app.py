@@ -1405,7 +1405,22 @@ function _parseBlocks(text){
   return blocks;
 }
 
+function _syncFromDOM(){
+  // 序列化前先把 DOM textarea 内容同步回 _blocks，避免 oninput 未触发导致内容丢失
+  const ed=document.getElementById('blockEditor');
+  if(!ed) return;
+  const tas=[...ed.querySelectorAll('textarea')];
+  let taIdx=0;
+  _blocks.forEach(b=>{
+    if(b.type==='text'){
+      if(tas[taIdx]) b.content=tas[taIdx].value;
+      taIdx++;
+    }
+  });
+}
+
 function _serializeBlocks(){
+  _syncFromDOM();
   let imgN=1;
   return _blocks.map(b=>{
     if(b.type==='text') return b.content;
@@ -1413,10 +1428,11 @@ function _serializeBlocks(){
     const cap=b.cap||`【图片${imgN}：${fname}】`;
     imgN++;
     return cap;
-  }).filter(s=>s).join('\n\n');
+  }).filter(s=>s!==undefined&&s!==null).join('\n\n');
 }
 
 function _renderBlocks(){
+  _syncFromDOM(); // 重建前先同步，防止移动时内容丢失
   const ed=document.getElementById('blockEditor');
   if(!ed) return;
   ed.innerHTML='';
@@ -1443,7 +1459,7 @@ function _makeTextBlock(b,i){
   const ta=document.createElement('textarea');
   ta.style.cssText='width:100%;box-sizing:border-box;border:none;outline:none;resize:none;padding:10px 36px 10px 10px;font-size:13px;line-height:1.8;background:transparent;font-family:inherit;min-height:60px';
   ta.value=b.content;
-  ta.oninput=()=>{_blocks[i].content=ta.value;ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'};
+  ta.oninput=()=>{b.content=ta.value;ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'}; // 绑定对象引用，不受 index 变化影响
   setTimeout(()=>{ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'},0);
   // Move buttons
   const ctrl=document.createElement('div');
