@@ -83,16 +83,30 @@ def run(dry_run: bool = False, live_preview: bool = False):
             week_likes = sum(r.get("点赞", 0) or 0 for r in rows if isinstance(r.get("点赞"), int))
             top_note = max(rows, key=lambda r: r.get("观看", 0) or 0, default={}).get("_id", "")
 
-            # 从自己的主页抓粉丝数
+            # 从自己的主页抓粉丝数（用 span.count+span.shows 精确提取）
             followers = None
             my_user_id = get_config("my_user_id", default="")
             if my_user_id:
                 try:
-                    profile = pub.get_profile_snapshot(user_id=my_user_id)
-                    followers = profile.get("user", {}).get("followers")
-                    if followers is not None:
-                        followers = int(str(followers).replace(",", "").replace("万", "0000")) if isinstance(followers, str) else int(followers)
-                    logger.info(f"  粉丝数: {followers}")
+                    pub._navigate(f"https://www.xiaohongshu.com/user/profile/{my_user_id}")
+                    import time as _t; _t.sleep(2.5)
+                    raw = pub._evaluate("""
+                        (() => {
+                            const result = {};
+                            document.querySelectorAll('.user-interactions span.count, .count').forEach(el => {
+                                const label = el.nextElementSibling?.innerText?.trim() || '';
+                                const val = el.innerText?.trim();
+                                if (label && val) result[label] = val;
+                            });
+                            return result;
+                        })()
+                    """)
+                    if isinstance(raw, dict):
+                        fans_str = raw.get("粉丝", "")
+                        if fans_str:
+                            fans_str = str(fans_str).replace(",", "")
+                            followers = int(float(fans_str.replace("万", "")) * 10000) if "万" in fans_str else int(fans_str)
+                    logger.info(f"  粉丝数: {followers}  关注: {raw.get('关注')}  获赞收藏: {raw.get('获赞与收藏')}")
                 except Exception as pe:
                     logger.warning(f"  粉丝数获取失败（不影响快照写入）: {pe}")
 
