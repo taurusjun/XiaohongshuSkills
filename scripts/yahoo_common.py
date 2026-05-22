@@ -1008,20 +1008,23 @@ def fetch_article_details(url: str) -> dict:
         if story_container:
             skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
                        "avatar", "profile", "favicon", "tracking", "pixel",
-                       "h30.png", "h20.png", "h16.png"]
+                       "h30.png", "h20.png", "h16.png", "profile_images"]
             for img in story_container.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if not src or not src.startswith("http"):
                     continue
                 if any(k in src.lower() for k in skip_kw):
                     continue
-                try:
-                    w = int(img.get("width", 0))
-                    h = int(img.get("height", 0))
-                    if (w and w < 200) or (h and h < 150):
-                        continue
-                except (ValueError, TypeError):
-                    pass
+                # Twitter 媒体图片（pbs.twimg.com/media/）直接收录，无需尺寸检查
+                is_tweet_media = "pbs.twimg.com/media/" in src
+                if not is_tweet_media:
+                    try:
+                        w = int(img.get("width", 0))
+                        h = int(img.get("height", 0))
+                        if (w and w < 200) or (h and h < 150):
+                            continue
+                    except (ValueError, TypeError):
+                        pass
                 if src not in article_images:
                     article_images.append(src)
 
@@ -1077,7 +1080,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 ---
 日文原文标题：{title_ja}
 日文正文：
-{body_ja[:4000]}
+{body_ja[:8000]}
 ---
 
 严格按格式输出 JSON：
@@ -1196,6 +1199,23 @@ def _download_article_images(news: dict, image_urls: list[str]) -> None:
     local_paths = []
     for i, url in enumerate(image_urls[:10]):
         try:
+            # Twitter 媒体图片用 unified_media_downloader.download_direct
+            if "pbs.twimg.com/media/" in url:
+                try:
+                    from scripts.unified_media_downloader import download_direct
+                    clean_url = url.split("&name=")[0] + "&name=large" if "?" in url else url
+                    files = download_direct(clean_url, cache_dir)
+                    for f in files:
+                        fpath = Path(f)
+                        if fpath.stat().st_size >= 20_000:
+                            dest = cache_dir / f"article_{i:02d}{fpath.suffix or '.jpg'}"
+                            fpath.rename(dest)
+                            local_paths.append(str(dest))
+                            print(f"    📷 推文图片[{i}]: {dest.name} ({dest.stat().st_size//1024}KB)")
+                except Exception as e:
+                    print(f"    ⚠️ 推文图片下载失败[{i}]: {e}")
+                continue
+
             resp = _direct_session.get(url, headers={
                 "User-Agent": "Mozilla/5.0",
                 "Referer": "https://news.yahoo.co.jp/",
