@@ -883,14 +883,64 @@ def extract_key_from_url(url: str) -> str:
     return m.group(1) if m else ""
 
 
+def _fetch_html_via_cdp(url: str, wait_sec: float = 4.0) -> str:
+    """用 CDP 导航到 url，等待 JS 渲染后返回 outerHTML；失败返回空串。"""
+    try:
+        import websocket as _ws_module
+        resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
+        if resp.status_code != 200:
+            return ""
+        tabs = resp.json()
+        ws_url = next((t.get("webSocketDebuggerUrl", "") for t in tabs
+                       if t.get("type") == "page"), "")
+        if not ws_url:
+            return ""
+        ws = _ws_module.create_connection(ws_url, timeout=20)
+        try:
+            ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+            ws.recv()
+            ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
+            start = time.time()
+            while time.time() - start < 20:
+                msg = json.loads(ws.recv())
+                if msg.get("method") == "Page.loadEventFired":
+                    break
+            time.sleep(wait_sec)  # 等 JS 懒加载
+            ws.send(json.dumps({
+                "id": 3, "method": "Runtime.evaluate",
+                "params": {"expression": "document.documentElement.outerHTML"},
+            }))
+            while True:
+                msg = json.loads(ws.recv())
+                if msg.get("id") == 3:
+                    return msg.get("result", {}).get("result", {}).get("value", "")
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"    ⚠️ CDP fetch 失败: {e}")
+    return ""
+
+
 def fetch_article_details(url: str) -> dict:
-    """HTTP 请求文章页，抓取封面图、原标题、日文摘要"""
+    """HTTP 请求文章页，抓取封面图、原标题、日文摘要。
+    对 Yahoo Expert 长文（/expert/articles/）优先走 CDP 以获取 JS 渲染后的图片。"""
     result = {"image_url": "", "original_title": "", "summary": ""}
     try:
-        resp = _direct_session.get(url, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        }, timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        # Yahoo Expert 文章用 CDP 获取完整渲染 HTML（解决懒加载图片问题）
+        is_expert = "/expert/articles/" in url
+        html = ""
+        if is_expert:
+            print("    📡 Expert 文章，用 CDP 获取渲染 HTML...")
+            html = _fetch_html_via_cdp(url, wait_sec=4.0)
+        if not html:
+            resp = _direct_session.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }, timeout=15)
+            html = resp.text
+        soup = BeautifulSoup(html, "html.parser")
 
         og = soup.find("meta", property="og:image")
         if og and og.get("content"):
@@ -987,9 +1037,7 @@ def fetch_article_details(url: str) -> dict:
                     twitter_embeds.append(tweet_url)
         result["twitter_embeds"] = twitter_embeds
 
-        # 長文（>800字）放寬到4000字，提供足夠上下文給體裁判斷
-        body_limit = 4000 if len(body_text) > 800 else 2000
-        result["body_text"] = body_text[:body_limit]
+        result["body_text"] = body_text  # 完整正文，不截断（SQLite TEXT 无长度限制）
         result["article_images"] = article_images[:10]  # 最多10张
     except Exception as e:
         print(f"    ⚠️ 抓取文章详情失败: {e}")
