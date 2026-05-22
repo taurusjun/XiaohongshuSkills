@@ -1523,7 +1523,7 @@ async function openStoryPreview(){
   function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
   loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
     loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
-      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.9.0/dist/index.umd.min.js',()=>{
+      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',()=>{
         _initEditorJs();
       });
     });
