@@ -1273,35 +1273,70 @@ def upload_cover_image(image_url: str) -> str:
     return image_url
 
 
+def _get_tweet_image_urls(tweet_id: str) -> list[str]:
+    """调 Twitter syndication API 获取推文图片 URL 列表（无需认证）。"""
+    import re as _re
+    try:
+        api_url = (f"https://cdn.syndication.twimg.com/tweet-result"
+                   f"?id={tweet_id}&lang=ja"
+                   f"&features=tfw_timeline_list%3A%3Btfw_follower_count_sunset%3Atrue"
+                   f"&token=4")
+        resp = _direct_session.get(api_url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://platform.twitter.com/",
+        }, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        urls = []
+        for m in data.get("mediaDetails", []):
+            if m.get("type") == "photo":
+                base = m.get("media_url_https", "")
+                if base:
+                    urls.append(f"{base}:large")  # 请求大图
+        return urls
+    except Exception:
+        return []
+
+
 def _download_twitter_embeds(news: dict, tweet_urls: list[str]) -> None:
-    """下载嵌入推文的媒体（图片/视频），追加到 news['gallery_images']。"""
+    """通过 syndication API 获取推文图片 URL，直接下载，追加到 news['gallery_images']。"""
+    import re as _re
     key = news.get('key', '') or extract_key_from_url(news.get('link', ''))
     if not key:
         return
     cache_dir = Path(os.path.expanduser(GALLERY_CACHE_DIR)) / key
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    existing = news.get('gallery_images') or []
+    existing = list(news.get('gallery_images') or [])
     new_paths = []
-    try:
-        from scripts.unified_media_downloader import download_twitter
-    except ImportError:
-        print("    ⚠️ unified_media_downloader 不可用，跳过推文媒体下载")
-        return
+    file_idx = len(existing)
 
-    for i, tweet_url in enumerate(tweet_urls[:7]):  # 最多7条推文
-        try:
-            files = download_twitter(tweet_url, cache_dir)
-            for fname in files:
-                fpath = cache_dir / fname
-                if fpath.exists() and fpath.stat().st_size >= 20_000:
-                    new_paths.append(str(fpath))
-        except Exception as e:
-            print(f"    ⚠️ 推文媒体下载失败[{i+1}]: {e}")
+    for tweet_url in tweet_urls[:7]:
+        tweet_id = re.search(r'/status/(\d+)', tweet_url)
+        if not tweet_id:
+            continue
+        tweet_id = tweet_id.group(1)
+        img_urls = _get_tweet_image_urls(tweet_id)
+        for img_url in img_urls:
+            try:
+                resp = _direct_session.get(img_url, headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://twitter.com/",
+                }, timeout=15)
+                if resp.status_code != 200 or len(resp.content) < 20_000:
+                    continue
+                fpath = cache_dir / f"tweet_{file_idx:02d}.jpg"
+                fpath.write_bytes(resp.content)
+                new_paths.append(str(fpath))
+                file_idx += 1
+                print(f"    🐦 推文图片: {fpath.name} ({len(resp.content)//1024}KB) tweet={tweet_id}")
+            except Exception as e:
+                print(f"    ⚠️ 推文图片下载失败: {e}")
 
     if new_paths:
-        news['gallery_images'] = list(existing) + new_paths
-        print(f"    ✅ 推文媒体缓存: {len(new_paths)} 个文件")
+        news['gallery_images'] = existing + new_paths
+        print(f"    ✅ 推文媒体缓存完成: {len(new_paths)} 张")
 
 
 def process_news_item(news: dict, no_translate: bool = False,
