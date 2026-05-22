@@ -33,6 +33,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
     from scripts.sqlite_db import (init_db, get_config, set_state, get_state,
                                     get_top_topics, get_recent_performance)
     init_db()
+    _sync_strategy_config()  # 每次启动检查 agent_strategy.json 是否比 DB 新，若是则同步
 
     date_str = datetime.now().strftime("%Y%m%d")
     progress = get_state(f"runner_progress_{date_str}", default={"phase": 0})
@@ -103,6 +104,8 @@ def run(dry_run: bool = False, live_preview: bool = False):
     plan_data = get_state(f"runner_progress_{date_str}", default={})
     plan = plan_data.get("plan", {})
     topics = [t["topic"] for t in plan.get("topics", [])]
+    # topic → target_format 映射（来自 content_format_rotation）
+    topic_format_map = {t["topic"]: t.get("target_format", "news") for t in plan.get("topics", [])}
 
     if dry_run or live_preview:
         print(json.dumps(plan_data, ensure_ascii=False, indent=2))
@@ -146,7 +149,8 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         if not key or key in seen_keys:
                             continue
                         seen_keys.add(key)
-                        tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags})
+                        tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags,
+                                      "target_format": topic_format_map.get(topic, "news")})
                 except Exception as e:
                     logger.warning(f"  fetch failed for '{topic}': {e}")
 
@@ -160,6 +164,8 @@ def run(dry_run: bool = False, live_preview: bool = False):
                 art = task["art"]
                 topic = task["topic"]
                 extra_tags = task["extra_tags"]
+                target_fmt = task.get("target_format", "news")
+                art["_target_format"] = target_fmt  # 传给 process_news_item 覆盖 LLM 体裁判断
                 art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
                 with lock:
                     done_count[0] += 1
@@ -226,6 +232,27 @@ def run(dry_run: bool = False, live_preview: bool = False):
     _update_topic_performance_for_mature_articles()
 
     logger.info("Agent run complete.")
+
+
+def _sync_strategy_config():
+    """将 config/agent_strategy.json 中的配置同步到 DB。
+    每次 agent_runner 启动时执行：运营者修改 JSON 文件后无需手动同步。
+    """
+    from scripts.sqlite_db import set_config
+    cfg_path = Path(__file__).resolve().parent.parent / "config" / "agent_strategy.json"
+    if not cfg_path.exists():
+        return
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        skip_keys = {"_comment_yahoo_keyword_map"}  # 注释字段不写入
+        synced = []
+        for k, v in cfg.items():
+            if not k.startswith("_") and k not in skip_keys:
+                set_config(k, v)
+                synced.append(k)
+        logger.info(f"  agent_strategy.json → DB 同步完成: {len(synced)} 项")
+    except Exception as e:
+        logger.warning(f"  agent_strategy.json 同步失败（不影响运行）: {e}")
 
 
 def _update_topic_performance_for_mature_articles():

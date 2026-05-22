@@ -8,7 +8,7 @@
   "daily_quota": 5,
   "max_daily_quota": 8,
 
-  "default_post_times": ["12:00", "18:00"],
+  "default_post_times": ["09:30", "12:00", "18:00"],
 
   "content_format_rotation": ["news", "story", "news", "story", "ranking", "news", "news"],
 
@@ -49,7 +49,7 @@
 
   "ai_phrase_threshold": 15,
 
-  "competitor_accounts": [],
+  "competitor_accounts": ["63d8d8d20000000026004e37"],
 
   "_comment_yahoo_keyword_map": "focus_topics 对应的 Yahoo Japan 搜索词（日语），未配置的 topic 直接用原词",
   "yahoo_keyword_map": {
