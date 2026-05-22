@@ -6,18 +6,41 @@ from datetime import datetime
 
 from config.yahoo_conf import DB_PATH
 
-def _connect() -> sqlite3.Connection:
-    # file::memory:?cache=shared 让所有连接共享同一个内存库
-    path = "file::memory:?cache=shared" if DB_PATH == ":memory:" else DB_PATH
-    conn = sqlite3.connect(path, uri=True if DB_PATH == ":memory:" else False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=OFF")
-    # Python 3.12+ 改变了 isolation_level 默认行为，显式设置确保 with conn: 能自动提交
-    # autocommit=False (legacy mode) + isolation_level="" 保证 with 块退出时调用 commit()
-    if hasattr(conn, 'autocommit'):  # Python 3.12+
-        pass  # 保持默认 LEGACY_TRANSACTION_CONTROL，with conn: 仍会提交
-    conn.isolation_level = ""  # deferred — 确保 with conn: 触发 commit/rollback
-    return conn
+class _ConnectionContext:
+    """sqlite3 连接上下文管理器，兼容 Python 3.14 的事务提交行为。
+    with _connect() as db: 退出时显式 commit()，确保写入持久化。
+    """
+    __slots__ = ("_conn",)
+
+    def __init__(self):
+        path = "file::memory:?cache=shared" if DB_PATH == ":memory:" else DB_PATH
+        self._conn = sqlite3.connect(path, uri=DB_PATH == ":memory:")
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys=OFF")
+
+    def execute(self, sql, params=()):
+        return self._conn.execute(sql, params)
+
+    def executemany(self, sql, seq):
+        return self._conn.executemany(sql, seq)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
+def _connect() -> "_ConnectionContext":
+    return _ConnectionContext()
 
 def init_db():
     with _connect() as db:
