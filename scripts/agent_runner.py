@@ -91,18 +91,25 @@ def run(dry_run: bool = False, live_preview: bool = False):
         print(json.dumps(plan_data, ensure_ascii=False, indent=2))
         return
 
-    # Phase 3: 执行
+    # Phase 3: 执行（并行处理，对齐 yahoo_news_auto_sqlite.py 的 ThreadPoolExecutor）
     if progress.get("phase", 0) < 3 and topics:
         logger.info("=== Phase 3: 执行 ===")
+        total_fetched = 0
         try:
+            import threading
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             from scripts.yahoo_news_auto import fetch_news_via_cdp, KEYWORD_TAG_MAP
-            from scripts.yahoo_common import process_news_item, LITELLM_API_KEY
-            from scripts.sqlite_db import insert_news, upsert_score_dims, update_news, load_today_keys
+            from scripts.yahoo_common import process_news_item
+            from scripts.sqlite_db import (insert_news, upsert_score_dims,
+                                            update_news, load_today_keys,
+                                            increment_topic_discard)
 
             existing_keys = load_today_keys()
-            total_fetched = 0
-
             max_results = get_config("daily_quota", default=2)
+            max_workers = get_config("fetch_parallel", default=3)
+
+            # Step 1: 串行抓取（CDP 不支持并发）
+            tasks = []
             for topic in topics[:plan.get("quota_total", 3)]:
                 extra_tags = KEYWORD_TAG_MAP.get(topic, [])
                 try:
@@ -110,22 +117,37 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         topic, max_results=max_results,
                         china_filter=False, existing_keys=existing_keys,
                     )
+                    for art in articles:
+                        tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags})
                 except Exception as e:
                     logger.warning(f"  fetch failed for '{topic}': {e}")
-                    continue
 
-                for art in articles:
+            logger.info(f"  抓取完成: {len(tasks)} 篇待处理，并行度={max_workers}")
+
+            # Step 2: 并行处理（翻译 + 生成 + 评分 各自独立，LLM 调用可并发）
+            lock = threading.Lock()
+            done_count = [0]
+
+            def _process_one(task):
+                art = task["art"]
+                topic = task["topic"]
+                extra_tags = task["extra_tags"]
+                art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
+                with lock:
+                    done_count[0] += 1
+                    status = "⏭️" if art.get("_skip") else ("🗑️" if art.get("_discard") else "✅")
+                    logger.info(f"  [{done_count[0]}/{len(tasks)}] {status} {art.get('title_zh','')[:35]}")
+                return art, topic
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_process_one, t): t for t in tasks}
+                for f in as_completed(futures):
                     try:
-                        art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
+                        art, topic = f.result()
                         if art.get("_skip"):
                             continue
                         if art.get("_discard"):
-                            # DISCARD：递增 topic 的 discard_count
-                            try:
-                                from scripts.sqlite_db import increment_topic_discard
-                                increment_topic_discard(topic, reason=art.get("_discard_reason", ""))
-                            except Exception:
-                                pass
+                            increment_topic_discard(topic, reason=art.get("_discard_reason", ""))
                             continue
                         insert_news(art)
                         quality = art.get("_quality", {})
@@ -138,9 +160,9 @@ def run(dry_run: bool = False, live_preview: bool = False):
                             })
                         total_fetched += 1
                     except Exception as e:
-                        logger.warning(f"  process failed for {art.get('key','?')}: {e}")
+                        logger.warning(f"  process failed: {e}")
 
-            logger.info(f"  执行完成: {total_fetched} articles")
+            logger.info(f"  执行完成: {total_fetched} articles saved")
         except Exception as e:
             logger.warning(f"  执行阶段失败: {e}")
 
