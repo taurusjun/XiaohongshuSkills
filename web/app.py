@@ -1402,7 +1402,7 @@ function slotDrop(e){
 async function saveImgOrder(){
   const slots=[...document.querySelectorAll('#imgSlotList .img-slot')];
   // Keep article images first, then tweet images in new order
-  const articleImgs={% if story_parts %}{{[p.v for p in story_parts if p.t=='tweet' and p.v]|tojson}}{% else %}[]{% endif %};
+  const articleImgs={{story_tweet_imgs|tojson}};
   const allGallery={% if news.gallery_images %}{{news.gallery_images|tojson}}{% else %}[]{% endif %};
   const nonTweet=allGallery.filter(p=>!p.includes('tweet_'));
   const newTweetOrder=slots.map(s=>s.dataset.path).filter(p=>p);
@@ -1521,7 +1521,11 @@ def detail(key):
         if tail:
             story_parts.append({'t': 'text', 'v': tail})
 
-    return rts(DETAIL_HTML, news=news, scores=scores, story_parts=story_parts)
+    # story 体裁：推文图片路径列表（按当前 slot 顺序），供 JS 使用
+    story_tweet_imgs = [p['v'] for p in story_parts if p['t'] == 'tweet' and p.get('v')]
+
+    return rts(DETAIL_HTML, news=news, scores=scores,
+               story_parts=story_parts, story_tweet_imgs=story_tweet_imgs)
 
 @app.route('/api/news')
 def api_list():
