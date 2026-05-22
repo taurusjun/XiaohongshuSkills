@@ -390,9 +390,10 @@ def get_recent_performance(days: int = 7) -> dict:
 
 
 def upsert_topic_performance(topic: str, saves: float = 0, comments: float = 0,
-                              views: float = 0, **kwargs):
+                              views: float = 0, trend_only: bool = False, **kwargs):
     """更新话题表现，使用滚动均值（非覆盖），保留 discard_count。
     新话题：INSERT post_count=1。已有话题：UPDATE 滚动均值，discard_count 不变。
+    trend_only=True：只更新 baseline / trend_signal 字段，不修改 avg_saves/avg_comments 滚动均值。
     """
     import json as _json
     eng_w = get_config("engagement_weights", default={"saves": 0.6, "comments": 0.4})
@@ -402,6 +403,38 @@ def upsert_topic_performance(topic: str, saves: float = 0, comments: float = 0,
         if isinstance(kwargs.get("trend_signal"), dict)
         else str(kwargs.get("trend_signal", ""))
     )
+
+    # trend_only：只更新 baseline / trend_signal，不触及滚动均值
+    if trend_only:
+        with _connect() as db:
+            existing = db.execute(
+                "SELECT topic FROM topic_performance WHERE topic=?", (topic,)
+            ).fetchone()
+            if not existing:
+                db.execute(
+                    """INSERT INTO topic_performance
+                       (topic, avg_saves, avg_comments, avg_views, engagement_score, post_count,
+                        discard_count, topic_baseline_saves, topic_baseline_comments,
+                        trend_signal, trend_updated_at, vertical, window_days, last_updated)
+                       VALUES (?,0,0,0,0,0,0,?,?,?,?,?,90,datetime('now','localtime'))""",
+                    (topic,
+                     kwargs.get("topic_baseline_saves", 0.0),
+                     kwargs.get("topic_baseline_comments", 0.0),
+                     ts_val, kwargs.get("trend_updated_at", ""),
+                     kwargs.get("vertical", "idol")),
+                )
+            elif ts_val or kwargs.get("topic_baseline_saves") is not None:
+                db.execute(
+                    """UPDATE topic_performance SET
+                       topic_baseline_saves=?, topic_baseline_comments=?,
+                       trend_signal=?, trend_updated_at=?, last_updated=datetime('now','localtime')
+                       WHERE topic=?""",
+                    (kwargs.get("topic_baseline_saves", 0.0),
+                     kwargs.get("topic_baseline_comments", 0.0),
+                     ts_val, kwargs.get("trend_updated_at", ""), topic),
+                )
+        return
+
     with _connect() as db:
         row = db.execute(
             "SELECT post_count, avg_saves, avg_comments, avg_views, engagement_score FROM topic_performance WHERE topic=?",

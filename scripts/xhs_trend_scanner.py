@@ -5,12 +5,40 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import re
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [trend] %(message)s")
 logger = logging.getLogger("trend_scanner")
+
+
+def _is_recent(text: str, hours: int = 48) -> bool:
+    """判断 XHS pub_time 字符串是否在 hours 小时内。
+    处理格式：'刚刚' / 'x分钟前' / 'x小时前' / '昨天' / 'x天前' / ISO日期 '2024-05-22'
+    """
+    if not text:
+        return False
+    t = str(text).strip()
+    if t in ("刚刚",):
+        return True
+    m = re.match(r"(\d+)\s*分钟前", t)
+    if m:
+        return int(m.group(1)) <= hours * 60
+    m = re.match(r"(\d+)\s*小时前", t)
+    if m:
+        return int(m.group(1)) <= hours
+    if t == "昨天":
+        return hours >= 24
+    m = re.match(r"(\d+)\s*天前", t)
+    if m:
+        return int(m.group(1)) * 24 <= hours
+    try:
+        pub = datetime.strptime(t[:10], "%Y-%m-%d")
+        return (datetime.now() - pub).total_seconds() / 3600 <= hours
+    except Exception:
+        return False
 
 
 def _get_publisher():
@@ -20,8 +48,50 @@ def _get_publisher():
     return pub
 
 
+def _extract_feeds_data(feeds: list) -> dict:
+    """从 feeds 列表提取统计数据。"""
+    def _nc(f): return f.get("noteCard", {})
+    def _ii(f): return _nc(f).get("interactInfo", {})
+    def _pub_time(f):
+        for tag in _nc(f).get("cornerTagInfo", []):
+            if tag.get("type") == "publish_time":
+                return tag.get("text", "")
+        return ""
+
+    titles = [_nc(f).get("displayTitle", "") for f in feeds[:10]]
+    saves = [int(_ii(f).get("collectedCount", 0) or 0) for f in feeds]
+    comments = [int(_ii(f).get("commentCount", 0) or 0) for f in feeds]
+    types = [_nc(f).get("type", "normal") for f in feeds]
+    pub_times = [_pub_time(f) for f in feeds]
+
+    # 截尾均值（去掉最高值防单篇爆款拉高）
+    saves_s = sorted(saves)
+    trim_saves = saves_s[:-1] if len(saves_s) > 3 else saves_s
+    baseline_saves = sum(trim_saves) / len(trim_saves) if trim_saves else 0
+
+    comments_s = sorted(comments)
+    trim_comments = comments_s[:-1] if len(comments_s) > 3 else comments_s
+    baseline_comments = sum(trim_comments) / len(trim_comments) if trim_comments else 0
+
+    image_count = sum(1 for t in types if t in ("image", "normal", "图文"))
+    image_ratio = image_count / len(types) if types else 1.0
+    avg_title_len = sum(len(t) for t in titles) / len(titles) if titles else 0
+
+    return {
+        "titles": titles,
+        "pub_times": pub_times,
+        "baseline_saves": round(baseline_saves, 1),
+        "baseline_comments": round(baseline_comments, 1),
+        "image_ratio": round(image_ratio, 2),
+        "avg_title_len": int(avg_title_len),
+    }
+
+
 def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
-    """对每个 keyword 搜索 XHS 热门内容，提取趋势信号"""
+    """对每个 keyword 双路扫描 XHS：
+    - Pass 1 综合排序（sort="general"）→ 质量基线（baseline_saves、内容类型）
+    - Pass 2 最新+一天内（sort="newest", time_filter="1day"）→ 话题活跃度（is_fresh）
+    """
     from scripts.yahoo_common import call_litellm
 
     publisher = None
@@ -34,40 +104,30 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
     results = []
     for keyword in keywords:
         try:
-            feeds_result = publisher.search_feeds(keyword=keyword, sort="最多收藏")
-            feeds = feeds_result.get("feeds", [])
-            if not feeds:
+            # ── Pass 1: 综合排序，质量基线 ─────────────────────────
+            feeds_general = publisher.search_feeds(keyword=keyword, sort="general")
+            feeds_g = feeds_general.get("feeds", [])
+            if not feeds_g:
                 raise ValueError(f"XHS 搜索「{keyword}」返回0条结果，可能未登录或关键词无效")
+            data_g = _extract_feeds_data(feeds_g)
 
-            def _nc(f): return f.get("noteCard", {})
-            def _ii(f): return _nc(f).get("interactInfo", {})
-            def _pub_time(f):
-                for tag in _nc(f).get("cornerTagInfo", []):
-                    if tag.get("type") == "publish_time":
-                        return tag.get("text", "")
-                return ""
+            # ── Pass 2: 最新+一天内，活跃度检测（方案B）─────────────
+            is_fresh = False
+            fresh_count_24h = 0
+            try:
+                feeds_newest = publisher.search_feeds(
+                    keyword=keyword, sort="newest", time_filter="1day"
+                )
+                feeds_n = feeds_newest.get("feeds", [])
+                fresh_count_24h = len(feeds_n)
+                # is_fresh = 一天内能搜到 ≥5 篇帖子
+                is_fresh = fresh_count_24h >= 5
+                logger.info(f"  [{keyword}] 一天内帖数={fresh_count_24h} is_fresh={is_fresh}")
+            except Exception as e:
+                logger.warning(f"  [{keyword}] Pass2 活跃度扫描失败: {e}")
 
-            titles = [_nc(f).get("displayTitle", "") for f in feeds[:10]]
-            likes = [int(_ii(f).get("likedCount", 0) or 0) for f in feeds]
-            saves = [int(_ii(f).get("collectedCount", 0) or 0) for f in feeds]
-            comments = [int(_ii(f).get("commentCount", 0) or 0) for f in feeds]
-            types = [_nc(f).get("type", "normal") for f in feeds]
-            pub_times = [_pub_time(f) for f in feeds]
-
-            avg_saves = sum(saves) / len(saves) if saves else 0
-            avg_comments = sum(comments) / len(comments) if comments else 0
-            image_count = sum(1 for t in types if t in ("image", "图文"))
-            image_ratio = image_count / len(types) if types else 1.0
-            avg_title_len = sum(len(t) for t in titles) / len(titles) if titles else 0
-
-            # is_fresh: >50% 发布时间是今天或昨天
-            from datetime import timedelta
-            today = datetime.now().strftime("%Y-%m-%d")
-            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            fresh_count = sum(1 for pt in pub_times if pt and (today in str(pt) or yesterday in str(pt)))
-            is_fresh = fresh_count > len(pub_times) / 2 if pub_times else False
-
-            # LLM 提炼推荐关键词
+            # ── LLM 提炼推荐关键词 ────────────────────────────────
+            titles = data_g["titles"]
             recommended_keywords = []
             try:
                 lite_result = call_litellm(
@@ -86,11 +146,12 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
                 "topic": keyword,
                 "top_titles": titles[:5],
                 "recommended_keywords": recommended_keywords,
-                "image_ratio": round(image_ratio, 2),
-                "avg_title_len": int(avg_title_len),
-                "baseline_saves": round(avg_saves, 1),
-                "baseline_comments": round(avg_comments, 1),
+                "image_ratio": data_g["image_ratio"],
+                "avg_title_len": data_g["avg_title_len"],
+                "baseline_saves": data_g["baseline_saves"],
+                "baseline_comments": data_g["baseline_comments"],
                 "is_fresh": is_fresh,
+                "fresh_count_24h": fresh_count_24h,
             })
         except Exception as e:
             logger.warning(f"扫描 '{keyword}' 失败: {e}")
@@ -104,11 +165,13 @@ def update_trend_signals(trend_results: list[dict]) -> None:
     for r in trend_results:
         upsert_topic_performance(
             r["topic"],
-            saves=r.get("baseline_saves", 0),
-            comments=r.get("baseline_comments", 0),
+            saves=0,           # 不污染 avg_saves 滚动均值
+            comments=0,        # 不污染 avg_comments 滚动均值
+            trend_only=True,   # 只更新 baseline / trend_signal
             topic_baseline_saves=r.get("baseline_saves", 0),
             topic_baseline_comments=r.get("baseline_comments", 0),
             trend_signal={"is_fresh": r.get("is_fresh", False),
+                          "fresh_count_24h": r.get("fresh_count_24h", 0),
                           "top_titles": r.get("top_titles", []),
                           "recommended_keywords": r.get("recommended_keywords", [])},
             trend_updated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
