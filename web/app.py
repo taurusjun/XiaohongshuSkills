@@ -1013,35 +1013,24 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
       <div class="field-row field-row-ta"><label>新闻要点</label><div class="value">
-        <textarea class="inline-textarea auto-resize" name="content" id="storyContent" style="min-height:120px">{{news.content or ''}}</textarea>
-        {% if story_parts %}
-        <div style="margin-top:10px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:11px;color:var(--text3)">🖼 图片顺序（拖拽调整）</span>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-gray btn-sm" onclick="saveImgOrder()" style="font-size:11px">💾 保存顺序</button>
-              <button class="btn btn-sm" onclick="openStoryPreview()" style="font-size:11px;background:#7c3aed;color:#fff">👁 预览</button>
-            </div>
-          </div>
-          <div id="imgSlotList" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px;background:var(--bg2,#f5f5f5);border-radius:8px;min-height:60px">
-            {% for part in story_parts %}{% if part.t == 'tweet' %}
-            <div class="img-slot" draggable="true"
-                 data-path="{{part.v or ''}}"
-                 data-cap="{{part.cap}}"
-                 ondragstart="slotDragStart(event)"
-                 ondragover="event.preventDefault()"
-                 ondrop="slotDrop(event)"
-                 style="cursor:grab;width:80px;text-align:center;padding:4px;background:#fff;border-radius:6px;border:1px solid #ddd;user-select:none;position:relative">
-              {% if part.v %}
-              <img src="/local-image?path={{part.v}}" style="width:72px;height:72px;object-fit:cover;border-radius:4px;display:block">
-              {% else %}
-              <div style="width:72px;height:72px;background:#2a2a2a;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#555;font-size:10px">无图</div>
-              {% endif %}
-              <div style="font-size:9px;color:#888;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{part.cap[:8]}}</div>
-            </div>
-            {% endif %}{% endfor %}
-          </div>
+        {# story 体裁：块状多媒体编辑器；其他体裁：普通 textarea #}
+        {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
+        <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
+        <div id="blockEditor" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg)"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+          <button class="btn btn-gray btn-sm" onclick="saveBlockContent()">💾 保存</button>
+          <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff">👁 预览</button>
         </div>
+        {# 图片选择浮层 #}
+        <div id="imgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:340px;max-height:70vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:13px;font-weight:600">选择图片</span>
+            <button onclick="closeImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999">✕</button>
+          </div>
+          <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+        {% else %}
+        <textarea class="inline-textarea auto-resize" name="content" id="contentHidden" style="min-height:120px">{{news.content or ''}}</textarea>
         {% endif %}
       </div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
@@ -1383,62 +1372,179 @@ async function submitOverride(){
   if(r.ok){location.reload()}else{alert('纠正失败: '+(await r.json()).error)}
 }
 
-// ── Story 图片拖拽排序 ─────────────────────────────────────
-let _dragSrc=null;
-function slotDragStart(e){
-  _dragSrc=e.currentTarget;
-  e.dataTransfer.effectAllowed='move';
+// ── 块状多媒体编辑器 ────────────────────────────────────────
+const _allImgs = {% if news.gallery_images %}{{news.gallery_images|tojson}}{% else %}[]{% endif %};
+const _tweetImgs = _allImgs.filter(p=>p.includes('tweet_'));
+let _blocks = [];   // [{type:'text',content:str}|{type:'image',path:str,cap:str}]
+let _pickerCb = null;
+
+function _initBlockEditor(){
+  const raw = document.getElementById('contentHidden').value;
+  _blocks = _parseBlocks(raw);
+  _renderBlocks();
 }
-function slotDrop(e){
-  e.preventDefault();
-  const target=e.currentTarget;
-  if(!_dragSrc||_dragSrc===target)return;
-  const list=document.getElementById('imgSlotList');
-  const nodes=[...list.querySelectorAll('.img-slot')];
-  const si=nodes.indexOf(_dragSrc), ti=nodes.indexOf(target);
-  if(si<ti) list.insertBefore(_dragSrc,target.nextSibling);
-  else list.insertBefore(_dragSrc,target);
-}
-async function saveImgOrder(){
-  const slots=[...document.querySelectorAll('#imgSlotList .img-slot')];
-  // Keep article images first, then tweet images in new order
-  const articleImgs={{story_tweet_imgs|tojson}};
-  const allGallery={% if news.gallery_images %}{{news.gallery_images|tojson}}{% else %}[]{% endif %};
-  const nonTweet=allGallery.filter(p=>!p.includes('tweet_'));
-  const newTweetOrder=slots.map(s=>s.dataset.path).filter(p=>p);
-  const newOrder=[...nonTweet,...newTweetOrder];
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_images:newOrder})});
-  const t=document.getElementById('toast');t.textContent='图片顺序已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1500);
-}
-function openStoryPreview(){
-  const slots=[...document.querySelectorAll('#imgSlotList .img-slot')];
-  const imgPaths=slots.map(s=>s.dataset.path);
-  let imgIdx=0;
-  const text=document.getElementById('storyContent').value;
-  const title='{{news.title|e}}';
-  // Split text by 【推文N：...】 markers
-  const parts=[];let last=0;
-  const re=/【推文\d+：[^】]*】/g;let m;
+
+function _parseBlocks(text){
+  const blocks=[], re=/【(?:推文\d+|图片\d*)：[^】]*】|【IMG:[^】]+】/g;
+  let last=0, imgIdx=0, m;
   while((m=re.exec(text))!==null){
-    if(m.index>last)parts.push({t:'text',v:text.slice(last,m.index).trim()});
-    parts.push({t:'img',cap:m[0],path:imgPaths[imgIdx]||''});
-    if(imgPaths[imgIdx])imgIdx++;
+    const before=text.slice(last,m.index).trim();
+    if(before) blocks.push({type:'text',content:before});
+    blocks.push({type:'image',path:_tweetImgs[imgIdx]||'',cap:m[0]});
+    if(_tweetImgs[imgIdx]) imgIdx++;
     last=m.index+m[0].length;
   }
-  if(last<text.length)parts.push({t:'text',v:text.slice(last).trim()});
-  // Render
+  const tail=text.slice(last).trim();
+  if(tail) blocks.push({type:'text',content:tail});
+  if(!blocks.length) blocks.push({type:'text',content:text});
+  return blocks;
+}
+
+function _serializeBlocks(){
+  let imgN=1;
+  return _blocks.map(b=>{
+    if(b.type==='text') return b.content;
+    const fname=b.path?b.path.split('/').pop():'';
+    const cap=b.cap||`【图片${imgN}：${fname}】`;
+    imgN++;
+    return cap;
+  }).filter(s=>s).join('\n\n');
+}
+
+function _renderBlocks(){
+  const ed=document.getElementById('blockEditor');
+  if(!ed) return;
+  ed.innerHTML='';
+  _blocks.forEach((b,i)=>{
+    ed.appendChild(_makeInsertRow(i));
+    if(b.type==='text') ed.appendChild(_makeTextBlock(b,i));
+    else ed.appendChild(_makeImgBlock(b,i));
+  });
+  ed.appendChild(_makeInsertRow(_blocks.length));
+}
+
+function _makeInsertRow(idx){
+  const d=document.createElement('div');
+  d.style.cssText='display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg2,#f7f7f7)';
+  d.innerHTML=`<div style="flex:1;height:1px;background:var(--border)"></div>
+    <button onclick="insertImgBlock(${idx})" style="font-size:11px;padding:2px 8px;border:1px dashed #aaa;background:none;border-radius:12px;cursor:pointer;color:#888;white-space:nowrap">📷 插入图片</button>
+    <div style="flex:1;height:1px;background:var(--border)"></div>`;
+  return d;
+}
+
+function _makeTextBlock(b,i){
+  const d=document.createElement('div');
+  d.style.cssText='position:relative;background:var(--bg)';
+  const ta=document.createElement('textarea');
+  ta.style.cssText='width:100%;box-sizing:border-box;border:none;outline:none;resize:none;padding:10px 36px 10px 10px;font-size:13px;line-height:1.8;background:transparent;font-family:inherit;min-height:60px';
+  ta.value=b.content;
+  ta.oninput=()=>{_blocks[i].content=ta.value;ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'};
+  setTimeout(()=>{ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'},0);
+  // Move buttons
+  const ctrl=document.createElement('div');
+  ctrl.style.cssText='position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:2px;opacity:0;transition:opacity .15s';
+  ctrl.innerHTML=`<button onclick="moveBlock(${i},-1)" title="上移" style="${_btnS()}">↑</button>
+    <button onclick="moveBlock(${i},1)" title="下移" style="${_btnS()}">↓</button>`;
+  d.onmouseenter=()=>ctrl.style.opacity='1';
+  d.onmouseleave=()=>ctrl.style.opacity='0';
+  d.appendChild(ta);d.appendChild(ctrl);
+  return d;
+}
+
+function _makeImgBlock(b,i){
+  const d=document.createElement('div');
+  d.style.cssText='position:relative;background:var(--bg2,#f7f7f7);padding:8px;text-align:center';
+  if(b.path){
+    const img=document.createElement('img');
+    img.src='/local-image?path='+encodeURIComponent(b.path);
+    img.style.cssText='max-width:100%;max-height:240px;border-radius:8px;object-fit:contain';
+    d.appendChild(img);
+  } else {
+    const ph=document.createElement('div');
+    ph.style.cssText='height:80px;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px';
+    ph.textContent='未选择图片';
+    d.appendChild(ph);
+  }
+  const ctrl=document.createElement('div');
+  ctrl.style.cssText='display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:wrap';
+  ctrl.innerHTML=`<button onclick="swapImgBlock(${i})" style="${_btnS2()}">🔄 换图</button>
+    <button onclick="moveBlock(${i},-1)" style="${_btnS2()}">↑ 上移</button>
+    <button onclick="moveBlock(${i},1)" style="${_btnS2()}">↓ 下移</button>
+    <button onclick="removeBlock(${i})" style="${_btnS2('red')}">✕ 删除</button>`;
+  d.appendChild(ctrl);
+  return d;
+}
+
+function _btnS(){return 'font-size:10px;padding:1px 4px;background:#eee;border:1px solid #ccc;border-radius:3px;cursor:pointer;line-height:1.4'}
+function _btnS2(c){return `font-size:11px;padding:2px 8px;background:${c==='red'?'#fee':'#eee'};border:1px solid ${c==='red'?'#fcc':'#ccc'};border-radius:4px;cursor:pointer`}
+
+function insertImgBlock(idx){
+  openImgPicker(path=>{
+    _blocks.splice(idx,0,{type:'image',path,cap:''});
+    _renderBlocks();
+  });
+}
+function swapImgBlock(idx){
+  openImgPicker(path=>{
+    _blocks[idx].path=path;
+    _renderBlocks();
+  });
+}
+function removeBlock(idx){
+  _blocks.splice(idx,1);
+  _renderBlocks();
+}
+function moveBlock(idx,dir){
+  const ni=idx+dir;
+  if(ni<0||ni>=_blocks.length) return;
+  [_blocks[idx],_blocks[ni]]=[_blocks[ni],_blocks[idx]];
+  _renderBlocks();
+}
+
+function openImgPicker(cb){
+  _pickerCb=cb;
+  const grid=document.getElementById('imgPickerGrid');
+  grid.innerHTML='';
+  _allImgs.forEach(p=>{
+    const d=document.createElement('div');
+    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden';
+    d.onmouseenter=()=>d.style.borderColor='#7c3aed';
+    d.onmouseleave=()=>d.style.borderColor='transparent';
+    d.onclick=()=>{closeImgPicker();_pickerCb(p)};
+    const img=document.createElement('img');
+    img.src='/local-image?path='+encodeURIComponent(p);
+    img.style.cssText='width:88px;height:88px;object-fit:cover;display:block';
+    img.title=p.split('/').pop();
+    d.appendChild(img);
+    grid.appendChild(d);
+  });
+  document.getElementById('imgPicker').style.display='block';
+}
+function closeImgPicker(){document.getElementById('imgPicker').style.display='none'}
+
+async function saveBlockContent(){
+  const text=_serializeBlocks();
+  document.getElementById('contentHidden').value=text;
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:text})});
+  const t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1200);
+}
+
+function openStoryPreview(){
+  const title='{{news.title|e}}';
   let html=`<h2 style="font-size:17px;font-weight:700;line-height:1.5;margin:0 0 14px;color:#111">${esc(title)}</h2>`;
-  parts.forEach(p=>{
-    if(p.t==='text'&&p.v){
-      html+=`<p style="white-space:pre-wrap;font-size:14px;line-height:1.9;color:#222;margin:0 0 14px">${esc(p.v)}</p>`;
-    } else if(p.t==='img'){
-      if(p.path) html+=`<div style="margin:14px 0"><img src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;border-radius:10px;display:block"></div>`;
-      html+=`<p style="font-size:11px;color:#aaa;text-align:center;margin:4px 0 14px">${esc(p.cap)}</p>`;
+  _blocks.forEach(b=>{
+    if(b.type==='text'&&b.content.trim()){
+      html+=`<p style="white-space:pre-wrap;font-size:14px;line-height:1.9;color:#222;margin:0 0 14px">${esc(b.content)}</p>`;
+    } else if(b.type==='image'&&b.path){
+      html+=`<div style="margin:12px 0"><img src="/local-image?path=${encodeURIComponent(b.path)}" style="width:100%;border-radius:10px;display:block"></div>`;
     }
   });
   document.getElementById('storyPreviewBody').innerHTML=html;
   document.getElementById('storyPreviewModal').style.display='block';
 }
+
+// Init on load
+if(document.getElementById('blockEditor')) _initBlockEditor();
 </script>
 <div class="modal" id="overrideModal"><div class="modal-card" style="max-width:360px">
   <h3 style="margin-bottom:8px">纠正 <span id="overrideDim"></span></h3>
