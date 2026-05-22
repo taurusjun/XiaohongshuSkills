@@ -1404,9 +1404,17 @@ function _textToEjsBlocks(text, imgs){
   }
   while((m=re.exec(text))!==null){
     _addText(text.slice(last,m.index));
-    const path=imgs[imgIdx]||'';
-    blocks.push({type:'galleryImage',data:{paths:path?[path]:[],caption:m[0]}});
-    if(path) imgIdx++;
+    // 解析 caption 内容：优先从路径标记恢复真实路径，否则按顺序索引
+    const inner=m[0].replace(/^【(?:图片|推文)\d+：/,'').replace(/】$/,'');
+    let paths=[];
+    if(inner.startsWith('/')){
+      // 新格式：内容是绝对路径（可能多张，以 | 分隔）
+      paths=inner.split('|').filter(p=>p.startsWith('/'));
+    } else {
+      // 旧格式：按顺序索引 _allImgs
+      const p=imgs[imgIdx]||''; if(p){paths=[p];imgIdx++;}
+    }
+    blocks.push({type:'galleryImage',data:{paths,caption:m[0]}});
     last=m.index+m[0].length;
   }
   _addText(text.slice(last));
@@ -1421,8 +1429,10 @@ function _ejsBlocksToText(blocks){
     else if(b.type==='header'&&b.data.text){
       parts.push((b.data.level===3?'### ':'## ')+b.data.text);
     } else if(b.type==='galleryImage'){
-      const cap=b.data.caption||`【图片${imgN}：图片${imgN}】`;
-      parts.push(cap); imgN++;
+      const paths=b.data.paths||[];
+      // 将真实路径编码进 caption，加载时可精确还原（以 / 开头判断是路径还是描述）
+      const inner=paths.length?paths.join('|'):(b.data.caption||`图片${imgN}`).replace(/^【.*：/,'').replace(/】$/,'');
+      parts.push(`【图片${imgN}：${inner}】`); imgN++;
     } else if(b.type==='image'){
       // 兼容旧 ImageTool blocks
       const cap=b.data.caption||(b.data.file?.url?`【图片${imgN}：图片${imgN}】`:'');
