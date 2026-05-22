@@ -82,11 +82,25 @@ def plan_today(date: str = "") -> DailyPlan:
         focus_quota = max(1, int(quota * 0.8))
         explore_quota = quota - focus_quota
 
-        # 按天轮转 focus_topics，确保所有话题都有机会出现
+        # 轮转 + 热度替换：按天轮转选基础话题，若全不 fresh 则用 is_fresh=True 的话题替换末位
         day_offset = int(date) % len(focus_topics) if focus_topics else 0
         rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
-        for ft in rotated[:focus_quota]:
-            # 从 topic_performance 读取 is_fresh，而不是默认 False
+        selected = rotated[:focus_quota]
+
+        # 检查 selected 里有没有 is_fresh=True 的话题
+        has_fresh = any(_topic_is_fresh(topic_trend_map.get(ft, {})) for ft in selected)
+        if not has_fresh:
+            # 从所有 focus_topics 里找一个 is_fresh=True 的，替换 selected 末位
+            fresh_candidate = next(
+                (ft for ft in rotated[focus_quota:] + rotated[:focus_quota]
+                 if ft not in selected and _topic_is_fresh(topic_trend_map.get(ft, {}))),
+                None
+            )
+            if fresh_candidate:
+                selected = list(selected[:-1]) + [fresh_candidate]
+                logger.info(f"  热度替换：{selected[-2] if len(selected)>1 else '?'} → {fresh_candidate}（is_fresh=True）")
+
+        for ft in selected:
             trend_data = topic_trend_map.get(ft, {})
             ft_is_fresh = _topic_is_fresh(trend_data) if trend_data else False
             plan.topics.append(TopicQuota(topic=ft, quota=1, source="high_perf",
