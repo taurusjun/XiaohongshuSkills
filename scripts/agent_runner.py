@@ -66,7 +66,11 @@ def run(dry_run: bool = False, live_preview: bool = False):
             update_trend_signals(trends)
             logger.info(f"  趋势扫描完成: {len(trends)} topics")
         except Exception as e:
-            _alert("1-趋势扫描", e, "请确认 Chrome 已打开并登录小红书")
+            from scripts.cdp_publish import XHSRateLimitError
+            ctx = ("⚠️ 触发安全验证，需要人工在 Chrome 中完成验证后，明天将自动恢复"
+                   if isinstance(e, XHSRateLimitError)
+                   else "请确认 Chrome 已打开并登录小红书")
+            _alert("1-趋势扫描", e, ctx)
 
         # 账号快照：返回0行也应明确报错（说明 CDP 未能读取创作者数据）
         try:
