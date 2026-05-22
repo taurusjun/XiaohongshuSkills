@@ -106,9 +106,11 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         if fans_str:
                             fans_str = str(fans_str).replace(",", "")
                             followers = int(float(fans_str.replace("万", "")) * 10000) if "万" in fans_str else int(fans_str)
+                    if followers is None:
+                        raise ValueError(f"DOM 中未找到粉丝数（raw={raw}），页面结构可能已变化")
                     logger.info(f"  粉丝数: {followers}  关注: {raw.get('关注')}  获赞收藏: {raw.get('获赞与收藏')}")
                 except Exception as pe:
-                    logger.warning(f"  粉丝数获取失败（不影响快照写入）: {pe}")
+                    _alert("1-粉丝数获取", pe, f"user_id={my_user_id}，快照仍正常写入，followers=NULL")
 
             insert_account_snapshot(
                 snapshot_date=date_str,
