@@ -73,14 +73,17 @@ def test_tc_fl3_72h_triggers_update(fresh_db):
     # Ensure agent_runner uses the same test DB
     original_path = db_module.DB_PATH
 
+    from datetime import datetime, timedelta
+    old_date = (datetime.now() - timedelta(days=10)).strftime('%Y.%m.%d')
     with fresh_db._connect() as conn:
         conn.execute(
             """INSERT INTO news (key, title, link, publish_xhs, pub_time, xhs_pub_time,
                xhs_saves, xhs_comments, xhs_views, xhs_collected_at, tags,
                topic_perf_updated_at, status, category)
                VALUES ('art001', '测试', 'http://x.com', 1,
-               '2026.05.15', '2026.05.15 10:00', 50, 5, 1000,
-               '2026-05-22 14:00 (72h)', '日本偶像', NULL, 'active', '娱乐')"""
+               ?, ?, 50, 5, 1000,
+               '2026-05-12 14:00 (72h)', '日本偶像', NULL, 'active', '娱乐')""",
+            (old_date, old_date + " 10:00")
         )
 
     # Run the mature articles update using the test DB path
@@ -99,8 +102,12 @@ def test_tc_fl3_72h_triggers_update(fresh_db):
 # ── fuzzy match threshold ─────────────────────────────────────
 
 def test_threshold_lowered():
-    """TC-FL-3b: 相似度0.70以上匹配成功（旧阈值0.85下失败）"""
+    """TC-FL-3b: 相似度0.72>0.70 匹配成功（旧阈值0.85下会失败）"""
     from scripts.metrics_collector import _normalize
-    a = _normalize("桥本环奈一夜爆红的秘密")
-    b = _normalize("桥本环奈意外走红的背后")
-    assert _titles_match(a, b), f"Expected match: '{a}' vs '{b}'"
+    # ratio ≈ 0.727，超过新阈值0.70，低于旧阈值0.85
+    a = _normalize("桥本环奈因一张照片封神")
+    b = _normalize("桥本环奈靠一张照片出圈")
+    from difflib import SequenceMatcher
+    ratio = SequenceMatcher(None, a, b).ratio()
+    assert 0.70 < ratio < 0.85, f"ratio={ratio:.3f} should be between 0.70 and 0.85"
+    assert _titles_match(a, b), f"Expected match with 0.70 threshold: '{a}' vs '{b}'"
