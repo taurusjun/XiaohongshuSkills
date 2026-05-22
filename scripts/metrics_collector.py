@@ -161,15 +161,30 @@ def collect_all(dry_run: bool = False) -> dict:
                          int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
                          int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0)),
                     )
+                    # 计算数据窗口标签（4h/24h/72h），写入 xhs_collected_at
+                    pub_time_row = conn.execute(
+                        "SELECT xhs_pub_time, xhs_collected_at FROM news WHERE key=?", (key,)
+                    ).fetchone()
+                    window_label = _calc_window_label(
+                        pub_time_row["xhs_pub_time"] if pub_time_row else None,
+                        now_str
+                    )
+                    collected_tag = f"{now_str} ({window_label})"
+                    # 追加而非覆盖（保留历史记录）
+                    old_val = pub_time_row["xhs_collected_at"] if pub_time_row else ""
+                    new_collected = (
+                        f"{old_val} | {collected_tag}" if old_val else collected_tag
+                    )
                     conn.execute(
                         """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
                            xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
-                           xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
+                           xhs_watch_time=?, xhs_danmaku=?, xhs_collected_at=?,
+                           updated_at=datetime('now','localtime') WHERE key=?""",
                         (int(row["views"]), int(row["likes"]), int(row["saves"]), int(row["comments"]),
                          int(row.get("share", 0) or 0), int(row.get("fans", 0) or 0),
                          int(row.get("impression", 0) or 0), float(row.get("click_rate", 0) or 0),
                          int(row.get("watch_time", 0) or 0), int(row.get("danmaku", 0) or 0),
-                         key),
+                         new_collected, key),
                     )
                     collected += 1
             conn.commit()
@@ -211,7 +226,27 @@ def _titles_match(a: str, b: str) -> bool:
     if a in b or b in a:
         return True
     from difflib import SequenceMatcher
-    return SequenceMatcher(None, a, b).ratio() >= 0.85
+    return SequenceMatcher(None, a, b).ratio() >= 0.70  # lowered from 0.85
+
+
+def _calc_window_label(xhs_pub_time: str | None, now_str: str) -> str:
+    """根据发布时间计算数据窗口标签 4h/24h/72h。"""
+    if not xhs_pub_time:
+        return "72h"
+    try:
+        from datetime import datetime as _dt
+        fmt = "%Y.%m.%d %H:%M"
+        pub = _dt.strptime(xhs_pub_time, fmt)
+        now = _dt.strptime(now_str, "%Y-%m-%d %H:%M")
+        hours = (now - pub).total_seconds() / 3600
+        if hours < 6:
+            return "4h"
+        elif hours < 36:
+            return "24h"
+        else:
+            return "72h"
+    except Exception:
+        return "72h"
 
 
 if __name__ == "__main__":

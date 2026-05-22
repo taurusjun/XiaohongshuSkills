@@ -266,12 +266,19 @@ def get_by_key(key: str) -> dict | None:
 
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
+               needs_review: bool = False,
                limit: int = 200, sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
     if sort_by not in valid_sort:
         sort_by = 'created_at'
     sort_dir = 'DESC' if sort_dir.upper() == 'DESC' else 'ASC'
-    sql = f"SELECT * FROM news WHERE status=? "
+    if needs_review:
+        # 查询 score_dims 中含 HUMAN_REVIEW action 的文章
+        sql = ("SELECT DISTINCT n.* FROM news n "
+               "JOIN score_dims sd ON n.key=sd.news_key "
+               "WHERE sd.action='HUMAN_REVIEW' AND n.status=? ")
+    else:
+        sql = f"SELECT * FROM news WHERE status=? "
     params = [status]
     if date_from:
         sql += "AND created_at >= ? "; params.append(date_from)
@@ -382,30 +389,67 @@ def get_recent_performance(days: int = 7) -> dict:
 
 def upsert_topic_performance(topic: str, saves: float = 0, comments: float = 0,
                               views: float = 0, **kwargs):
-    eng_w = get_config("engagement_weights", default={"saves": 0.6, "comments": 0.4})
-    eng_score = eng_w.get("saves", 0.6) * saves + eng_w.get("comments", 0.4) * comments
+    """更新话题表现，使用滚动均值（非覆盖），保留 discard_count。
+    新话题：INSERT post_count=1。已有话题：UPDATE 滚动均值，discard_count 不变。
+    """
     import json as _json
+    eng_w = get_config("engagement_weights", default={"saves": 0.6, "comments": 0.4})
+    new_eng = eng_w.get("saves", 0.6) * saves + eng_w.get("comments", 0.4) * comments
+    ts_val = (
+        _json.dumps(kwargs["trend_signal"], ensure_ascii=False)
+        if isinstance(kwargs.get("trend_signal"), dict)
+        else str(kwargs.get("trend_signal", ""))
+    )
     with _connect() as db:
-        existing = db.execute("SELECT post_count FROM topic_performance WHERE topic=?", (topic,)).fetchone()
-        post_count = (existing["post_count"] + 1) if existing else 1
-        db.execute(
-            """INSERT OR REPLACE INTO topic_performance
-               (topic, avg_saves, avg_comments, avg_views, engagement_score, post_count,
-                discard_count, last_discard_reason, topic_baseline_saves, topic_baseline_comments,
-                trend_signal, trend_updated_at, vertical, competition_count,
-                window_days, last_updated)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                       COALESCE((SELECT window_days FROM topic_performance WHERE topic=?), 90),
-                       datetime('now','localtime'))""",
-            (topic, saves, comments, views, eng_score, post_count,
-             kwargs.get("discard_count", 0), kwargs.get("last_discard_reason", ""),
-             kwargs.get("topic_baseline_saves", 0.0), kwargs.get("topic_baseline_comments", 0.0),
-             _json.dumps(kwargs.get("trend_signal", {}), ensure_ascii=False) if isinstance(kwargs.get("trend_signal"), dict) else str(kwargs.get("trend_signal", "")),
-             kwargs.get("trend_updated_at", ""),
-             kwargs.get("vertical", "idol"),
-             kwargs.get("competition_count", 0),
-             topic),
-        )
+        row = db.execute(
+            "SELECT post_count, avg_saves, avg_comments, avg_views, engagement_score FROM topic_performance WHERE topic=?",
+            (topic,)
+        ).fetchone()
+        if not row:
+            # 新话题
+            db.execute(
+                """INSERT INTO topic_performance
+                   (topic, avg_saves, avg_comments, avg_views, engagement_score, post_count,
+                    discard_count, last_discard_reason, topic_baseline_saves, topic_baseline_comments,
+                    trend_signal, trend_updated_at, vertical, competition_count, window_days, last_updated)
+                   VALUES (?,?,?,?,?,1,0,?,?,?,?,?,?,?,90,datetime('now','localtime'))""",
+                (topic, saves, comments, views, new_eng,
+                 kwargs.get("last_discard_reason", ""),
+                 kwargs.get("topic_baseline_saves", 0.0),
+                 kwargs.get("topic_baseline_comments", 0.0),
+                 ts_val, kwargs.get("trend_updated_at", ""),
+                 kwargs.get("vertical", "idol"), kwargs.get("competition_count", 0)),
+            )
+        else:
+            n = row["post_count"]  # 已有 n 篇
+            new_n = n + 1
+            avg_s = (row["avg_saves"] * n + saves) / new_n
+            avg_c = (row["avg_comments"] * n + comments) / new_n
+            avg_v = (row["avg_views"] * n + views) / new_n
+            avg_e = (row["engagement_score"] * n + new_eng) / new_n
+            if kwargs.get("trend_signal") is not None:
+                db.execute(
+                    """UPDATE topic_performance SET
+                       avg_saves=?, avg_comments=?, avg_views=?, engagement_score=?,
+                       post_count=?, trend_signal=?, trend_updated_at=?,
+                       topic_baseline_saves=?, topic_baseline_comments=?,
+                       vertical=?, competition_count=?, last_updated=datetime('now','localtime')
+                       WHERE topic=?""",
+                    (avg_s, avg_c, avg_v, avg_e, new_n, ts_val,
+                     kwargs.get("trend_updated_at", ""),
+                     kwargs.get("topic_baseline_saves", row["avg_saves"]),
+                     kwargs.get("topic_baseline_comments", row["avg_comments"]),
+                     kwargs.get("vertical", "idol"), kwargs.get("competition_count", 0),
+                     topic),
+                )
+            else:
+                db.execute(
+                    """UPDATE topic_performance SET
+                       avg_saves=?, avg_comments=?, avg_views=?, engagement_score=?,
+                       post_count=?, last_updated=datetime('now','localtime')
+                       WHERE topic=?""",
+                    (avg_s, avg_c, avg_v, avg_e, new_n, topic),
+                )
 
 
 def increment_topic_discard(topic: str, reason: str = ""):
