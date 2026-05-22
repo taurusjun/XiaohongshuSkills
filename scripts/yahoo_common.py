@@ -1078,24 +1078,31 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
     twitter_note = ""
     if twitter_embeds:
-        twitter_note = f"\n\n原文中嵌入了 {len(twitter_embeds)} 条推文，在翻译正文中用【推文X：简要描述推文内容】形式插入在对应位置。"
+        twitter_note = (
+            f"\n\n原文共嵌入 {len(twitter_embeds)} 条推文。"
+            "翻译正文时，在对应位置插入占位符 【推文1：一句话描述该推文内容】、【推文2：...】……依此类推。"
+            "占位符必须使用全角括号【】，冒号后跟简短描述，与周围文字用换行隔开。"
+        )
 
     prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
 
-请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章，格式如下：
+请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章。
 
-【标题】
+【标题要求】
 重新创作一个中文标题：聚焦文章核心冲突或转折，用具体细节代替抽象概念，让读者一眼看出"为什么值得读"。
-参考：{title_zh}
+参考原标题翻译：{title_zh}
 
-【导语】
+【导语要求】
 2-3句话，提炼文章最核心的冲突或意义，引发读者继续阅读的欲望。不剧透结局，不写成摘要。
 
-【正文】
-完整翻译原文。保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{twitter_note}
+【正文要求】
+完整翻译原文，保留叙事结构和因果逻辑，不压缩。用简洁有力的句子，避免口语化。{twitter_note}
 
-【结语】
+【结语要求】
 1-2句话，点睛式收尾。可以是作者的判断、对行业的启示、或留给读者的问题。不得是「欢迎评论」等套话。
+
+【人物/团体标签】
+提取文章涉及的所有主要人物姓名、偶像团体名（用中文名或通用译名），以逗号分隔字符串输出。
 
 ---
 日文原文标题：{title_ja}
@@ -1103,8 +1110,8 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 {body_ja}
 ---
 
-严格按格式输出 JSON：
-{{"title": "微调后的标题", "intro": "导语文字", "body": "正文译文（纯文本，推文用[推文X:描述]插入）", "outro": "结语文字"}}"""
+严格按如下 JSON 格式输出（body 中推文占位符示例：【推文1：橋本環奈14岁现场照爆红】）：
+{{"title": "标题", "intro": "导语", "body": "正文（含【推文N：描述】占位符）", "outro": "结语", "persons": "人物1,人物2,团体名"}}"""
 
     result = call_litellm(
         prompt,
@@ -1172,7 +1179,9 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     classify_text = (news.get('content_ja', '') or '')[:500]
     category, tags = auto_classify(news['title_ja'], classify_text, keyword=keyword)
     news['category'] = category or '新闻'
-    news['tags'] = list({*tags, *extra_tags, *(news.get('tags') or [])})
+    # 合并 auto_classify 标签 + LLM 提取的人物/团体标签
+    person_tags = [p.strip() for p in story.get('persons', '').split(',') if p.strip()]
+    news['tags'] = list({*tags, *person_tags, *extra_tags, *(news.get('tags') or [])})
 
     # 封面图（与资讯体一致）
     if news.get('original_image_url') and not news.get('image_url'):
