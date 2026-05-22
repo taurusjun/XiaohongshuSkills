@@ -131,11 +131,14 @@ def run(dry_run: bool = False, live_preview: bool = False):
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             tasks = []
             seen_keys = set()  # 跨话题去重，同 yahoo_news_auto_sqlite.py 的逻辑
+            # 从计划中取话题及其目标体裁
+            plan_topics_detail = {t["topic"]: t for t in plan.get("topics", [])}
             for topic in topics[:plan.get("quota_total", 3)]:
                 extra_tags = KEYWORD_TAG_MAP.get(topic, [topic])
                 yahoo_kw = yahoo_kw_map.get(topic, topic)  # 转换为日语搜索词
+                planned_format = plan_topics_detail.get(topic, {}).get("planned_format", "news")
                 if yahoo_kw != topic:
-                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}'")
+                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}' 体裁目标={planned_format}")
                 try:
                     articles = fetch_news_via_cdp(
                         yahoo_kw, max_results=max_results,
@@ -146,6 +149,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         if not key or key in seen_keys:
                             continue  # 跳过空key或已见过的文章
                         seen_keys.add(key)
+                        art["_planned_format"] = planned_format  # 传递给 process_news_item
                         tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags})
                 except Exception as e:
                     logger.warning(f"  fetch failed for '{topic}': {e}")

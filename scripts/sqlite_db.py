@@ -169,6 +169,8 @@ def init_db():
             ("xhs_comments", "INTEGER DEFAULT 0"),
             ("xhs_collected_at", "TEXT DEFAULT ''"),
             ("topic_perf_updated_at", "TEXT DEFAULT NULL"),
+            ("format_suitability", "TEXT DEFAULT '[\"news\"]'"),
+            ("is_long_form", "INTEGER DEFAULT 0"),
             ("xhs_shares", "INTEGER DEFAULT 0"),
             ("xhs_fans_gained", "INTEGER DEFAULT 0"),
             ("xhs_impression", "INTEGER DEFAULT 0"),
@@ -204,12 +206,16 @@ def insert_news(news: dict) -> bool:
     gallery_str = json.dumps(gallery) if isinstance(gallery, list) else str(gallery or '')
     with _connect() as db:
         try:
+            import json as _j
+            fs = news.get('format_suitability', ['news'])
+            fs_str = _j.dumps(fs) if isinstance(fs, list) else str(fs)
             db.execute("""
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
-                    pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                    pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by,
+                    format_suitability, is_long_form, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -223,6 +229,8 @@ def insert_news(news: dict) -> bool:
                     content_score=excluded.content_score, publish_xhs=excluded.publish_xhs,
                     publish_time=excluded.publish_time, xhs_pub_time=excluded.xhs_pub_time,
                     fetch_by=excluded.fetch_by,
+                    format_suitability=excluded.format_suitability,
+                    is_long_form=excluded.is_long_form,
                     updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
                   news.get('link',''), news.get('source',''), news.get('category',''),
@@ -233,7 +241,8 @@ def insert_news(news: dict) -> bool:
                   news.get('video_path',''), news.get('video_caption',''), news.get('gallery_url',''),
                   news.get('content_ja',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
-                  news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by','')))
+                  news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by',''),
+                  fs_str, 1 if news.get('is_long_form') else 0))
             return True
         except Exception as e:
             print(f"  ⚠️ SQLite 写入失败: {e}")
