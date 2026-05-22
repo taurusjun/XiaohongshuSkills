@@ -618,10 +618,15 @@ async function loadList(){
     pager+=`<button class="btn btn-gray" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>›</button>`;
   }
   S('pager').innerHTML=pager;
+  // Save current state for back-navigation
+  sessionStorage.setItem('listState',JSON.stringify({sortBy,sortDir,page,
+    search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
+    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value}));
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
   if(sy){requestAnimationFrame(()=>{window.scrollTo(0,parseInt(sy));sessionStorage.removeItem('listScrollY')})}
 }
+window.addEventListener('beforeunload',()=>{sessionStorage.setItem('listScrollY',window.scrollY)})
 function goPage(n){page=n;loadList();window.scrollTo(0,0)}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function setSort(col){if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}else{sortBy=col;sortDir='DESC'}loadList()}
@@ -786,8 +791,20 @@ async function loadCategories(){
 // Default date range to today (local timezone)
 const d=new Date();
 const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-if(!S('dateFrom').value)S('dateFrom').value=today;
-if(!S('dateTo').value)S('dateTo').value=today;
+// Restore state when returning from detail page
+const saved=sessionStorage.getItem('listState');
+if(saved){try{const s=JSON.parse(saved);sortBy=s.sortBy||'created_at';sortDir=s.sortDir||'DESC';page=s.page||0;
+  if(s.date_from)S('dateFrom').value=s.date_from;else S('dateFrom').value=today;
+  if(s.date_to)S('dateTo').value=s.date_to;else S('dateTo').value=today;
+  if(s.search)S('search').value=s.search;
+  if(s.category)S('category').value=s.category;
+  if(s.status)S('status').value=s.status;
+  if(s.publish_xhs)S('publishXhs').value=s.publish_xhs;
+  sessionStorage.removeItem('listState');
+}catch(e){}}else{
+  if(!S('dateFrom').value)S('dateFrom').value=today;
+  if(!S('dateTo').value)S('dateTo').value=today;
+}
 loadList();loadCategories();checkActiveTasks();
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
