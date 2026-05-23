@@ -187,14 +187,21 @@ def run(dry_run: bool = False, live_preview: bool = False):
             # topic → per-topic quota（来自 plan，规则版/LLM版均有）
             topic_quota_map = {t["topic"]: t.get("quota", 1) for t in plan.get("topics", [])}
             topic_angle_map = {t["topic"]: t.get("angle", "") for t in plan.get("topics", [])}
-            keywords = []
+            kw_seen: dict[str, dict] = {}  # keyword → entry，相同 keyword 合并（取较大 max）
             for topic in topics:
                 kw_val = yahoo_kw_map.get(topic, topic)
                 keyword = kw_val.get("keyword", topic) if isinstance(kw_val, dict) else (kw_val or topic)
                 max_n   = topic_quota_map.get(topic, 1) * 6
                 angle   = topic_angle_map.get(topic, "")
-                keywords.append({"keyword": keyword, "max": max_n, "angle": angle})
-                logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n} angle='{angle[:20]}'")
+                if keyword in kw_seen:
+                    kw_seen[keyword]["max"] = max(kw_seen[keyword]["max"], max_n)
+                    if angle and not kw_seen[keyword]["angle"]:
+                        kw_seen[keyword]["angle"] = angle
+                    logger.info(f"  topic '{topic}' → 合并到已有搜索词 '{keyword}'")
+                else:
+                    kw_seen[keyword] = {"keyword": keyword, "max": max_n, "angle": angle}
+                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n} angle='{angle[:20]}'")
+            keywords = list(kw_seen.values())
             resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
                            json={"mode": "keywords", "keywords": keywords}, timeout=10)
             data = resp.json()

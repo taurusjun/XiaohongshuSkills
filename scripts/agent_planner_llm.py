@@ -68,7 +68,7 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
         prompt,
         system_prompt="你是内容运营决策者。直接输出JSON，不要前置说明。",
         temperature=0.3,
-        max_tokens=600,
+        max_tokens=1000,
         response_format={"type": "json_object"},
     )
 
@@ -87,7 +87,7 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
                     pass
 
     if not llm_out.get("topics"):
-        logger.warning("  LLM 规划失败，回退到规则版")
+        logger.warning(f"  LLM 规划失败，回退到规则版 (raw={str(result)[:200]})")
         from scripts.agent_planner import plan_today
         return plan_today(date)
 
