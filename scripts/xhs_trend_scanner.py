@@ -116,8 +116,10 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
                 raise ValueError(f"XHS 搜索「{keyword}」返回0条结果，可能未登录或关键词无效")
             data_g = _extract_feeds_data(feeds_g)
 
-            # ── Pass 2: 最新+一天内，活跃度检测（方案B）─────────────
-            # 两次搜索之间随机等待，避免触发频率限制
+            # ── Pass 2: 最新排序（不限时间），手动统计真实24h内帖数 ────
+            # 不用 time_filter="1day"：XHS 的"一天内"实际覆盖约40h，且页面上限22条
+            # 无法区分高热话题（100篇/天）和低活话题（3篇/天）
+            # 改为：抓最新22条，按发布时间精确统计24h内的数量
             import time as _time, random as _random
             _time.sleep(_random.uniform(3.0, 6.0))
 
@@ -125,13 +127,17 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             fresh_count_24h = 0
             try:
                 feeds_newest = _search_with_ratelimit_check(
-                    keyword, sort="newest", time_filter="1day"
+                    keyword, sort="newest"  # 不加 time_filter
                 )
                 feeds_n = feeds_newest.get("feeds", [])
-                fresh_count_24h = len(feeds_n)
-                # is_fresh = 一天内能搜到 ≥5 篇帖子
-                is_fresh = fresh_count_24h >= 5
-                logger.info(f"  [{keyword}] 一天内帖数={fresh_count_24h} is_fresh={is_fresh}")
+                # 用 _is_recent 精确统计真实24h内帖数
+                fresh_count_24h = sum(
+                    1 for f in feeds_n
+                    if _is_recent(_pub_time(f), hours=24)
+                )
+                # is_fresh = 真实24h内 ≥3 篇（低门槛，区分有无活跃）
+                is_fresh = fresh_count_24h >= 3
+                logger.info(f"  [{keyword}] 真实24h帖数={fresh_count_24h} is_fresh={is_fresh}")
             except Exception as e:
                 logger.warning(f"  [{keyword}] Pass2 活跃度扫描失败: {e}")
 
