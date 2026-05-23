@@ -1238,6 +1238,42 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     except Exception:
         news['video_caption'] = ""
 
+    # 写入 DB（故事体走了独立路径，不会回到 process_news_item 的 insert_news）
+    if STORAGE_BACKEND == "sqlite":
+        try:
+            from sqlite_db import insert_news as _sql_insert
+            _sql_insert({
+                'title': news.get('title_zh', news.get('title_ja', '')),
+                'title_ja': news.get('title_ja', ''),
+                'link': news.get('link', ''),
+                'source': news.get('source', ''),
+                'category': news.get('category', '新闻'),
+                'content': news.get('content', ''),
+                'comment': news.get('comment', ''),
+                'summary': news.get('summary', ''),
+                'tags': news.get('tags', []),
+                'image_url': news.get('image_url', ''),
+                'original_image_url': news.get('original_image_url', ''),
+                'video_caption': news.get('video_caption', ''),
+                'content_ja': news.get('body_text', '') or news.get('ja_summary', ''),
+                'pub_time': news.get('pub_time', ''),
+                'title_score': news.get('title_score', 0),
+                'content_score': news.get('content_score', 0),
+                'key': extract_key_from_url(news.get('link', '')),
+                'status': 'active',
+                'fetch_by': keyword if keyword else 'recomm',
+            })
+            news_key = extract_key_from_url(news.get('link', ''))
+            # 写入评分明细
+            quality = news.get('_quality', {})
+            if quality.get('scores'):
+                from sqlite_db import upsert_score_dims
+                upsert_score_dims(news_key, quality['scores'],
+                                 dim_version=quality.get('_dim_version', ''))
+                print(f"    📊 评分明细已写入: {len(quality['scores'])}项")
+        except Exception as e:
+            print(f"    ⚠️ 故事体入库失败: {e}")
+
     return news
 
 
