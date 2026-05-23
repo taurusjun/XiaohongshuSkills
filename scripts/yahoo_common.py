@@ -1808,6 +1808,8 @@ def process_news_item(news: dict, no_translate: bool = False,
                 'key': extract_key_from_url(news.get('link', '')),
                 'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
+                'format_suitability': news.get('format_suitability', ['news']),
+                'is_long_form': 1 if news.get('is_long_form') else 0,
             })
             if news.get('_discard'):
                 print(f"    🗑️ 已标记为 discarded")

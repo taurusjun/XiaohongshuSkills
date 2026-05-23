@@ -215,7 +215,7 @@ def init_db():
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
-            except: pass
+            except sqlite3.OperationalError: pass  # column already exists
         for col, col_type in [("shares", "INTEGER DEFAULT 0"),
                                ("fans_gained", "INTEGER DEFAULT 0"),
                                ("impression", "INTEGER DEFAULT 0"),
@@ -223,7 +223,7 @@ def init_db():
                                ("watch_time", "INTEGER DEFAULT 0"),
                                ("danmaku", "INTEGER DEFAULT 0")]:
             try: db.execute(f"ALTER TABLE metrics_history ADD COLUMN {col} {col_type}")
-            except: pass
+            except sqlite3.OperationalError: pass  # column already exists
         for col, col_type in [("human_override", "INTEGER DEFAULT 0"),
                                ("human_value", "REAL"),
                                ("override_note", "TEXT DEFAULT ''"),
@@ -232,7 +232,7 @@ def init_db():
                                ("action", "TEXT DEFAULT ''"),
                                ("category", "TEXT DEFAULT ''")]:
             try: db.execute(f"ALTER TABLE score_dims ADD COLUMN {col} {col_type}")
-            except: pass
+            except sqlite3.OperationalError: pass  # column already exists
 
 # ── 新闻 CRUD ──
 

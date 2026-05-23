@@ -45,6 +45,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
     tasks = []
     seen_keys = set()
 
+    retry_queue = []
     for kw in keywords:
         k, mx, cf = kw['keyword'], kw.get('max', 10), kw.get('china_filter', False)
         print(f"\n{'━' * 60}")
@@ -54,12 +55,33 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
         _log_ctx.prefix = ""
         print(f"  ✅ [{k}] 找到 {len(articles)} 条\n")
+        if len(articles) == 0:
+            retry_queue.append(kw)
+            continue
         tags = KEYWORD_TAG_MAP.get(k, []) or [k]
         for a in articles:
             key = extract_key_from_url(a['link'])
             if key not in seen_keys:
                 seen_keys.add(key)
                 tasks.append({'news': a, 'keyword': k, 'extra_tags': tags})
+
+    # Retry failed keywords once（页面加载问题可能导致0条）
+    for kw in retry_queue:
+        k, mx, cf = kw['keyword'], kw.get('max', 10), kw.get('china_filter', False)
+        print(f"\n{'━' * 60}")
+        print(f"🔁 重试: 【{k}】| 最多 {mx} 条")
+        print(f"{'━' * 60}")
+        _log_ctx.prefix = f"[{k}] "
+        articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
+        _log_ctx.prefix = ""
+        print(f"  {'✅' if articles else '❌'} [{k}] 找到 {len(articles)} 条\n")
+        tags = KEYWORD_TAG_MAP.get(k, []) or [k]
+        for a in articles:
+            key = extract_key_from_url(a['link'])
+            if key not in seen_keys:
+                seen_keys.add(key)
+                tasks.append({'news': a, 'keyword': k, 'extra_tags': tags})
+
     return tasks
 
 

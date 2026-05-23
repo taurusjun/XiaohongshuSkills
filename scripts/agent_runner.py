@@ -249,17 +249,8 @@ def _sync_strategy_config():
 
 
 def _update_topic_performance_for_mature_articles():
-    """检查发布满 7 天且有 72h 数据的文章，更新 topic_performance。
-    使用单一连接处理所有行，避免大批量时文件句柄耗尽。
-    """
-    from scripts.sqlite_db import _connect
-    from scripts.sqlite_db import get_config
-    import json as _json
-
-    eng_w = get_config("engagement_weights", default={"saves": 0.6, "comments": 0.4})
-    w_s = eng_w.get("saves", 0.6)
-    w_c = eng_w.get("comments", 0.4)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    """检查发布满 7 天的文章，调用 upsert_topic_performance 更新话题表现"""
+    from scripts.sqlite_db import _connect, upsert_topic_performance, update_news
 
     with _connect() as db:
         rows = db.execute(
@@ -270,51 +261,15 @@ def _update_topic_performance_for_mature_articles():
             "AND status='active'"
         ).fetchall()
 
-        for r in rows:
-            saves = r["xhs_saves"] or 0
-            comments = r["xhs_comments"] or 0
-            views = r["xhs_views"] or 0
-            eng = w_s * saves + w_c * comments
-            tags = (r["tags"] or "").split(",") if r["tags"] else []
-
-            for raw_tag in tags:
-                tag = raw_tag.strip()
-                if not tag:
-                    continue
-                existing = db.execute(
-                    "SELECT post_count, avg_saves, avg_comments, avg_views, engagement_score "
-                    "FROM topic_performance WHERE topic=?", (tag,)
-                ).fetchone()
-                if not existing:
-                    db.execute(
-                        "INSERT INTO topic_performance "
-                        "(topic, avg_saves, avg_comments, avg_views, engagement_score, post_count, "
-                        " discard_count, vertical, window_days, last_updated) "
-                        "VALUES (?,?,?,?,?,1,0,'idol',90,datetime('now','localtime'))",
-                        (tag, saves, comments, views, eng),
-                    )
-                else:
-                    n = existing["post_count"]
-                    new_n = n + 1
-                    db.execute(
-                        "UPDATE topic_performance SET "
-                        "avg_saves=?, avg_comments=?, avg_views=?, engagement_score=?, "
-                        "post_count=?, last_updated=datetime('now','localtime') WHERE topic=?",
-                        ((existing["avg_saves"] * n + saves) / new_n,
-                         (existing["avg_comments"] * n + comments) / new_n,
-                         (existing["avg_views"] * n + views) / new_n,
-                         (existing["engagement_score"] * n + eng) / new_n,
-                         new_n, tag),
-                    )
-
-            db.execute(
-                "UPDATE news SET topic_perf_updated_at=? WHERE key=?",
-                (now_str, r["key"]),
-            )
-
-    if rows:
-        logger.info(f"  topic_performance 更新: {len(rows)} articles")
-
+    for r in rows:
+        tags = (r["tags"] or "").split(",") if r["tags"] else []
+        for tag in tags:
+            tag = tag.strip()
+            if tag:
+                upsert_topic_performance(tag, saves=r["xhs_saves"] or 0,
+                                         comments=r["xhs_comments"] or 0,
+                                         views=r["xhs_views"] or 0)
+        update_news(r["key"], {"topic_perf_updated_at": datetime.now().strftime("%Y-%m-%d %H:%M")})
 
 def _seed_test_config():
     from scripts.sqlite_db import set_config
