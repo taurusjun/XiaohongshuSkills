@@ -1840,6 +1840,7 @@ def api_list():
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),
+        offset=int(request.args.get('offset', 0)),
     )
     # Count filtered rows (without LIMIT) for correct pagination
     filtered_total = len(query_news(

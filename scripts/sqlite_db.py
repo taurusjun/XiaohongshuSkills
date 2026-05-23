@@ -304,7 +304,8 @@ def get_by_key(key: str) -> dict | None:
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
                needs_review: bool = False, fmt: str = "", score_min: str = "",
-               limit: int = 200, sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
+               limit: int = 200, offset: int = 0,
+               sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
     if sort_by not in valid_sort:
         sort_by = 'created_at'
@@ -337,8 +338,9 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
     if search:
         sql += "AND (title LIKE ? OR content LIKE ? OR comment LIKE ?) "
         params.extend([f"%{search}%"]*3)
-    sql += f"ORDER BY {sort_by} {sort_dir} LIMIT ?"
+    sql += f"ORDER BY {sort_by} {sort_dir} LIMIT ? OFFSET ?"
     params.append(limit)
+    params.append(offset)
     with _connect() as db:
         rows = db.execute(sql, params).fetchall()
     result = []
