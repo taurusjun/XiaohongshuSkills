@@ -53,6 +53,85 @@ def diagnose_low_score(article: dict, scores: dict,
     return Action.DISCARD
 
 
+import logging as _logging
+_dedup_logger = _logging.getLogger("dedup")
+
+
+def dedup_today_candidates(keyword: str = "") -> None:
+    """对今日入库的候选文章按 keyword 分组去重，重复的标记 discarded。
+
+    算法：标题字符集重叠 > 50% 视为同一事件，保留 title_score 最高的一篇。
+    打印详细日志供人工审查。
+    """
+    import sqlite3, os
+    from datetime import datetime
+
+    db_path = os.environ.get("SQLITE_PATH", "data/news.db")
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    where = "DATE(created_at)=? AND status='active'"
+    params = [today]
+    if keyword:
+        where += " AND fetch_by=?"
+        params.append(keyword)
+    rows = conn.execute(
+        f"SELECT key, title, title_score, fetch_by FROM news WHERE {where} ORDER BY title_score DESC",
+        params
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return
+
+    # 按 fetch_by 分组
+    from collections import defaultdict
+    groups: dict[str, list] = defaultdict(list)
+    for r in rows:
+        groups[r["fetch_by"] or ""].append(dict(r))
+
+    total_discarded = 0
+    for kw, articles in groups.items():
+        _dedup_logger.info(f"[dedup] keyword='{kw}' 候选 {len(articles)} 篇（已按 title_score 降序）")
+        kept, discarded = [], []
+        for art in articles:  # 已按 title_score 降序
+            title = art["title"] or ""
+            sa = set(title)
+            duplicate_of = None
+            for k in kept:
+                sb = set(k["title"] or "")
+                overlap = len(sa & sb) / max(len(sa | sb), 1)
+                if overlap > 0.5:
+                    duplicate_of = k
+                    break
+            if duplicate_of:
+                discarded.append((art, duplicate_of, overlap))
+            else:
+                kept.append(art)
+
+        _dedup_logger.info(f"[dedup]   保留 {len(kept)} 篇，丢弃 {len(discarded)} 篇重复")
+        for art, dup_of, overlap in discarded:
+            _dedup_logger.info(
+                f"[dedup]   ✂️  丢弃: 「{art['title'][:30]}」(score={art['title_score']:.2f})"
+                f" ← 重复于 「{dup_of['title'][:30]}」(score={dup_of['title_score']:.2f})"
+                f" overlap={overlap:.0%}"
+            )
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "UPDATE news SET status='discarded', updated_at=datetime('now') WHERE key=?",
+                (art["key"],)
+            )
+            conn.commit()
+            conn.close()
+            total_discarded += 1
+
+        for art in kept:
+            _dedup_logger.info(f"[dedup]   ✅ 保留: 「{art['title'][:30]}」(score={art['title_score']:.2f})")
+
+    _dedup_logger.info(f"[dedup] 完成，共丢弃 {total_discarded} 篇重复候选")
+
+
 HINT_MAP = {
     "啰嗦重复": "请精简正文，删除重复表述，每句话只出现一次核心信息。",
     "离题": "请确保正文紧密围绕标题主题，不要偏离到无关内容。",
