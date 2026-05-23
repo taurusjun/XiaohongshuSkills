@@ -1260,9 +1260,11 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
                 'title_score': news.get('title_score', 0),
                 'content_score': news.get('content_score', 0),
                 'key': extract_key_from_url(news.get('link', '')),
-                'status': 'active',
+                'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
             })
+            if news.get('_discard'):
+                print(f"    🗑️ 已标记为 discarded")
             news_key = extract_key_from_url(news.get('link', ''))
             # 写入评分明细
             quality = news.get('_quality', {})
@@ -1757,9 +1759,11 @@ def process_news_item(news: dict, no_translate: bool = False,
                 'title_score': news.get('_title_score', 0),
                 'content_score': news.get('_content_score', 0),
                 'key': extract_key_from_url(news.get('link', '')),
-                'status': 'active',
+                'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
             })
+            if news.get('_discard'):
+                print(f"    🗑️ 已标记为 discarded")
             news_key = extract_key_from_url(news.get('link', ''))
             # 封面图存本地（SQLite 专属）
             cover_url = news.get('image_url', '')
