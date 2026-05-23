@@ -721,7 +721,7 @@ def main():
             sqlite_key = page.get("_key", "") if is_sqlite else ""
             if note_id and sqlite_key:
                 from sqlite_db import update_news
-                update_news(sqlite_key, {"xhs_note_id": note_id})
+                update_news(sqlite_key, {"xhs_note_id": note_id, "xhs_title": full_title})
                 print(f"  📌 note_id: {note_id}")
             if mark_as_published(page["id"], sqlite_key, args.post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
