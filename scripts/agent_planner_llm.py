@@ -116,117 +116,137 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
     return plan
 
 
-def content_review_brain(date: str, plan_quota: int) -> list[str]:
-    """Phase 3.5: 看今日全部候选，选出最终发布名单，标记 publish_xhs=1。
+def _dedup_and_prefilter(rows: list[dict]) -> list[dict]:
+    """标题去重（重合度 >50% 保留高分）+ 每话题取最高分 2 篇。"""
+    deduped: list[dict] = []
+    for r in rows:
+        title_a = set(r["title"] or "")
+        dup = False
+        for kept in deduped:
+            overlap = len(title_a & set(kept["title"] or "")) / max(len(title_a | set(kept["title"] or "")), 1)
+            if overlap > 0.5:
+                logger.info(f"[review] 去重: 「{r['title'][:25]}」← 重复于「{kept['title'][:25]}」({overlap:.0%})")
+                dup = True; break
+        if not dup:
+            deduped.append(r)
 
-    返回被选中的 key 列表。
-    """
-    import sqlite3
+    topic_counts: dict[str, int] = {}
+    diverse: list[dict] = []
+    for r in deduped:
+        fb = r["fetch_by"] or "other"
+        if topic_counts.get(fb, 0) < 2:
+            diverse.append(r)
+            topic_counts[fb] = topic_counts.get(fb, 0) + 1
+    return diverse
+
+
+def _llm_select(pool: list[dict], quota: int, include_summary: bool, label: str) -> list[str]:
+    """对给定候选池调用 LLM 选稿，返回选中的 key 列表。"""
     from scripts.yahoo_common import call_litellm
+    if not pool or quota <= 0:
+        return []
+
+    keys_by_idx = {i+1: r["key"] for i, r in enumerate(pool)}
+    lines = []
+    for i, r in enumerate(pool):
+        line = (f"{i+1}. [{r['fetch_by']}] {r['title']} "
+                f"(title={r['title_score']:.2f}, content={r['content_score']:.2f})")
+        if include_summary and r.get("summary"):
+            line += f" — {r['summary'][:50]}"
+        lines.append(line)
+
+    prompt = (f"从以下 {len(pool)} 篇{label}中选出最优 {quota} 篇发布。\n\n"
+              + "\n".join(lines)
+              + f"\n\n选择标准：质量优先（title_score高），话题覆盖多样。"
+                f"\n必须输出 reasoning（一句话说明选稿逻辑）。"
+                f"\n直接输出：{{\"selected\":[1,3],\"reasoning\":\"选稿理由\"}}")
+
+    result = call_litellm(
+        prompt,
+        system_prompt="只输出一个JSON对象，禁止输出任何解释或分析文字。",
+        temperature=0.2, max_tokens=400,
+        response_format={"type": "json_object"},
+    )
+
+    if not result:
+        return []
+    out = {}
+    try:
+        out = json.loads(result)
+    except Exception:
+        import re as _re
+        for m in reversed(list(_re.finditer(r'\{[\s\S]*\}', result))):
+            try:
+                c = json.loads(m.group())
+                if "selected" in c:
+                    out = c; break
+            except Exception:
+                pass
+
+    if not out:
+        logger.warning(f"[review:{label}] JSON 解析失败 — {result[:200]}")
+        return []
+
+    reasoning = out.get("reasoning", "")
+    logger.info(f"[review:{label}] 理由: {reasoning}")
+    selected = []
+    for idx in out.get("selected", [])[:quota]:
+        key = keys_by_idx.get(int(idx))
+        if key:
+            selected.append(key)
+    return selected
+
+
+def content_review_brain(date: str, plan_quota: int) -> list[str]:
+    """Phase 3.5: 长文和资讯分开选稿，标记 publish_xhs=1。返回选中 key 列表。"""
+    import sqlite3
     from scripts.sqlite_db import update_news, DB_PATH
 
-    db_path = DB_PATH
-    today = date[:4] + '-' + date[4:6] + '-' + date[6:8]  # 20260523 → 2026-05-23
-
-    conn = sqlite3.connect(db_path)
+    today = date[:4] + '-' + date[4:6] + '-' + date[6:8]
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
+    rows = [dict(r) for r in conn.execute(
         "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
         "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
-        "ORDER BY title_score DESC LIMIT 20",
+        "ORDER BY title_score DESC LIMIT 30",
         (today,)
-    ).fetchall()
+    ).fetchall()]
     conn.close()
 
     if not rows:
         logger.info("[review] 今日无候选文章，跳过")
         return []
 
-    # ── Step 1: 标题去重（字符重合度 >50% 视为同一事件，保留高分）──────────
-    deduped: list[dict] = []
+    # 按体裁拆分
+    story_rows = [r for r in rows if "story" in (r.get("format_suitability") or "")]
+    news_rows  = [r for r in rows if "story" not in (r.get("format_suitability") or "")]
+
+    # 去重 + 预筛（每路独立）
+    story_pool = _dedup_and_prefilter(story_rows)
+    news_pool  = _dedup_and_prefilter(news_rows)
+
+    # 配额分配：story 最多占 plan_quota 的一半，剩余给 news
+    story_quota = min(len(story_pool), max(1, plan_quota // 2)) if story_pool else 0
+    news_quota  = plan_quota - story_quota
+
+    logger.info(f"[review] 原始 {len(rows)} 篇（story={len(story_rows)}, news={len(news_rows)}）"
+                f" → 预筛后 story={len(story_pool)}, news={len(news_pool)}"
+                f" → 配额 story={story_quota}, news={news_quota}")
+
+    # 分别选稿
+    story_keys = _llm_select(story_pool, story_quota, include_summary=False, label="长文")
+    news_keys  = _llm_select(news_pool,  news_quota,  include_summary=True,  label="资讯")
+    selected_keys = story_keys + news_keys
+
+    # 打印并标记
+    all_keys_set = set(selected_keys)
+    logger.info(f"[review] 选中 {len(selected_keys)} 篇（长文 {len(story_keys)}，资讯 {len(news_keys)}）")
     for r in rows:
-        r = dict(r)
-        title_a = set(r["title"] or "")
-        duplicate = False
-        for kept in deduped:
-            title_b = set(kept["title"] or "")
-            overlap = len(title_a & title_b) / max(len(title_a | title_b), 1)
-            if overlap > 0.5:
-                duplicate = True
-                logger.info(f"[review] 去重: 「{r['title'][:25]}」← 重复于「{kept['title'][:25]}」({overlap:.0%})")
-                break
-        if not duplicate:
-            deduped.append(r)
-
-    # ── Step 2: 预筛——每个话题取最高分 2 篇 ─────────────────────────────
-    topic_counts: dict[str, int] = {}
-    diverse: list[dict] = []
-    PER_TOPIC = 2
-    for r in deduped:
-        fb = r["fetch_by"] or "other"
-        if topic_counts.get(fb, 0) < PER_TOPIC:
-            diverse.append(r)
-            topic_counts[fb] = topic_counts.get(fb, 0) + 1
-
-    logger.info(f"[review] 原始候选 {len(rows)} 篇 → 去重后 {len(deduped)} 篇 → 预筛后 {len(diverse)} 篇")
-
-    candidates_text = "\n".join(
-        f"{i+1}. [{r['fetch_by']}] {r['title']} "
-        f"(title={r['title_score']:.2f}, content={r['content_score']:.2f}, "
-        f"format={r['format_suitability']})"
-        for i, r in enumerate(diverse)
-    )
-    keys_by_idx = {i+1: r["key"] for i, r in enumerate(diverse)}
-
-    prompt = f"""从以下 {len(diverse)} 篇文章中选出最优 {plan_quota} 篇今日发布。
-
-{candidates_text}
-
-选择标准：质量优先（title_score高），故事体(story)和资讯体(news)搭配，话题覆盖多样。
-必须输出 reasoning 字段（一句话说明选稿逻辑）。
-直接输出：{{"selected":[1,3,5],"reasoning":"选稿理由一句话"}}"""
-
-    result = call_litellm(
-        prompt,
-        system_prompt="只输出一个JSON对象，禁止输出任何解释或分析文字。",
-        temperature=0.2,
-        max_tokens=1200,
-        response_format={"type": "json_object"},
-    )
-
-    selected_keys = []
-    reasoning = ""
-    if result:
-        out = {}
-        try:
-            out = json.loads(result)
-        except Exception:
-            import re as _re
-            for m in reversed(list(_re.finditer(r'\{[\s\S]*\}', result))):
-                try:
-                    c = json.loads(m.group())
-                    if "selected" in c:
-                        out = c; break
-                except Exception:
-                    pass
-        if not out:
-            logger.warning(f"[review] JSON 解析失败 — {result[:200]}")
-        else:
-            reasoning = out.get("reasoning", "")
-            for idx in out.get("selected", [])[:plan_quota]:
-                key = keys_by_idx.get(int(idx))
-                if key:
-                    selected_keys.append(key)
-
-    logger.info(f"[review] 今日候选 {len(rows)} 篇 → 选中 {len(selected_keys)} 篇")
-    logger.info(f"[review] 理由: {reasoning}")
-    for i, r in enumerate(rows):
-        key = dict(r)["key"]
-        if key in selected_keys:
-            logger.info(f"[review]   ✅ 选中: [{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
-            update_news(key, {"publish_xhs": 1})
-        else:
-            logger.info(f"[review]   ❌ 未选: [{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
+        tag = "✅" if r["key"] in all_keys_set else "❌"
+        fmt = "story" if "story" in (r.get("format_suitability") or "") else "news"
+        logger.info(f"[review]   {tag} [{fmt}][{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
+        if r["key"] in all_keys_set:
+            update_news(r["key"], {"publish_xhs": 1})
 
     return selected_keys
 
