@@ -173,7 +173,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             daily_quota = get_config("daily_quota", default=2)
             keywords = []
-            for topic in topics[:plan.get("quota_total", 3)]:
+            for topic in topics:
                 kw_cfg = yahoo_kw_map.get(topic, {"keyword": topic, "max": daily_quota})
                 keywords.append({"keyword": kw_cfg.get("keyword", topic), "max": kw_cfg.get("max", daily_quota)})
             resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
