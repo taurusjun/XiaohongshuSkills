@@ -143,11 +143,8 @@ def main():
         daily = get_config("daily_quota", default=5)
         keywords = []
         for t in topics:
-            cfg = kw_map.get(t, {})
-            if isinstance(cfg, dict):
-                keywords.append({"keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
-            else:
-                keywords.append({"keyword": str(cfg), "max": daily})  # 旧格式兼容
+            cfg = kw_map.get(t, {"keyword": t, "max": daily})
+            keywords.append({"keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
 
     run_parallel(keywords, args.workers)
 
