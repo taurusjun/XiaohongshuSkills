@@ -230,19 +230,6 @@ def init_db():
             try: db.execute(f"ALTER TABLE score_dims ADD COLUMN {col} {col_type}")
             except: pass
 
-    # 迁移旧 yahoo_keyword_map 格式: str → {keyword, max}
-    try:
-        row = db.execute("SELECT value FROM agent_config WHERE key='yahoo_keyword_map'").fetchone()
-        if row:
-            val = json.loads(row["value"]) if isinstance(row["value"], str) else row["value"]
-            if val and isinstance(next(iter(val.values()), None), str):
-                daily = json.loads(db.execute("SELECT value FROM agent_config WHERE key='daily_quota'").fetchone()["value"]) if db.execute("SELECT 1 FROM agent_config WHERE key='daily_quota'").fetchone() else 5
-                new_val = {k: {"keyword": v, "max": daily} for k, v in val.items()}
-                db.execute("UPDATE agent_config SET value=?, updated_at=datetime('now','localtime') WHERE key='yahoo_keyword_map'",
-                           (json.dumps(new_val, ensure_ascii=False),))
-    except Exception:
-        pass
-
 # ── 新闻 CRUD ──
 
 def insert_news(news: dict) -> bool:

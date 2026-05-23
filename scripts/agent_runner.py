@@ -191,13 +191,9 @@ def run(dry_run: bool = False, live_preview: bool = False):
             daily_quota = get_config("daily_quota", default=2)
             for topic in topics[:plan.get("quota_total", 3)]:
                 extra_tags = KEYWORD_TAG_MAP.get(topic, [topic])
-                kw_cfg = yahoo_kw_map.get(topic, topic)
-                if isinstance(kw_cfg, dict):
-                    yahoo_kw = kw_cfg.get("keyword", topic)
-                    topic_max = kw_cfg.get("max", daily_quota)
-                else:
-                    yahoo_kw = str(kw_cfg)  # 旧格式兼容
-                    topic_max = daily_quota
+                kw_cfg = yahoo_kw_map.get(topic, {"keyword": topic, "max": daily_quota})
+                yahoo_kw = kw_cfg.get("keyword", topic)
+                topic_max = kw_cfg.get("max", daily_quota)
                 if yahoo_kw != topic:
                     logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}' (max={topic_max})")
                 try:

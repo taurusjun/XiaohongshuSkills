@@ -247,11 +247,8 @@ def api_keywords():
         daily = get_config("daily_quota", default=5)
         kws = []
         for t in topics:
-            cfg = kw_map.get(t, {})
-            if isinstance(cfg, dict):
-                kws.append({"topic": t, "keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
-            else:
-                kws.append({"topic": t, "keyword": str(cfg), "max": daily})
+            cfg = kw_map.get(t, {"keyword": t, "max": daily})
+            kws.append({"topic": t, "keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
     except Exception:
         kws = [{"topic": "AKB48", "keyword": "AKB", "max": 10}]
     return jsonify({"keywords": kws})
