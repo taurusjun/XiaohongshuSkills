@@ -220,10 +220,19 @@ def api_custom_keywords_save():
 @app.route('/api/keywords')
 def api_keywords():
     try:
-        from yahoo_news_auto import DEFAULT_KEYWORDS
-        kws = [{"keyword": kw, "max": mx, "china_filter": cf} for kw, mx, cf in DEFAULT_KEYWORDS]
+        from sqlite_db import get_config
+        topics = get_config("focus_topics", default=[])
+        kw_map = get_config("yahoo_keyword_map", default={})
+        daily = get_config("daily_quota", default=5)
+        kws = []
+        for t in topics:
+            cfg = kw_map.get(t, {})
+            if isinstance(cfg, dict):
+                kws.append({"topic": t, "keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
+            else:
+                kws.append({"topic": t, "keyword": str(cfg), "max": daily})
     except Exception:
-        kws = [{"keyword": "AKB", "max": 10, "china_filter": False}]
+        kws = [{"topic": "AKB48", "keyword": "AKB", "max": 10}]
     return jsonify({"keywords": kws})
 
 @app.route('/api/active-tasks')

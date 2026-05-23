@@ -52,14 +52,14 @@
   "my_user_id": "69e099cb00000000330241c7",
   "competitor_accounts": ["63d8d8d20000000026004e37"],
 
-  "_comment_yahoo_keyword_map": "focus_topics 对应的 Yahoo Japan 搜索词（日语），未配置的 topic 直接用原词",
+  "_comment_yahoo_keyword_map": "每个 focus_topic 的 Yahoo 搜索词 + 每次抓取上限，数字为独立配额。未配置的话题用 daily_quota 兜底（keyword 取原词）",
   "yahoo_keyword_map": {
-    "乃木坂46":  "乃木坂",
-    "AKB48":     "AKB",
-    "日向坂46":  "日向坂",
-    "欅坂46":    "櫻坂",
-    "日本写真集": "グラビア",
-    "日本偶像":  "アイドル",
-    "日本性感女星": "セクシー女優"
+    "乃木坂46":  {"keyword": "乃木坂", "max": 10},
+    "AKB48":     {"keyword": "AKB", "max": 10},
+    "日向坂46":  {"keyword": "日向坂", "max": 5},
+    "欅坂46":    {"keyword": "櫻坂", "max": 5},
+    "日本写真集": {"keyword": "グラビア", "max": 5},
+    "日本偶像":  {"keyword": "アイドル", "max": 10},
+    "日本性感女星": {"keyword": "セクシー女優", "max": 5}
   }
 }

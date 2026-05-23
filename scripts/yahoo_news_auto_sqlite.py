@@ -31,7 +31,7 @@ sys.stdout = _PrefixedStdout(sys.stdout)
 
 # Reuse CDP fetch from original script
 from yahoo_news_auto import (
-    fetch_news_via_cdp, KEYWORD_TAG_MAP, DEFAULT_KEYWORDS
+    fetch_news_via_cdp, KEYWORD_TAG_MAP
 )
 from yahoo_common import (
     process_news_item, push_with_gallery, load_today_keys,
@@ -136,8 +136,18 @@ def main():
     if args.keywords:
         keywords = json.loads(args.keywords)
     else:
-        keywords = [{"keyword": kw, "max": mx, "china_filter": cf}
-                    for kw, mx, cf in DEFAULT_KEYWORDS]
+        # 从 agent_config 读取配置，不再硬编码 DEFAULT_KEYWORDS
+        from scripts.sqlite_db import get_config
+        topics = get_config("focus_topics", default=[])
+        kw_map = get_config("yahoo_keyword_map", default={})
+        daily = get_config("daily_quota", default=5)
+        keywords = []
+        for t in topics:
+            cfg = kw_map.get(t, {})
+            if isinstance(cfg, dict):
+                keywords.append({"keyword": cfg.get("keyword", t), "max": cfg.get("max", daily)})
+            else:
+                keywords.append({"keyword": str(cfg), "max": daily})  # 旧格式兼容
 
     run_parallel(keywords, args.workers)
 
