@@ -349,7 +349,7 @@ def _render_html(content: str, img_url_map: dict,
             elif s.startswith("> "):
                 q = s[2:].strip()
                 parts.append(
-                    f'<p style="font-size:13px;line-height:1.8;color:#aaa;'
+                    f'<p style="font-size:15px;line-height:1.8;color:#aaa;'
                     f'font-style:italic;padding:16px 0 4px;margin:0">'
                     f'{_render_inline(q, S)}</p>'
                 )
