@@ -184,18 +184,25 @@ def run(dry_run: bool = False, live_preview: bool = False):
             max_workers = get_config("fetch_parallel", default=3)
 
             # Step 1: 串行抓取（CDP 不支持并发），跨话题合并去重
-            # yahoo_keyword_map: focus_topics（中文）→ Yahoo Japan 搜索词（日语）
+            # yahoo_keyword_map: focus_topics（中文）→ {keyword: 日语, max: 配额}
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             tasks = []
-            seen_keys = set()  # 跨话题去重，同 yahoo_news_auto_sqlite.py 的逻辑
+            seen_keys = set()
+            daily_quota = get_config("daily_quota", default=2)
             for topic in topics[:plan.get("quota_total", 3)]:
                 extra_tags = KEYWORD_TAG_MAP.get(topic, [topic])
-                yahoo_kw = yahoo_kw_map.get(topic, topic)  # 转换为日语搜索词
+                kw_cfg = yahoo_kw_map.get(topic, topic)
+                if isinstance(kw_cfg, dict):
+                    yahoo_kw = kw_cfg.get("keyword", topic)
+                    topic_max = kw_cfg.get("max", daily_quota)
+                else:
+                    yahoo_kw = str(kw_cfg)  # 旧格式兼容
+                    topic_max = daily_quota
                 if yahoo_kw != topic:
-                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}'")
+                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}' (max={topic_max})")
                 try:
                     articles = fetch_news_via_cdp(
-                        yahoo_kw, max_results=max_results,
+                        yahoo_kw, max_results=topic_max,
                         china_filter=False, existing_keys=existing_keys,
                     )
                     for art in articles:
