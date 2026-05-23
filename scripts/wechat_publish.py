@@ -78,6 +78,13 @@ def md_to_wechat_html(md_text: str) -> str:
 
     for line in lines:
         line = line.rstrip()
+        # Quote (blockquote)
+        if line.startswith("> "):
+            if in_paragraph: html.append("</p>"); in_paragraph = False
+            # Preserve <i> <b> tags in quotes
+            text = line[2:]
+            html.append(f'<blockquote style="font-size:14px;line-height:1.8;color:#555;border-left:3px solid #ff6b35;padding-left:14px;margin:12px 0">{text}</blockquote>')
+            continue
         # Headers
         if line.startswith("## "):
             if in_paragraph: html.append("</p>"); in_paragraph = False
