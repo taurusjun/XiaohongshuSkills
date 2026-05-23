@@ -914,8 +914,6 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 #editorjs h2.ce-header{font-size:16px;font-weight:700;margin:16px 0 6px;color:var(--text)}
 #editorjs h3.ce-header{font-size:14px;font-weight:600;margin:14px 0 4px;color:var(--text)}
 #editorjs .image-tool__image-picture{max-width:100%;border-radius:8px}
-#editorjs .cdx-quote__text{font-size:15px;line-height:1.7;color:#555;border-left:3px solid #ff6b35;padding-left:12px;margin:8px 0}
-#editorjs .cdx-list{margin:8px 0;padding-left:20px}
 </style>
 </head>
 <body>
@@ -1119,30 +1117,6 @@ async function stopTask(){if(confirm('确定终止？')){await fetch('/api/task/
 
 <script>
 const key='{{news.key}}';
-{% if news.primary_format=='story' %}
-// Editor.js for story articles
-var _ejsEditor=null;
-function _ejsBlocksToText(blocks){return blocks.map(b=>{if(b.type==='header')return '#'.repeat(b.data.level)+' '+b.data.text;if(b.type==='quote')return '> '+b.data.text;if(b.type==='list')return (b.data.items||[]).map(i=>'• '+i).join('\\n');return b.data.text;}).join('\\n\\n');}
-(async function(){
-  const [{default:E},{default:H},{default:L},{default:Q}]=await Promise.all([
-    import('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.28/+esm'),
-    import('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8/+esm'),
-    import('https://cdn.jsdelivr.net/npm/@editorjs/list@1.9/+esm'),
-    import('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6/+esm')
-  ]);
-  const raw=document.getElementById('contentHidden').value;
-  let blocks=[],ls=raw.split('\\n');
-  for(let l of ls){
-    if(!l.trim())continue;
-    if(l.startsWith('## '))blocks.push({type:'header',data:{text:l.slice(3),level:2}});
-    else if(l.startsWith('### '))blocks.push({type:'header',data:{text:l.slice(4),level:3}});
-    else if(l.startsWith('> '))blocks.push({type:'quote',data:{text:l.slice(2),caption:'',alignment:'left'}});
-    else if(l.startsWith('• ')||l.startsWith('- '))blocks.push({type:'list',data:{style:'unordered',items:[l.slice(2)]}});
-    else blocks.push({type:'paragraph',data:{text:l}});
-  }
-  _ejsEditor=new E({holder:'editorjs',tools:{header:{class:H,config:{levels:[2,3]}},list:{class:L},quote:{class:Q}},data:{blocks},onChange:()=>{_ejsEditor.save().then(d=>{document.getElementById('contentHidden').value=_ejsBlocksToText(d.blocks)})}});
-})();
-{% endif %}
 {% if scores and scores|length > 0 %}
 function filterScoreTab(cat){
   document.getElementById('tabTitle').className=cat==='标题'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
