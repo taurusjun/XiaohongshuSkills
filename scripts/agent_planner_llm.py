@@ -60,8 +60,9 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
 {chr(10).join(topic_lines)}
 
 决策要求：优先热度高（fresh_count大）且质量潜力高（baseline_saves大）的话题，冷启动阶段集中资源而非雨露均沾。
+每个话题还需给出一句话内容角度（angle）：今天这个话题应该聚焦什么切入点，引导内容生成方向。
 
-输出 JSON：{{"topics":[{{"topic":"话题名","quota":1}}],"quota_total":5,"reasoning":"策略说明"}}"""
+输出 JSON：{{"topics":[{{"topic":"话题名","quota":1,"angle":"内容切入角度一句话"}}],"quota_total":5,"reasoning":"策略说明"}}"""
 
     result = call_litellm(
         prompt,
@@ -105,6 +106,7 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
             topic=t["topic"], quota=t.get("quota", 1),
             source="llm", is_fresh=bool(ts.get("is_fresh")),
             target_format=target_format,
+            angle=t.get("angle", ""),
         ))
 
     plan.post_times = recommend_post_times(plan.topics, date)
@@ -112,6 +114,86 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
     logger.info(f"  LLM规划: quota={plan.quota_total}, topics={[t.topic for t in plan.topics]}")
     logger.info(f"  理由: {plan.note[:120]}")
     return plan
+
+
+def content_review_brain(date: str, plan_quota: int) -> list[str]:
+    """Phase 3.5: 看今日全部候选，选出最终发布名单，标记 publish_xhs=1。
+
+    返回被选中的 key 列表。
+    """
+    import sqlite3, os
+    from scripts.yahoo_common import call_litellm
+    from scripts.sqlite_db import update_news
+
+    db_path = os.environ.get("SQLITE_PATH", "data/news.db")
+    today = date[:4] + '-' + date[4:6] + '-' + date[6:8]  # 20260523 → 2026-05-23
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
+        "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
+        "ORDER BY title_score DESC LIMIT 50",
+        (today,)
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        logger.info("[review] 今日无候选文章，跳过")
+        return []
+
+    candidates_text = "\n".join(
+        f"{i+1}. [{r['fetch_by']}] {r['title']} "
+        f"(title={r['title_score']:.2f}, content={r['content_score']:.2f}, "
+        f"format={r['format_suitability']}) — {(r['summary'] or '')[:40]}"
+        for i, r in enumerate(rows)
+    )
+    keys_by_idx = {i+1: dict(r)["key"] for i, r in enumerate(rows)}
+
+    prompt = f"""今日计划发布 {plan_quota} 篇内容。以下是今日生成并通过去重的 {len(rows)} 篇候选文章：
+
+{candidates_text}
+
+请从中选出最优的 {plan_quota} 篇，选择标准：
+1. 话题多样性：尽量覆盖不同话题（fetch_by字段），不要全选同一话题
+2. 质量优先：title_score 和 content_score 综合考量
+3. 体裁搭配：今日不要全部同一 format，故事体(story)和资讯体(news)搭配更好
+
+输出 JSON：{{"selected": [1, 3, 5], "reasoning": "选稿理由一句话"}}
+（selected 填候选列表中的编号，不是 key）"""
+
+    result = call_litellm(
+        prompt,
+        system_prompt="你是内容运营编辑。直接输出JSON，不要前置说明。",
+        temperature=0.2,
+        max_tokens=300,
+        response_format={"type": "json_object"},
+    )
+
+    selected_keys = []
+    reasoning = ""
+    if result:
+        try:
+            out = json.loads(result)
+            reasoning = out.get("reasoning", "")
+            for idx in out.get("selected", [])[:plan_quota]:
+                key = keys_by_idx.get(int(idx))
+                if key:
+                    selected_keys.append(key)
+        except Exception as e:
+            logger.warning(f"[review] JSON 解析失败: {e} — {result[:200]}")
+
+    logger.info(f"[review] 今日候选 {len(rows)} 篇 → 选中 {len(selected_keys)} 篇")
+    logger.info(f"[review] 理由: {reasoning}")
+    for i, r in enumerate(rows):
+        key = dict(r)["key"]
+        if key in selected_keys:
+            logger.info(f"[review]   ✅ 选中: [{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
+            update_news(key, {"publish_xhs": 1})
+        else:
+            logger.info(f"[review]   ❌ 未选: [{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
+
+    return selected_keys
 
 
 def shadow_plan(date: str, rule_plan) -> dict:

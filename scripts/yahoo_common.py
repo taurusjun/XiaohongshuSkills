@@ -453,7 +453,8 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 
 def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
                                   keyword: str = "", body_text: str = "",
-                                  hint: str = "", content_format: str = "news") -> Tuple[str, str, str, str, str, list]:
+                                  hint: str = "", content_format: str = "news",
+                                  angle: str = "") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
@@ -494,7 +495,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 
 新闻标题：{title_zh}
 日文原文：{title_ja}{context}{tsundere_instruction}
-{f"【修正要求】{hint}" if hint else ""}
+{f"【内容角度】今日重点关注：{angle}" if angle else ""}{chr(10) if angle else ""}{f"【修正要求】{hint}" if hint else ""}
 输出格式（必须包含全部6个字段）：
 
 【SEO标题】
@@ -1076,7 +1077,8 @@ def fetch_article_details(url: str) -> dict:
 
 
 def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
-                           twitter_embeds: list[str] | None = None) -> dict | None:
+                           twitter_embeds: list[str] | None = None,
+                           angle: str = "") -> dict | None:
     """生成故事体文章（导语 + 翻译正文 + 结语），风格对齐严肃新闻媒体。
 
     与 generate_content_and_comment 完全不同的格式，不含娱乐化语气和词汇教学。
@@ -1110,8 +1112,9 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
             "占位符单独成行，上下各留一个空行。"
         )
 
+    angle_note = f"\n【内容角度】今日重点关注：{angle}\n" if angle else ""
     prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
-
+{angle_note}
 请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章。
 
 【第一步：判断文章类型】
@@ -1205,12 +1208,13 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     return None
 
 
-def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
+def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str = "") -> dict:
     """故事体文章的完整独立处理路径：生成 → 评分 → 分类 → 图片 → 返回。"""
     story = generate_story_article(
         news['title_ja'], news['title_zh'],
         body_ja=news.get('content_ja', '') or news.get('body_text', ''),
         twitter_embeds=news.get('_twitter_embeds', []),
+        angle=angle,
     )
     if not story:
         print("    ⚠️ 故事体生成失败，回退到资讯体")
@@ -1629,8 +1633,9 @@ def process_news_item(news: dict, no_translate: bool = False,
             news['pub_time'] = datetime.now().strftime('%Y.%m.%d %H:%M')
 
         # ── story 体裁：完全独立路径，生成完直接返回 ──────────────────────
+        _angle = news.get('_angle', '')
         if selected_format == 'story':
-            return _process_story_path(news, keyword, extra_tags or [])
+            return _process_story_path(news, keyword, extra_tags or [], angle=_angle)
 
         # ── 资讯体 / 盘点体 / 对比体：原有路径 ──────────────────────────────
         generated = generate_content_and_comment(
@@ -1640,6 +1645,7 @@ def process_news_item(news: dict, no_translate: bool = False,
             body_text=news.get('body_text', ''),
             hint=news.get('_regen_hint', ''),
             content_format=selected_format,
+            angle=_angle,
         )
         if generated is None:
             print("    ⚠️ LLM 调用失败，跳过此条新闻")
@@ -1685,6 +1691,7 @@ def process_news_item(news: dict, no_translate: bool = False,
                     keyword=keyword,
                     body_text=news.get('body_text', ''),
                     hint=regen_hint,
+                    angle=news.get('_angle', ''),
                 )
                 if generated is None:
                     print("    ⚠️ 重生成失败，保留当前内容")

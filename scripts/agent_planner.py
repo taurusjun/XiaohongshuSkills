@@ -19,6 +19,7 @@ class TopicQuota:
     source: str  # "high_perf" | "explore" | "baseline"
     is_fresh: bool = False
     target_format: str = "news"  # 今日目标体裁，来自 content_format_rotation
+    angle: str = ""              # Phase 2 LLM 给出的内容切入角度
 
 
 @dataclass
