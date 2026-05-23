@@ -296,14 +296,13 @@ def get_by_key(key: str) -> dict | None:
 
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
-               needs_review: bool = False,
+               needs_review: bool = False, fmt: str = "", score_min: str = "",
                limit: int = 200, sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
     if sort_by not in valid_sort:
         sort_by = 'created_at'
     sort_dir = 'DESC' if sort_dir.upper() == 'DESC' else 'ASC'
     if needs_review:
-        # 查询 score_dims 中含 HUMAN_REVIEW action 的文章
         sql = ("SELECT DISTINCT n.* FROM news n "
                "JOIN score_dims sd ON n.key=sd.news_key "
                "WHERE sd.action='HUMAN_REVIEW' AND n.status=? ")
@@ -316,6 +315,12 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
         sql += "AND created_at <= ? || ' 23:59:59' "; params.append(date_to)
     if category:
         sql += "AND category = ? "; params.append(category)
+    if fmt:
+        sql += "AND n.format_suitability LIKE ? " if needs_review else "AND format_suitability LIKE ? "
+        params.append(f"%{fmt}%")
+    if score_min:
+        sql += "AND (n.title_score + n.content_score) >= ? " if needs_review else "AND (title_score + content_score) >= ? "
+        params.append(float(score_min))
     if publish_xhs == 'published':
         sql += "AND publish_xhs=1 AND publish_time IS NOT NULL AND publish_time!='' "
     elif publish_xhs == 'pending':

@@ -496,6 +496,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
       <select id="category" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部分类</option></select>
       <select id="status" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
       <select id="publishXhs" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
+      <select id="fmtFilter" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
+      <select id="scoreFilter" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
       <button class="btn btn-red" onclick="loadList()">筛选</button>
     </div>
   </div>
@@ -587,7 +589,8 @@ async function pollTaskLog(tid){
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:100,offset:page*100,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
-    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value});
+    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value,
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>`<tr>
     <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()"></td>
@@ -623,7 +626,8 @@ async function loadList(){
   const up=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,page:page,
     date_from:S('dateFrom').value,date_to:S('dateTo').value,
     search:S('search').value,category:S('category').value,
-    status:S('status').value,publish_xhs:S('publishXhs').value});
+    status:S('status').value,publish_xhs:S('publishXhs').value,
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   history.replaceState(null,'','/?'+up.toString());
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
@@ -802,6 +806,8 @@ async function loadCategories(){
 	S("category").value=qp.get("category")||"";
 	S("status").value=qp.get("status")||"active";
 	S("publishXhs").value=qp.get("publish_xhs")||"";
+	S("fmtFilter").value=qp.get("fmt")||"";
+	S("scoreFilter").value=qp.get("score_min")||"";
 	// date: empty URL param means user cleared it — don't override with today
 	S("dateFrom").value=qp.has("date_from")?qp.get("date_from"):today;
 	S("dateTo").value=qp.has("date_to")?qp.get("date_to"):today;
@@ -1733,6 +1739,8 @@ def api_list():
         search=request.args.get('search',''),
         publish_xhs=request.args.get('publish_xhs',''),
         needs_review=_needs_review,
+        fmt=request.args.get('fmt',''),
+        score_min=request.args.get('score_min',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),
@@ -1746,6 +1754,8 @@ def api_list():
         search=request.args.get('search',''),
         publish_xhs=request.args.get('publish_xhs',''),
         needs_review=_needs_review,
+        fmt=request.args.get('fmt',''),
+        score_min=request.args.get('score_min',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=10000,
