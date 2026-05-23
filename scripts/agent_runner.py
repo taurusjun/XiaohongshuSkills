@@ -165,104 +165,29 @@ def run(dry_run: bool = False, live_preview: bool = False):
         print(json.dumps(plan_data, ensure_ascii=False, indent=2))
         return
 
-    # Phase 3: 执行（并行处理，对齐 yahoo_news_auto_sqlite.py 的 ThreadPoolExecutor）
+    # Phase 3: 执行 — 统一调用 yahoo_news_auto_sqlite.py
     if progress.get("phase", 0) < 3 and topics:
         logger.info("=== Phase 3: 执行 ===")
-        total_fetched = 0
         try:
-            import threading
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            from scripts.yahoo_news_auto import fetch_news_via_cdp, KEYWORD_TAG_MAP
-            from scripts.yahoo_common import process_news_item
-            from scripts.sqlite_db import (insert_news, upsert_score_dims,
-                                            update_news, load_today_keys,
-                                            increment_topic_discard)
-
-            from scripts.yahoo_common import extract_key_from_url
-            existing_keys = load_today_keys()
-            max_results = get_config("daily_quota", default=2)
-            max_workers = get_config("fetch_parallel", default=3)
-
-            # Step 1: 串行抓取（CDP 不支持并发），跨话题合并去重
-            # yahoo_keyword_map: focus_topics（中文）→ {keyword: 日语, max: 配额}
+            import subprocess as _sp, json as _json
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
-            tasks = []
-            seen_keys = set()
             daily_quota = get_config("daily_quota", default=2)
+            keywords = []
             for topic in topics[:plan.get("quota_total", 3)]:
-                extra_tags = KEYWORD_TAG_MAP.get(topic, [topic])
                 kw_cfg = yahoo_kw_map.get(topic, {"keyword": topic, "max": daily_quota})
-                yahoo_kw = kw_cfg.get("keyword", topic)
-                topic_max = kw_cfg.get("max", daily_quota)
-                if yahoo_kw != topic:
-                    logger.info(f"  topic '{topic}' → Yahoo搜索词 '{yahoo_kw}' (max={topic_max})")
-                try:
-                    articles = fetch_news_via_cdp(
-                        yahoo_kw, max_results=topic_max,
-                        china_filter=False, existing_keys=existing_keys,
-                    )
-                    for art in articles:
-                        key = extract_key_from_url(art.get("link", ""))
-                        if not key or key in seen_keys:
-                            continue
-                        seen_keys.add(key)
-                        tasks.append({"art": art, "topic": topic, "extra_tags": extra_tags,
-                                      "target_format": topic_format_map.get(topic, "news")})
-                except Exception as e:
-                    _alert("3-抓取", e, f"话题: {topic}")
-
-            logger.info(f"  抓取完成: {len(tasks)} 篇待处理，并行度={max_workers}")
-
-            # Step 2: 并行处理（翻译 + 生成 + 评分 各自独立，LLM 调用可并发）
-            lock = threading.Lock()
-            done_count = [0]
-
-            def _process_one(task):
-                art = task["art"]
-                topic = task["topic"]
-                extra_tags = task["extra_tags"]
-                target_fmt = task.get("target_format", "news")
-                art["_target_format"] = target_fmt  # 传给 process_news_item 覆盖 LLM 体裁判断
-                art = process_news_item(art, extra_tags=extra_tags, keyword=topic)
-                with lock:
-                    done_count[0] += 1
-                    status = "⏭️" if art.get("_skip") else ("🗑️" if art.get("_discard") else "✅")
-                    logger.info(f"  [{done_count[0]}/{len(tasks)}] {status} {art.get('title_zh','')[:35]}")
-                return art, topic
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(_process_one, t): t for t in tasks}
-                for f in as_completed(futures):
-                    try:
-                        art, topic = f.result()
-                        if art.get("_skip"):
-                            continue
-                        # 空标题或空 key → 跳过，避免插入无效记录
-                        if not art.get("title_zh", "").strip() or not art.get("key", "").strip():
-                            logger.warning(f"  ⚠️ 跳过无效文章（空标题或空key）: {art.get('title_ja','')[:40]}")
-                            continue
-                        if art.get("_discard"):
-                            increment_topic_discard(topic, reason=art.get("_discard_reason", ""))
-                            continue
-                        insert_news(art)
-                        quality = art.get("_quality", {})
-                        if quality.get("scores"):
-                            upsert_score_dims(art["key"], quality["scores"],
-                                             dim_version=quality.get("_dim_version", ""))
-                            update_news(art["key"], {
-                                "title_score": quality.get("title_score", 0),
-                                "content_score": quality.get("content_score", 0),
-                            })
-                        total_fetched += 1
-                    except Exception as e:
-                        logger.warning(f"  process failed: {e}")
-
-            logger.info(f"  执行完成: {total_fetched} articles saved")
+                keywords.append({"keyword": kw_cfg.get("keyword", topic), "max": kw_cfg.get("max", daily_quota)})
+            cmd = [sys.executable, "scripts/yahoo_news_auto_sqlite.py", "--keywords", _json.dumps(keywords)]
+            logger.info(f"  启动: {' '.join(cmd)}")
+            result = _sp.run(cmd, cwd=str(Path(__file__).resolve().parent.parent),
+                            capture_output=True, text=True, timeout=600)
+            if result.stdout:
+                for line in result.stdout.strip().split("\n")[-5:]:
+                    logger.info(f"  {line}")
+            if result.returncode != 0:
+                _alert("3-执行", RuntimeError(f"exit={result.returncode}"))
         except Exception as e:
             _alert("3-执行", e)
-
-        set_state(f"runner_progress_{date_str}",
-                  {"phase": 3, "fetched": total_fetched}, date=date_str)
+        set_state(f"runner_progress_{date_str}", {"phase": 3}, date=date_str)
 
     # Phase 4: 通知（飞书纯通知 + Web UI 链接，不依赖回调）
     if progress.get("phase", 0) < 4:
