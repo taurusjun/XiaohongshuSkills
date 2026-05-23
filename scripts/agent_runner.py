@@ -178,11 +178,16 @@ def run(dry_run: bool = False, live_preview: bool = False):
         try:
             import requests as _req, json as _json, time as _time
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
-            daily_quota = get_config("daily_quota", default=2)
+            # topic → per-topic quota（来自 plan，规则版/LLM版均有）
+            topic_quota_map = {t["topic"]: t.get("quota", 1) for t in plan.get("topics", [])}
             keywords = []
             for topic in topics:
-                kw_cfg = yahoo_kw_map.get(topic, {"keyword": topic, "max": daily_quota})
-                keywords.append({"keyword": kw_cfg.get("keyword", topic), "max": kw_cfg.get("max", daily_quota)})
+                kw_val = yahoo_kw_map.get(topic, topic)
+                # yahoo_keyword_map 值可能是字符串或 dict
+                keyword = kw_val.get("keyword", topic) if isinstance(kw_val, dict) else (kw_val or topic)
+                max_n   = kw_val.get("max", topic_quota_map.get(topic, 1)) if isinstance(kw_val, dict) else topic_quota_map.get(topic, 1)
+                keywords.append({"keyword": keyword, "max": max_n})
+                logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n}")
             resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
                            json={"mode": "keywords", "keywords": keywords}, timeout=10)
             data = resp.json()
