@@ -193,25 +193,14 @@
   <div class="cards">
 
     <div class="card blue" style="flex:1.2">
-      <div class="card-label">XHS · 感知</div>
-      <div class="card-title">小红书趋势扫描</div>
-      <div class="card-desc">双路扫描：综合排序（质量基线）+ 最新排序（活跃度）</div>
+      <div class="card-label">XHS · 感知目标</div>
+      <div class="card-title">小红书平台</div>
+      <div class="card-desc">Phase 1 扫描的对象：话题热度 / 竞品内容 / 发布频率</div>
       <div class="tags">
         <span class="tag">search_feeds</span>
         <span class="tag">fresh_count_24h</span>
         <span class="tag">baseline_saves</span>
         <span class="tag">is_fresh</span>
-      </div>
-    </div>
-
-    <div class="card orange" style="flex:1.2">
-      <div class="card-label">YAHOO JAPAN · 内容</div>
-      <div class="card-title">新闻原文抓取</div>
-      <div class="card-desc">按话题关键词抓取候选，1:6 比例放大候选池</div>
-      <div class="tags">
-        <span class="tag">yahoo_keyword_map</span>
-        <span class="tag">quota × 6</span>
-        <span class="tag">body_text</span>
       </div>
     </div>
 
@@ -269,10 +258,12 @@
 
     <div class="card orange">
       <div class="card-label">PHASE 3 · 执行</div>
-      <div class="card-title">内容生成</div>
-      <div class="card-desc">Yahoo 抓取 → 翻译 → story/news 体裁生成 → 评分入库</div>
+      <div class="card-title">抓取 + 内容生成</div>
+      <div class="card-desc">调 Yahoo Japan 抓 quota×6 候选 → 日译中 → story/news 体裁生成 → 评分入库</div>
       <div class="tags">
         <span class="tag">yahoo_news_auto</span>
+        <span class="tag">Yahoo Japan</span>
+        <span class="tag">quota × 6</span>
         <span class="tag">generate_story_article</span>
         <span class="tag">story_type</span>
       </div>
