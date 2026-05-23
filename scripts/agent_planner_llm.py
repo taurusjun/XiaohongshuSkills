@@ -82,17 +82,25 @@ def shadow_plan(date: str, rule_plan) -> dict:
 
     result = call_litellm(
         prompt,
-        system_prompt="你是严肃的内容运营决策者。直接输出JSON，不要任何前置说明。",
+        system_prompt="你是严肃的内容运营决策者。只输出一个JSON对象，不要任何解释文字。",
         temperature=0.3,
         max_tokens=800,
-        response_format={"type": "json_object"},
     )
 
     llm_plan = {}
     if result:
-        try:
-            llm_plan = json.loads(result)
-        except Exception:
+        # 提取最后一个完整 JSON 对象（防止 LLM 前置思考文字）
+        import re as _re
+        matches = list(_re.finditer(r'\{[\s\S]*\}', result))
+        for m in reversed(matches):
+            try:
+                candidate = json.loads(m.group())
+                if candidate.get("topics"):
+                    llm_plan = candidate
+                    break
+            except Exception:
+                continue
+        if not llm_plan:
             logger.warning(f"  LLM Shadow 规划 JSON 解析失败: {result[:200]}")
 
     # ── 生成对比日志 ─────────────────────────────────────────────────
