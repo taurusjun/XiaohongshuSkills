@@ -258,7 +258,7 @@ def insert_news(news: dict) -> bool:
                     pub_time=excluded.pub_time, title_score=excluded.title_score,
                     content_score=excluded.content_score, publish_xhs=excluded.publish_xhs,
                     publish_time=excluded.publish_time, xhs_pub_time=excluded.xhs_pub_time,
-                    fetch_by=excluded.fetch_by,
+                    fetch_by=excluded.fetch_by, status=excluded.status,
                     format_suitability=excluded.format_suitability,
                     is_long_form=excluded.is_long_form,
                     updated_at=datetime('now','localtime')
