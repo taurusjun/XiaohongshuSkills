@@ -185,7 +185,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
                 kw_val = yahoo_kw_map.get(topic, topic)
                 # yahoo_keyword_map 值可能是字符串或 dict
                 keyword = kw_val.get("keyword", topic) if isinstance(kw_val, dict) else (kw_val or topic)
-                max_n   = kw_val.get("max", topic_quota_map.get(topic, 1)) if isinstance(kw_val, dict) else topic_quota_map.get(topic, 1)
+                max_n   = kw_val.get("max", topic_quota_map.get(topic, 1) * 6) if isinstance(kw_val, dict) else topic_quota_map.get(topic, 1) * 6
                 keywords.append({"keyword": keyword, "max": max_n})
                 logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n}")
             resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
