@@ -124,6 +124,14 @@ def api_trigger_fetch():
         def on_fetch_done():
             global _fetch_running
             with _fetch_lock: _fetch_running = False
+            try:
+                import sys as _sys, os as _os
+                _sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+                from scripts.scoring import dedup_today_candidates
+                for kw_entry in kws:
+                    dedup_today_candidates(keyword=kw_entry.get("keyword", ""))
+            except Exception as _e:
+                app.logger.warning(f"[dedup] 去重失败（不影响后续流程）: {_e}")
         threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
         return jsonify({"task_id": tid})
     else:
