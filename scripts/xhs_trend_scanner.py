@@ -48,11 +48,18 @@ def _get_publisher():
     return pub
 
 
+def _nc(f): return f.get("noteCard", {})
+def _ii(f): return _nc(f).get("interactInfo", {})
+def _pub_time(f):
+    for tag in _nc(f).get("cornerTagInfo", []):
+        if tag.get("type") == "publish_time":
+            return tag.get("text", "")
+    return ""
+
+
 def _extract_feeds_data(feeds: list) -> dict:
     """从 feeds 列表提取统计数据。"""
-    def _nc(f): return f.get("noteCard", {})
-    def _ii(f): return _nc(f).get("interactInfo", {})
-    def _pub_time(f):
+    def _pub_time_local(f):
         for tag in _nc(f).get("cornerTagInfo", []):
             if tag.get("type") == "publish_time":
                 return tag.get("text", "")
