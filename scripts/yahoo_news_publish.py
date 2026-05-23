@@ -373,7 +373,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
                    article_url: str = "", video_url: str = "",
                    preview: bool = False, headless: bool = True,
                    post_time: str = None, timing_jitter: float = 0.25,
-                   reuse_existing_tab: bool = False) -> bool:
+                   reuse_existing_tab: bool = False) -> tuple[bool, str]:
     """调用 publish_pipeline.py 发布到小红书。"""
     import subprocess
     if image_urls is None:
@@ -440,7 +440,15 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
     if result.returncode == 0:
-        return True
+        # 提取 note_id 从输出
+        import re as _re
+        note_id = ""
+        for line in (result.stdout or "").split("\n"):
+            m = _re.search(r'xiaohongshu\.com/explore/([a-f0-9]{24})', line)
+            if m:
+                note_id = m.group(1)
+                break
+        return (True, note_id)
 
     # 图片 URL 过期时降级重抓封面图（仅图文模式）
     if not video_url and "All image downloads failed" in result.stderr and article_url:
@@ -455,10 +463,10 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             if preview: cmd2.append("--preview")
             result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
             if result.returncode == 0:
-                return True
+                return (True, "")
 
     print(f"  发布失败:\n{result.stderr[-500:]}")
-    return False
+    return (False, "")
 
 
 # ============ 主程序 ============
@@ -705,11 +713,16 @@ def main():
 
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
+        ok, note_id = publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
                           preview=args.preview, headless=not args.no_headless,
                           post_time=args.post_time, timing_jitter=args.timing_jitter,
-                          reuse_existing_tab=args.reuse_existing_tab):
+                          reuse_existing_tab=args.reuse_existing_tab)
+        if ok:
             sqlite_key = page.get("_key", "") if is_sqlite else ""
+            if note_id and sqlite_key:
+                from sqlite_db import update_news
+                update_news(sqlite_key, {"xhs_note_id": note_id})
+                print(f"  📌 note_id: {note_id}")
             if mark_as_published(page["id"], sqlite_key, args.post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
