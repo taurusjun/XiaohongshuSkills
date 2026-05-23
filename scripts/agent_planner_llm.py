@@ -121,11 +121,11 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
 
     返回被选中的 key 列表。
     """
-    import sqlite3, os
+    import sqlite3
     from scripts.yahoo_common import call_litellm
-    from scripts.sqlite_db import update_news
+    from scripts.sqlite_db import update_news, DB_PATH
 
-    db_path = os.environ.get("SQLITE_PATH", "data/news.db")
+    db_path = DB_PATH
     today = date[:4] + '-' + date[4:6] + '-' + date[6:8]  # 20260523 → 2026-05-23
 
     conn = sqlite3.connect(db_path)

@@ -66,7 +66,8 @@ def dedup_today_candidates(keyword: str = "") -> None:
     import sqlite3, os
     from datetime import datetime
 
-    db_path = os.environ.get("SQLITE_PATH", "data/news.db")
+    from scripts.sqlite_db import DB_PATH
+    db_path = DB_PATH
     today = datetime.now().strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(db_path)
