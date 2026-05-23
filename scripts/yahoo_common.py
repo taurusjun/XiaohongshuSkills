@@ -1591,9 +1591,9 @@ def process_news_item(news: dict, no_translate: bool = False,
         news['title_zh'] = tc['title_zh']
         news['format_suitability'] = tc['format_suitability']  # list[str]
 
-        # 长文检测：分页文章 OR 正文超过800字的单页长文
+        # 长文检测：分页文章 OR 正文超过950字的单页长文
         body_len = len(news.get('body_text', '') or news.get('content_ja', ''))
-        if not news.get('is_long_form') and body_len > 800:
+        if not news.get('is_long_form') and body_len >= 950:
             news['is_long_form'] = True
             print(f"    📄 检测为长文（正文{body_len}字）")
 

@@ -174,6 +174,25 @@ def get_page_media_blocks(page_id: str, is_sqlite: bool = False) -> tuple[list[s
     return image_urls, video_urls
 
 
+def _strip_markdown(text: str) -> str:
+    """Strip markdown formatting from story-format content for XHS publishing.
+    XHS editor doesn't render markdown — raw ##/>, **, etc. look broken."""
+    import re
+    if not text:
+        return text
+    # Image placeholders: 【图片N：描述】 — never filled, look broken on XHS
+    text = re.sub(r'\n{0,2}【图片\d+：[^】]+】\n{0,2}', '\n\n', text)
+    # Sub-headings: ## / ### → ✦ bullet (XHS-friendly decorative marker)
+    text = re.sub(r'^#{2,4}\s+', '✦ ', text, flags=re.MULTILINE)
+    # Blockquotes: > text → just the text
+    text = re.sub(r'^>\s?', '', text, flags=re.MULTILINE)
+    # Bold: **text** → text
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # Italic: *text* → text (careful not to match **)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    return text.strip()
+
+
 def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
     """获取页面正文内容。
     返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 短配文)
@@ -183,7 +202,13 @@ def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
         from sqlite_db import get_by_key
         row = get_by_key(page_id)
         if row:
-            return (row.get('content',''), row.get('comment',''), row.get('title_ja',''), '',
+            content = row.get('content','') or ''
+            comment = row.get('comment','') or ''
+            # Story-format articles have markdown; strip it for XHS
+            if row.get('is_long_form') or 'story' in (row.get('format_suitability') or ''):
+                content = _strip_markdown(content)
+                comment = _strip_markdown(comment)
+            return (content, comment, row.get('title_ja',''), '',
                     row.get('summary',''), row.get('video_caption',''))
         return "", "", "", "", "", ""
 
@@ -359,8 +384,16 @@ def fetch_article_image(url: str) -> str:
 
 # ============ XHS 发布 ============
 
+def _xhs_char_units(text: str) -> float:
+    """小红书字数计算：英文字母/数字 2 个算 1 字，其余字符各算 1 字。"""
+    units = 0.0
+    for ch in text:
+        units += 0.5 if (ch.isascii() and (ch.isalpha() or ch.isdigit())) else 1.0
+    return units
+
+
 def _xhs_title_truncate(title: str, max_units: int = 20) -> str:
-    """按小红书字数规则截断标题：英文字母/数字 2 个算 1 字，其余字符各算 1 字。"""
+    """按小红书字数规则截断标题。"""
     units = 0.0
     for i, ch in enumerate(title):
         units += 0.5 if (ch.isascii() and (ch.isalpha() or ch.isdigit())) else 1.0
@@ -710,6 +743,12 @@ def main():
             print(f"  🎬 短配文: {video_caption[:60]}...")
         elif video_url and not video_caption:
             print(f"  ⚠️ 无短配文，使用普通正文")
+
+        # 字数检测：小红书正文上限 1000 字
+        xhs_units = _xhs_char_units(xhs_content)
+        if xhs_units > 1000:
+            print(f"  ⛔ 内容过长（{xhs_units:.0f}字 > 1000），无法发布，跳过\n")
+            continue
 
         # 发布
         print("📤 发布中...")
