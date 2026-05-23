@@ -1,87 +1,100 @@
 #!/usr/bin/env python3
-"""metrics_collector.py — 每小时通过 CDP 拦截 creator API JSON 追加历史快照"""
+"""metrics_collector.py — 每小时通过 creator 导出全量 Excel，追加历史快照"""
 
-import sys, os, json, time, logging
+import sys, os, json, time, re, logging, glob
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datetime import datetime
+
+import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [metrics] %(message)s")
 logger = logging.getLogger("metrics_collector")
 
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
+DOWNLOAD_DIR = "/tmp"
 
 
 def collect_all(dry_run: bool = False) -> dict:
-    """CDP 拦截 creator 页面的 analyze/list JSON 响应，按 note_id 精确匹配"""
     import requests as _requests
     import websocket as _ws
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:00")
 
+    for f in glob.glob(f"{DOWNLOAD_DIR}/笔记列表明细表*.xlsx"):
+        try: os.remove(f)
+        except: pass
+
     try:
         resp = _requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
         tabs = resp.json()
         ws_url = tabs[0].get("webSocketDebuggerUrl", "")
-        if not ws_url:
-            return {"error": "no_ws_url"}
     except Exception as e:
         return {"error": str(e)}
 
     ws = _ws.create_connection(ws_url, timeout=15)
     try:
-        ws.send(json.dumps({"id": 1, "method": "Network.enable"}))
+        ws.send(json.dumps({"id": 1, "method": "Browser.setDownloadBehavior",
+                            "params": {"behavior": "allow", "downloadPath": DOWNLOAD_DIR}}))
         ws.recv()
         ws.send(json.dumps({"id": 2, "method": "Page.enable"}))
         ws.recv()
         ws.send(json.dumps({"id": 3, "method": "Page.navigate", "params": {
             "url": "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"
         }}))
-        # Drain only the navigate response (id=3), not unsolicited network events
-        _drain_until(ws, msg_id=3)
+        for _ in range(5):
+            try: ws.recv()
+            except: break
+        time.sleep(5)
 
         if dry_run:
             ws.close()
             return {"dry_run": True}
 
-        # Intercept analyze/list JSON response
-        captured_body = ""
-        request_ids = []
-        deadline = time.time() + 25
+        # Click 导出数据
+        ws.send(json.dumps({"id": 10, "method": "Runtime.evaluate", "params": {
+            "expression": """(()=>{for(let el of document.querySelectorAll('*')){if((el.textContent||'').trim()==='导出数据'){el.click();return'ok'}}return'not found'})()""",
+            "returnByValue": True,
+        }}))
+        _recv_until(ws, msg_id=10)
+
+        logger.info("Waiting for download...")
+        downloaded = False
+        deadline = time.time() + 30
         ws.settimeout(5)
         while time.time() < deadline:
             try:
                 raw = ws.recv()
                 msg = json.loads(raw)
-                m = msg.get("method", "")
-                pid = msg.get("params", {}).get("requestId", "")
-
-                if m == "Network.responseReceived":
-                    url = msg.get("params", {}).get("response", {}).get("url", "")
-                    if "analyze/list" in url:
-                        request_ids.append(pid)
-
-                if m == "Network.loadingFinished" and pid in request_ids:
-                    ws.send(json.dumps({"id": 200, "method": "Network.getResponseBody",
-                                        "params": {"requestId": pid}}))
-                    body_raw = json.loads(ws.recv())
-                    body = body_raw.get("result", {}).get("body", "")
-                    if body and '"note_infos"' in body:
-                        captured_body = body
+                if msg.get("method") == "Page.downloadProgress":
+                    if msg.get("params", {}).get("state") == "completed":
+                        downloaded = True
                         break
             except Exception:
                 continue
 
-        if not captured_body:
-            logger.warning("Could not capture analyze/list response")
+        if not downloaded:
             ws.close()
-            return {"error": "no_response"}
+            return {"error": "download_timeout"}
 
-        data = json.loads(captured_body)
-        notes = data.get("data", {}).get("note_infos", [])
+        time.sleep(2)
+        files = sorted(glob.glob(f"{DOWNLOAD_DIR}/笔记列表明细表*.xlsx"), key=os.path.getmtime, reverse=True)
+        if not files:
+            ws.close()
+            return {"error": "file_not_found"}
 
-        # Match against DB: prefer note_id, fallback to title
+        excel_path = files[0]
+        logger.info(f"Reading: {excel_path}")
+
+        df = pd.read_excel(excel_path, skiprows=1)
+        df.columns = ["title", "pub_time", "format", "impression", "views",
+                      "click_rate", "likes", "comments", "saves", "fans",
+                      "share", "watch_time", "danmaku"]
+
+        for col in ["views", "likes", "comments", "saves"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
         import sqlite3
         from scripts.sqlite_db import DB_PATH
 
@@ -90,47 +103,75 @@ def collect_all(dry_run: bool = False) -> dict:
         conn.execute("BEGIN")
         try:
             articles = conn.execute(
-                "SELECT key, title, xhs_note_id FROM news WHERE publish_xhs=1 AND status='active'"
+                "SELECT key, title, xhs_title, xhs_note_id FROM news WHERE publish_xhs=1 AND status='active'"
             ).fetchall()
 
-            # Build lookup: note_id → key, title → key
-            note_map = {}
-            title_list = []
-            for art in articles:
-                if art["xhs_note_id"]:
-                    note_map[art["xhs_note_id"]] = art["key"]
-                title_list.append(art)
+            # Build Excel title index for fast lookup
+            excel_titles = {}
+            for _, row in df.iterrows():
+                t = _normalize(str(row["title"]))
+                if t:
+                    excel_titles[t] = row
 
             collected = 0
-            for n in notes:
-                nid = n.get("id", "")
-                key = None
-                # 1. Exact match by note_id
-                if nid and nid in note_map:
-                    key = note_map[nid]
-                else:
-                    # 2. Fallback: title match
-                    xhs_title = _normalize(n.get("title", ""))
-                    best_score = 0
-                    for art in title_list:
-                        score = _title_score(xhs_title, _normalize(art["title"]))
-                        if score > best_score and score >= 0.7:
-                            best_score = score
-                            key = art["key"]
-                    # 3. If matched and article had no note_id, save it
-                    if key and nid and best_score >= 0.85:
-                        conn.execute("UPDATE news SET xhs_note_id=? WHERE key=?", (nid, key))
-                        note_map[nid] = key
+            from difflib import SequenceMatcher
+            for art in articles:
+                match_row = None
+                # 1. Match by xhs_title (exact or fuzzy)
+                xhs_t = _normalize(art["xhs_title"] or "")
+                if xhs_t and xhs_t in excel_titles:
+                    match_row = excel_titles[xhs_t]
+                elif xhs_t:
+                    best = 0
+                    for et, er in excel_titles.items():
+                        s = SequenceMatcher(None, xhs_t, et).ratio()
+                        if s > best and s >= 0.85:
+                            best = s; match_row = er
 
-                if key:
-                    _write_metrics(conn, key, n, now_str)
+                # 2. Fallback: match by DB title
+                if match_row is None:
+                    art_t = _normalize(art["title"])
+                    if art_t in excel_titles:
+                        match_row = excel_titles[art_t]
+                    else:
+                        best = 0
+                        for et, er in excel_titles.items():
+                            s = SequenceMatcher(None, art_t, et).ratio()
+                            if s > best and s >= 0.7:
+                                best = s; match_row = er
+
+                if match_row is not None:
+                    key = art["key"]
+                    conn.execute(
+                        """INSERT OR REPLACE INTO metrics_history
+                           (news_key, collected_at, views, likes, saves, comments,
+                            shares, fans_gained, impression, click_rate, watch_time, danmaku)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (key, now_str,
+                         int(match_row["views"]), int(match_row["likes"]),
+                         int(match_row["saves"]), int(match_row["comments"]),
+                         int(match_row.get("share", 0) or 0), int(match_row.get("fans", 0) or 0),
+                         int(match_row.get("impression", 0) or 0), float(match_row.get("click_rate", 0) or 0),
+                         int(match_row.get("watch_time", 0) or 0), int(match_row.get("danmaku", 0) or 0)),
+                    )
+                    conn.execute(
+                        """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
+                           xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
+                           xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
+                        (int(match_row["views"]), int(match_row["likes"]),
+                         int(match_row["saves"]), int(match_row["comments"]),
+                         int(match_row.get("share", 0) or 0), int(match_row.get("fans", 0) or 0),
+                         int(match_row.get("impression", 0) or 0), float(match_row.get("click_rate", 0) or 0),
+                         int(match_row.get("watch_time", 0) or 0), int(match_row.get("danmaku", 0) or 0),
+                         key),
+                    )
                     collected += 1
 
             conn.commit()
             logger.info(f"Collected: {collected} articles at {now_str}")
         except Exception as e:
             conn.rollback()
-            logger.error(f"Collection failed: {e}")
+            logger.error(f"Failed: {e}")
             return {"error": str(e)}
         finally:
             conn.close()
@@ -140,38 +181,11 @@ def collect_all(dry_run: bool = False) -> dict:
     return {"collected": collected, "time": now_str}
 
 
-def _write_metrics(conn, key, note, now_str):
-    conn.execute(
-        """INSERT OR REPLACE INTO metrics_history
-           (news_key, collected_at, views, likes, saves, comments,
-            shares, fans_gained, impression, click_rate, watch_time, danmaku)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (key, now_str,
-         note.get("read_count", 0), note.get("like_count", 0),
-         note.get("fav_count", 0), note.get("comment_count", 0),
-         note.get("share_count", 0) or 0, note.get("increase_fans_count", 0) or 0,
-         note.get("imp_count", 0), note.get("coverClickRate", 0) or 0,
-         note.get("view_time_avg", 0) or 0, note.get("danmaku_count", 0) or 0),
-    )
-    conn.execute(
-        """UPDATE news SET xhs_views=?, xhs_likes=?, xhs_saves=?, xhs_comments=?,
-           xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,
-           xhs_watch_time=?, xhs_danmaku=?, updated_at=datetime('now','localtime') WHERE key=?""",
-        (note.get("read_count", 0), note.get("like_count", 0),
-         note.get("fav_count", 0), note.get("comment_count", 0),
-         note.get("share_count", 0) or 0, note.get("increase_fans_count", 0) or 0,
-         note.get("imp_count", 0), note.get("coverClickRate", 0) or 0,
-         note.get("view_time_avg", 0) or 0, note.get("danmaku_count", 0) or 0,
-         key),
-    )
-
-
 def _normalize(s):
-    return __import__('re').sub(r"[，。！？、\s「」『』【】（）\(\)\,\!\.\?\-—　\"\"]", "", str(s).lower())
+    return re.sub(r"[，。！？、\s「」『』【】（）\(\)\,\!\.\?\-—　\"\"]", "", str(s).lower())
 
 
-def _drain_until(ws, msg_id, timeout=10):
-    import websocket as _ws
+def _recv_until(ws, msg_id, timeout=10):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -180,13 +194,6 @@ def _drain_until(ws, msg_id, timeout=10):
                 return
         except Exception:
             continue
-
-def _title_score(a, b):
-    if a == b: return 1.0
-    if a[:8] == b[:8]: return 0.9
-    if a in b or b in a: return 0.85
-    from difflib import SequenceMatcher
-    return SequenceMatcher(None, a, b).ratio()
 
 
 if __name__ == "__main__":
