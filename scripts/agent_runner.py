@@ -186,14 +186,15 @@ def run(dry_run: bool = False, live_preview: bool = False):
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             # topic → per-topic quota（来自 plan，规则版/LLM版均有）
             topic_quota_map = {t["topic"]: t.get("quota", 1) for t in plan.get("topics", [])}
+            topic_angle_map = {t["topic"]: t.get("angle", "") for t in plan.get("topics", [])}
             keywords = []
             for topic in topics:
                 kw_val = yahoo_kw_map.get(topic, topic)
-                # yahoo_keyword_map 值可能是字符串或 dict
                 keyword = kw_val.get("keyword", topic) if isinstance(kw_val, dict) else (kw_val or topic)
                 max_n   = topic_quota_map.get(topic, 1) * 6
-                keywords.append({"keyword": keyword, "max": max_n})
-                logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n}")
+                angle   = topic_angle_map.get(topic, "")
+                keywords.append({"keyword": keyword, "max": max_n, "angle": angle})
+                logger.info(f"  topic '{topic}' → Yahoo搜索词 '{keyword}' max={max_n} angle='{angle[:20]}'")
             resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
                            json={"mode": "keywords", "keywords": keywords}, timeout=10)
             data = resp.json()
@@ -214,6 +215,17 @@ def run(dry_run: bool = False, live_preview: bool = False):
         except Exception as e:
             _alert("3-执行", e)
         set_state(f"runner_progress_{date_str}", {"phase": 3}, date=date_str)
+
+    # Phase 3.5: Content Review Brain（LLM 模式下选稿，标记 publish_xhs=1）
+    if progress.get("phase", 0) < 4 and planner_mode == "llm":
+        logger.info("=== Phase 3.5: 选稿 ===")
+        try:
+            from scripts.agent_planner_llm import content_review_brain
+            plan_quota = plan.get("quota_total", 3) if isinstance(plan, dict) else getattr(plan, "quota_total", 3)
+            selected = content_review_brain(date_str, plan_quota)
+            logger.info(f"  选稿完成: {len(selected)} 篇标记为 publish_xhs=1")
+        except Exception as e:
+            logger.warning(f"  Content Review 失败（不影响后续）: {e}")
 
     # Phase 4: 通知（飞书纯通知 + Web UI 链接，不依赖回调）
     if progress.get("phase", 0) < 4:
