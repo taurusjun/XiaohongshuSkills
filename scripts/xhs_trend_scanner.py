@@ -41,11 +41,19 @@ def _is_recent(text: str, hours: int = 48) -> bool:
         return False
 
 
-def _get_publisher():
+def _get_publisher(retries: int = 2):
     from scripts.cdp_publish import XiaohongshuPublisher
-    pub = XiaohongshuPublisher()
-    pub.connect()
-    return pub
+    import time as _time
+    for attempt in range(retries + 1):
+        try:
+            pub = XiaohongshuPublisher()
+            pub.connect()
+            return pub
+        except Exception as e:
+            if attempt == retries:
+                raise
+            logger.warning(f"CDP connect retry {attempt+1}/{retries}: {e}")
+            _time.sleep(3)
 
 
 def _nc(f): return f.get("noteCard", {})
@@ -108,16 +116,24 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
         logger.warning(f"CDP 未就绪，跳过趋势扫描: {e}")
         return []
 
-    def _search_with_ratelimit_check(kw: str, **kwargs) -> dict:
-        """调 search_feeds，遇到频率限制立即上抛——需要人工介入解验证码。"""
-        return publisher.search_feeds(keyword=kw, **kwargs)
-        # XHSRateLimitError 会自动上抛 → scan_topic_trends except → agent_runner _alert → 飞书告警
+    def _search_with_reconnect(kw: str, **kwargs) -> dict:
+        """调 search_feeds，连接断开时自动重连重试"""
+        for attempt in range(3):
+            try:
+                return publisher.search_feeds(keyword=kw, **kwargs)
+            except Exception as e:
+                if "keepalive" in str(e).lower() or "ConnectionClosed" in str(e):
+                    logger.warning(f"CDP reconnect for '{kw}' (attempt {attempt+1})")
+                    try: publisher.connect()
+                    except: pass
+                    continue
+                raise
 
     results = []
     for keyword in keywords:
         try:
             # ── Pass 1: 综合排序，质量基线 ─────────────────────────
-            feeds_general = _search_with_ratelimit_check(keyword, sort="general")
+            feeds_general = _search_with_reconnect(keyword, sort="general")
             feeds_g = feeds_general.get("feeds", [])
             if not feeds_g:
                 raise ValueError(f"XHS 搜索「{keyword}」返回0条结果，可能未登录或关键词无效")
@@ -133,7 +149,7 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             is_fresh = False
             fresh_count_24h = 0
             try:
-                feeds_newest = _search_with_ratelimit_check(
+                feeds_newest = _search_with_reconnect(
                     keyword, sort="newest"  # 不加 time_filter
                 )
                 feeds_n = feeds_newest.get("feeds", [])
@@ -193,14 +209,14 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             _time.sleep(300)  # 等待 5 分钟
             # 重试一次
             try:
-                feeds_retry = _search_with_ratelimit_check(keyword, sort="general")
+                feeds_retry = _search_with_reconnect(keyword, sort="general")
                 feeds_r = feeds_retry.get("feeds", [])
                 if feeds_r:
                     data_r = _extract_feeds_data(feeds_r)
                     is_fresh_r = False
                     fresh_count_r = 0
                     try:
-                        feeds_newest_r = _search_with_ratelimit_check(keyword, sort="newest", time_filter="1day")
+                        feeds_newest_r = _search_with_reconnect(keyword, sort="newest", time_filter="1day")
                         feeds_n_r = feeds_newest_r.get("feeds", [])
                         fresh_count_r = len(feeds_n_r)
                         is_fresh_r = fresh_count_r >= 5
