@@ -1456,9 +1456,6 @@ function _ejsBlocksToText(blocks){
       parts.push((b.data.level===3?'### ':'## ')+b.data.text);
 	    } else if(b.type==='quote'&&b.data.text){
 	      parts.push('> '+b.data.text);
-	    } else if(b.type==='quote'&&b.data.text){
-	      html+=`<blockquote style="font-size:14px;line-height:1.8;color:#555;border-left:3px solid #ff6b35;padding-left:14px;margin:12px 0">${esc(b.data.text)}</blockquote>`;
-	      html+=\;
     } else if(b.type==='galleryImage'){
       const paths=(b.data.paths||[]).filter(p=>p);
       if(!paths.length){imgN++;continue;}  // 图片已全部删除，跳过此块
@@ -1616,6 +1613,8 @@ async function openStoryPreview(){
     else if(b.type==='header'&&b.data.text){
       const tag=b.data.level===3?'h3':'h2';
       html+=`<${tag} style="font-size:${b.data.level===3?'14':'16'}px;font-weight:700;margin:16px 0 6px;color:#111">${esc(b.data.text)}</${tag}>`;
+    } else if(b.type==='quote'&&b.data.text){
+      html+=`<blockquote style="font-size:14px;line-height:1.8;color:#555;border-left:3px solid #ff6b35;padding-left:14px;margin:12px 0">${esc(b.data.text)}</blockquote>`;
     } else if(b.type==='galleryImage'){
       // 支持多图横排
       const paths=(b.data.paths||[]).filter(p=>p);
