@@ -175,7 +175,8 @@ def run_reflection(mode: str = "quick") -> dict:
 
         def _run():
             try:
-                # Placeholder: run reflection logic here
+                from scripts.reflection_runner import run
+                run(dry_run=(mode == "quick"), min_samples=30 if mode == "full" else 10)
                 from scripts.sqlite_db import set_state
                 set_state(f"task_{task_id}", {"status": "completed", "mode": mode})
             except Exception as e:
