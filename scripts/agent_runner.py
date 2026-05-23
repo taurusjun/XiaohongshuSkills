@@ -155,6 +155,13 @@ def run(dry_run: bool = False, live_preview: bool = False):
         except Exception as e:
             logger.warning(f"  飞书计划通知失败（不影响执行）: {e}")
 
+        # Shadow: LLM 版规划（不影响执行，仅用于对比验证）
+        try:
+            from scripts.agent_planner_llm import shadow_plan
+            shadow_plan(date_str, plan)
+        except Exception as e:
+            logger.warning(f"  Shadow 规划失败（不影响执行）: {e}")
+
     plan_data = get_state(f"runner_progress_{date_str}", default={})
     plan = plan_data.get("plan", {})
     topics = [t["topic"] for t in plan.get("topics", [])]
