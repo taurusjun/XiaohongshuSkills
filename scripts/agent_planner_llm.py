@@ -82,9 +82,10 @@ def shadow_plan(date: str, rule_plan) -> dict:
 
     result = call_litellm(
         prompt,
-        system_prompt="你是严肃的内容运营决策者。只输出一个JSON对象，不要任何解释文字。",
+        system_prompt="你是严肃的内容运营决策者。直接输出JSON，不要任何前置说明。",
         temperature=0.3,
         max_tokens=800,
+        response_format={"type": "json_object"},
     )
 
     llm_plan = {}
