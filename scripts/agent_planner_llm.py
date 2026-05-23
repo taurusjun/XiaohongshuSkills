@@ -166,22 +166,33 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
         prompt,
         system_prompt="你是内容运营编辑。直接输出JSON，不要前置说明。",
         temperature=0.2,
-        max_tokens=300,
+        max_tokens=600,
         response_format={"type": "json_object"},
     )
 
     selected_keys = []
     reasoning = ""
     if result:
+        out = {}
         try:
             out = json.loads(result)
+        except Exception:
+            import re as _re
+            for m in reversed(list(_re.finditer(r'\{[\s\S]*\}', result))):
+                try:
+                    c = json.loads(m.group())
+                    if "selected" in c:
+                        out = c; break
+                except Exception:
+                    pass
+        if not out:
+            logger.warning(f"[review] JSON 解析失败 — {result[:200]}")
+        else:
             reasoning = out.get("reasoning", "")
             for idx in out.get("selected", [])[:plan_quota]:
                 key = keys_by_idx.get(int(idx))
                 if key:
                     selected_keys.append(key)
-        except Exception as e:
-            logger.warning(f"[review] JSON 解析失败: {e} — {result[:200]}")
 
     logger.info(f"[review] 今日候选 {len(rows)} 篇 → 选中 {len(selected_keys)} 篇")
     logger.info(f"[review] 理由: {reasoning}")
