@@ -425,6 +425,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
 .table tbody tr:hover{background:#f5f7ff}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
 .badge-green{background:#e6f7e9;color:#1a7d2e}
+.badge-red{background:#fee2e2;color:#b91c1c}
 .badge-gray{background:#f0f0f0;color:#888}
 .badge-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 .badge-dot-active{background:#22c55e}
@@ -493,7 +494,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
       <input type="date" id="dateTo" title="结束日期" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px">
       <div class="sep"></div>
       <select id="category" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部分类</option></select>
-      <select id="status" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="active">活跃</option><option value="archived">已归档</option></select>
+      <select id="status" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
       <select id="publishXhs" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
       <button class="btn btn-red" onclick="loadList()">筛选</button>
     </div>
@@ -598,7 +599,7 @@ async function loadList(){
     <td><input type="checkbox" ${n.publish_xhs?'checked':''} onchange="togglePublish('${n.key}',this.checked)" onclick="event.stopPropagation()"></td>
     <td style="font-size:11px;color:var(--text2)">${n.publish_time||'-'}</td>
     <td style="font-size:11px;color:var(--text2)">${n.xhs_pub_time||'-'}</td>
-    <td><span class="badge ${n.status==='archived'?'badge-gray':'badge-green'}"><span class="badge-dot ${n.status==='archived'?'badge-dot-archived':'badge-dot-active'}"></span>${n.status==='archived'?'归档':'活跃'}</span></td>
+    <td><span class="badge ${n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green'}">${n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃'}</span></td>
     <td>${n.category||'-'}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
@@ -856,6 +857,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 .meta-item b{color:var(--text)}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
 .badge-green{background:#e6f7e9;color:#1a7d2e}
+.badge-red{background:#fee2e2;color:#b91c1c}
 .badge-gray{background:#f0f0f0;color:#888}
 .inline-input,.inline-textarea{border:none;border-bottom:2px dashed transparent;background:transparent;padding:6px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0}
 .inline-input:hover,.inline-textarea:hover{border-bottom-color:#ddd}
@@ -943,6 +945,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <span style="font-size:12px;color:var(--text2)">状态</span>
       <select name="status" onchange="autoSaveField('status',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
         <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+        <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
         <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
       </select>
     </div>
