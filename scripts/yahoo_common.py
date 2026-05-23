@@ -1218,7 +1218,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
 
     news['title']    = story.get('title', news['title_zh'])
     news['title_zh'] = story.get('title', news['title_zh'])
-    news['content']  = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
+    news['content']  = story['body']
     news['comment']  = story.get('outro', '')
     news['summary']  = story.get('intro', '')[:100]
     news['category'] = '新闻'
