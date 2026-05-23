@@ -1,5 +1,6 @@
 {
   "growth_stage": "cold_start",
+  "planner_mode": "llm",
 
   "focus_topics": ["乃木坂46", "AKB48", "日向坂46", "欅坂46", "日本写真集", "日本偶像", "日本性感女星"],
 
