@@ -349,10 +349,9 @@ def _render_html(content: str, img_url_map: dict,
             elif s.startswith("> "):
                 q = s[2:].strip()
                 parts.append(
-                    f'<blockquote style="{S.get("blockquote", S["p"])};'
-                    f'border-left:4px solid {primary};'
-                    f'padding:10px 16px;margin:16px 0;background:{_hex_tint(primary,0.05)}">'
-                    f'{_render_inline(q, S)}</blockquote>'
+                    f'<p style="font-size:13px;line-height:1.8;color:#aaa;'
+                    f'font-style:italic;padding:16px 0 4px;margin:0">'
+                    f'{_render_inline(q, S)}</p>'
                 )
             elif s.startswith(">>") and s.endswith("<<"):
                 # 显式 pull quote: >>金句<<
