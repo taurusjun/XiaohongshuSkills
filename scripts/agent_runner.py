@@ -133,9 +133,14 @@ def run(dry_run: bool = False, live_preview: bool = False):
     # Phase 2: 规划
     if progress.get("phase", 0) < 2:
         logger.info("=== Phase 2: 规划 ===")
-        from scripts.agent_planner import plan_today
-        plan = plan_today(date_str)
-        logger.info(f"  计划: quota={plan.quota_total}, mode={plan.mode}, topics={len(plan.topics)}")
+        planner_mode = get_config("planner_mode", default="rule")
+        if planner_mode == "llm":
+            from scripts.agent_planner_llm import plan_today_llm
+            plan = plan_today_llm(date_str)
+        else:
+            from scripts.agent_planner import plan_today
+            plan = plan_today(date_str)
+        logger.info(f"  计划[{planner_mode}]: quota={plan.quota_total}, mode={plan.mode}, topics={len(plan.topics)}")
         set_state(f"runner_progress_{date_str}", {"phase": 2, "plan": asdict(plan)}, date=date_str)
 
         # 告知运营者今日计划（非阻塞，失败不影响后续流程）
@@ -155,12 +160,13 @@ def run(dry_run: bool = False, live_preview: bool = False):
         except Exception as e:
             logger.warning(f"  飞书计划通知失败（不影响执行）: {e}")
 
-        # Shadow: LLM 版规划（不影响执行，仅用于对比验证）
-        try:
-            from scripts.agent_planner_llm import shadow_plan
-            shadow_plan(date_str, plan)
-        except Exception as e:
-            logger.warning(f"  Shadow 规划失败（不影响执行）: {e}")
+        # Shadow: 规则模式下并行跑 LLM 版对比（LLM模式下跳过）
+        if planner_mode != "llm":
+            try:
+                from scripts.agent_planner_llm import shadow_plan
+                shadow_plan(date_str, plan)
+            except Exception as e:
+                logger.warning(f"  Shadow 规划失败（不影响执行）: {e}")
 
     plan_data = get_state(f"runner_progress_{date_str}", default={})
     plan = plan_data.get("plan", {})

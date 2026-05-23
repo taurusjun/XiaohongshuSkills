@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agent_planner_llm.py — LLM 驱动的 Shadow 规划器（与规则版并行，用于验证）"""
+"""agent_planner_llm.py — LLM 驱动的规划器（可替换规则版或作 Shadow 验证）"""
 
 import json
 import logging
@@ -7,6 +7,111 @@ from datetime import datetime
 from dataclasses import asdict
 
 logger = logging.getLogger("agent_planner_llm")
+
+
+def plan_today_llm(date: str = "") -> "DailyPlan":
+    """LLM 驱动的今日规划，返回 DailyPlan（与规则版 plan_today 接口一致）。"""
+    from scripts.agent_planner import DailyPlan, TopicQuota, recommend_post_times
+    from scripts.sqlite_db import get_config, get_top_topics, get_recent_performance, get_state, set_state
+    from scripts.yahoo_common import call_litellm
+
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+
+    # 幂等：已有计划直接返回
+    cached = get_state(f"daily_plan_{date}")
+    if cached and isinstance(cached, dict) and "quota_total" in cached:
+        topics = [TopicQuota(**t) if isinstance(t, dict) else t for t in cached.pop("topics", [])]
+        cached["topics"] = topics
+        return DailyPlan(**cached)
+
+    focus_topics  = get_config("focus_topics", default=[]) or []
+    growth_stage  = get_config("growth_stage", default="cold_start")
+    quota_min     = get_config("cold_start_quota", default=3)
+    quota_max     = get_config("cold_start_max_quota", default=6)
+    format_rotation = get_config("content_format_rotation", default=["news","story","news","story","ranking","news","news"])
+    day_idx       = int(date) % len(format_rotation) if format_rotation else 0
+    target_format = format_rotation[day_idx]
+
+    historic      = get_top_topics(n=30)
+    topic_map     = {t["topic"]: t for t in historic}
+    recent_perf   = get_recent_performance(7)
+
+    topic_lines = []
+    for ft in focus_topics:
+        td = topic_map.get(ft, {})
+        ts = {}
+        raw = td.get("trend_signal", "")
+        if isinstance(raw, str) and raw:
+            try: ts = json.loads(raw)
+            except Exception: pass
+        topic_lines.append(
+            f"- {ft}: fresh_count={int(ts.get('fresh_count_24h') or 0)}, "
+            f"is_fresh={ts.get('is_fresh', False)}, "
+            f"baseline_saves={round(float(td.get('topic_baseline_saves') or 0), 1)}, "
+            f"avg_saves={round(float(td.get('avg_saves') or 0), 1)}"
+        )
+
+    prompt = f"""你是小红书内容运营决策者。根据今日数据制定发布计划。
+
+【账号状态】成长阶段：{growth_stage}，近7天avg_saves={recent_perf.get('avg_week_saves', 0):.1f}
+【配额范围】{quota_min}～{quota_max} 篇
+【今日话题数据】
+{chr(10).join(topic_lines)}
+
+决策要求：优先热度高（fresh_count大）且质量潜力高（baseline_saves大）的话题，冷启动阶段集中资源而非雨露均沾。
+
+输出 JSON：{{"topics":[{{"topic":"话题名","quota":1}}],"quota_total":5,"reasoning":"策略说明"}}"""
+
+    result = call_litellm(
+        prompt,
+        system_prompt="你是内容运营决策者。直接输出JSON，不要前置说明。",
+        temperature=0.3,
+        max_tokens=600,
+        response_format={"type": "json_object"},
+    )
+
+    llm_out = {}
+    if result:
+        try:
+            llm_out = json.loads(result)
+        except Exception:
+            import re as _re
+            for m in reversed(list(_re.finditer(r'\{[\s\S]*\}', result))):
+                try:
+                    c = json.loads(m.group())
+                    if c.get("topics"):
+                        llm_out = c; break
+                except Exception:
+                    pass
+
+    if not llm_out.get("topics"):
+        logger.warning("  LLM 规划失败，回退到规则版")
+        from scripts.agent_planner import plan_today
+        return plan_today(date)
+
+    plan = DailyPlan(date=date, mode=f"{growth_stage}+llm")
+    plan.quota_total = llm_out.get("quota_total", quota_min)
+    plan.note = llm_out.get("reasoning", "")
+
+    for t in llm_out["topics"]:
+        td = topic_map.get(t["topic"], {})
+        ts = {}
+        raw = td.get("trend_signal", "")
+        if isinstance(raw, str) and raw:
+            try: ts = json.loads(raw)
+            except Exception: pass
+        plan.topics.append(TopicQuota(
+            topic=t["topic"], quota=t.get("quota", 1),
+            source="llm", is_fresh=bool(ts.get("is_fresh")),
+            target_format=target_format,
+        ))
+
+    plan.post_times = recommend_post_times(plan.topics, date)
+    set_state(f"daily_plan_{date}", asdict(plan), date=date)
+    logger.info(f"  LLM规划: quota={plan.quota_total}, topics={[t.topic for t in plan.topics]}")
+    logger.info(f"  理由: {plan.note[:120]}")
+    return plan
 
 
 def shadow_plan(date: str, rule_plan) -> dict:
