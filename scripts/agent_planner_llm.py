@@ -131,7 +131,7 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
+        "SELECT key, title, title_score, content_score, fetch_by, summary "
         "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
         "ORDER BY title_score DESC LIMIT 50",
         (today,)
@@ -144,8 +144,8 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
 
     candidates_text = "\n".join(
         f"{i+1}. [{r['fetch_by']}] {r['title']} "
-        f"(title={r['title_score']:.2f}, content={r['content_score']:.2f}, "
-        f"format={r['format_suitability']}) — {(r['summary'] or '')[:40]}"
+        f"(title={r['title_score']:.2f}, content={r['content_score']:.2f}) "
+        f"— {(r['summary'] or '')[:40]}"
         for i, r in enumerate(rows)
     )
     keys_by_idx = {i+1: dict(r)["key"] for i, r in enumerate(rows)}
