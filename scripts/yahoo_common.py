@@ -1200,6 +1200,8 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     news['comment']  = story.get('outro', '')
     news['summary']  = story.get('intro', '')[:100]
     news['category'] = '新闻'
+    news['is_long_form'] = True
+    news['format_suitability'] = ['story']
     print(f"    故事体生成完成: {len(news['content'])} 字")
 
     # 评分

@@ -97,6 +97,7 @@ GALLERY_SITES: dict[str, str] = {
     "news-postseven.com":    ".c-PhotoImage img, article img",
     "magmix.jp":            "#gallery_main",
     "jprime.jp":            ".article-body",
+    "ddnavi.com":           "article",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -2461,6 +2462,11 @@ def _scrape_postseven(gallery_url: str) -> list[str]:
                 images.append(full)
     return images
 
+def _scrape_ddnavi(gallery_url: str) -> list[str]:
+    """ddnavi.com 图集（独立脚本 scripts/scrapers/ddnavi_dl.py）"""
+    from scrapers.ddnavi_dl import scrape
+    return scrape(gallery_url)
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2744,6 +2750,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "news-postseven.com" in domain:
         images = _scrape_postseven(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "ddnavi.com" in domain:
+        images = _scrape_ddnavi(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
