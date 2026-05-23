@@ -2,11 +2,14 @@
 """agent_planner.py — 每日内容计划生成器"""
 
 import sys
+import logging
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+
+logger = logging.getLogger("agent_planner")
 
 
 @dataclass
