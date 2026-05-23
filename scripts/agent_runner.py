@@ -148,7 +148,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
             from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
             if FEISHU_OPERATOR_OPEN_ID:
                 topic_lines = "\n".join(
-                    f"  • {t['topic']} × {t['quota']} 篇  [{t['source']}{'🔥' if t.get('is_fresh') else ''}]"
+                    f"  • {t.topic} × {t.quota} 篇  [{t.source}{'🔥' if t.is_fresh else ''}]"
                     for t in plan.topics
                 )
                 send_text(FEISHU_OPERATOR_OPEN_ID,
