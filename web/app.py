@@ -217,6 +217,27 @@ def api_custom_keywords_save():
     _save_custom_keywords(kws)
     return jsonify({"ok": True})
 
+@app.route('/api/agent-config', methods=['GET'])
+def api_agent_config_get():
+    from sqlite_db import get_config
+    return jsonify({
+        "focus_topics": get_config("focus_topics", default=[]),
+        "yahoo_keyword_map": get_config("yahoo_keyword_map", default={}),
+        "daily_quota": get_config("daily_quota", default=5),
+        "publish_threshold": get_config("publish_threshold", default=3.0),
+        "retry_threshold": get_config("retry_threshold", default=2.0),
+    })
+
+@app.route('/api/agent-config', methods=['PUT'])
+def api_agent_config_put():
+    from sqlite_db import set_config
+    data = request.json or {}
+    for key in ["focus_topics", "yahoo_keyword_map", "daily_quota",
+                "publish_threshold", "retry_threshold"]:
+        if key in data:
+            set_config(key, data[key])
+    return jsonify({"ok": True})
+
 @app.route('/api/keywords')
 def api_keywords():
     try:
@@ -482,6 +503,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text2)" id="kwSummary"></span>
       <button class="btn btn-red btn-sm" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
+      <button class="btn btn-gray btn-sm" onclick="toggleConfigPanel()" style="font-size:11px">⚙️ 关键词配额</button>
+    </div>
+    <div id="configPanel" style="display:none;padding:10px;background:#f9fafb;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:600">策略配置</span>
+        <button class="btn btn-gray btn-sm" onclick="saveConfig()" style="font-size:11px">💾 保存</button>
+      </div>
+      <div id="configRows" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div style="margin-top:8px;display:flex;gap:12px;font-size:11px;color:var(--text2);flex-wrap:wrap">
+        <span>发布阈值 <input type="number" id="cfgPublishTh" step="0.5" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
+        <span>重试阈值 <input type="number" id="cfgRetryTh" step="0.5" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
+        <span>默认配额 <input type="number" id="cfgDailyQuota" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
+      </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
     <div style="display:flex;align-items:center;gap:8px">
@@ -715,6 +749,46 @@ async function saveCustomKw(){
   await fetch('/api/custom-keywords',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:custom})});
 }
 function resetKeywords(){loadKeywords()}
+async function toggleConfigPanel(){
+  var p=S('configPanel');
+  if(p.style.display==='none'){
+    p.style.display='block';
+    var r=await fetch('/api/agent-config');var d=await r.json();
+    var map=d.yahoo_keyword_map||{}, topics=d.focus_topics||[];
+    var html='';
+    for(var t of topics){
+      var cfg=map[t]||{keyword:t,max:d.daily_quota||5};
+      html+=`<div style="display:flex;gap:8px;align-items:center;font-size:12px">
+        <span style="width:80px;color:var(--text2)">${esc(t)}</span>
+        <span style="color:var(--text3)">→</span>
+        <input value="${esc(typeof cfg==='object'?cfg.keyword:t)}" oninput="updateConfigMap()" style="width:80px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px">
+        <span style="color:var(--text3)">×</span>
+        <input type="number" value="${typeof cfg==='object'?cfg.max:d.daily_quota||5}" style="width:45px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center">
+      </div>`;
+    }
+    S('configRows').innerHTML=html;
+    S('cfgPublishTh').value=d.publish_threshold||3;
+    S('cfgRetryTh').value=d.retry_threshold||2;
+    S('cfgDailyQuota').value=d.daily_quota||5;
+  }else{p.style.display='none'}
+}
+function updateConfigMap(){}
+async function saveConfig(){
+  var rows=S('configRows').children, map={};
+  for(var i=0;i<rows.length;i++){
+    var ins=rows[i].querySelectorAll('input');
+    var topic=rows[i].querySelector('span').textContent;
+    map[topic]={keyword:ins[0].value,max:parseInt(ins[1].value)||5};
+  }
+  var body={
+    yahoo_keyword_map:map,
+    publish_threshold:parseFloat(S('cfgPublishTh').value)||3,
+    retry_threshold:parseFloat(S('cfgRetryTh').value)||2,
+    daily_quota:parseInt(S('cfgDailyQuota').value)||5
+  };
+  var r=await fetch('/api/agent-config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){alert('配置已保存');loadKeywords()}else{alert('保存失败')}
+}
 function updateKwSummary(){
   const chips=document.querySelectorAll('#kwGrid .kw-chip');
   let total=0,sel=0;
