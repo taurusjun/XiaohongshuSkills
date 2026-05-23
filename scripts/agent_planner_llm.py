@@ -84,7 +84,7 @@ def shadow_plan(date: str, rule_plan) -> dict:
         prompt,
         system_prompt="你是严肃的内容运营决策者。直接输出JSON，不要任何前置说明。",
         temperature=0.3,
-        max_tokens=800,
+        max_tokens=1500,
         response_format={"type": "json_object"},
     )
 
