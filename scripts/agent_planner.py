@@ -82,7 +82,7 @@ def plan_today(date: str = "") -> DailyPlan:
         focus_quota = max(1, int(quota * 0.8))
         explore_quota = quota - focus_quota
 
-        # 热点优先策略：先锁定今日最热话题，剩余槽位按轮转补充覆盖
+        # 热点Top3 + 轮转补充策略
         import json as _json
 
         def _fresh_count(ft: str) -> int:
@@ -96,28 +96,29 @@ def plan_today(date: str = "") -> DailyPlan:
                     pass
             return 0
 
-        # 1. 按 fresh_count_24h 降序排列所有 focus_topics（有热度数据的排前面）
+        def _baseline(ft: str) -> float:
+            td = topic_trend_map.get(ft, {})
+            return float(td.get("topic_baseline_saves") or 0)
+
+        # 1. 按（真实24h帖数，baseline_saves打平局）降序，取Top3热点话题
+        HOT_SLOTS = 3
         sorted_by_heat = sorted(
             focus_topics,
-            key=lambda ft: _fresh_count(ft),
+            key=lambda ft: (_fresh_count(ft), _baseline(ft)),
             reverse=True
         )
+        hot_topics = sorted_by_heat[:HOT_SLOTS]
 
-        # 2. 热点槽（第1位）：取今天 fresh_count 最高的话题
-        hot_slot = sorted_by_heat[0] if sorted_by_heat else None
-
-        # 3. 轮转槽（剩余位）：从日期轮转序列里取，排除热点槽已选的话题
+        # 2. 轮转补充剩余槽位（排除已选热点）
         day_offset = int(date) % len(focus_topics) if focus_topics else 0
         rotated = focus_topics[day_offset:] + focus_topics[:day_offset]
-        rotation_pool = [ft for ft in rotated if ft != hot_slot]
+        rotation_pool = [ft for ft in rotated if ft not in hot_topics]
 
-        # 4. 合并：热点优先 + 轮转补充
-        selected = ([hot_slot] if hot_slot else []) + rotation_pool
+        # 3. 合并：热点优先 + 轮转补充，截取到 focus_quota
+        selected = hot_topics + rotation_pool
         selected = selected[:focus_quota]
 
-        hot_fresh_count = _fresh_count(hot_slot) if hot_slot else 0
-        logger.info(f"  热点话题: {hot_slot}（24h帖数={hot_fresh_count}）"
-                    f"  轮转补充: {selected[1:] if len(selected) > 1 else []}")
+        logger.info(f"  热点Top3: {hot_topics}  轮转补充: {rotation_pool[:focus_quota-HOT_SLOTS]}")
 
         for ft in selected:
             trend_data = topic_trend_map.get(ft, {})
