@@ -324,12 +324,12 @@ def _render_html(content: str, img_url_map: dict,
             for l in intro_lines
         )
         parts.append(
-            f'<div style="background:{_hex_tint(primary,0.08)};'
+            f'<section style="background:{_hex_tint(primary,0.08)};'
             f'border-left:4px solid {primary};'
             f'border-radius:0 10px 10px 0;'
             f'padding:16px 18px;margin:0 0 24px">'
             f'{intro_html}'
-            f'</div>'
+            f'</section>'
         )
 
     # ── 正文 ──────────────────────────────────────────────────────
@@ -403,10 +403,10 @@ def _render_html(content: str, img_url_map: dict,
         )
         parts.append(
             f'<hr style="{hr}">'
-            f'<div style="background:{_hex_tint(primary,0.04)};'
+            f'<section style="background:{_hex_tint(primary,0.04)};'
             f'border-radius:8px;padding:16px 18px;margin-top:8px">'
             f'{outro_html}'
-            f'</div>'
+            f'</section>'
         )
 
     body_html = "\n".join(parts)
