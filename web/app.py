@@ -1424,6 +1424,7 @@ function _textToEjsBlocks(text, imgs){
       if(!s) continue;
       if(s.startsWith('### ')) blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
       else if(s.startsWith('## ')) blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
+      else if(s.startsWith('> ')) blocks.push({type:'quote',data:{text:s.slice(2).trim(),caption:'',alignment:'left'}});
       else blocks.push({type:'paragraph',data:{text:s}});
     }
   }
@@ -1453,6 +1454,11 @@ function _ejsBlocksToText(blocks){
     if(b.type==='paragraph'&&b.data.text) parts.push(b.data.text);
     else if(b.type==='header'&&b.data.text){
       parts.push((b.data.level===3?'### ':'## ')+b.data.text);
+	    } else if(b.type==='quote'&&b.data.text){
+	      parts.push('> '+b.data.text);
+	    } else if(b.type==='quote'&&b.data.text){
+	      html+=`<blockquote style="font-size:14px;line-height:1.8;color:#555;border-left:3px solid #ff6b35;padding-left:14px;margin:12px 0">${esc(b.data.text)}</blockquote>`;
+	      html+=\;
     } else if(b.type==='galleryImage'){
       const paths=(b.data.paths||[]).filter(p=>p);
       if(!paths.length){imgN++;continue;}  // 图片已全部删除，跳过此块
@@ -1555,6 +1561,7 @@ function _initEditorJs(){
     placeholder:'输入正文内容... （用 / 插入小标题或图片块）',
     tools:{
       header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+      quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
       galleryImage:{class:GalleryImageBlock}
     },
     data:{blocks:initBlocks},
@@ -1631,8 +1638,10 @@ async function openStoryPreview(){
   function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
   loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
     loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
-      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',()=>{
-        _initEditorJs();
+      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',()=>{
+        loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',()=>{
+          _initEditorJs();
+        });
       });
     });
   });
