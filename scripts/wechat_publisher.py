@@ -416,12 +416,15 @@ def _render_html(content: str, img_url_map: dict,
 
 
 def _hex_tint(hex_color: str, alpha: float) -> str:
-    """将 #RRGGBB 颜色与白色混合，返回 rgba() 字符串。"""
+    """将 #RRGGBB 与白色预混合，返回实色 hex（微信不支持 rgba）。"""
     h = hex_color.lstrip("#")
     if len(h) == 3:
         h = "".join(c*2 for c in h)
     r, g, b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
-    return f"rgba({r},{g},{b},{alpha:.2f})"
+    r2 = round(255 + (r - 255) * alpha)
+    g2 = round(255 + (g - 255) * alpha)
+    b2 = round(255 + (b - 255) * alpha)
+    return f"#{r2:02x}{g2:02x}{b2:02x}"
 
 
 def publish_article(article_key: str, publish: bool = False,
