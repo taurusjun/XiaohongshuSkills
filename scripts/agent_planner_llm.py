@@ -133,7 +133,7 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
     rows = conn.execute(
         "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
         "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
-        "ORDER BY title_score DESC LIMIT 50",
+        "ORDER BY title_score DESC LIMIT 20",
         (today,)
     ).fetchall()
     conn.close()
@@ -166,7 +166,7 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
         prompt,
         system_prompt="你是内容运营编辑。直接输出JSON，不要前置说明。",
         temperature=0.2,
-        max_tokens=600,
+        max_tokens=1200,
         response_format={"type": "json_object"},
     )
 
