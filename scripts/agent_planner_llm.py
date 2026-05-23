@@ -234,7 +234,9 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
                 f" → 配额 story={story_quota}, news={news_quota}")
 
     # 分别选稿
+    # TODO: 长文选稿目前只用标题+分数，后续考虑传入故事体的 intro（导语）作为摘要替代
     story_keys = _llm_select(story_pool, story_quota, include_summary=False, label="长文")
+    # 资讯传入 summary（50字），帮助 LLM 判断内容质量和区分相似标题
     news_keys  = _llm_select(news_pool,  news_quota,  include_summary=True,  label="资讯")
     selected_keys = story_keys + news_keys
 
