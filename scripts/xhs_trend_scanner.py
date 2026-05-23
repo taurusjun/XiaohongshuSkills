@@ -113,8 +113,8 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
     try:
         publisher = _get_publisher()
     except Exception as e:
-        logger.warning(f"CDP 未就绪，跳过趋势扫描: {e}")
-        return []
+        logger.error(f"CDP 未就绪，无法进行趋势扫描: {e}")
+        raise
 
     def _search_with_reconnect(kw: str, **kwargs) -> dict:
         """调 search_feeds，连接断开时自动重连重试"""
@@ -162,7 +162,7 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
                 is_fresh = fresh_count_24h >= 3
                 logger.info(f"  [{keyword}] 真实24h帖数={fresh_count_24h} is_fresh={is_fresh}")
             except Exception as e:
-                logger.warning(f"  [{keyword}] Pass2 活跃度扫描失败: {e}")
+                logger.error(f"  [{keyword}] Pass2 活跃度扫描失败: {e}")
 
             # ── LLM 提炼推荐关键词 ────────────────────────────────
             titles = data_g["titles"]
@@ -197,7 +197,7 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
                 # 安全验证需要人工介入，不重试，直接上抛让 agent_runner _alert 处理
                 raise
             # 其他错误（超时等）：飞书告警 + 等待 5 分钟重试一次
-            logger.warning(f"扫描 '{keyword}' 失败: {e}，5分钟后重试...")
+            logger.error(f"扫描 '{keyword}' 失败: {e}，5分钟后重试...")
             try:
                 from scripts.feishu_bot import send_text, FEISHU_OPERATOR_OPEN_ID
                 if FEISHU_OPERATOR_OPEN_ID:

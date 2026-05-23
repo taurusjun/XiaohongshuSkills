@@ -165,26 +165,34 @@ def run(dry_run: bool = False, live_preview: bool = False):
         print(json.dumps(plan_data, ensure_ascii=False, indent=2))
         return
 
-    # Phase 3: 执行 — 统一调用 yahoo_news_auto_sqlite.py
+    # Phase 3: 执行 — 调 Web UI /api/trigger-fetch（走统一任务系统，页面可见锁/日志）
     if progress.get("phase", 0) < 3 and topics:
         logger.info("=== Phase 3: 执行 ===")
         try:
-            import subprocess as _sp, json as _json
+            import requests as _req, json as _json, time as _time
             yahoo_kw_map = get_config("yahoo_keyword_map", default={})
             daily_quota = get_config("daily_quota", default=2)
             keywords = []
             for topic in topics[:plan.get("quota_total", 3)]:
                 kw_cfg = yahoo_kw_map.get(topic, {"keyword": topic, "max": daily_quota})
                 keywords.append({"keyword": kw_cfg.get("keyword", topic), "max": kw_cfg.get("max", daily_quota)})
-            cmd = [sys.executable, "scripts/yahoo_news_auto_sqlite.py", "--keywords", _json.dumps(keywords)]
-            logger.info(f"  启动: {' '.join(cmd)}")
-            result = _sp.run(cmd, cwd=str(Path(__file__).resolve().parent.parent),
-                            capture_output=True, text=True, timeout=600)
-            if result.stdout:
-                for line in result.stdout.strip().split("\n")[-5:]:
-                    logger.info(f"  {line}")
-            if result.returncode != 0:
-                _alert("3-执行", RuntimeError(f"exit={result.returncode}"))
+            resp = _req.post("http://127.0.0.1:5000/api/trigger-fetch",
+                           json={"mode": "keywords", "keywords": keywords}, timeout=10)
+            data = resp.json()
+            if data.get("locked"):
+                raise RuntimeError(f"抓取被锁定: {data.get('msg')}")
+            tid = data.get("task_id", "?")
+            logger.info(f"  已触发抓取任务 task_id={tid}")
+            # 等待任务完成（最长 10 分钟）
+            for _ in range(120):
+                _time.sleep(5)
+                status = _req.get(f"http://127.0.0.1:5000/api/task/{tid}", timeout=5).json()
+                st = status.get("status", "?")
+                if st == "done":
+                    logger.info(f"  抓取任务完成")
+                    break
+                elif st != "running":
+                    raise RuntimeError(f"抓取任务异常终止: {st}")
         except Exception as e:
             _alert("3-执行", e)
         set_state(f"runner_progress_{date_str}", {"phase": 3}, date=date_str)
