@@ -346,6 +346,14 @@ def _render_html(content: str, img_url_map: dict,
                 # h2 前加分隔空间
                 parts.append(f'<div style="height:8px"></div>')
                 parts.append(f'<h2 style="{S["h2"]}">{_render_inline(s[3:], S)}</h2>')
+            elif s.startswith("> "):
+                q = s[2:].strip()
+                parts.append(
+                    f'<blockquote style="{S.get("blockquote", S["p"])};'
+                    f'border-left:4px solid {primary};'
+                    f'padding:10px 16px;margin:16px 0;background:{_hex_tint(primary,0.05)}">'
+                    f'{_render_inline(q, S)}</blockquote>'
+                )
             elif s.startswith(">>") and s.endswith("<<"):
                 # 显式 pull quote: >>金句<<
                 q = s[2:-2].strip()
