@@ -142,23 +142,33 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
         logger.info("[review] 今日无候选文章，跳过")
         return []
 
-    # Python 预筛：每个 fetch_by 取最高分 1 篇，保证多样性，减少 LLM 负担
-    seen_topics: dict[str, dict] = {}
+    # ── Step 1: 标题去重（字符重合度 >50% 视为同一事件，保留高分）──────────
+    deduped: list[dict] = []
     for r in rows:
         r = dict(r)
+        title_a = set(r["title"] or "")
+        duplicate = False
+        for kept in deduped:
+            title_b = set(kept["title"] or "")
+            overlap = len(title_a & title_b) / max(len(title_a | title_b), 1)
+            if overlap > 0.5:
+                duplicate = True
+                logger.info(f"[review] 去重: 「{r['title'][:25]}」← 重复于「{kept['title'][:25]}」({overlap:.0%})")
+                break
+        if not duplicate:
+            deduped.append(r)
+
+    # ── Step 2: 预筛——每个话题取最高分 2 篇 ─────────────────────────────
+    topic_counts: dict[str, int] = {}
+    diverse: list[dict] = []
+    PER_TOPIC = 2
+    for r in deduped:
         fb = r["fetch_by"] or "other"
-        if fb not in seen_topics:
-            seen_topics[fb] = r
-    diverse = list(seen_topics.values())
-    # 不足 plan_quota 时用整体 top 补足（去重）
-    diverse_keys = {r["key"] for r in diverse}
-    for r in rows:
-        if len(diverse) >= max(plan_quota + 3, 8):
-            break
-        r = dict(r)
-        if r["key"] not in diverse_keys:
+        if topic_counts.get(fb, 0) < PER_TOPIC:
             diverse.append(r)
-            diverse_keys.add(r["key"])
+            topic_counts[fb] = topic_counts.get(fb, 0) + 1
+
+    logger.info(f"[review] 原始候选 {len(rows)} 篇 → 去重后 {len(deduped)} 篇 → 预筛后 {len(diverse)} 篇")
 
     candidates_text = "\n".join(
         f"{i+1}. [{r['fetch_by']}] {r['title']} "
@@ -168,12 +178,13 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
     )
     keys_by_idx = {i+1: r["key"] for i, r in enumerate(diverse)}
 
-    prompt = f"""从以下 {len(diverse)} 篇文章中选出最优 {plan_quota} 篇发布。
+    prompt = f"""从以下 {len(diverse)} 篇文章中选出最优 {plan_quota} 篇今日发布。
 
 {candidates_text}
 
-要求：质量优先（title_score高），故事体(story)和资讯体(news)尽量搭配。
-直接输出：{{"selected":[1,3,5],"reasoning":"一句话"}}"""
+选择标准：质量优先（title_score高），故事体(story)和资讯体(news)搭配，话题覆盖多样。
+必须输出 reasoning 字段（一句话说明选稿逻辑）。
+直接输出：{{"selected":[1,3,5],"reasoning":"选稿理由一句话"}}"""
 
     result = call_litellm(
         prompt,
