@@ -72,7 +72,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         k, mx, cf = kw['keyword'], kw.get('max', 10), kw.get('china_filter', False)
         angle = kw.get('angle', '')
         print(f"\n{'━' * 60}")
-        print(f"🔁 重试: 【{k}】| 最多 {mx} 条")
+        print(f"🔁 重试: 【{k}】| 最多 {mx} 条" + (f" | 角度: {angle[:30]}" if angle else ""))
         print(f"{'━' * 60}")
         _log_ctx.prefix = f"[{k}] "
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
