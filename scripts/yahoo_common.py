@@ -1307,6 +1307,8 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
                 'key': extract_key_from_url(news.get('link', '')),
                 'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
+                'format_suitability': news.get('format_suitability', ['story']),
+                'is_long_form': news.get('is_long_form', True),
             })
             if news.get('_discard'):
                 print(f"    🗑️ 已标记为 discarded")
