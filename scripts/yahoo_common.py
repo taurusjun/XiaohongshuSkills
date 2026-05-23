@@ -1209,6 +1209,25 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list) -> dict:
     news['content_score'] = quality.get('content_score', 0)
     print(f"    📊 评分: 标题{news['title_score']:.2f} 内容{news['content_score']:.2f}")
 
+    # 低分诊断（与资讯体一致）
+    try:
+        from scripts.scoring import diagnose_low_score, Action
+        from scripts.sqlite_db import get_config
+        publish_threshold = get_config("publish_threshold", default=3.0)
+        retry_threshold = get_config("retry_threshold", default=2.0)
+        action = diagnose_low_score(
+            {"content_score": news["content_score"],
+             "title_score": news["title_score"],
+             "gallery_images": news.get("gallery_images", [])},
+            quality["scores"],
+            publish_threshold=publish_threshold, retry_threshold=retry_threshold,
+        )
+        if action == Action.DISCARD:
+            news['_discard'] = True
+            print(f"    📊 诊断: {action.value}")
+    except Exception:
+        pass
+
     # 分类 + 标签（story 体裁：用日文原文前500字做关键词匹配，避免长文噪音误匹配）
     classify_text = (news.get('content_ja', '') or '')[:500]
     category, tags = auto_classify(news['title_ja'], classify_text, keyword=keyword)
