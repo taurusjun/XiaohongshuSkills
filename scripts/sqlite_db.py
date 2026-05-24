@@ -2,7 +2,7 @@
 """SQLite 数据库模块 — 替代 Notion 的读写操作"""
 
 import sqlite3, os, json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config.yahoo_conf import DB_PATH
 
@@ -287,9 +287,12 @@ def insert_news(news: dict) -> bool:
 
 def load_today_keys(date_str: str = "") -> set[str]:
     if not date_str:
-        date_str = datetime.now().strftime('%Y.%m.%d')
+        date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     with _connect() as db:
-        rows = db.execute("SELECT key FROM news WHERE created_at LIKE ? AND status='active'", (f"{date_str}%",)).fetchall()
+        rows = db.execute(
+            "SELECT key FROM news WHERE created_at >= ?",
+            (date_str,)
+        ).fetchall()
     return {r['key'] for r in rows}
 
 def get_by_key(key: str) -> dict | None:
