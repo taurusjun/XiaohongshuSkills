@@ -914,8 +914,9 @@ async function loadList(){
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
-    const thumb=n.image_url
-      ?`<img src="${esc(n.image_url)}" class="thumb-img" onerror="this.outerHTML='<div class=\\"thumb-empty\\">📰</div>'">`
+    const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
+    const thumb=imgSrc
+      ?`<img src="${imgSrc}" class="thumb-img" onerror="this.outerHTML='<div class=\\"thumb-empty\\">📰</div>'">`
       :`<div class="thumb-empty">📰</div>`;
     const badgeCls=n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green';
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
@@ -991,7 +992,7 @@ function setSort(col){if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}els
 async function preview(key){
   const r=await fetch('/api/news/'+key);const n=await r.json();
   let imgs='';
-  if(n.image_url)imgs+=`<img class="preview-img" src="${esc(n.image_url)}">`;
+  if(n.image_url){const s=n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url;imgs+=`<img class="preview-img" src="${s}">`}
   if(n.gallery_images){try{
     const g=typeof n.gallery_images==='string'?JSON.parse(n.gallery_images):n.gallery_images;
     g.forEach(p=>{imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`});
