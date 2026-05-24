@@ -159,7 +159,7 @@ def _llm_select(pool: list[dict], quota: int, include_summary: bool, label: str)
               + "\n".join(lines)
               + f"\n\n选择标准：质量优先（title_score高），话题覆盖多样。"
                 f"\n必须输出 reasoning（一句话说明选稿逻辑）。"
-                f"\n直接输出：{{\"selected\":[1,3],\"reasoning\":\"选稿理由\"}}")
+                f"\n直接输出（selected 编号数量必须等于 {quota}）：{{\"selected\":[1,2,3],\"reasoning\":\"选稿理由\"}}")
 
     result = call_litellm(
         prompt,
