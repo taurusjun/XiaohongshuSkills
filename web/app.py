@@ -827,6 +827,19 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
   </div>
 </div>
 
+<!-- Confirm modal -->
+<div class="modal" id="confirmModal">
+  <div class="modal-card" style="max-width:380px;text-align:center">
+    <div style="font-size:32px;margin-bottom:12px" id="confirmIcon">⚠️</div>
+    <p id="confirmMsg" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px"></p>
+    <p id="confirmSub" style="font-size:12px;color:var(--text2);margin-bottom:20px"></p>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-gray" style="min-width:80px" onclick="_confirmResolve(false)">取消</button>
+      <button class="btn btn-red" style="min-width:80px" id="confirmOkBtn" onclick="_confirmResolve(true)">确定</button>
+    </div>
+  </div>
+</div>
+
 <!-- Preview modal -->
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
 
@@ -841,6 +854,19 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
 <script>
 let sortBy='created_at',sortDir='DESC',page=0,pageSize=50,_st=null;
+let _confirmResolve=null;
+function showConfirm(msg,sub='',okLabel='确定',okClass='btn-red',icon='⚠️'){
+  return new Promise(resolve=>{
+    _confirmResolve=v=>{document.getElementById('confirmModal').classList.remove('active');resolve(v)};
+    document.getElementById('confirmMsg').textContent=msg;
+    document.getElementById('confirmSub').textContent=sub;
+    document.getElementById('confirmSub').style.display=sub?'':'none';
+    document.getElementById('confirmIcon').textContent=icon;
+    document.getElementById('confirmOkBtn').textContent=okLabel;
+    document.getElementById('confirmOkBtn').className='btn '+okClass+' min-width:80px';
+    document.getElementById('confirmModal').classList.add('active');
+  });
+}
 let activeTaskId=null,activeTaskLabel='';
 const S=id=>document.getElementById(id);
 
@@ -1029,7 +1055,7 @@ function closeModal(){S('modal').classList.remove('active')}
 function closeTaskModal(){S('taskModal').classList.remove('active')}
 async function stopTask(){
   if(!activeTaskId)return;
-  if(!confirm('确定终止当前任务？'))return;
+  if(!await showConfirm('确定终止当前任务？','','终止','btn-red','🛑'))return;
   await fetch('/api/task/'+activeTaskId+'/stop',{method:'POST'});
 }
 
@@ -1232,7 +1258,7 @@ function updateArchiveBar(){
 async function archiveSelected(){
   var keys=[];document.querySelectorAll('.rowSel:checked').forEach(cb=>{keys.push(cb.value)});
   if(!keys.length){alert('请先勾选新闻');return}
-  if(!confirm('确定归档 '+keys.length+' 条新闻？'))return;
+  if(!await showConfirm('确定归档 '+keys.length+' 条文章？','归档后不可撤销','归档','btn-red','📦'))return;
   await fetch('/api/archive-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys})});
   document.getElementById('archiveBar').classList.remove('active');
   loadList();
@@ -1630,6 +1656,19 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 <div class="toast" id="toast">已保存</div>
 
 <!-- Story 预览 Modal -->
+<!-- Confirm modal (detail) -->
+<div class="modal" id="confirmModal">
+  <div class="modal-card" style="max-width:380px;text-align:center">
+    <div style="font-size:32px;margin-bottom:12px" id="confirmIcon">⚠️</div>
+    <p id="confirmMsg" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px"></p>
+    <p id="confirmSub" style="font-size:12px;color:var(--text2);margin-bottom:20px"></p>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-gray" style="min-width:80px" onclick="_confirmResolve(false)">取消</button>
+      <button class="btn btn-red" style="min-width:80px" id="confirmOkBtn" onclick="_confirmResolve(true)">确定</button>
+    </div>
+  </div>
+</div>
+
 <div id="storyPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;overflow-y:auto;padding:20px" onclick="if(event.target===this)this.style.display='none'">
   <div style="max-width:420px;margin:0 auto;background:#fff;border-radius:16px;padding:0 0 24px;position:relative;box-shadow:0 12px 40px rgba(0,0,0,.3)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0">
@@ -1648,7 +1687,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   </div>
 </div>
 <script>function closeTaskModal(){document.getElementById('taskModal').classList.remove('active')}
-async function stopTask(){if(confirm('确定终止？')){await fetch('/api/task/regen_'+key+'/stop',{method:'POST'});location.reload()}}</script>
+async function stopTask(){if(await showConfirm('确定终止当前任务？','','终止','btn-red','🛑')){await fetch('/api/task/regen_'+key+'/stop',{method:'POST'});location.reload()}}</script>
 
 <div class="modal" id="galleryModal" onclick="if(event.target===this)closeGalleryModal()">
   <div class="modal-card" style="max-width:800px">
@@ -1666,6 +1705,19 @@ async function stopTask(){if(confirm('确定终止？')){await fetch('/api/task/
 
 <script>
 const key='{{news.key}}';
+let _confirmResolve=null;
+function showConfirm(msg,sub='',okLabel='确定',okClass='btn-red',icon='⚠️'){
+  return new Promise(resolve=>{
+    _confirmResolve=v=>{document.getElementById('confirmModal').classList.remove('active');resolve(v)};
+    document.getElementById('confirmMsg').textContent=msg;
+    document.getElementById('confirmSub').textContent=sub;
+    document.getElementById('confirmSub').style.display=sub?'':'none';
+    document.getElementById('confirmIcon').textContent=icon;
+    document.getElementById('confirmOkBtn').textContent=okLabel;
+    document.getElementById('confirmOkBtn').className='btn '+okClass;
+    document.getElementById('confirmModal').classList.add('active');
+  });
+}
 {% if scores and scores|length > 0 %}
 function filterScoreTab(cat){
   document.getElementById('tabTitle').className=cat==='标题'?'btn btn-red btn-sm':'btn btn-gray btn-sm';
@@ -1701,7 +1753,7 @@ async function runTask(opts){
   btn.textContent='⏰ 超时';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;
 }
 async function regenerateContent(){
-  if(!confirm('重新生成会覆盖当前标题和内容，确定？'))return;
+  if(!await showConfirm('重新生成会覆盖当前内容','标题和正文将被重新生成，无法撤销','重新生成','btn-red','🔄'))return;
   var btn=document.getElementById('regenBtn'),orig=btn.textContent;
   runTask({title:'🔄 重新生成',apiUrl:'/api/regenerate/'+key,apiBody:{},btn:btn,origText:orig,onDone:()=>location.reload()});
 }
