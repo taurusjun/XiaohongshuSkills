@@ -310,6 +310,13 @@ def api_regenerate(key):
                 updates = {'title': seo_title, 'summary': summary, 'content': content, 'comment': comment,
                            'video_caption': video_caption,
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
+                # Preserve story metadata if regenerating from story path, else re-evaluate long-form
+                if row.get('is_long_form') or 'story' in (row.get('format_suitability') or ''):
+                    updates['is_long_form'] = True
+                    updates['format_suitability'] = row.get('format_suitability', '["story"]')
+                elif len(content or '') >= 950:
+                    updates['is_long_form'] = True
+                    updates['format_suitability'] = '["news"]'
                 update_news(key, updates)
                 if quality.get('scores'):
                     try:
