@@ -231,6 +231,7 @@ def api_agent_config_get():
     return jsonify({
         "focus_topics": get_config("focus_topics", default=[]),
         "yahoo_keyword_map": get_config("yahoo_keyword_map", default={}),
+        "tag_config": get_config("tag_config", default={}),
         "daily_quota": get_config("daily_quota", default=5),
         "publish_threshold": get_config("publish_threshold", default=3.0),
         "retry_threshold": get_config("retry_threshold", default=2.0),
@@ -240,7 +241,7 @@ def api_agent_config_get():
 def api_agent_config_put():
     from sqlite_db import set_config
     data = request.json or {}
-    for key in ["focus_topics", "yahoo_keyword_map", "daily_quota",
+    for key in ["focus_topics", "yahoo_keyword_map", "tag_config", "daily_quota",
                 "publish_threshold", "retry_threshold"]:
         if key in data:
             set_config(key, data[key])
@@ -424,65 +425,113 @@ INDEX_HTML = r"""
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>新闻管理</title>
 <style>
-:root{--bg:#f0f2f5;--card-bg:#fff;--text:#333;--text2:#888;--text3:#bbb;--border:#eef0f4;--red:#ff2442;--orange:#ff6b35;--shadow:0 1px 3px rgba(0,0,0,.06);--radius:10px}
+:root{
+  --bg:#f5f5f7;
+  --card-bg:#fff;
+  --text:#1d1d1f;
+  --text2:#6e6e73;
+  --text3:#aeaeb2;
+  --border:#e5e5ea;
+  --red:#e03a4e;
+  --orange:#e0793a;
+  --accent:#0071e3;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 8px rgba(0,0,0,.06);
+  --radius:12px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,sans-serif
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.page{padding:20px;max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
-.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 20px}
-.card-header{display:flex;align-items:center;gap:16px}
-.card-header h1{font-size:18px;font-weight:700}
-.stats{display:flex;gap:16px;font-size:12px;color:var(--text2)}
-.stats b{color:var(--text)}
-.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;white-space:nowrap;line-height:1.4}
-.btn:hover{filter:brightness(.95)}
-.btn:disabled{opacity:.4;pointer-events:none}
+body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.page{max-width:1440px;margin:0 auto;padding:24px 28px;display:flex;flex-direction:column;gap:14px}
+
+/* Cards */
+.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px;border:1px solid var(--border)}
+.card-header{display:flex;align-items:center;gap:24px;padding:14px 24px}
+.card-header h1{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0}
+
+/* Stats */
+.stats{display:flex;gap:20px;font-size:12px}
+.stats-item{display:flex;align-items:center;gap:6px}
+.stats-dot{width:7px;height:7px;border-radius:50%}
+.stats-dot.green{background:#34c759}
+.stats-dot.orange{background:var(--orange)}
+.stats-dot.blue{background:var(--accent)}
+.stats b{font-size:14px;font-weight:700}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 15px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;transition:all .12s;white-space:nowrap;line-height:1.3;letter-spacing:-.01em}
+.btn:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{opacity:.35;pointer-events:none;transform:none;box-shadow:none}
 .btn-red{background:var(--red);color:#fff}
 .btn-orange{background:var(--orange);color:#fff}
-.btn-gray{background:#eef0f2;color:#555}
-.btn-dark{background:#6b7280;color:#fff}
-input,select,textarea{font:inherit;outline:none;transition:border-color .15s}
-input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
-.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.toolbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0}
-.toolbar-row+.toolbar-row{border-top:1px solid var(--border);padding-top:8px;margin-top:2px}
-.toolbar-row .label{font-size:11px;font-weight:600;color:var(--text3);width:36px;flex-shrink:0}
-.toolbar-row input[type=text]{width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px}
-.toolbar-row input[type=number]{width:44px;padding:5px 4px;border:1px solid #ddd;border-radius:5px;font-size:12px;text-align:center}
-.toolbar-row input[type=date],.toolbar-row input[type=datetime-local]{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px}
-.toolbar-row select{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff}
-.sep{width:1px;height:22px;background:var(--border);margin:0 4px;flex-shrink:0}
+.btn-gray{background:#f3f3f5;color:#555}
+.btn-dark{background:#555;color:#fff}
+.btn-sm{padding:4px 12px;font-size:11px;border-radius:6px}
+.btn-xs{font-size:10px;padding:3px 10px;border-radius:6px}
+
+/* Section titles */
+.sec-title{font-size:13px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:6px}
+
+/* Inputs */
+input,select,textarea{font:inherit;outline:none;transition:border-color .15s,box-shadow .15s;color:var(--text)}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)!important;box-shadow:0 0 0 3px rgba(0,113,227,.12)}
+input[type=text],input[type=date],input[type=datetime-local],input[type=number],select{padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff}
+input[type=date],input[type=datetime-local]{width:135px}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:28px}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sep{width:1px;height:24px;background:var(--border);flex-shrink:0}
+
+/* Table */
 .table-wrap{overflow-x:auto}
 .table{width:100%;border-collapse:collapse}
-.table th{background:#f7f8fa;padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+.table thead{}
+.table th{background:#fafafa;padding:11px 14px;text-align:left;font-size:10.5px;font-weight:600;color:var(--text2);border-bottom:2px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
 .table th:hover{color:var(--text)}
-.table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
-.table tbody tr{transition:background .1s}
-.table tbody tr:hover{background:#f5f7ff}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
-.badge-green{background:#e6f7e9;color:#1a7d2e}
-.badge-red{background:#fee2e2;color:#b91c1c}
-.badge-gray{background:#f0f0f0;color:#888}
-.badge-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.badge-dot-active{background:#22c55e}
-.badge-dot-archived{background:#bbb}
-.score{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.score-hi{background:#dcfce7;color:#15803d}
-.score-mid{background:#fef3c7;color:#a16207}
-.score-lo{background:#fee2e2;color:#b91c1c}
-.tag{display:inline-block;background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 3px}
+.table td{padding:10px 14px;border-bottom:1px solid #f3f3f5;font-size:12.5px;vertical-align:middle}
+.table tbody tr{transition:background .08s}
+.table tbody tr:hover{background:#fafaff}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:600;letter-spacing:.01em}
+.badge-green{background:#e8f8ed;color:#1d7c3a}
+.badge-red{background:#fde8ec;color:#b3203a}
+.badge-gray{background:#f0f0f2;color:#888}
+
+/* Score */
+.score{display:inline-flex;align-items:center;justify-content:center;min-width:38px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.score-hi{background:#e8f8ed;color:#1d7c3a}
+.score-mid{background:#fef9e7;color:#9a6b0a}
+.score-lo{background:#fde8ec;color:#b3203a}
+
+/* Tags */
+.tag{display:inline-block;background:#f0f0ff;color:#5856d6;padding:2px 9px;border-radius:20px;font-size:10.5px;margin:1px 3px;font-weight:500}
+
 .link{color:var(--text);text-decoration:none}
 .link:hover{color:var(--red)}
-.pagination{display:flex;justify-content:center;gap:4px;padding:4px 0}
-.pagination button{min-width:32px;height:30px}
-.pagination button.current{background:var(--red);color:#fff}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+
+/* Pagination */
+.pagination{display:flex;justify-content:center;gap:4px;padding:6px 0}
+.pagination button{min-width:34px;height:32px;border-radius:8px}
+.pagination button.current{background:var(--accent);color:#fff}
+
+/* Modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(4px)}
 .modal.active{display:flex}
-.modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
-.modal img.preview-img{max-width:100%;max-height:300px;border-radius:8px;margin-bottom:12px}
-.modal h2{font-size:18px;margin-bottom:8px}
-.modal .meta{color:var(--text2);font-size:12px;margin-bottom:12px}
-.modal .section{margin:10px 0;padding:8px 0;border-top:1px solid var(--border)}
-.modal .section h4{font-size:12px;color:var(--text2);margin-bottom:4px}
+.modal-card{background:var(--card-bg);border-radius:16px;max-width:700px;width:92%;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.18)}
+.modal img.preview-img{max-width:100%;max-height:300px;border-radius:10px;margin-bottom:14px}
+.modal h2{font-size:18px;margin-bottom:8px;letter-spacing:-.01em}
+.modal .meta{color:var(--text2);font-size:12px;margin-bottom:14px}
+.modal .section{margin:12px 0;padding:10px 0;border-top:1px solid var(--border)}
+.modal .section h4{font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+
+/* Side panels */
+.side-panel{display:none;background:#fafafa;border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:6px}
+.side-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.side-panel-header span{font-size:12px;font-weight:700}
+
+/* Action bar */
+.action-bar{display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fafafa;gap:8px;align-items:center}
+.action-bar.active{display:flex}
 </style>
 </head>
 <body>
@@ -493,82 +542,91 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
     <div class="stats" id="stats"></div>
     <span id="taskBar" style="display:none;font-size:12px;cursor:pointer;color:var(--orange);font-weight:600" onclick="showTaskModal()"></span>
     <div style="flex:1"></div>
-    <button class="btn btn-dark btn-sm" onclick="location.reload()">🔄 刷新</button>
+    <button class="btn btn-dark" onclick="location.reload()">🔄 刷新</button>
   </div>
 
   <!-- Fetch -->
   <div class="card">
-    <h3 style="margin-bottom:10px">🔍 关键词抓取</h3>
-    <div id="kwGrid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div class="sec-title" style="margin-bottom:12px">🔍 关键词抓取</div>
+    <div id="kwGrid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-gray btn-sm" onclick="selectAllKw(true)">全选</button>
-      <button class="btn btn-gray btn-sm" onclick="selectAllKw(false)">全不选</button>
-      <button class="btn btn-gray btn-sm" onclick="addKeyword()">+ 自定义</button>
-      <button class="btn btn-gray btn-sm" onclick="resetKeywords()">重置预置</button>
+      <button class="btn btn-xs btn-gray" onclick="selectAllKw(true)">全选</button>
+      <button class="btn btn-xs btn-gray" onclick="selectAllKw(false)">全不选</button>
+      <button class="btn btn-xs btn-gray" onclick="addKeyword()">+ 自定义</button>
+      <button class="btn btn-xs btn-gray" onclick="resetKeywords()">重置预置</button>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text2)" id="kwSummary"></span>
-      <button class="btn btn-red btn-sm" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
-      <button class="btn btn-gray btn-sm" onclick="toggleConfigPanel()" style="font-size:11px">⚙️ 关键词配额</button>
+      <button class="btn btn-red" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
+      <span class="sep"></span>
+      <button class="btn btn-xs btn-gray" onclick="toggleConfigPanel()">⚙️ 配置</button>
+      <button class="btn btn-xs btn-gray" onclick="toggleTagPanel()">🏷️ 标签</button>
     </div>
-    <div id="configPanel" style="display:none;padding:10px;background:#f9fafb;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;font-weight:600">策略配置</span>
-        <button class="btn btn-gray btn-sm" onclick="saveConfig()" style="font-size:11px">💾 保存</button>
+    <div class="side-panel" id="configPanel">
+      <div class="side-panel-header">
+        <span>策略配置</span>
+        <button class="btn btn-xs btn-gray" onclick="saveConfig()">💾 保存</button>
       </div>
       <div id="configRows" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div style="margin-top:8px;display:flex;gap:12px;font-size:11px;color:var(--text2);flex-wrap:wrap">
-        <span>发布阈值 <input type="number" id="cfgPublishTh" step="0.5" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
-        <span>重试阈值 <input type="number" id="cfgRetryTh" step="0.5" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
-        <span>默认配额 <input type="number" id="cfgDailyQuota" style="width:50px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px;text-align:center"></span>
+      <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--text2);flex-wrap:wrap">
+        <span>发布阈值 <input type="number" id="cfgPublishTh" step="0.5" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
+        <span>重试阈值 <input type="number" id="cfgRetryTh" step="0.5" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
+        <span>默认配额 <input type="number" id="cfgDailyQuota" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
       </div>
     </div>
-    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
-    <div style="display:flex;align-items:center;gap:8px">
-      <h3 style="margin:0">📰 推荐抓取</h3>
-      <span style="font-size:11px;color:var(--text2)">抓取 Yahoo 首页推荐流</span>
+    <div class="side-panel" id="tagPanel">
+      <div class="side-panel-header">
+        <span>🏷️ 标签配置</span>
+        <button class="btn btn-xs btn-gray" onclick="saveTagConfig()">💾 保存</button>
+      </div>
+      <div id="tagConfigRows" style="display:flex;flex-direction:column;gap:8px;font-size:11px"></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="sec-title" style="margin:0">📰 推荐抓取</div>
+      <span style="font-size:11px;color:var(--text2)">Yahoo 首页推荐流</span>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text2)">条数</span>
-      <input type="number" id="recomMax" value="10" min="1" max="50" style="width:50px;padding:5px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
-      <button class="btn btn-red btn-sm" onclick="triggerFetch('recom')" id="recomBtn">📰 开始抓取</button>
+      <input type="number" id="recomMax" value="10" min="1" max="50" style="width:52px;padding:6px;border:1px solid var(--border);border-radius:8px;font-size:12px;text-align:center">
+      <button class="btn btn-red" onclick="triggerFetch('recom')" id="recomBtn">📰 开始抓取</button>
     </div>
   </div>
 
   <!-- Filters -->
-  <div class="card">
+  <div class="card" style="padding:14px 22px">
     <div class="toolbar">
-      <input type="text" id="search" placeholder="搜索标题/正文..." style="width:180px;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px">
+      <input type="text" id="search" placeholder="搜索..." style="width:180px">
       <div class="sep"></div>
-      <input type="date" id="dateFrom" title="开始日期" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px">
-      <input type="date" id="dateTo" title="结束日期" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:130px">
+      <input type="date" id="dateFrom" title="开始日期">
+      <input type="date" id="dateTo" title="结束日期">
       <div class="sep"></div>
-      <select id="category" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部分类</option></select>
-      <select id="status" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
-      <select id="publishXhs" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">发布小红书</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
-      <select id="fmtFilter" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
-      <select id="scoreFilter" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
-      <button class="btn btn-red" onclick="loadList()">筛选</button>
+      <select id="category"><option value="">全部分类</option></select>
+      <select id="status"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
+      <select id="publishXhs"><option value="">发布状态</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
+      <select id="fmtFilter"><option value="">全部体裁</option><option value="news">📰 news</option><option value="story">📖 story</option><option value="ranking">🏆 ranking</option><option value="comparison">⚖️ comparison</option></select>
+      <select id="scoreFilter"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
+      <button class="btn btn-dark" onclick="loadList()">筛选</button>
     </div>
   </div>
 
   <!-- Table -->
   <div class="card" style="padding:0;overflow:hidden">
-    <div id="archiveBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fafbfc;justify-content:space-between;align-items:center">
+    <div class="action-bar" id="archiveBar">
       <span style="font-size:12px;color:var(--text2)" id="archiveCount">已选 0 条</span>
-      <button class="btn btn-dark btn-sm" onclick="archiveSelected()">📦 归档选中</button>
-      <button class="btn btn-orange btn-sm" id="collectBtn" onclick="collectBatchMetrics()">🔄 回收数据</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-xs btn-dark" onclick="archiveSelected()">📦 归档</button>
+      <button class="btn btn-xs btn-orange" onclick="collectBatchMetrics()">🔄 回收数据</button>
     </div>
-    <div id="publishBar" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:#fff7f5;justify-content:space-between;align-items:center">
+    <div class="action-bar" id="publishBar">
       <span style="font-size:12px;color:var(--text2)"><b id="pendingCount">0</b> 条待发布</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="datetime-local" id="postTime" title="定时发布" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px;width:130px">
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(8,0)" id="qtT8">今8:00</button>
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(12,0)" id="qtT12">今12:00</button>
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(18,0)" id="qtT18">今18:00</button>
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(8,1)" id="qtM8">明8:00</button>
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(12,1)" id="qtM12">明12:00</button>
-        <button class="btn btn-gray btn-sm" onclick="setQuickTime(18,1)" id="qtM18">明18:00</button>
-        <button class="btn btn-orange btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布到小红书</button>
-      </div>
+      <span style="flex:1"></span>
+      <input type="datetime-local" id="postTime" title="定时发布" style="width:140px">
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(8,0)">今 8:00</button>
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(12,0)">今 12:00</button>
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(18,0)">今 18:00</button>
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(8,1)">明 8:00</button>
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(12,1)">明 12:00</button>
+      <button class="btn btn-xs btn-gray" onclick="setQuickTime(18,1)">明 18:00</button>
+      <button class="btn btn-orange" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
     </div>
     <div class="table-wrap">
     <table class="table">
@@ -578,18 +636,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
         <th onclick="setSort('pub_time')" style="width:90px">新闻时间</th>
         <th onclick="setSort('created_at')" style="width:85px">入库时间</th>
         <th>标题</th>
-        <th style="width:55px">发布XHS</th>
+        <th style="width:55px">发布</th>
         <th style="width:85px">发布时间</th>
-        <th style="width:85px">XHS公开</th>
+        <th style="width:85px">公开时间</th>
         <th style="width:52px">状态</th>
-        <th>分类</th>
+        <th>体裁</th>
         <th onclick="setSort('title_score')" style="width:60px">评分</th>
         <th>标签</th>
       </tr></thead>
       <tbody id="tbody"></tbody>
     </table>
     </div>
-    <div class="pagination" id="pager" style="padding:12px"></div>
+    <div class="pagination" id="pager"></div>
   </div>
 </div>
 
@@ -606,7 +664,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--red)!important}
 </div>
 
 <script>
-let sortBy='created_at',sortDir='DESC',page=0;
+let sortBy='created_at',sortDir='DESC',page=0,pageSize=100;
 let activeTaskId=null,activeTaskLabel='';
 const S=id=>document.getElementById(id);
 
@@ -635,14 +693,14 @@ async function pollTaskLog(tid){
 }
 
 async function loadList(){
-  const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:100,offset:page*100,
+  const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:pageSize,offset:page*pageSize,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
     category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value,
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>`<tr>
     <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()"></td>
-    <td style="color:var(--text3);font-size:11px">${page*100+i+1}</td>
+    <td style="color:var(--text3);font-size:11px">${page*pageSize+i+1}</td>
     <td style="white-space:nowrap;font-size:12px;color:var(--text2)">${n.pub_time||''}</td>
     <td style="white-space:nowrap;font-size:11px;color:var(--text3)">${(n.created_at||'').substring(0,16)}</td>
     <td><a href="/detail/${n.key}" class="link" onclick="event.stopPropagation()">${n.fetch_by?`<span class="tag">${esc(n.fetch_by)}</span> `:''}<b>${esc(n.title||'')}</b></a><br>
@@ -651,24 +709,29 @@ async function loadList(){
     <td style="font-size:11px;color:var(--text2)">${n.publish_time||'-'}</td>
     <td style="font-size:11px;color:var(--text2)">${n.xhs_pub_time||'-'}</td>
     <td><span class="badge ${n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green'}">${n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃'}</span></td>
-    <td>${n.category||'-'}</td>
+    <td>${(()=>{try{return JSON.parse(n.format_suitability||'[]').join(',')||'-'}catch(e){return n.category||'-'}})()}</td>
     <td><span class="score ${n.title_score>3?'score-hi':n.title_score>1?'score-mid':'score-lo'}">${(n.title_score||0).toFixed(1)}</span></td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
   </tr>`).join('');
   S('stats').innerHTML=`<b>${d.total}</b> 条 · 今日 <b>${d.today}</b> · 待发 <b>${d.pending}</b> · 已发 <b>${d.published||0}</b>`;
   // Show/hide publish bar
   const pendingBar=document.getElementById('publishBar');
-  if(d.pending>0){pendingBar.style.display='flex';document.getElementById('pendingCount').textContent=d.pending}
-  else pendingBar.style.display='none';
-  const totalPages=Math.ceil(d.total/100);let pager='';
+  if(d.pending>0){pendingBar.classList.add('active');document.getElementById('pendingCount').textContent=d.pending}
+  else pendingBar.classList.remove('active');
+  const totalPages=Math.ceil(d.total/pageSize);let pager='';
   if(totalPages>1){
     pager+=`<button class="btn btn-gray" onclick="goPage(${page-1})" ${page<=0?'disabled':''}>‹</button>`;
     for(let i=0;i<totalPages;i++){
-      if(i===page)pager+=`<button class="btn btn-red current">${i+1}</button>`;
+      if(i===page)pager+=`<button class="btn current">${i+1}</button>`;
       else pager+=`<button class="btn btn-gray" onclick="goPage(${i})">${i+1}</button>`;
     }
     pager+=`<button class="btn btn-gray" onclick="goPage(${page+1})" ${page>=totalPages-1?'disabled':''}>›</button>`;
   }
+  pager+=` <select onchange="pageSize=parseInt(this.value);page=0;loadList()" style="padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;margin-left:8px;vertical-align:middle">
+    <option value="50" ${pageSize==50?'selected':''}>50条</option>
+    <option value="100" ${pageSize==100?'selected':''}>100条</option>
+    <option value="200" ${pageSize==200?'selected':''}>200条</option>
+  </select>`;
   S('pager').innerHTML=pager;
   // Push state to URL so browser back button restores filters
   const up=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,page:page,
@@ -794,6 +857,112 @@ async function saveConfig(){
   var r=await fetch('/api/agent-config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.ok){alert('配置已保存');loadKeywords()}else{alert('保存失败')}
 }
+function _renderTagChips(container, tags){
+  container.innerHTML='';
+  (tags||[]).forEach(function(t){
+    if(!t)return;
+    var chip=document.createElement('span');
+    chip.style.cssText='display:inline-flex;align-items:center;gap:2px;background:#e8ecf1;color:#333;border-radius:10px;padding:1px 6px;font-size:10px;margin:1px 2px';
+    chip.innerHTML=esc(t)+'<button onclick="this.parentElement.remove();_syncChipInput(this)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 2px;line-height:1">×</button>';
+    container.appendChild(chip);
+  });
+  var inp=document.createElement('input');
+  inp.placeholder='+ 添加';
+  inp.style.cssText='width:60px;border:none;outline:none;font-size:10px;padding:1px 4px;background:transparent';
+  inp.onkeydown=function(e){
+    if(e.key==='Enter'){
+      var v=inp.value.trim();
+      if(v){
+        var hidden=container.parentElement.querySelector('.chip-hidden');
+        var arr=(hidden.value||'').split(/\s+/).filter(Boolean);
+        arr.push(v);
+        hidden.value=arr.join(' ');
+        _renderTagChips(container, arr);
+        var next=container.querySelector('input');
+        if(next)next.focus();
+      }
+    }
+  };
+  container.appendChild(inp);
+}
+function _syncChipInput(btn){
+  var container=btn.closest('.chip-area');
+  if(!container)return;
+  var hidden=container.parentElement.querySelector('.chip-hidden');
+  var tags=[];
+  container.querySelectorAll('.tag-chip-style, span[style*="border-radius:10px"]').forEach(function(c){tags.push(c.textContent.replace('×','').trim())});
+  hidden.value=tags.join(' ');
+}
+function _chipInput(name, tags){
+  return '<input type="hidden" class="chip-hidden" id="'+name+'" value="'+esc((tags||[]).join(' '))+'"><span class="chip-area"></span>';
+}
+
+async function toggleTagPanel(){
+  var p=S('tagPanel');
+  if(p.style.display==='none'){
+    p.style.display='block';
+    var r=await fetch('/api/agent-config');var d=await r.json();
+    var tc=d.tag_config||{};
+    var must=tc.must_tags||['日本娱乐','日本文化','日本新闻'];
+    var pools=tc.random_tag_pools||{fashion:['日系穿搭','日本穿搭','日系风格','穿搭分享','今日穿搭'],beauty:['日本化妆','日系妆容','日本美妆','日本护肤','护肤分享','化妆教程']};
+    var fashion=pools.fashion||[];
+    var beauty=pools.beauty||[];
+    var kwMap=tc.keyword_tag_map||{};
+    var html='';
+    html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px"><span style="width:80px;color:var(--text2);padding-top:4px">必选标签</span><div>'+_chipInput('cfgMustTags',must)+'</div></div>';
+    html+='<div style="font-size:10px;color:var(--text3);margin:4px 0">随机标签池（匹配时随机取 4 个补足）</div>';
+    html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px;margin-left:12px"><span style="width:56px;color:var(--text2);padding-top:4px;font-size:10px">时尚</span><div>'+_chipInput('cfgFashionTags',fashion)+'</div></div>';
+    html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;margin-left:12px"><span style="width:56px;color:var(--text2);padding-top:4px;font-size:10px">美妆</span><div>'+_chipInput('cfgBeautyTags',beauty)+'</div></div>';
+    html+='<div style="font-size:10px;color:var(--text3);margin:4px 0">keyword → 发布标签</div>';
+    html+='<div id="cfgKwRows" style="display:flex;flex-direction:column;gap:4px">';
+    var kwKeys=Object.keys(kwMap).sort();
+    for(var i=0;i<kwKeys.length;i++){
+      var kw=kwKeys[i];
+      var tags=kwMap[kw]||[];
+      html+='<div style="display:flex;align-items:flex-start;gap:6px" data-kw="'+esc(kw)+'"><input class="cfgKwKey" value="'+esc(kw)+'" style="width:90px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px"><span style="color:var(--text3);padding-top:4px">→</span><div>'+_chipInput('kwtags_'+esc(kw),tags)+'</div><button class="btn btn-gray btn-sm" onclick="this.parentElement.remove()" style="font-size:10px;padding:1px 4px;flex-shrink:0">✕</button></div>';
+    }
+    html+='</div>';
+    html+='<button class="btn btn-gray btn-sm" onclick="addKwRow()" style="font-size:10px;margin-top:2px">+ 添加</button>';
+    S('tagConfigRows').innerHTML=html;
+    document.querySelectorAll('.chip-area').forEach(function(area){
+      var hidden=area.parentElement.querySelector('.chip-hidden');
+      var tags=(hidden.value||'').split(/\s+/).filter(Boolean);
+      _renderTagChips(area, tags);
+    });
+  }else{p.style.display='none'}
+}
+function addKwRow(){
+  var container=S('cfgKwRows');
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:flex-start;gap:6px';
+  var id='kwtags_new_'+Date.now();
+  row.innerHTML='<input class="cfgKwKey" value="" style="width:90px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:11px"><span style="color:var(--text3);padding-top:4px">→</span><div>'+_chipInput(id,[])+'</div><button class="btn btn-gray btn-sm" onclick="this.parentElement.remove()" style="font-size:10px;padding:1px 4px;flex-shrink:0">✕</button>';
+  container.appendChild(row);
+  var area=row.querySelector('.chip-area');
+  _renderTagChips(area, []);
+}
+async function saveTagConfig(){
+  var tc={};
+  tc.must_tags=getChipTags('cfgMustTags');
+  tc.random_tag_pools={};
+  var ft=getChipTags('cfgFashionTags'),bt=getChipTags('cfgBeautyTags');
+  if(ft.length)tc.random_tag_pools.fashion=ft;
+  if(bt.length)tc.random_tag_pools.beauty=bt;
+  tc.keyword_tag_map={};
+  document.querySelectorAll('#cfgKwRows > div').forEach(function(row){
+    var key=row.querySelector('.cfgKwKey');
+    var kw=(key.value||'').trim();
+    var hidden=row.querySelector('.chip-hidden');
+    var tags=(hidden.value||'').split(/\s+/).filter(Boolean);
+    if(kw&&tags.length)tc.keyword_tag_map[kw]=tags;
+  });
+  var r=await fetch('/api/agent-config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag_config:tc})});
+  if(r.ok){alert('标签配置已保存')}else{alert('保存失败')}
+}
+function getChipTags(id){
+  var el=S(id);
+  return el? (el.value||'').split(/\s+/).filter(Boolean) : [];
+}
 function updateKwSummary(){
   const chips=document.querySelectorAll('#kwGrid .kw-chip');
   let total=0,sel=0;
@@ -857,19 +1026,19 @@ function selectAllRows(val){document.querySelectorAll('.rowSel').forEach(cb=>{cb
 function updateArchiveBar(){
   const n=document.querySelectorAll('.rowSel:checked').length;
   const bar=document.getElementById('archiveBar');
-  if(n>0){bar.style.display='flex';document.getElementById('archiveCount').textContent='已选 '+n+' 条'}
-  else bar.style.display='none';
+  if(n>0){bar.classList.add('active');document.getElementById('archiveCount').textContent='已选 '+n+' 条'}
+  else bar.classList.remove('active');
 }
 async function archiveSelected(){
   var keys=[];document.querySelectorAll('.rowSel:checked').forEach(cb=>{keys.push(cb.value)});
   if(!keys.length){alert('请先勾选新闻');return}
   if(!confirm('确定归档 '+keys.length+' 条新闻？'))return;
   await fetch('/api/archive-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys})});
-  document.getElementById('archiveBar').style.display='none';
+  document.getElementById('archiveBar').classList.remove('active');
   loadList();
 }
 async function collectBatchMetrics(){
-  var btn=document.getElementById('collectBtn');
+  var btn=document.querySelector('#archiveBar .btn-orange');
   btn.disabled=true;btn.textContent='⏳ 回收中...';
   try{
     var r=await fetch('/api/collect-metrics',{method:'POST'});
@@ -1131,7 +1300,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
       <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
       <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
       <hr class="sep-line">
-      <div class="field-row field-row-ta"><label>新闻要点</label><div class="value">
+      <div class="field-row field-row-ta"><label>新闻要点 <span id="contentCount" style="font-size:11px;color:var(--text3);font-weight:400"></span></label><div class="value">
         <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
         {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
         {# story 体裁：Editor.js 富文本编辑器 #}
@@ -1149,7 +1318,7 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
           <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
         {% else %}
-        <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px">{{news.content or ''}}</textarea>
+        <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px" oninput="updateContentCount()">{{news.content or ''}}</textarea>
         {% endif %}
       </div></div>
       <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
@@ -1303,7 +1472,15 @@ function updateTitleCount(){
   c.textContent=n+'/20';
   c.style.color=n>20?'var(--red)':'var(--text3)';
 }
+function updateContentCount(){
+  var ta=document.getElementById('contentHidden'),c=document.getElementById('contentCount');
+  if(!ta||!c)return;
+  var n=xhsCharCount(ta.value);
+  c.textContent=n+'/1000';
+  c.style.color=n>1000?'var(--red)':'var(--text3)';
+}
 updateTitleCount();
+updateContentCount();
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
 document.querySelectorAll('.auto-resize').forEach(function(ta){
   ta.addEventListener('input',function(){autoGrow(this)});
@@ -1654,6 +1831,7 @@ function _initEditorJs(){
       try{
         const out=await _ejsEditor.save();
         document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);
+        updateContentCount();
       }catch(e){}
     }
   });
