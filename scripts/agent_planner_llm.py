@@ -66,9 +66,9 @@ def plan_today_llm(date: str = "") -> "DailyPlan":
 
     result = call_litellm(
         prompt,
-        system_prompt="你是内容运营决策者。直接输出JSON，不要前置说明。",
+        system_prompt="只输出一个JSON对象，禁止任何推理、解释或分析文字。",
         temperature=0.3,
-        max_tokens=1000,
+        max_tokens=2000,
         response_format={"type": "json_object"},
     )
 
