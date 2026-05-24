@@ -77,6 +77,26 @@ def _download(key: str, gallery_url: str = ""):
                     log.append(f'  ✓ {f}')
             image_urls = []
         else:
+            # 检测目标页面是否包含 Instagram embed（iframe）
+            try:
+                from gallery_fetch import _extract_instagram_shortcode
+                import requests as _rq
+                r2 = _rq.get(gallery_url, headers=HEADERS, timeout=15)
+                sc = _extract_instagram_shortcode(r2.text)
+                if sc:
+                    log.append(f'📸 检测到 Instagram embed: instagram.com/p/{sc}/')
+                    gallery_url = f'https://www.instagram.com/p/{sc}/'
+                    files = _dl_ig(gallery_url, d)
+                    for f in files:
+                        log.append(f'  ✓ {f}')
+                    image_urls = []
+                    task['images'] = [str(d / f) for f in sorted(os.listdir(d))
+                                      if not f.startswith('.') and not f.startswith('cover.')]
+                    task['status'] = 'done'
+                    task['log'] = '\n'.join(log)
+                    return
+            except Exception:
+                pass
             mixed_urls = scrape_gallery_images(gallery_url)
             if not mixed_urls:
                 task['status'] = 'error: 图集为空'

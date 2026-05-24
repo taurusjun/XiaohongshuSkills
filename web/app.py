@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project roo
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 from flask import Flask, jsonify, render_template_string, request, send_file
-from config.yahoo_conf import STORAGE_BACKEND
+from config.yahoo_conf import STORAGE_BACKEND, DB_PATH
 from sqlite_db import init_db, query_news, get_by_key, update_news, get_score_dims, upsert_score_dims, stats, recalculate_scores, _connect
 from web.gallery_downloader import trigger_download, get_status as gstatus, upload_selected
 
@@ -111,14 +111,14 @@ def api_trigger_fetch():
     data = request.json or {}
     tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
+    py = sys.executable
+    scripts_dir_abs = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+    sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'PATH': os.environ.get('PATH',''),
+               'SQLITE_PATH': DB_PATH}
+    sub_env['PYTHONPATH'] = scripts_dir_abs + ':' + os.path.abspath(os.path.join(scripts_dir_abs, '..')) + ':' + sub_env.get('PYTHONPATH','')
+    sub_env['PYTHONUNBUFFERED'] = '1'
     if data.get('mode') == 'keywords':
         kws = data.get('keywords', []) or [{"keyword": data.get('keyword','AKB'), "max": data.get('max',5)}]
-        py = sys.executable
-        scripts_dir = os.path.join(os.path.dirname(__file__), '..', 'scripts')
-        sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'PATH': os.environ.get('PATH','')}
-        scripts_dir_abs = os.path.abspath(scripts_dir)
-        sub_env['PYTHONPATH'] = scripts_dir_abs + ':' + os.path.abspath(os.path.join(scripts_dir_abs, '..')) + ':' + sub_env.get('PYTHONPATH','')
-        sub_env['PYTHONUNBUFFERED'] = '1'
         import json as _json
         cmd = [py, 'yahoo_news_auto_sqlite.py', '--keywords', _json.dumps(kws), '--push']
         def on_fetch_done():
@@ -135,9 +135,8 @@ def api_trigger_fetch():
         threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_fetch_done), daemon=True).start()
         return jsonify({"task_id": tid})
     else:
-        cmd = [sys.executable, 'yahoo_recommendations_sqlite.py',
+        cmd = [py, 'yahoo_recommendations_sqlite.py',
                '--max', str(data.get('max',10)), '--push']
-    sub_env = {**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND}
     def on_fetch_done():
         global _fetch_running
         with _fetch_lock:
