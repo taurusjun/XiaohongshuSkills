@@ -1483,51 +1483,23 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div class="tag-row" id="tagBubbles"></div>
     </div>
 
-    <!-- URLs -->
-    <div class="card-section">
-      <div class="card-section-title">图片 / 链接</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div><div class="field-label">封面图路径</div><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div>
-        {% if news.original_image_url and news.original_image_url != news.image_url %}
-        <div><div class="field-label">原始图片</div><a href="{{news.original_image_url}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{news.original_image_url}}</a></div>
-        {% endif %}
-        <div><div class="field-label">图集来源</div><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div>
-      </div>
-    </div>
-
-    <!-- Gallery -->
+    <!-- Score (display only → left panel) -->
+    {% if scores and scores|length > 0 %}
     <div class="card-section">
       <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span>图集</span>
-        <div class="actions">
-          <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载</button>
-          <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理</button>
+        <span>评分明细</span>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-red btn-sm" id="tabTitle" onclick="filterScoreTab('标题')" style="height:22px;font-size:10px">标题 {{"%.1f"|format(news.title_score or 0)}}</button>
+          <button class="btn btn-gray btn-sm" id="tabContent" onclick="filterScoreTab('内容')" style="height:22px;font-size:10px">内容 {{"%.1f"|format(news.content_score or 0)}}</button>
         </div>
       </div>
-      <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:8px;background:#1e1e1e;color:#0f0;border-radius:5px;font-size:10px;max-height:150px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
-      {% if news.gallery_images or news.gallery_video %}
-      <div class="img-strip" id="publishImgStrip">
-        {% for p in news.gallery_images %}
-        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
-          {% if p.endswith('.mp4') %}
-          <video src="/local-image?path={{p}}" style="height:100px;border-radius:6px"></video>
-          {% else %}
-          <img src="/local-image?path={{p}}">
-          {% endif %}
-          <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
-          <button class="btn btn-gray" style="font-size:9px;padding:1px 5px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
-        </div>
+      <div class="score-grid" id="scoreGrid">
+        {% for d in scores %}
+        <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %} {% if d.human_override %}score-override{% endif %}" data-cat="{{d.category}}" data-dim="{{d.dimension}}" data-val="{{d.value}}" onclick="toggleScore(this)" style="{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
         {% endfor %}
-        {% if news.gallery_video %}
-        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
-          <video src="/local-image?path={{news.gallery_video}}" style="height:100px;border-radius:6px"></video>
-          <span style="font-size:9px;color:var(--red);margin-top:2px">🎬 视频</span>
-          <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
-        </div>
-        {% endif %}
       </div>
-      {% endif %}
     </div>
+    {% endif %}
 
     <!-- XHS Stats (conditional) -->
     {% if news.publish_xhs %}
@@ -1554,29 +1526,44 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   <!-- Right panel: score + content editing + japanese -->
   <div class="detail-right">
 
-    <!-- Score accordion (conditional) -->
-    {% if scores and scores|length > 0 %}
-    <div class="card" style="padding:0;overflow:hidden">
-      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
-        <span class="ah-title">📊 评分明细
-          <span class="badge badge-green" style="font-size:10px">{{"%.1f"|format(news.title_score or 0)}} 标题</span>
-          <span class="badge badge-blue" style="font-size:10px">{{"%.1f"|format(news.content_score or 0)}} 内容</span>
-        </span>
-        <span class="ah-arrow">▼</span>
+    <!-- URLs + Gallery (editing → right panel) -->
+    <div class="card" style="padding:16px 18px">
+      <h3 style="font-size:13px;font-weight:600;margin-bottom:12px">📸 图集 / 封面</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div><div class="field-label">封面图路径</div><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div>
+        {% if news.original_image_url and news.original_image_url != news.image_url %}
+        <div><div class="field-label">原始图片</div><a href="{{news.original_image_url}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{news.original_image_url}}</a></div>
+        {% endif %}
+        <div><div class="field-label">图集来源</div><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div>
       </div>
-      <div class="accordion-body open" style="padding:14px 16px">
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button class="btn btn-red btn-sm" id="tabTitle" onclick="filterScoreTab('标题')">标题评分</button>
-          <button class="btn btn-gray btn-sm" id="tabContent" onclick="filterScoreTab('内容')">内容评分</button>
-        </div>
-        <div class="score-grid" id="scoreGrid">
-          {% for d in scores %}
-          <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %} {% if d.human_override %}score-override{% endif %}" data-cat="{{d.category}}" data-dim="{{d.dimension}}" data-val="{{d.value}}" onclick="toggleScore(this)" style="{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
-          {% endfor %}
-        </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载图集</button>
+        <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理图集</button>
       </div>
+      <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:8px;background:#1e1e1e;color:#0f0;border-radius:5px;font-size:10px;max-height:150px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
+      {% if news.gallery_images or news.gallery_video %}
+      <div class="img-strip" id="publishImgStrip">
+        {% for p in news.gallery_images %}
+        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
+          {% if p.endswith('.mp4') %}
+          <video src="/local-image?path={{p}}" style="height:100px;border-radius:6px"></video>
+          {% else %}
+          <img src="/local-image?path={{p}}">
+          {% endif %}
+          <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
+          <button class="btn btn-gray" style="font-size:9px;padding:1px 5px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
+        </div>
+        {% endfor %}
+        {% if news.gallery_video %}
+        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
+          <video src="/local-image?path={{news.gallery_video}}" style="height:100px;border-radius:6px"></video>
+          <span style="font-size:9px;color:var(--red);margin-top:2px">🎬 视频</span>
+          <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
 
     <!-- Content editing -->
     <div class="card">
