@@ -862,7 +862,6 @@ function toggleConfigPanel(){
     });
 }
 function toggleTagPanel(){
-  const p=S('tagPanel');
   S('tagModal').classList.add('active');
   fetch('/api/agent-config').then(r=>r.json()).then(d=>{
       const tc=d.tag_config||{};
