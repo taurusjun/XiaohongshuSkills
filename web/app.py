@@ -303,13 +303,12 @@ def api_regenerate(key):
                     _tasks['regen_'+key] = {'status': 'error: 故事体生成失败', 'log': '故事体生成失败'}
                     return
                 new_title = story.get('title', title_zh)
-                new_content = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
                 log.append(f'标题: {new_title[:50]}')
                 log.append('评估质量...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
-                quality = evaluate_quality(new_title, new_content, story.get('outro', ''), title_ja, content_ja)
-                updates = {'title': new_title, 'summary': story.get('intro', '')[:100],
-                           'content': new_content, 'comment': story.get('outro', ''),
+                quality = evaluate_quality(new_title, story['body'], story.get('outro', ''), title_ja, content_ja)
+                updates = {'title': new_title, 'summary': story.get('intro', ''),
+                           'content': story['body'], 'comment': story.get('outro', ''),
                            'is_long_form': True,
                            'format_suitability': row.get('format_suitability', '["story"]'),
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
@@ -1015,7 +1014,7 @@ async function loadList(){
       :`<div class="thumb-empty">📰</div>`;
     const badgeCls=n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green';
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
-    const sc=n.title_score||0;const scCls=sc>3?'score-hi':sc>1?'score-mid':'score-lo';
+    const ts=n.title_score||0,cs=n.content_score||0,sc=ts+cs;const scCls=sc>6?'score-hi':sc>3?'score-mid':'score-lo';
     return`<tr>
     <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()" style="width:14px;height:14px"></td>
     <td>${thumb}</td>
@@ -1025,7 +1024,7 @@ async function loadList(){
       <div class="tc-snip">${esc((n.content||'').substring(0,60))}</div>
     </div></div></td>
     <td>${_fmtBadge(n.format_suitability,n.category)}</td>
-    <td><span class="score ${scCls}">${sc.toFixed(1)}</span></td>
+    <td><span class="score ${scCls}">${ts.toFixed(1)}/${cs.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
     <td>${(()=>{
       const locked=n.publish_xhs&&n.publish_time;
@@ -1058,7 +1057,7 @@ async function loadList(){
   if(pend>0){S('publishBar').classList.add('active');S('pendingCount').textContent=pend}
   else S('publishBar').classList.remove('active');
   // Avg score
-  const scores=d.rows.filter(n=>n.title_score>0).map(n=>n.title_score);
+  const scores=d.rows.filter(n=>n.title_score>0).map(n=>n.title_score+n.content_score);
   const avg=scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:0;
   S('mcScore').textContent=avg>0?avg.toFixed(1):'—';
 
@@ -1099,13 +1098,14 @@ async function preview(key){
     const g=typeof n.gallery_images==='string'?JSON.parse(n.gallery_images):n.gallery_images;
     g.forEach(p=>{imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`});
   }catch(e){}}
+  const isStory=n.is_long_form||(n.format_suitability||'').includes('story');
   S('modalContent').innerHTML=`
     ${imgs}
     <h2>${esc(n.title)}</h2>
     <div class="meta">${n.pub_time} | ${n.source} | ${n.category} | 📊标题${(n.title_score||0).toFixed(1)} 内容${(n.content_score||0).toFixed(1)}</div>
-    ${n.summary?`<p style="color:#555;margin:8px 0">${esc(n.summary)}</p>`:''}
-    <div class="section"><h4>新闻要点</h4><p>${esc(n.content||'').replace(/\\n/g,'<br>')}</p></div>
-    <div class="section"><h4>我的解读</h4><p>${esc(n.comment||'').replace(/\\n/g,'<br>')}</p></div>
+    ${n.summary?`<div class="section"><h4>${isStory?'导语':'引流摘要'}</h4><p>${esc(n.summary).replace(/\\n/g,'<br>')}</p></div>`:''}
+    <div class="section"><h4>${isStory?'正文':'新闻要点'}</h4><p>${esc(n.content||'').replace(/\\n/g,'<br>')}</p></div>
+    ${n.comment?`<div class="section"><h4>${isStory?'结语':'我的解读'}</h4><p>${esc(n.comment||'').replace(/\\n/g,'<br>')}</p></div>`:''}
     ${n.video_caption?`<div class="section"><h4>🎬 短配文</h4><p>${esc(n.video_caption||'')}</p></div>`:''}
     <div class="section"><h4>标签</h4>${(n.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}</div>
     <div style="margin-top:16px"><a href="/detail/${n.key}" class="btn btn-red">编辑详情</a> <button class="btn btn-gray" onclick="closeModal()">关闭</button></div>`;
@@ -2381,7 +2381,10 @@ function closeImgPicker(){document.getElementById('imgPicker').style.display='no
 
 async function openStoryPreview(){
   const title='{{news.title|e}}';
+  const intro=document.querySelector('[name=summary]')?.value||'';
+  const outro=document.querySelector('[name=comment]')?.value||'';
   let html=`<h2 style="font-size:17px;font-weight:700;line-height:1.5;margin:0 0 14px;color:#111">${esc(title)}</h2>`;
+  if(intro) html+=`<p style="font-size:13px;line-height:1.8;color:#777;margin:0 0 18px;padding-bottom:14px;border-bottom:1px solid #eee">${esc(intro).replace(/\n/g,'<br>')}</p>`;
   let blocks=[];
   if(_ejsEditor){try{const out=await _ejsEditor.save();blocks=out.blocks||[];}catch(e){}}
   for(const b of blocks){
@@ -2404,6 +2407,7 @@ async function openStoryPreview(){
     } else if(b.type==='image'&&b.data.file?.url)
       html+=`<div style="margin:12px 0"><img src="${b.data.file.url}" style="width:100%;border-radius:10px;display:block"></div>`;
   }
+  if(outro) html+=`<p style="font-size:13px;line-height:1.8;color:#777;margin:18px 0 0;padding-top:14px;border-top:1px solid #eee">${esc(outro).replace(/\n/g,'<br>')}</p>`;
   document.getElementById('storyPreviewBody').innerHTML=html;
   document.getElementById('storyPreviewModal').style.display='block';
 }
