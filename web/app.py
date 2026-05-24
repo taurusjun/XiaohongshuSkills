@@ -991,10 +991,9 @@ async function loadList(){
   history.replaceState(null,'','/?'+up.toString());
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
-  if(sy){requestAnimationFrame(()=>{window.scrollTo(0,parseInt(sy));sessionStorage.removeItem('listScrollY')})}
+  if(sy){const ts=document.querySelector('.table-scroll');requestAnimationFrame(()=>{if(ts)ts.scrollTop=parseInt(sy);sessionStorage.removeItem('listScrollY')})}
 }
-window.addEventListener('beforeunload',()=>{sessionStorage.setItem('listScrollY',window.scrollY)})
-function goPage(n){page=n;loadList();window.scrollTo(0,0)}
+function goPage(n){page=n;loadList();const ts=document.querySelector('.table-scroll');if(ts)ts.scrollTop=0;}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function setSort(col){if(sortBy===col){sortDir=sortDir==='DESC'?'ASC':'DESC'}else{sortBy=col;sortDir='DESC'}loadList()}
 
@@ -1263,7 +1262,7 @@ async function loadCategories(){
 	if(S("pageSizeSelect"))S("pageSizeSelect").value=pageSize;
 	loadList();loadCategories();checkActiveTasks();
 // Save scroll position only when navigating to detail page
-document.addEventListener('click',e=>{const a=e.target.closest('a[href^=\"/detail/\"]');if(a)sessionStorage.setItem('listScrollY',window.scrollY)},true);
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/detail/"]');if(a){const ts=document.querySelector('.table-scroll');sessionStorage.setItem('listScrollY',ts?ts.scrollTop:0)}},true);
 // Quick time buttons for publish schedule
 function setQuickTime(h,dayOffset){
   const d=new Date();d.setDate(d.getDate()+dayOffset);
