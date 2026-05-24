@@ -1602,7 +1602,9 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         <button class="trend-btn" data-metric="saves">收藏</button>
         <button class="trend-btn" data-metric="click_rate">点击率</button>
       </div>
-      <canvas id="metricsChart" height="150"></canvas>
+      <div style="position:relative;height:140px">
+        <canvas id="metricsChart"></canvas>
+      </div>
       <p id="trendEmpty" style="display:none;font-size:11px;color:var(--text3);text-align:center;padding:20px 0">暂无增长数据</p>
     </div>
     {% endif %}
