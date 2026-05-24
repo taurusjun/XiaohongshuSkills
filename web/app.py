@@ -440,6 +440,20 @@ def api_gallery_upload(key):
 def api_gallery_status(key):
     return jsonify(gstatus(key))
 
+@app.route('/api/metrics-history/<key>')
+def api_metrics_history(key):
+    """文章 metrics_history 时间序列，最近 72 个快照"""
+    from scripts.sqlite_db import _connect
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT collected_at, views, likes, saves, comments, impression, click_rate "
+            "FROM metrics_history WHERE news_key=? ORDER BY collected_at ASC LIMIT 72",
+            (key,)
+        ).fetchall()
+    snapshots = [dict(r) for r in rows]
+    return jsonify({"snapshots": snapshots, "count": len(snapshots)})
+
+
 @app.route('/local-image')
 def local_image():
     """代理本地图片文件"""
@@ -1460,6 +1474,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .stat-cell{background:var(--bg);border-radius:7px;padding:8px 10px;text-align:center}
 .stat-num{font-size:16px;font-weight:700;color:var(--text);line-height:1}
 .stat-label{font-size:10px;color:var(--text3);margin-top:2px}
+/* trend chart */
+.trend-btn{height:22px;padding:0 8px;border:1px solid var(--border);border-radius:20px;background:var(--bg);font-size:10.5px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s}
+.trend-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.trend-btn:hover:not(.active){border-color:var(--text3);color:var(--text)}
 /* Editor.js overrides */
 #editorjs .ce-block__content{max-width:none}
 #editorjs .codex-editor__redactor{padding-bottom:20px!important}
@@ -1571,6 +1589,21 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         </div>
         {% endfor %}
       </div>
+    </div>
+
+    <!-- Metrics trend chart -->
+    <div class="card-section" id="trendSection" style="display:none">
+      <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span>📈 增长趋势</span>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="trend-btn active" data-metric="views">浏览</button>
+        <button class="trend-btn" data-metric="likes">点赞</button>
+        <button class="trend-btn" data-metric="saves">收藏</button>
+        <button class="trend-btn" data-metric="click_rate">点击率</button>
+      </div>
+      <canvas id="metricsChart" height="150"></canvas>
+      <p id="trendEmpty" style="display:none;font-size:11px;color:var(--text3);text-align:center;padding:20px 0">暂无增长数据</p>
     </div>
     {% endif %}
 
@@ -1854,6 +1887,92 @@ function updateContentCount(){
 }
 updateTitleCount();
 updateContentCount();
+
+// ── Metrics trend chart ──────────────────────────────────────────────
+{% if news.publish_xhs %}
+(function(){
+  var trendSection=document.getElementById('trendSection');
+  var chartCanvas=document.getElementById('metricsChart');
+  var trendEmpty=document.getElementById('trendEmpty');
+  var _chart=null, _snapshots=[], _currentMetric='views';
+
+  var METRIC_LABELS={'views':'浏览','likes':'点赞','saves':'收藏','click_rate':'点击率'};
+
+  function fmtTime(t){return t?t.slice(5,16):t}  // "2026-05-23 14:00" → "05-23 14:00"
+
+  function buildDataset(metric){
+    return _snapshots.map(s=>metric==='click_rate'?+(s[metric]*100).toFixed(2):s[metric]);
+  }
+
+  function initChart(metric){
+    if(_chart)_chart.destroy();
+    _chart=new Chart(chartCanvas,{
+      type:'line',
+      data:{
+        labels:_snapshots.map(s=>fmtTime(s.collected_at)),
+        datasets:[{
+          label:METRIC_LABELS[metric],
+          data:buildDataset(metric),
+          borderColor:'#3b82f6',
+          backgroundColor:'rgba(59,130,246,.08)',
+          borderWidth:1.5,
+          pointRadius:0,
+          pointHoverRadius:3,
+          fill:true,
+          tension:.3
+        }]
+      },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,
+          callbacks:{label:ctx=>METRIC_LABELS[metric]+': '+ctx.raw+(metric==='click_rate'?'%':'')}}},
+        scales:{
+          x:{ticks:{font:{size:9},maxTicksLimit:8,maxRotation:0},grid:{display:false}},
+          y:{ticks:{font:{size:9}},beginAtZero:true}
+        }
+      }
+    });
+  }
+
+  function switchMetric(metric){
+    _currentMetric=metric;
+    document.querySelectorAll('.trend-btn').forEach(b=>{
+      b.classList.toggle('active',b.dataset.metric===metric);
+    });
+    if(_chart){
+      _chart.data.datasets[0].data=buildDataset(metric);
+      _chart.data.datasets[0].label=METRIC_LABELS[metric];
+      _chart.update();
+    }
+  }
+
+  document.querySelectorAll('.trend-btn').forEach(b=>{
+    b.addEventListener('click',function(){switchMetric(this.dataset.metric)});
+  });
+
+  function loadChart(){
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    s.onload=function(){
+      fetch('/api/metrics-history/{{news.key}}').then(r=>r.json()).then(d=>{
+        if(!d.count){
+          trendSection.style.display='';
+          chartCanvas.style.display='none';
+          trendEmpty.style.display='';
+          return;
+        }
+        _snapshots=d.snapshots;
+        trendSection.style.display='';
+        initChart(_currentMetric);
+      });
+    };
+    document.head.appendChild(s);
+  }
+  loadChart();
+})();
+{% endif %}
+
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
 document.querySelectorAll('.auto-resize').forEach(function(ta){
   ta.addEventListener('input',function(){autoGrow(this)});
