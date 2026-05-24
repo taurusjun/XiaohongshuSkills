@@ -941,7 +941,14 @@ async function loadList(){
     <td>${_fmtBadge(n.format_suitability,n.category)}</td>
     <td><span class="score ${scCls}">${sc.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
-    <td><div class="pub-toggle ${n.publish_xhs?'on':''}" onclick="event.stopPropagation();togglePublish('${n.key}',${n.publish_xhs?0:1},this)" title="${n.publish_xhs?'取消发布':'标记发布'}"></div></td>
+    <td>${(()=>{
+      const locked=n.publish_xhs&&n.xhs_pub_time;
+      const cls='pub-toggle'+(n.publish_xhs?' on':'');
+      const sty=locked?'opacity:.4;cursor:not-allowed':'';
+      const fn=locked?'':'togglePublish(\''+n.key+'\','+(n.publish_xhs?0:1)+',this)';
+      const ttl=locked?'已发布，不可撤销':(n.publish_xhs?'取消发布':'标记发布');
+      return`<div class="${cls}" style="${sty}" onclick="event.stopPropagation();${fn}" title="${ttl}"></div>`;
+    })()}</td>
     <td style="font-size:11px;color:${n.xhs_pub_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.xhs_pub_time?600:400}">${n.xhs_pub_time||'—'}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${(n.created_at||'').substring(0,16)}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${n.pub_time||'—'}</td>
