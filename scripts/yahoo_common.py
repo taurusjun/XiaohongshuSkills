@@ -1913,8 +1913,7 @@ def load_today_keys() -> set:
     if STORAGE_BACKEND == "sqlite":
         try:
             from sqlite_db import load_today_keys as sqlite_keys
-            sqlite_today = datetime.now().strftime('%Y-%m-%d')
-            keys |= sqlite_keys(sqlite_today)
+            keys |= sqlite_keys()  # 默认昨天至今，2天去重窗口
         except ImportError:
             pass
 
