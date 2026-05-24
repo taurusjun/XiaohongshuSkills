@@ -736,6 +736,19 @@ def load_active_dimensions() -> list[dict]:
     return _dim_cache["dims"]
 
 
+def update_active_dimensions(dims: list[dict]) -> None:
+    """原地更新当前活跃版本的维度定义，同时刷新 created_at 让缓存失效。"""
+    global _dim_cache
+    import json as _json
+    with _connect() as db:
+        db.execute(
+            "UPDATE scoring_dimension_versions SET dimensions_json=?, created_at=datetime('now','localtime') WHERE is_active=1",
+            (_json.dumps(dims, ensure_ascii=False),)
+        )
+    _dim_cache["dims"] = []
+    _dim_cache["cached_created_at"] = ""
+
+
 def commit_dimension_version(dims: list[dict], change_note: str, created_by: str = "human"):
     """提交新版本，自动递增 minor 版本号，清空缓存"""
     global _dim_cache
