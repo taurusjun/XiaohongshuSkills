@@ -1567,7 +1567,6 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h3 style="font-size:13px;font-weight:600;color:var(--text)">✏️ 内容编辑</h3>
-        <span id="contentCount" style="font-size:11px;color:var(--text3)"></span>
       </div>
       <div class="field-group">
         <div>
@@ -1584,7 +1583,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         </div>
         <hr class="sep-line">
         <div>
-          <div class="field-label">新闻要点</div>
+          <div class="field-label">新闻要点 <span id="contentCount" style="float:right;font-size:11px;color:var(--text3);font-weight:400"></span></div>
           <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
           {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
           <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px"></div>
