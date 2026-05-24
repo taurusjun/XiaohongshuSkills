@@ -671,10 +671,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="topbar-title">文章列表</div>
     <span id="taskBar" style="display:none;font-size:11.5px;cursor:pointer;color:var(--orange);font-weight:600;background:#fff7ed;padding:4px 10px;border-radius:6px;border:1px solid #fed7aa" onclick="showTaskModal()"></span>
     <div class="topbar-spacer"></div>
-    <div class="topbar-search">
-      <span style="color:var(--text3);font-size:12px">🔍</span>
-      <input id="search" placeholder="搜索标题、内容..." oninput="clearTimeout(_st);_st=setTimeout(()=>{page=0;loadList()},400)">
-    </div>
     <button class="btn btn-outline" onclick="location.reload()">🔄 刷新</button>
   </div>
 
@@ -724,6 +720,11 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <!-- Filter strip -->
   <div class="filter-strip">
+    <div class="topbar-search" style="width:200px;background:#fff;border:1px solid var(--border);border-radius:7px;height:30px;padding:0 10px">
+      <span style="color:var(--text3);font-size:12px">🔍</span>
+      <input id="search" placeholder="搜索..." oninput="clearTimeout(_st);_st=setTimeout(()=>{page=0;loadList()},400)" style="border:none;background:none;font-size:12px;outline:none;width:100%">
+    </div>
+    <div class="filter-divider"></div>
     <input type="date" id="dateFrom" class="fd" title="开始日期" onchange="page=0;loadList()">
     <span style="font-size:11px;color:var(--text3)">→</span>
     <input type="date" id="dateTo" class="fd" title="结束日期" onchange="page=0;loadList()">
