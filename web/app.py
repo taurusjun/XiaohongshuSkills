@@ -916,7 +916,7 @@ async function loadList(){
   S('tbody').innerHTML=d.rows.map((n,i)=>{
     const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
     const thumb=imgSrc
-      ?`<img src="${imgSrc}" class="thumb-img" onerror="this.outerHTML='<div class=\\"thumb-empty\\">📰</div>'">`
+      ?`<img src="${imgSrc}" class="thumb-img" onerror="this.className='thumb-empty';this.removeAttribute('src');this.removeAttribute('onerror')">`
       :`<div class="thumb-empty">📰</div>`;
     const badgeCls=n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green';
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
