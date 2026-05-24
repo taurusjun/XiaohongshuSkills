@@ -673,7 +673,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="topbar-spacer"></div>
     <div class="topbar-search">
       <span style="color:var(--text3);font-size:12px">🔍</span>
-      <input id="search" placeholder="搜索标题、内容...">
+      <input id="search" placeholder="搜索标题、内容..." oninput="clearTimeout(_st);_st=setTimeout(()=>{page=0;loadList()},400)">
     </div>
     <button class="btn btn-outline" onclick="location.reload()">🔄 刷新</button>
   </div>
@@ -724,16 +724,15 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <!-- Filter strip -->
   <div class="filter-strip">
-    <input type="date" id="dateFrom" class="fd" title="开始日期">
+    <input type="date" id="dateFrom" class="fd" title="开始日期" onchange="page=0;loadList()">
     <span style="font-size:11px;color:var(--text3)">→</span>
-    <input type="date" id="dateTo" class="fd" title="结束日期">
+    <input type="date" id="dateTo" class="fd" title="结束日期" onchange="page=0;loadList()">
     <div class="filter-divider"></div>
-    <select id="category" class="fs"><option value="">全部分类</option></select>
-    <select id="status" class="fs"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
-    <select id="publishXhs" class="fs"><option value="">发布状态</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
-    <select id="fmtFilter" class="fs"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
-    <select id="scoreFilter" class="fs"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
-    <button class="btn btn-dark btn-sm" onclick="loadList()">筛选</button>
+    <select id="category" class="fs" onchange="page=0;loadList()"><option value="">全部分类</option></select>
+    <select id="status" class="fs" onchange="page=0;loadList()"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
+    <select id="publishXhs" class="fs" onchange="page=0;loadList()"><option value="">发布状态</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
+    <select id="fmtFilter" class="fs" onchange="page=0;loadList()"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
+    <select id="scoreFilter" class="fs" onchange="page=0;loadList()"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
   </div>
 
   <!-- Action bars -->
@@ -839,7 +838,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 </div>
 
 <script>
-let sortBy='created_at',sortDir='DESC',page=0,pageSize=50;
+let sortBy='created_at',sortDir='DESC',page=0,pageSize=50,_st=null;
 let activeTaskId=null,activeTaskLabel='';
 const S=id=>document.getElementById(id);
 
