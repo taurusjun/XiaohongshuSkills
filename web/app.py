@@ -1453,17 +1453,13 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- Settings -->
     <div class="card-section">
-      <div class="card-section-title">基本信息</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;align-items:center;font-size:11.5px">
-        <span style="color:var(--text2)">分类</span>
-        <input class="inline-input" name="category" value="{{news.category or ''}}" style="text-align:right;font-size:11.5px;padding:2px 0">
-        <span style="color:var(--text2)">发布 XHS</span>
-        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11.5px;padding:2px 6px;justify-self:end">
-          <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
-          <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px">
+        <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:60px;font-size:11.5px;padding:2px 0;color:var(--text)" placeholder="分类">
+        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
+          <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
         </select>
-        <span style="color:var(--text2)">状态</span>
-        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11.5px;padding:2px 6px;justify-self:end">
+        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
           <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
           <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
