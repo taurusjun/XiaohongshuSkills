@@ -288,46 +288,68 @@ def api_regenerate(key):
         _tasks['regen_'+key] = {'status': 'running', 'log': ''}
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-            from yahoo_common import translate_title, generate_content_and_comment, evaluate_quality, generate_video_caption
+            from yahoo_common import translate_title, generate_content_and_comment, evaluate_quality, generate_video_caption, generate_story_article
             import json as _json
             log = []
-            log.append('翻译标题...')
-            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
-            title_zh = translate_title(row.get('title_ja', row.get('title','')))
-            log.append(f'标题: {title_zh[:50]}')
-            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
-            log.append('生成内容...')
-            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
-            gen = generate_content_and_comment(row.get('title_ja',''), title_zh, body_text=row.get('content',''))
-            if gen:
+            is_story = row.get('is_long_form') or 'story' in (row.get('format_suitability') or '')
+            title_ja = row.get('title_ja', row.get('title', ''))
+            content_ja = row.get('content_ja', '')
+
+            if is_story:
+                log.append('故事体重新生成...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
+                title_zh = translate_title(title_ja) if title_ja else row.get('title', '')
+                story = generate_story_article(title_ja, title_zh, content_ja or row.get('content', ''))
+                if not story:
+                    _tasks['regen_'+key] = {'status': 'error: 故事体生成失败', 'log': '故事体生成失败'}
+                    return
+                new_title = story.get('title', title_zh)
+                new_content = f"{story['intro']}\n\n{story['body']}\n\n{story['outro']}"
+                log.append(f'标题: {new_title[:50]}')
+                log.append('评估质量...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
+                quality = evaluate_quality(new_title, new_content, story.get('outro', ''), title_ja, content_ja)
+                updates = {'title': new_title, 'summary': story.get('intro', '')[:100],
+                           'content': new_content, 'comment': story.get('outro', ''),
+                           'is_long_form': True,
+                           'format_suitability': row.get('format_suitability', '["story"]'),
+                           'title_score': quality['title_score'], 'content_score': quality['content_score']}
+                if story.get('story_type'):
+                    updates['story_type'] = story['story_type']
+            else:
+                log.append('翻译标题...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
+                title_zh = translate_title(title_ja) if title_ja else row.get('title', '')
+                log.append(f'标题: {title_zh[:50]}')
+                log.append('生成内容...')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
+                gen = generate_content_and_comment(title_ja, title_zh, body_text=row.get('content',''))
+                if not gen:
+                    _tasks['regen_'+key] = {'status': 'error: 内容生成失败', 'log': '内容生成失败'}
+                    return
                 seo_title, summary, content, comment, _, topic_tags = gen
                 log.append('生成短配文...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                 video_caption = generate_video_caption(seo_title, summary, content, list(topic_tags) if topic_tags else [])
                 log.append('评估质量...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
-                quality = evaluate_quality(seo_title, content, comment, row.get('title_ja',''), row.get('content',''))
+                quality = evaluate_quality(seo_title, content, comment, title_ja, row.get('content',''))
                 updates = {'title': seo_title, 'summary': summary, 'content': content, 'comment': comment,
                            'video_caption': video_caption,
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
-                # Preserve story metadata if regenerating from story path, else re-evaluate long-form
-                if row.get('is_long_form') or 'story' in (row.get('format_suitability') or ''):
-                    updates['is_long_form'] = True
-                    updates['format_suitability'] = row.get('format_suitability', '["story"]')
-                elif len(content or '') >= 950:
+                if len(content or '') >= 950:
                     updates['is_long_form'] = True
                     updates['format_suitability'] = '["news"]'
-                update_news(key, updates)
-                if quality.get('scores'):
-                    try:
-                        from sqlite_db import upsert_score_dims
-                        upsert_score_dims(key, quality['scores'])
-                    except: pass
-                ts = quality.get('title_score', 0)
-                cs = quality.get('content_score', 0)
-                log.append('✅ 完成 标题' + str(ts) + ' 内容' + str(cs))
-            else:
-                log.append('❌ LLM生成失败')
+
+            update_news(key, updates)
+            if quality.get('scores'):
+                try:
+                    from sqlite_db import upsert_score_dims
+                    upsert_score_dims(key, quality['scores'])
+                except: pass
+            ts = quality.get('title_score', 0)
+            cs = quality.get('content_score', 0)
+            log.append('✅ 完成 标题' + str(round(ts,2)) + ' 内容' + str(round(cs,2)))
             _tasks['regen_'+key] = {'status': 'done', 'log': '\n'.join(log)}
             _save_task_log('regen_'+key, '\n'.join(log))
         except Exception as e:
