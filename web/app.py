@@ -1298,73 +1298,112 @@ DETAIL_HTML = r"""
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{news.title}}</title>
 <style>
-:root{--bg:#f0f2f5;--card-bg:#fff;--text:#333;--text2:#888;--text3:#bbb;--border:#eef0f4;--red:#ff2442;--orange:#ff6b35;--shadow:0 1px 3px rgba(0,0,0,.06);--radius:10px}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.topbar{background:var(--card-bg);padding:10px 24px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}
-.topbar a{color:var(--red);text-decoration:none;font-size:13px;font-weight:500;flex-shrink:0}
-.topbar a:hover{opacity:.8}
-.topbar .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-.page-detail{padding:20px;max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
-.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px}
-.card h3{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--text);display:flex;align-items:center;gap:6px}
-.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;white-space:nowrap;line-height:1.4;text-decoration:none}
-.btn:hover{filter:brightness(.95)}
-.btn:disabled{opacity:.4;pointer-events:none}
-.btn-red{background:var(--red);color:#fff}
+:root{
+  --bg:#f4f4f8;--card-bg:#fff;--text:#1a1a2e;--text2:#6b7280;--text3:#9ca3af;
+  --border:#e5e7eb;--red:#ef4444;--orange:#f97316;--green:#10b981;--blue:#3b82f6;--purple:#8b5cf6;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);--radius:10px;
+  --font:-apple-system,'Inter','PingFang SC','Segoe UI',sans-serif
+}
+body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+/* topbar */
+.topbar{background:var(--card-bg);border-bottom:1px solid var(--border);padding:0 20px;height:50px;display:flex;align-items:center;gap:10px;flex-shrink:0;z-index:100}
+.topbar a{color:var(--text2);text-decoration:none;font-size:12.5px;font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:4px}
+.topbar a:hover{color:var(--text)}
+.topbar-title{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+/* layout */
+.detail-layout{flex:1;display:flex;overflow:hidden}
+.detail-left{width:300px;min-width:300px;overflow-y:auto;border-right:1px solid var(--border);background:var(--card-bg);display:flex;flex-direction:column}
+.detail-right{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+/* cards */
+.card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px 18px}
+.card-section{padding:14px 18px;border-bottom:1px solid var(--border)}
+.card-section:last-child{border-bottom:none}
+.card-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border:1px solid transparent;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;font-family:var(--font)}
+.btn:hover{opacity:.88}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.35;pointer-events:none}
+.btn-red{background:var(--red);color:#fff;border-color:var(--red)}
 .btn-orange{background:var(--orange);color:#fff}
-.btn-gray{background:#eef0f2;color:#555}
-.btn-sm{padding:3px 10px;font-size:11px}
-.meta-grid{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px}
-.meta-item{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px}
-.meta-item b{color:var(--text)}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:500}
-.badge-green{background:#e6f7e9;color:#1a7d2e}
-.badge-red{background:#fee2e2;color:#b91c1c}
-.badge-gray{background:#f0f0f0;color:#888}
-.inline-input,.inline-textarea{border:none;border-bottom:2px dashed transparent;background:transparent;padding:6px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0}
-.inline-input:hover,.inline-textarea:hover{border-bottom-color:#ddd}
-.inline-input:focus,.inline-textarea:focus{border-bottom-color:var(--red);border-bottom-style:solid}
-.inline-textarea{resize:vertical;min-height:100px}
-.auto-resize{resize:none;overflow:hidden;transition:height .1s}
-.inline-textarea:focus{border:1px solid var(--red);border-radius:6px;padding:8px}
-.field-group{display:flex;flex-direction:column;gap:10px}
-.field-row{display:flex;align-items:center;gap:12px}
+.btn-gray{background:#f3f4f6;color:var(--text2);border-color:var(--border)}
+.btn-outline{background:var(--card-bg);border-color:var(--border);color:var(--text2)}
+.btn-sm{height:26px;padding:0 10px;font-size:11px;border-radius:6px}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+/* meta + badges */
+.meta-item{font-size:11.5px;color:var(--text2);display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.meta-item b{color:var(--text);font-weight:600}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600}
+.badge-green{background:#f0fdf4;color:#15803d}
+.badge-red{background:#fef2f2;color:#b91c1c}
+.badge-gray{background:#f3f4f6;color:#6b7280}
+.badge-purple{background:#f5f3ff;color:#7c3aed}
+.badge-blue{background:#eff6ff;color:#2563eb}
+/* form fields */
+.field-label{font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:500}
+.inline-input,.inline-textarea{border:none;border-bottom:1px solid transparent;background:transparent;padding:5px 0;font:inherit;width:100%;outline:none;transition:border-color .15s;border-radius:0;color:var(--text)}
+.inline-input:hover,.inline-textarea:hover{border-bottom-color:var(--border)}
+.inline-input:focus,.inline-textarea:focus{border-bottom-color:var(--blue);border-bottom-style:solid}
+.inline-textarea{resize:vertical;min-height:80px}
+.auto-resize{resize:none;overflow:hidden}
+.inline-textarea:focus{border:1px solid var(--blue);border-radius:6px;padding:8px;background:#fafbff}
+.field-group{display:flex;flex-direction:column;gap:12px}
+.field-row{display:flex;align-items:center;gap:10px}
 .field-row-ta{align-items:flex-start}
-.field-row-ta label{padding-top:7px}
-.field-row label{font-size:12px;color:var(--text2);width:68px;flex-shrink:0;text-align:right}
+.field-row-ta .field-label{padding-top:6px}
+.field-row .field-label{width:60px;flex-shrink:0;text-align:right}
 .field-row .value{flex:1;position:relative}
-.cover-img{max-width:100%;max-height:360px;border-radius:8px;object-fit:cover}
-.url-input{width:100%;padding:5px 8px;border:1px solid #eee;border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text}
+/* cover */
+.cover-img{width:100%;max-height:200px;object-fit:cover;display:block}
+/* url inputs */
+.url-input{width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text;font-family:var(--font)}
+/* select */
+.meta-select{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card-bg);color:var(--text);font-family:var(--font);outline:none}
+.meta-select:focus{border-color:var(--blue)}
+/* img strip */
 .img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
 .img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
-.img-strip .img-item img{height:130px;border-radius:6px;display:block}
-.img-strip .img-item .chk{position:absolute;top:6px;left:6px;width:20px;height:20px;accent-color:var(--red);cursor:pointer}
+.img-strip .img-item img{height:100px;border-radius:6px;display:block}
+.img-strip .img-item .chk{position:absolute;top:5px;left:5px;width:16px;height:16px;accent-color:var(--red);cursor:pointer}
+/* zoom */
 #imgZoom{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;pointer-events:none}
 #imgZoom img{max-width:500px;max-height:500px;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.4)}
+/* score */
 .score-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px}
-.score-item{text-align:center;padding:4px 6px;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s}
+.score-item{text-align:center;padding:5px 4px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;position:relative}
 .score-item:hover{filter:brightness(.9)}
 .score-plus{background:#dcfce7;color:#15803d}
 .score-minus{background:#fee2e2;color:#b91c1c}
 .score-neutral{background:#f3f4f6;color:#888}
 .score-override{border:2px solid #f59e0b}
-.reason-tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#333;color:#fff;font-size:11px;padding:4px 8px;border-radius:4px;white-space:nowrap;z-index:10;margin-bottom:4px}
+.reason-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;font-size:11px;padding:5px 9px;border-radius:5px;white-space:nowrap;z-index:10;max-width:240px;white-space:normal;text-align:left;line-height:1.4}
 .score-item:hover .reason-tip{display:block}
-.tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:34px;padding:6px 8px;border:1px solid var(--border);border-radius:6px}
-.tag-bubble{display:inline-flex;align-items:center;background:#eef2ff;color:#4f46e5;padding:3px 10px;border-radius:10px;font-size:11px;gap:6px}
+/* tags */
+.tag-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:32px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:#fafafa}
+.tag-bubble{display:inline-flex;align-items:center;background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:20px;font-size:11px;gap:5px}
 .tag-bubble .del{cursor:pointer;opacity:.5;font-weight:bold}
 .tag-bubble .del:hover{opacity:1}
-.tag-input{border:none;background:transparent;padding:3px 6px;font-size:11px;width:70px;outline:none}
-.selects-row{display:flex;gap:16px;align-items:center}
-.selects-row label{font-size:12px;color:var(--text2);margin-right:4px}
-.selects-row select{padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px;background:#fff}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.toast{position:fixed;top:20px;right:20px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:8px;display:none;z-index:999;font-weight:500;font-size:13px}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+.tag-input{border:none;background:transparent;padding:2px 4px;font-size:11px;width:60px;outline:none;font-family:var(--font)}
+/* toast / modal */
+.toast{position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:10px 18px;border-radius:8px;display:none;z-index:9999;font-weight:500;font-size:12.5px;box-shadow:0 4px 12px rgba(16,185,129,.3)}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(3px)}
 .modal.active{display:flex}
-.modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
-.sep-line{border:none;border-top:1px solid var(--border);margin:10px 0}
+.modal-card{background:var(--card-bg);border-radius:12px;max-width:700px;width:90%;max-height:82vh;overflow-y:auto;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.sep-line{border:none;border-top:1px solid var(--border);margin:12px 0}
+/* accordion */
+.accordion-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 18px;background:var(--bg);border-bottom:1px solid var(--border);user-select:none}
+.accordion-hdr:hover{background:#eef0f4}
+.accordion-hdr .ah-title{font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px}
+.accordion-hdr .ah-arrow{font-size:11px;color:var(--text3);transition:transform .2s}
+.accordion-hdr.open .ah-arrow{transform:rotate(180deg)}
+.accordion-body{display:none;padding:14px 18px}
+.accordion-body.open{display:block}
+/* stats grid */
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-cell{background:var(--bg);border-radius:7px;padding:8px 10px;text-align:center}
+.stat-num{font-size:16px;font-weight:700;color:var(--text);line-height:1}
+.stat-label{font-size:10px;color:var(--text3);margin-top:2px}
 /* Editor.js overrides */
 #editorjs .ce-block__content{max-width:none}
 #editorjs .codex-editor__redactor{padding-bottom:20px!important}
@@ -1374,166 +1413,235 @@ body{font:13px -apple-system,ui-sans-serif,system-ui,sans-serif;background:var(-
 </style>
 </head>
 <body>
+
+<!-- Topbar -->
 <div class="topbar">
   <a href="javascript:history.back()">← 返回</a>
-  {% if news.fetch_by %}<span class="badge badge-gray">{{news.fetch_by}}</span>{% endif %}
-  <span class="title">{{news.title}}</span>
-  <button class="btn btn-gray" id="regenBtn" onclick="regenerateContent()">🔄 重新生成</button>
-  <button class="btn btn-red" id="saveBtn">💾 保存修改</button>
-</div>
-
-<div class="page-detail">
-
-  <div class="card">
-    {% if news.image_url %}<img src="{{ '/local-image?path=' + news.image_url if news.image_url.startswith('/') else news.image_url }}" class="cover-img" style="margin-bottom:10px">{% endif %}
-    <div class="meta-grid">
-      <span class="meta-item">来源 <b>{{news.source or '-'}}</b></span>
-      <span class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></span>
-      <span class="meta-item">入库 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></span>
-      {% if scores and scores|length > 0 %}
-      <span class="meta-item">📊 标题 <b>{{"%.1f"|format(news.title_score or 0)}}</b> · 内容 <b>{{"%.1f"|format(news.content_score or 0)}}</b></span>
-      {% endif %}
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-      <span style="font-size:12px;color:var(--text2)">分类</span>
-      <input class="inline-input" name="category" value="{{news.category or ''}}" style="max-width:120px">
-      <span style="background:{% if news.primary_format=='story' %}#7c3aed{% elif news.primary_format=='ranking' %}#0891b2{% elif news.primary_format=='comparison' %}#059669{% else %}#6b7280{% endif %};color:#fff;font-size:11px;padding:2px 7px;border-radius:10px">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
-      <span style="color:var(--border)">|</span>
-      <span style="font-size:12px;color:var(--text2)">发布XHS</span>
-      <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
-        <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
-        <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
-      </select>
-      <span style="color:var(--border)">|</span>
-      <span style="font-size:12px;color:var(--text2)">状态</span>
-      <select name="status" onchange="autoSaveField('status',this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
-        <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
-        <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
-        <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
-      </select>
-    </div>
-    {% if news.publish_time %}<div class="meta-item" style="margin-bottom:6px">发布XHS时间 <b>{{news.publish_time}}</b> <span style="cursor:pointer;color:var(--red);font-size:11px" onclick="autoSaveField('publish_time','');location.reload()">[清除]</span></div>{% endif %}
-    <div class="field-row" style="margin-bottom:8px"><label>标签</label><div class="value"><div class="tag-row" id="tagBubbles"></div></div></div>
-    <hr class="sep-line">
-    <div class="field-row" style="margin-bottom:3px"><label>原文</label><div class="value"><a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.link or ''}}">{{news.link or '-'}}</a></div></div>
-    <div class="field-row" style="margin-bottom:3px"><label>封面</label><div class="value"><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div></div>
-    {% if news.original_image_url and news.original_image_url != news.image_url %}
-    <div class="field-row" style="margin-bottom:3px"><label>原图</label><div class="value"><a href="{{news.original_image_url or ''}}" target="_blank" style="font-size:11px;color:var(--text2);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="{{news.original_image_url or ''}}">{{news.original_image_url or '-'}}</a></div></div>
-    {% endif %}
-    <div class="field-row"><label>图集</label><div class="value"><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div></div>
-    {% if news.publish_xhs %}
-    <hr class="sep-line">
-    <h3>📈 实发数据</h3>
-    <div class="meta-grid" style="margin-top:6px">
-      <span class="meta-item">👁 浏览 <b>{{news.xhs_views or 0}}</b></span>
-      <span class="meta-item">❤ 点赞 <b>{{news.xhs_likes or 0}}</b></span>
-      <span class="meta-item">⭐ 收藏 <b>{{news.xhs_saves or 0}}</b></span>
-      <span class="meta-item">💬 评论 <b>{{news.xhs_comments or 0}}</b></span>
-      <span class="meta-item">🔄 分享 <b>{{news.xhs_shares or 0}}</b></span>
-      <span class="meta-item">➕ 涨粉 <b>{{news.xhs_fans_gained or 0}}</b></span>
-    </div>
-    <div class="meta-grid" style="margin-top:4px">
-      <span class="meta-item">👀 曝光 <b>{{news.xhs_impression or 0}}</b></span>
-      <span class="meta-item">🎯 点击率 <b>{{"%.1f"|format((news.xhs_click_rate or 0)*100)}}%</b></span>
-      <span class="meta-item">⏱ 人均观看 <b>{{news.xhs_watch_time or 0}}s</b></span>
-      <span class="meta-item">💬 弹幕 <b>{{news.xhs_danmaku or 0}}</b></span>
-      {% if news.xhs_saves and news.xhs_views %}
-      <span class="meta-item">📊 收藏率 <b>{{"%.1f"|format(news.xhs_saves / news.xhs_views * 100)}}%</b></span>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h3>📸 图集 <span style="font-weight:400;font-size:12px;color:var(--text2)">— 下载并选择发布图片</span></h3>
-    <div class="actions" style="margin-bottom:8px">
-      <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载图集</button>
-      <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理图集</button>
-    </div>
-    <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:10px;background:#1e1e1e;color:#0f0;border-radius:6px;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
-    {% if news.gallery_images or news.gallery_video %}
-    <div class="img-strip" id="publishImgStrip">
-      {% for p in news.gallery_images %}
-      <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
-        {% if p.endswith('.mp4') %}
-        <video src="/local-image?path={{p}}" style="height:130px;border-radius:6px"></video>
-        {% else %}
-        <img src="/local-image?path={{p}}">
-        {% endif %}
-        <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
-        <button class="btn btn-gray" style="font-size:9px;padding:1px 6px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
-      </div>
-      {% endfor %}
-      {% if news.gallery_video %}
-      <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
-        <video src="/local-image?path={{news.gallery_video}}" style="height:130px;border-radius:6px"></video>
-        <span style="font-size:10px;color:var(--red);margin-top:2px">🎬 视频</span>
-        <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
-
+  {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
+  <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
   {% if scores and scores|length > 0 %}
-  <div class="card">
-    <h3 style="margin-bottom:8px">📊 评分明细</h3>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-red btn-sm" id="tabTitle" onclick="filterScoreTab('标题')">标题评分 {{"%.1f"|format(news.title_score or 0)}}</button>
-      <button class="btn btn-gray btn-sm" id="tabContent" onclick="filterScoreTab('内容')">内容评分 {{"%.1f"|format(news.content_score or 0)}}</button>
-    </div>
-    <div class="score-grid" id="scoreGrid">
-      {% for d in scores %}
-      <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %} {% if d.human_override %}score-override{% endif %}" data-cat="{{d.category}}" data-dim="{{d.dimension}}" data-val="{{d.value}}" onclick="toggleScore(this)" style="position:relative;{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
-      {% endfor %}
-    </div>
-  </div>
+  <span class="badge badge-green" style="flex-shrink:0">📊 {{("%.1f"|format(news.title_score or 0))}}</span>
   {% endif %}
-
-  <div class="card">
-    <h3>✏️ 内容编辑</h3>
-    <div class="field-group">
-      <div class="field-row"><label>标题</label><div class="value">
-        <input class="inline-input" name="title" id="titleInput" value="{{news.title}}" oninput="updateTitleCount()" style="padding-right:50px">
-        <span id="titleCount" style="position:absolute;right:8px;top:6px;font-size:11px;color:var(--text3)"></span>
-      </div></div>
-      <div class="field-row field-row-ta"><label>🎬 短配文</label><div class="value"><textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:40px">{{news.video_caption or ''}}</textarea></div></div>
-      <div class="field-row"><label>引流摘要</label><div class="value"><input class="inline-input" name="summary" value="{{news.summary or ''}}"></div></div>
-      <hr class="sep-line">
-      <div class="field-row field-row-ta"><label>新闻要点 <span id="contentCount" style="font-size:11px;color:var(--text3);font-weight:400"></span></label><div class="value">
-        <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
-        {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
-        {# story 体裁：Editor.js 富文本编辑器 #}
-        <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px"></div>
-        <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end;align-items:center">
-          <button class="btn btn-gray btn-sm" onclick="openImgPicker()" style="font-size:11px">📷 插入图片</button>
-          <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff;font-size:11px">👁 预览</button>
-        </div>
-        {# 图片选择浮层 #}
-        <div id="imgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:360px;max-height:70vh;overflow-y:auto">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span style="font-size:13px;font-weight:600">选择图片插入</span>
-            <button onclick="closeImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999">✕</button>
-          </div>
-          <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-        </div>
-        {% else %}
-        <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px" oninput="updateContentCount()">{{news.content or ''}}</textarea>
-        {% endif %}
-      </div></div>
-      <div class="field-row field-row-ta"><label>我的解读</label><div class="value"><textarea class="inline-textarea auto-resize" name="comment" style="min-height:120px">{{news.comment or ''}}</textarea></div></div>
-    </div>
-  </div>
-
-  {% if news.title_ja or news.content_ja %}
-  <div class="card">
-    <h3 style="margin-bottom:8px">📰 原文</h3>
-    {% if news.title_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文标题</p><p style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)">{{news.title_ja}}</p>{% endif %}
-    {% if news.content_ja %}<p style="font-size:11px;color:var(--text3);margin-bottom:2px">日文摘要</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.6">{{news.content_ja}}</p>{% endif %}
-  </div>
-  {% endif %}
-
+  <span class="topbar-title">{{news.title}}</span>
+  <span id="taskBar" style="display:none;font-size:11px;cursor:pointer;color:var(--orange);font-weight:600;background:#fff7ed;padding:3px 9px;border-radius:5px;border:1px solid #fed7aa;flex-shrink:0" onclick="showTaskModal()"></span>
+  <button class="btn btn-outline btn-sm" id="regenBtn" onclick="regenerateContent()" style="flex-shrink:0">🔄 重新生成</button>
+  <button class="btn btn-red btn-sm" id="saveBtn" style="flex-shrink:0">💾 保存修改</button>
 </div>
+
+<!-- Two-column layout -->
+<div class="detail-layout">
+
+  <!-- Left panel: metadata + settings + gallery -->
+  <div class="detail-left">
+
+    <!-- Cover image -->
+    {% if news.image_url %}
+    <img src="{{ '/local-image?path=' + news.image_url if news.image_url.startswith('/') else news.image_url }}" class="cover-img">
+    {% endif %}
+
+    <!-- Meta info -->
+    <div class="card-section">
+      <div class="card-section-title">基本信息</div>
+      <div class="meta-item">来源 <b>{{news.source or '-'}}</b></div>
+      <div class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></div>
+      <div class="meta-item">入库时间 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></div>
+      {% if news.publish_time %}<div class="meta-item" style="color:var(--green)">XHS发布 <b>{{news.publish_time}}</b> <span style="cursor:pointer;color:var(--red);font-size:10px;margin-left:4px" onclick="autoSaveField('publish_time','');location.reload()">[清除]</span></div>{% endif %}
+      <div style="margin-top:8px">
+        <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{news.link or ''}}">🔗 查看原文</a>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card-section">
+      <div class="card-section-title">设置</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text2)">分类</span>
+          <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:130px;text-align:right;font-size:12px">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text2)">发布 XHS</span>
+          <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select">
+            <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
+            <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text2)">状态</span>
+          <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select">
+            <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+            <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
+            <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tags -->
+    <div class="card-section">
+      <div class="card-section-title">标签</div>
+      <div class="tag-row" id="tagBubbles"></div>
+    </div>
+
+    <!-- URLs -->
+    <div class="card-section">
+      <div class="card-section-title">图片 / 链接</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div><div class="field-label">封面图路径</div><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div>
+        {% if news.original_image_url and news.original_image_url != news.image_url %}
+        <div><div class="field-label">原始图片</div><a href="{{news.original_image_url}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{news.original_image_url}}</a></div>
+        {% endif %}
+        <div><div class="field-label">图集来源</div><input class="url-input" name="gallery_url" value="{{news.gallery_url or ''}}" placeholder="https://..." onclick="this.select()"></div>
+      </div>
+    </div>
+
+    <!-- Gallery -->
+    <div class="card-section">
+      <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span>图集</span>
+        <div class="actions">
+          <button class="btn btn-gray btn-sm" onclick="downloadGallery()" id="galleryBtn">📥 下载</button>
+          <button class="btn btn-gray btn-sm" id="manageGalleryBtn" onclick="toggleGalleryModal()" {% if not news.gallery_images and not news.cached_images %}style="display:none"{% endif %}>🖼️ 管理</button>
+        </div>
+      </div>
+      <pre id="galleryLog" style="display:none;margin-bottom:8px;padding:8px;background:#1e1e1e;color:#0f0;border-radius:5px;font-size:10px;max-height:150px;overflow-y:auto;white-space:pre-wrap;font-family:Menlo,monospace"></pre>
+      {% if news.gallery_images or news.gallery_video %}
+      <div class="img-strip" id="publishImgStrip">
+        {% for p in news.gallery_images %}
+        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
+          {% if p.endswith('.mp4') %}
+          <video src="/local-image?path={{p}}" style="height:100px;border-radius:6px"></video>
+          {% else %}
+          <img src="/local-image?path={{p}}">
+          {% endif %}
+          <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
+          <button class="btn btn-gray" style="font-size:9px;padding:1px 5px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
+        </div>
+        {% endfor %}
+        {% if news.gallery_video %}
+        <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
+          <video src="/local-image?path={{news.gallery_video}}" style="height:100px;border-radius:6px"></video>
+          <span style="font-size:9px;color:var(--red);margin-top:2px">🎬 视频</span>
+          <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- XHS Stats (conditional) -->
+    {% if news.publish_xhs %}
+    <div class="card-section">
+      <div class="card-section-title">XHS 实发数据</div>
+      <div class="stats-grid" style="margin-bottom:8px">
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_views or 0}}</div><div class="stat-label">👁 浏览</div></div>
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_likes or 0}}</div><div class="stat-label">❤ 点赞</div></div>
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_saves or 0}}</div><div class="stat-label">⭐ 收藏</div></div>
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_comments or 0}}</div><div class="stat-label">💬 评论</div></div>
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_shares or 0}}</div><div class="stat-label">🔄 分享</div></div>
+        <div class="stat-cell"><div class="stat-num">{{news.xhs_fans_gained or 0}}</div><div class="stat-label">➕ 涨粉</div></div>
+      </div>
+      <div class="meta-item">曝光 <b>{{news.xhs_impression or 0}}</b></div>
+      <div class="meta-item">点击率 <b>{{"%.1f"|format((news.xhs_click_rate or 0)*100)}}%</b></div>
+      {% if news.xhs_saves and news.xhs_views %}
+      <div class="meta-item">收藏率 <b>{{"%.1f"|format(news.xhs_saves / news.xhs_views * 100)}}%</b></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div><!-- /detail-left -->
+
+  <!-- Right panel: score + content editing + japanese -->
+  <div class="detail-right">
+
+    <!-- Score accordion (conditional) -->
+    {% if scores and scores|length > 0 %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <span class="ah-title">📊 评分明细
+          <span class="badge badge-green" style="font-size:10px">{{"%.1f"|format(news.title_score or 0)}} 标题</span>
+          <span class="badge badge-blue" style="font-size:10px">{{"%.1f"|format(news.content_score or 0)}} 内容</span>
+        </span>
+        <span class="ah-arrow">▼</span>
+      </div>
+      <div class="accordion-body open" style="padding:14px 16px">
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="btn btn-red btn-sm" id="tabTitle" onclick="filterScoreTab('标题')">标题评分</button>
+          <button class="btn btn-gray btn-sm" id="tabContent" onclick="filterScoreTab('内容')">内容评分</button>
+        </div>
+        <div class="score-grid" id="scoreGrid">
+          {% for d in scores %}
+          <div class="score-item {% if d.calc=='加分' %}score-plus{% elif d.calc=='减分' %}score-minus{% else %}score-neutral{% endif %} {% if d.human_override %}score-override{% endif %}" data-cat="{{d.category}}" data-dim="{{d.dimension}}" data-val="{{d.value}}" onclick="toggleScore(this)" style="{% if d.category!='标题' %}display:none{% endif %}">{{d.dimension}}: {{d.value}}<span class="reason-tip">{{d.reason}}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Content editing -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 style="font-size:13px;font-weight:600;color:var(--text)">✏️ 内容编辑</h3>
+        <span id="contentCount" style="font-size:11px;color:var(--text3)"></span>
+      </div>
+      <div class="field-group">
+        <div>
+          <div class="field-label">标题 <span id="titleCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
+          <input class="inline-input" name="title" id="titleInput" value="{{news.title}}" oninput="updateTitleCount()" style="font-size:15px;font-weight:600;padding-bottom:8px">
+        </div>
+        <div>
+          <div class="field-label">🎬 短配文</div>
+          <textarea class="inline-textarea auto-resize" name="video_caption" style="min-height:36px">{{news.video_caption or ''}}</textarea>
+        </div>
+        <div>
+          <div class="field-label">引流摘要</div>
+          <input class="inline-input" name="summary" value="{{news.summary or ''}}">
+        </div>
+        <hr class="sep-line">
+        <div>
+          <div class="field-label">新闻要点</div>
+          <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
+          {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
+          <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px"></div>
+          <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+            <button class="btn btn-gray btn-sm" onclick="openImgPicker()">📷 插入图片</button>
+            <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff">👁 预览</button>
+          </div>
+          <div id="imgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:360px;max-height:70vh;overflow-y:auto">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <span style="font-size:13px;font-weight:600">选择图片插入</span>
+              <button onclick="closeImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text3)">✕</button>
+            </div>
+            <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          </div>
+          {% else %}
+          <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px" oninput="updateContentCount()">{{news.content or ''}}</textarea>
+          {% endif %}
+        </div>
+        <div>
+          <div class="field-label">我的解读</div>
+          <textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Japanese original (accordion, conditional) -->
+    {% if news.title_ja or news.content_ja %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <span class="ah-title">📰 日文原文</span>
+        <span class="ah-arrow">▼</span>
+      </div>
+      <div class="accordion-body">
+        {% if news.title_ja %}<p style="font-size:10.5px;color:var(--text3);margin-bottom:2px">日文标题</p><p style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)">{{news.title_ja}}</p>{% endif %}
+        {% if news.content_ja %}<p style="font-size:10.5px;color:var(--text3);margin-bottom:4px">日文正文</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.7;max-height:400px;overflow-y:auto">{{news.content_ja}}</p>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /detail-right -->
+
+</div><!-- /detail-layout -->
 
 <div class="toast" id="toast">已保存</div>
 
