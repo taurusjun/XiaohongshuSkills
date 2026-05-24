@@ -1612,11 +1612,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     <!-- Japanese original (accordion, conditional) -->
     {% if news.title_ja or news.content_ja %}
     <div class="card" style="padding:0;overflow:hidden">
-      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+      <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
         <span class="ah-title">📰 日文原文</span>
         <span class="ah-arrow">▼</span>
       </div>
-      <div class="accordion-body open">
+      <div class="accordion-body">
         {% if news.title_ja %}<p style="font-size:10.5px;color:var(--text3);margin-bottom:2px">日文标题</p><p style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)">{{news.title_ja}}</p>{% endif %}
         {% if news.content_ja %}<p style="font-size:10.5px;color:var(--text3);margin-bottom:4px">日文正文</p><p style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.7;max-height:400px;overflow-y:auto">{{news.content_ja}}</p>{% endif %}
       </div>
