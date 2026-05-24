@@ -1453,27 +1453,21 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- Settings -->
     <div class="card-section">
-      <div class="card-section-title">设置</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;color:var(--text2)">分类</span>
-          <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:130px;text-align:right;font-size:12px">
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;color:var(--text2)">发布 XHS</span>
-          <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select">
-            <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
-            <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;color:var(--text2)">状态</span>
-          <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select">
-            <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
-            <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
-            <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
-          </select>
-        </div>
+      <div class="card-section-title">基本信息</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;align-items:center;font-size:11.5px">
+        <span style="color:var(--text2)">分类</span>
+        <input class="inline-input" name="category" value="{{news.category or ''}}" style="text-align:right;font-size:11.5px;padding:2px 0">
+        <span style="color:var(--text2)">发布 XHS</span>
+        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11.5px;padding:2px 6px;justify-self:end">
+          <option value="0" {{'selected' if not news.publish_xhs else ''}}>否</option>
+          <option value="1" {{'selected' if news.publish_xhs else ''}}>是</option>
+        </select>
+        <span style="color:var(--text2)">状态</span>
+        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11.5px;padding:2px 6px;justify-self:end">
+          <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+          <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
+          <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
+        </select>
       </div>
     </div>
 
@@ -1505,19 +1499,26 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     {% if news.publish_xhs %}
     <div class="card-section">
       <div class="card-section-title">XHS 实发数据</div>
-      <div class="stats-grid" style="margin-bottom:8px">
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_views or 0}}</div><div class="stat-label">👁 浏览</div></div>
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_likes or 0}}</div><div class="stat-label">❤ 点赞</div></div>
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_saves or 0}}</div><div class="stat-label">⭐ 收藏</div></div>
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_comments or 0}}</div><div class="stat-label">💬 评论</div></div>
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_shares or 0}}</div><div class="stat-label">🔄 分享</div></div>
-        <div class="stat-cell"><div class="stat-num">{{news.xhs_fans_gained or 0}}</div><div class="stat-label">➕ 涨粉</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px 0">
+        {% set stats = [
+          ('👁', '浏览', news.xhs_views or 0, ''),
+          ('❤', '点赞', news.xhs_likes or 0, ''),
+          ('⭐', '收藏', news.xhs_saves or 0, ''),
+          ('💬', '评论', news.xhs_comments or 0, ''),
+          ('🔄', '分享', news.xhs_shares or 0, ''),
+          ('➕', '涨粉', news.xhs_fans_gained or 0, ''),
+          ('👀', '曝光', news.xhs_impression or 0, ''),
+          ('🎯', '点击率', ((news.xhs_click_rate or 0)*100)|round(1), '%'),
+        ] %}
+        {% if news.xhs_saves and news.xhs_views %}{% set _ = stats.append(('📊', '收藏率', (news.xhs_saves / news.xhs_views * 100)|round(1), '%')) %}{% endif %}
+        {% for icon, label, val, unit in stats %}
+        <div style="width:50%;display:flex;align-items:baseline;gap:4px;padding:2px 0;font-size:11.5px">
+          <span style="color:var(--text3);width:14px">{{icon}}</span>
+          <span style="color:var(--text2);min-width:30px">{{label}}</span>
+          <b style="color:var(--text)">{{val}}{{unit}}</b>
+        </div>
+        {% endfor %}
       </div>
-      <div class="meta-item">曝光 <b>{{news.xhs_impression or 0}}</b></div>
-      <div class="meta-item">点击率 <b>{{"%.1f"|format((news.xhs_click_rate or 0)*100)}}%</b></div>
-      {% if news.xhs_saves and news.xhs_views %}
-      <div class="meta-item">收藏率 <b>{{"%.1f"|format(news.xhs_saves / news.xhs_views * 100)}}%</b></div>
-      {% endif %}
     </div>
     {% endif %}
 
