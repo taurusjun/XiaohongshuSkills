@@ -581,23 +581,13 @@ def main():
 
         # 添加标签（最后一行 #标签1 #标签2 格式）
         import random
-        # 必选标签
-        must_tag = "#看新闻学日语"
-        # 分类标签池（按内容分类选择，避免不相关标签混入）
-        BASE_TAGS = [
-            "#日语学习", "#日语N1", "#日语N2", "#日语单词",
-            "#中日双语", "#中日翻译",
-            "#日语学习打卡", "#日本新闻",
-            "#日本文化", "#日本生活",
-        ]
-        FASHION_TAGS = [
-            "#日系穿搭", "#日本穿搭", "#日系风格",
-            "#穿搭分享", "#今日穿搭",
-        ]
-        BEAUTY_TAGS = [
-            "#日本化妆", "#日系妆容", "#日本美妆",
-            "#日本护肤", "#护肤分享", "#化妆教程",
-        ]
+        from sqlite_db import get_config
+        tc = get_config("tag_config", default={})
+        MUST_TAGS = tc.get("must_tags", ["日本娱乐", "日本文化", "日本新闻"])
+        TAG_POOLS = tc.get("random_tag_pools", {})
+        FASHION_TAGS = TAG_POOLS.get("fashion", [])
+        BEAUTY_TAGS = TAG_POOLS.get("beauty", [])
+        KEYWORD_TAG_MAP = tc.get("keyword_tag_map", {})
 
         # 根据内容标签判断分类，选对应的标签池
         existing_tag_str = " ".join(info.get("tags", []))
@@ -605,42 +595,11 @@ def main():
         is_beauty = any(k in existing_tag_str for k in ["メイク", "コスメ", "スキンケア", "美妆", "化妆", "护肤"])
 
         if is_fashion:
-            hot_tags = BASE_TAGS[:6] + FASHION_TAGS
+            hot_tags = FASHION_TAGS
         elif is_beauty:
-            hot_tags = BASE_TAGS[:6] + BEAUTY_TAGS
+            hot_tags = BEAUTY_TAGS
         else:
-            hot_tags = BASE_TAGS
-        # 标签规范化映射（日文/繁体 → 中文）
-        TAG_NORMALIZE = {
-            "コスプレ": "cosplay", "コスプ": "cosplay",
-            # 不再转换 AKB48/乃木坂46/欅坂46，保留完整形式
-            "鳴潮": "鸣潮", "原神": "原神", "崩壊": "崩坏", "スターレイル": "星穹铁道",
-            "アニメ": "动漫", "マンガ": "漫画", "ゲーム": "游戏",
-            "中東": "中东", "政治": "时政",
-            # 时尚美妆
-            "ファッション": "日系穿搭", "コーデ": "穿搭分享", "おしゃれ": "日系风格",
-            "メイク": "日系妆容", "コスメ": "日本美妆", "スキンケア": "日本护肤",
-            "ビューティー": "护肤分享", "トレンド": "日本潮流",
-        }
-
-# 关键词到发布标签的映射（与 yahoo_news_auto.py 保持一致）
-        KEYWORD_TAG_MAP = {
-            "AKB": ["AKB48", "akb48"],
-            "乃木坂": ["乃木坂", "乃木坂46"],
-            "欅坂": ["欅坂", "欅坂46", "樱坂", "樱坂46"],
-            "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
-            "えなこ": ["えなこ", "enako"],
-            "アークナイツ": ["明日方舟"],
-            "辻野かなみ": ["超心宣", "超ときめき宣伝部", "超とき宣", "辻野かなみ"],
-            "≠ME": ["notequalme","指原系","符号系"],
-            "=LOVE": ["equallove","等爱","指原系","符号系"],
-            "柏木由纪": ["柏木由纪"],
-            "指原莉乃": ["指原莉乃"],
-            "lesserafim": ["lesserafim", "炽", "韩国偶像", "Kpop", "韩国女团", "女团"],
-        }
-
-        def normalize_tag(t: str) -> str:
-            return TAG_NORMALIZE.get(t, t)
+            hot_tags = []
 
         def add_tag(lst: list[str], seen_set: set[str], tag: str):
             tag = tag.lstrip("#")
@@ -663,18 +622,21 @@ def main():
 
         for t in mapped_tags:
             for mapped in KEYWORD_TAG_MAP[t]:
-                add_tag(all_tags, seen_set, normalize_tag(mapped))
+                add_tag(all_tags, seen_set, mapped)
 
         for t in other_tags:
-            add_tag(all_tags, seen_set, normalize_tag(t))
+            add_tag(all_tags, seen_set, t)
 
         # 2. 必选标签
-        add_tag(all_tags, seen_set, must_tag)
-
-        # 3. 随机热门标签（补足）
-        random_hot = random.sample(hot_tags, min(4, len(hot_tags)))
-        for t in random_hot:
+        for t in MUST_TAGS:
             add_tag(all_tags, seen_set, t)
+
+        # 3. 分类补足标签
+        if hot_tags:
+            n_extra = min(4, len(hot_tags))
+            random_hot = random.sample(hot_tags, n_extra)
+            for t in random_hot:
+                add_tag(all_tags, seen_set, t)
 
         tags_str = " ".join(f"#{t}" for t in all_tags[:10])
         xhs_content = f"{xhs_content}\n{tags_str}"
