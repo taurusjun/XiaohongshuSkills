@@ -1269,6 +1269,7 @@ async function loadCategories(){
 	S("dateTo").value=qp.has("date_to")?qp.get("date_to"):today;
 	if(S("pageSizeSelect"))S("pageSizeSelect").value=pageSize;
 	loadList();loadCategories();checkActiveTasks();
+window.addEventListener('pageshow',e=>{if(e.persisted)loadList()});
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/detail/"]');if(a){const ts=document.querySelector('.table-scroll');sessionStorage.setItem('listScrollY',ts?ts.scrollTop:0)}},true);
 // Quick time buttons for publish schedule
