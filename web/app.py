@@ -657,7 +657,25 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 <!-- ── Sidebar ─────────────────────────────────── -->
 <div class="sidebar">
   <div class="sidebar-logo">
-    <div class="sidebar-logo-icon">📰</div>
+    <div class="sidebar-logo-icon" style="background:none;padding:0">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="30" height="30">
+        <defs>
+          <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6c63ff"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+          <linearGradient id="lg2" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ef4444"/>
+            <stop offset="100%" stop-color="#f97316"/>
+          </linearGradient>
+        </defs>
+        <rect width="40" height="40" rx="10" fill="url(#lg1)"/>
+        <line x1="11" y1="11" x2="29" y2="29" stroke="white" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+        <line x1="29" y1="11" x2="11" y2="29" stroke="white" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+        <circle cx="29" cy="11" r="5" fill="url(#lg2)"/>
+        <circle cx="29" cy="11" r="3" fill="white" opacity="0.9"/>
+      </svg>
+    </div>
     XHS 运营
   </div>
 
