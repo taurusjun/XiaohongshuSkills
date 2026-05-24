@@ -1314,7 +1314,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 /* layout */
 .detail-layout{flex:1;display:flex;overflow:hidden}
 .detail-left{width:300px;min-width:300px;overflow-y:auto;border-right:1px solid var(--border);background:var(--card-bg);display:flex;flex-direction:column}
-.detail-right{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+.detail-right{flex:1;overflow-y:auto;padding:20px 24px}.detail-right>*{margin-bottom:14px}
 /* cards */
 .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px 18px}
 .card-section{padding:14px 18px;border-bottom:1px solid var(--border)}
