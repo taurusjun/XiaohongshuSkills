@@ -691,25 +691,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <button class="btn btn-red btn-sm" onclick="triggerFetch('keywords')" id="kwBtn">🔍 开始抓取</button>
     </div>
     <div id="kwGrid" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
-    <div class="side-panel" id="configPanel">
-      <div class="side-panel-header">
-        <span>策略配置</span>
-        <button class="btn btn-xs btn-gray" onclick="saveConfig()">💾 保存</button>
-      </div>
-      <div id="configRows" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--text2);flex-wrap:wrap">
-        <span>发布阈值 <input type="number" id="cfgPublishTh" step="0.5" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
-        <span>重试阈值 <input type="number" id="cfgRetryTh" step="0.5" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
-        <span>默认配额 <input type="number" id="cfgDailyQuota" style="width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center"></span>
-      </div>
-    </div>
-    <div class="side-panel" id="tagPanel">
-      <div class="side-panel-header">
-        <span>🏷️ 标签配置</span>
-        <button class="btn btn-xs btn-gray" onclick="saveTagConfig()">💾 保存</button>
-      </div>
-      <div id="tagConfigRows" style="display:flex;flex-direction:column;gap:8px;font-size:11px"></div>
-    </div>
     <div style="border-top:1px solid var(--border);margin:10px 0 8px"></div>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="sec-title" style="margin:0">📰 推荐抓取</div>
@@ -812,6 +793,39 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
 </div><!-- /main -->
 
+<!-- Config modal -->
+<div class="modal" id="configModal" onclick="if(event.target===this)closeConfigModal()">
+  <div class="modal-card" style="max-width:560px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="margin:0">⚙️ 策略配置</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-red btn-sm" onclick="saveConfig()">💾 保存</button>
+        <button class="btn btn-gray btn-sm" onclick="closeConfigModal()">关闭</button>
+      </div>
+    </div>
+    <div id="configRows" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:20px;font-size:12px;color:var(--text2);flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border)">
+      <label>发布阈值 <input type="number" id="cfgPublishTh" step="0.5" style="width:52px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center;margin-left:4px"></label>
+      <label>重试阈值 <input type="number" id="cfgRetryTh" step="0.5" style="width:52px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center;margin-left:4px"></label>
+      <label>默认配额 <input type="number" id="cfgDailyQuota" style="width:52px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;text-align:center;margin-left:4px"></label>
+    </div>
+  </div>
+</div>
+
+<!-- Tag modal -->
+<div class="modal" id="tagModal" onclick="if(event.target===this)closeTagModal()">
+  <div class="modal-card" style="max-width:600px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="margin:0">🏷️ 标签配置</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-red btn-sm" onclick="saveTagConfig()">💾 保存</button>
+        <button class="btn btn-gray btn-sm" onclick="closeTagModal()">关闭</button>
+      </div>
+    </div>
+    <div id="tagConfigRows" style="display:flex;flex-direction:column;gap:8px;font-size:11px"></div>
+  </div>
+</div>
+
 <!-- Preview modal -->
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
 
@@ -833,12 +847,11 @@ function toggleFetchDrawer(){
   const d=S('fetchDrawer');
   d.classList.toggle('open');
 }
+function closeConfigModal(){S('configModal').classList.remove('active')}
+function closeTagModal(){S('tagModal').classList.remove('active')}
 function toggleConfigPanel(){
-  const p=S('configPanel');
-  if(!S('fetchDrawer').classList.contains('open'))S('fetchDrawer').classList.add('open');
-  if(!p.classList.contains('open')){
-    p.classList.add('open');
-    fetch('/api/agent-config').then(r=>r.json()).then(d=>{
+  S('configModal').classList.add('active');
+  fetch('/api/agent-config').then(r=>r.json()).then(d=>{
       const map=d.yahoo_keyword_map||{},topics=d.focus_topics||[];
       let html='';
       for(const t of topics){const cfg=map[t]||{keyword:t,max:d.daily_quota||5};
@@ -848,14 +861,11 @@ function toggleConfigPanel(){
       S('cfgRetryTh').value=d.retry_threshold||2;
       S('cfgDailyQuota').value=d.daily_quota||5;
     });
-  }else{p.classList.remove('open')}
 }
 function toggleTagPanel(){
   const p=S('tagPanel');
-  if(!S('fetchDrawer').classList.contains('open'))S('fetchDrawer').classList.add('open');
-  if(!p.classList.contains('open')){
-    p.classList.add('open');
-    fetch('/api/agent-config').then(r=>r.json()).then(d=>{
+  S('tagModal').classList.add('active');
+  fetch('/api/agent-config').then(r=>r.json()).then(d=>{
       const tc=d.tag_config||{};
       const must=tc.must_tags||['日本娱乐','日本文化','日本新闻'];
       const pools=tc.random_tag_pools||{fashion:['日系穿搭'],beauty:['日本化妆']};
@@ -872,7 +882,6 @@ function toggleTagPanel(){
       S('tagConfigRows').innerHTML=html;
       document.querySelectorAll('.chip-area').forEach(area=>{const hidden=area.parentElement.querySelector('.chip-hidden');const tags=(hidden.value||'').split(/\s+/).filter(Boolean);_renderTagChips(area,tags);});
     });
-  }else{p.classList.remove('open')}
 }
 
 async function checkActiveTasks(){
