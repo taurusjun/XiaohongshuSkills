@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理页面 · Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sidebar-w: 220px;
+  --bg: #f4f4f8;
+  --sidebar-bg: #1c1c2e;
+  --sidebar-text: #a8a8c0;
+  --sidebar-active: #fff;
+  --sidebar-accent: #6c63ff;
+  --card-bg: #fff;
+  --text: #1a1a2e;
+  --text2: #6b7280;
+  --text3: #9ca3af;
+  --border: #e5e7eb;
+  --red: #ef4444;
+  --orange: #f97316;
+  --green: #10b981;
+  --blue: #3b82f6;
+  --purple: #8b5cf6;
+  --yellow: #f59e0b;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow: 0 4px 6px -1px rgba(0,0,0,.07), 0 2px 4px -1px rgba(0,0,0,.04);
+  --radius: 10px;
+  --font: -apple-system, "Inter", "PingFang SC", sans-serif;
+}
+
+body { font-family: var(--font); background: var(--bg); color: var(--text);
+  font-size: 13px; display: flex; height: 100vh; overflow: hidden; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: var(--sidebar-bg);
+  display: flex; flex-direction: column;
+  padding: 20px 0; overflow-y: auto;
+}
+.sidebar-logo {
+  padding: 0 20px 24px;
+  font-size: 15px; font-weight: 700; color: #fff;
+  letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 10px;
+}
+.sidebar-logo-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--sidebar-accent), #a78bfa);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.sidebar-section { padding: 0 12px; margin-bottom: 4px; }
+.sidebar-label {
+  font-size: 9px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: #4a4a6a; padding: 0 8px; margin-bottom: 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  color: var(--sidebar-text); font-size: 12.5px; font-weight: 500;
+  transition: all .15s;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color: #d0d0e8; }
+.nav-item.active { background: rgba(108,99,255,.25); color: var(--sidebar-active); }
+.nav-item .icon { font-size: 14px; width: 18px; text-align: center; }
+.nav-badge {
+  margin-left: auto; background: var(--red); color: #fff;
+  font-size: 9px; font-weight: 700; padding: 1px 5px;
+  border-radius: 10px; min-width: 18px; text-align: center;
+}
+.nav-badge.green { background: var(--green); }
+.sidebar-divider { height: 1px; background: #2a2a40; margin: 10px 12px; }
+
+/* Stats in sidebar */
+.sidebar-stats { padding: 16px 20px; margin-top: auto; }
+.sidebar-stat-label { font-size: 9px; color: #4a4a6a; letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: 10px; }
+.sidebar-stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.sidebar-stat-item { text-align: center; }
+.sidebar-stat-num { font-size: 18px; font-weight: 700; color: #fff; line-height: 1; }
+.sidebar-stat-name { font-size: 9px; color: #4a4a6a; margin-top: 2px; }
+
+/* ── Main ────────────────────────────────────────────────── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Topbar */
+.topbar {
+  background: var(--card-bg); border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 52px;
+  display: flex; align-items: center; gap: 16px;
+  flex-shrink: 0;
+}
+.topbar-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.topbar-sub { font-size: 12px; color: var(--text3); }
+.topbar-spacer { flex: 1; }
+.topbar-search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; width: 220px;
+}
+.topbar-search input { border: none; background: none; font-size: 12px;
+  color: var(--text); outline: none; width: 100%; }
+.topbar-search input::placeholder { color: var(--text3); }
+
+/* Metric cards */
+.metrics {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; padding: 16px 24px 0; flex-shrink: 0;
+}
+.metric-card {
+  background: var(--card-bg); border-radius: var(--radius);
+  padding: 16px 18px; box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.metric-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.metric-icon.blue { background: #eff6ff; }
+.metric-icon.green { background: #f0fdf4; }
+.metric-icon.orange { background: #fff7ed; }
+.metric-icon.purple { background: #f5f3ff; }
+.metric-num { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); }
+.metric-label { font-size: 11px; color: var(--text2); margin-top: 3px; }
+.metric-delta { font-size: 10px; margin-top: 5px; }
+.metric-delta.up { color: var(--green); }
+.metric-delta.down { color: var(--red); }
+
+/* Filter strip */
+.filter-strip {
+  padding: 12px 24px 0; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.filter-select {
+  height: 32px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 12px; color: var(--text);
+  background: var(--card-bg); cursor: pointer; outline: none;
+}
+.filter-select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+.filter-date { height: 32px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 12px; color: var(--text); background: var(--card-bg); }
+.filter-pill {
+  display: flex; align-items: center; gap: 5px;
+  background: #eff6ff; border: 1px solid #bfdbfe;
+  border-radius: 20px; padding: 3px 10px 3px 8px;
+  font-size: 11px; color: #1d4ed8; cursor: pointer;
+}
+.filter-pill:hover { background: #dbeafe; }
+.filter-pill .x { font-size: 10px; color: #60a5fa; }
+.filter-divider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.btn { height: 32px; padding: 0 14px; border: none; border-radius: 8px;
+  font-size: 12px; font-weight: 500; cursor: pointer; display: inline-flex;
+  align-items: center; gap: 6px; }
+.btn-primary { background: var(--text); color: #fff; }
+.btn-primary:hover { background: #2d2d4e; }
+.btn-red { background: var(--red); color: #fff; }
+.btn-outline { background: var(--card-bg); border: 1px solid var(--border); color: var(--text2); }
+.btn-outline:hover { border-color: var(--text3); color: var(--text); }
+
+/* Table area */
+.table-wrap {
+  flex: 1; overflow: hidden; padding: 12px 24px 16px;
+  display: flex; flex-direction: column;
+}
+.table-card {
+  flex: 1; background: var(--card-bg); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.table-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.table-header-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.table-header-count { font-size: 11px; color: var(--text3); }
+.table-header-spacer { flex: 1; }
+.table-scroll { flex: 1; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: #fafafa; border-bottom: 1px solid var(--border);
+  padding: 9px 12px; text-align: left;
+  font-size: 10px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: .06em;
+  white-space: nowrap;
+}
+tbody tr { border-bottom: 1px solid #f3f4f6; }
+tbody tr:hover { background: #fafbff; }
+tbody td { padding: 10px 12px; vertical-align: middle; }
+
+/* Thumbnail */
+.thumb { width: 44px; height: 44px; border-radius: 6px;
+  object-fit: cover; background: var(--border); flex-shrink: 0; }
+.thumb-placeholder { width: 44px; height: 44px; border-radius: 6px;
+  background: linear-gradient(135deg, #f0f0f5, #e5e5ea);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0; }
+
+/* Title cell */
+.title-cell { display: flex; align-items: center; gap: 12px; }
+.title-text { font-size: 12.5px; font-weight: 600; color: var(--text);
+  line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; max-width: 280px; }
+.title-snippet { font-size: 11px; color: var(--text3); margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.kw-chip { display: inline-block; background: #f0f0ff; color: var(--purple);
+  font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  margin-bottom: 3px; letter-spacing: .02em; }
+
+/* Score pill */
+.score-pill { display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.score-hi { background: #f0fdf4; color: #16a34a; }
+.score-mid { background: #fffbeb; color: #b45309; }
+.score-lo { background: #fef2f2; color: #dc2626; }
+
+/* Status badge */
+.badge { padding: 3px 8px; border-radius: 20px; font-size: 10.5px; font-weight: 600; }
+.badge-green { background: #f0fdf4; color: #15803d; }
+.badge-red { background: #fef2f2; color: #b91c1c; }
+.badge-gray { background: #f3f4f6; color: #6b7280; }
+.badge-blue { background: #eff6ff; color: #1d4ed8; }
+
+/* Format badge */
+.fmt-badge { padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 600; }
+.fmt-news { background: #eff6ff; color: #2563eb; }
+.fmt-story { background: #f5f3ff; color: #7c3aed; }
+
+/* Tags */
+.tag { display: inline-block; background: #f0f0ff; color: #5856d6;
+  border-radius: 20px; font-size: 10px; padding: 1px 7px; }
+
+/* Publish toggle */
+.toggle { width: 32px; height: 18px; border-radius: 9px;
+  background: var(--border); cursor: pointer; position: relative;
+  transition: background .2s; }
+.toggle.on { background: var(--green); }
+.toggle::after { content:''; position: absolute; width: 14px; height: 14px;
+  background: #fff; border-radius: 50%; top: 2px; left: 2px;
+  transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.toggle.on::after { left: 16px; }
+
+/* Pagination */
+.table-footer { padding: 10px 16px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.table-footer-info { font-size: 11px; color: var(--text3); flex: 1; }
+.page-btn { width: 28px; height: 28px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--card-bg); cursor: pointer;
+  font-size: 12px; display: flex; align-items: center; justify-content: center; color: var(--text2); }
+.page-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+.page-btn:hover:not(.active) { border-color: var(--text3); }
+
+/* Action bar (contextual) */
+.action-bar {
+  background: #1c1c2e; color: #fff;
+  padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+  font-size: 12px; border-radius: 8px; margin: 0 24px 10px;
+  flex-shrink: 0;
+}
+.action-bar-count { font-weight: 600; }
+.action-bar-spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ─────────────────────────── -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">📰</div>
+    XHS 运营
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">内容管理</div>
+    <div class="nav-item active">
+      <span class="icon">📋</span> 文章列表
+      <span class="nav-badge green">5</span>
+    </div>
+    <div class="nav-item">
+      <span class="icon">📊</span> 数据报表
+    </div>
+    <div class="nav-item">
+      <span class="icon">✅</span> 待发布
+      <span class="nav-badge">3</span>
+    </div>
+  </div>
+
+  <div class="sidebar-divider"></div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">运营工具</div>
+    <div class="nav-item">
+      <span class="icon">🔍</span> 抓取管理
+    </div>
+    <div class="nav-item">
+      <span class="icon">⚙️</span> 策略配置
+    </div>
+    <div class="nav-item">
+      <span class="icon">🏷️</span> 标签管理
+    </div>
+  </div>
+
+  <div class="sidebar-divider"></div>
+
+  <div class="sidebar-stats">
+    <div class="sidebar-stat-label">今日概况</div>
+    <div class="sidebar-stat-row">
+      <div class="sidebar-stat-item">
+        <div class="sidebar-stat-num">23</div>
+        <div class="sidebar-stat-name">总入库</div>
+      </div>
+      <div class="sidebar-stat-item">
+        <div class="sidebar-stat-num" style="color:#10b981">5</div>
+        <div class="sidebar-stat-name">待发布</div>
+      </div>
+      <div class="sidebar-stat-item">
+        <div class="sidebar-stat-num" style="color:#6c63ff">2</div>
+        <div class="sidebar-stat-name">已发布</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main Content ───────────────────── -->
+<div class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">文章列表</div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-search">
+      <span style="color:#9ca3af;font-size:13px">🔍</span>
+      <input placeholder="搜索标题、内容..." value="">
+    </div>
+    <button class="btn btn-outline">🔄 刷新</button>
+    <button class="btn btn-red">📥 抓取新闻</button>
+  </div>
+
+  <!-- Metric cards -->
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-icon blue">📰</div>
+      <div>
+        <div class="metric-num">1,284</div>
+        <div class="metric-label">总文章数</div>
+        <div class="metric-delta up">↑ 23 今日新增</div>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon green">✅</div>
+      <div>
+        <div class="metric-num">156</div>
+        <div class="metric-label">已发布</div>
+        <div class="metric-delta up">↑ 2 今日</div>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon orange">⏳</div>
+      <div>
+        <div class="metric-num">5</div>
+        <div class="metric-label">待发布</div>
+        <div class="metric-delta" style="color:var(--orange)">3 资讯 · 2 长文</div>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon purple">⭐</div>
+      <div>
+        <div class="metric-num">4.8</div>
+        <div class="metric-label">今日平均评分</div>
+        <div class="metric-delta up">↑ 高质量批次</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter strip -->
+  <div class="filter-strip">
+    <select class="filter-select">
+      <option>全部状态</option><option>活跃</option><option>已丢弃</option>
+    </select>
+    <select class="filter-select">
+      <option>全部体裁</option><option>资讯</option><option selected>长文</option>
+    </select>
+    <select class="filter-select">
+      <option>发布状态</option><option>待发布</option><option>已发布</option><option>未发布</option>
+    </select>
+    <select class="filter-select">
+      <option>全部评分</option><option>≥ 7</option><option>≥ 5</option><option>≥ 3</option>
+    </select>
+    <input type="date" class="filter-date" value="2026-05-01">
+    <span style="color:var(--text3);font-size:12px">→</span>
+    <input type="date" class="filter-date" value="2026-05-24">
+    <div class="filter-divider"></div>
+    <!-- Active filter pills -->
+    <div class="filter-pill">长文 <span class="x">✕</span></div>
+    <div class="filter-pill" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d">待发布 <span class="x" style="color:#4ade80">✕</span></div>
+    <button class="btn btn-outline" style="height:28px;font-size:11px;color:var(--text3)">清除筛选</button>
+  </div>
+
+  <!-- Action bar (contextual - shown when rows selected) -->
+  <div class="action-bar" style="margin-top:10px">
+    <span class="action-bar-count">已选 3 篇</span>
+    <button class="btn btn-outline" style="color:#fff;border-color:#3a3a5a;background:rgba(255,255,255,.08);height:28px;font-size:11px">🗃️ 归档</button>
+    <button class="btn btn-outline" style="color:#fff;border-color:#3a3a5a;background:rgba(255,255,255,.08);height:28px;font-size:11px">🔄 回收数据</button>
+    <div class="action-bar-spacer"></div>
+    <span style="color:#9ca3af;font-size:11px">发布时间：</span>
+    <input type="datetime-local" style="height:28px;border:1px solid #3a3a5a;border-radius:6px;background:rgba(255,255,255,.08);color:#fff;font-size:11px;padding:0 8px">
+    <button class="btn btn-red" style="height:28px;font-size:11px">📤 发布小红书</button>
+    <button style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;padding:0 4px">✕</button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap" style="padding-top:0">
+    <div class="table-card">
+      <div class="table-header">
+        <input type="checkbox" style="width:14px;height:14px">
+        <span class="table-header-title">文章</span>
+        <span class="table-header-count">共 127 条</span>
+        <div class="table-header-spacer"></div>
+        <select class="filter-select" style="height:28px;font-size:11px">
+          <option>每页 50 条</option><option>每页 100 条</option>
+        </select>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px"></th>
+              <th style="width:52px">封面</th>
+              <th>标题</th>
+              <th style="width:80px">体裁</th>
+              <th style="width:72px">评分 ↕</th>
+              <th style="width:64px">状态</th>
+              <th style="width:52px">发布</th>
+              <th style="width:90px">发布时间</th>
+              <th style="width:90px">入库时间 ↕</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Row 1 -->
+            <tr>
+              <td><input type="checkbox" checked style="width:14px;height:14px"></td>
+              <td>
+                <img class="thumb" src="https://picsum.photos/44/44?random=1" onerror="this.style.display='none'">
+              </td>
+              <td>
+                <div class="title-cell">
+                  <div>
+                    <div class="kw-chip">グラビア</div>
+                    <div class="title-text">山田花奈：一句没钱，毁了我的童年</div>
+                    <div class="title-snippet">被经纪公司欠薪的经历让她重新审视偶像产业的本质……</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-story">长文</span></td>
+              <td><span class="score-pill score-hi">⭐ 5.0</span></td>
+              <td><span class="badge badge-green">活跃</span></td>
+              <td><div class="toggle on"></div></td>
+              <td style="font-size:11px;color:var(--text2)">05-24 18:00</td>
+              <td style="font-size:11px;color:var(--text3)">05-24 10:44</td>
+            </tr>
+            <!-- Row 2 -->
+            <tr>
+              <td><input type="checkbox" checked style="width:14px;height:14px"></td>
+              <td><div class="thumb-placeholder">📸</div></td>
+              <td>
+                <div>
+                  <div class="kw-chip">AKB</div>
+                  <div class="title-text">"公务员！"的欢呼中，她站上了偶像舞台</div>
+                  <div class="title-snippet">从公务员考试落榜到 AKB48 研究生，三年逆袭的背后……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-story">长文</span></td>
+              <td><span class="score-pill score-hi">⭐ 4.1</span></td>
+              <td><span class="badge badge-green">活跃</span></td>
+              <td><div class="toggle on"></div></td>
+              <td style="font-size:11px;color:var(--text2)">05-24 12:00</td>
+              <td style="font-size:11px;color:var(--text3)">05-24 10:44</td>
+            </tr>
+            <!-- Row 3 -->
+            <tr>
+              <td><input type="checkbox" style="width:14px;height:14px"></td>
+              <td><img class="thumb" src="https://picsum.photos/44/44?random=3"></td>
+              <td>
+                <div>
+                  <div class="kw-chip">乃木坂</div>
+                  <div class="title-text">梅泽美波：100%完成，东京巨蛋毕业演唱会泪洒舞台</div>
+                  <div class="title-snippet">「我没有任何遗憾了。」站在五万人面前，她终于说出这句话……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-news">资讯</span></td>
+              <td><span class="score-pill score-hi">⭐ 5.0</span></td>
+              <td><span class="badge badge-green">活跃</span></td>
+              <td><div class="toggle"></div></td>
+              <td style="font-size:11px;color:var(--text3)">—</td>
+              <td style="font-size:11px;color:var(--text3)">05-23 22:11</td>
+            </tr>
+            <!-- Row 4 -->
+            <tr>
+              <td><input type="checkbox" style="width:14px;height:14px"></td>
+              <td><div class="thumb-placeholder">📝</div></td>
+              <td>
+                <div>
+                  <div class="kw-chip">AKB</div>
+                  <div class="title-text">柏木由纪穿十二单，粉丝喊前世是公主</div>
+                  <div class="title-snippet">一袭和服惊艳全场，这才是真正的日式美人……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-news">资讯</span></td>
+              <td><span class="score-pill score-hi">⭐ 5.0</span></td>
+              <td><span class="badge badge-green">活跃</span></td>
+              <td><div class="toggle"></div></td>
+              <td style="font-size:11px;color:var(--text3)">—</td>
+              <td style="font-size:11px;color:var(--text3)">05-23 21:44</td>
+            </tr>
+            <!-- Row 5 -->
+            <tr>
+              <td><input type="checkbox" style="width:14px;height:14px"></td>
+              <td><img class="thumb" src="https://picsum.photos/44/44?random=5"></td>
+              <td>
+                <div>
+                  <div class="kw-chip">グラビア</div>
+                  <div class="title-text">今森茉耶20岁盛装亮相，曾被曝未成年饮酒</div>
+                  <div class="title-snippet">争议与才华并存，她的成人式引发了一场关于偶像形象的讨论……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-news">资讯</span></td>
+              <td><span class="score-pill score-hi">⭐ 5.0</span></td>
+              <td><span class="badge badge-gray">未发布</span></td>
+              <td><div class="toggle"></div></td>
+              <td style="font-size:11px;color:var(--text3)">—</td>
+              <td style="font-size:11px;color:var(--text3)">05-23 20:30</td>
+            </tr>
+            <!-- Row 6 -->
+            <tr>
+              <td><input type="checkbox" style="width:14px;height:14px"></td>
+              <td><div class="thumb-placeholder">🎵</div></td>
+              <td>
+                <div>
+                  <div class="kw-chip">AKB</div>
+                  <div class="title-text">板野友美晒素颜，34岁被夸永远18岁</div>
+                  <div class="title-snippet">素颜出镜反而引发更多关注，"冻龄女神"的称号又一次被证实……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-news">资讯</span></td>
+              <td><span class="score-pill score-mid">⭐ 4.5</span></td>
+              <td><span class="badge badge-gray">未发布</span></td>
+              <td><div class="toggle"></div></td>
+              <td style="font-size:11px;color:var(--text3)">—</td>
+              <td style="font-size:11px;color:var(--text3)">05-23 19:15</td>
+            </tr>
+            <!-- Row 7 -->
+            <tr>
+              <td><input type="checkbox" style="width:14px;height:14px"></td>
+              <td><div class="thumb-placeholder">📸</div></td>
+              <td>
+                <div>
+                  <div class="kw-chip">グラビア</div>
+                  <div class="title-text">32岁小池里奈晒比基尼背影，网友热议臀线</div>
+                  <div class="title-snippet">写真集发售首日售罄，八年后重新证明自己的魅力……</div>
+                </div>
+              </td>
+              <td><span class="fmt-badge fmt-news">资讯</span></td>
+              <td><span class="score-pill score-mid">⭐ 3.4</span></td>
+              <td><span class="badge badge-red">已丢弃</span></td>
+              <td><div class="toggle"></div></td>
+              <td style="font-size:11px;color:var(--text3)">—</td>
+              <td style="font-size:11px;color:var(--text3)">05-23 18:02</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        <span class="table-footer-info">显示 1–50 / 共 127 条</span>
+        <div class="page-btn">‹</div>
+        <div class="page-btn active">1</div>
+        <div class="page-btn">2</div>
+        <div class="page-btn">3</div>
+        <div class="page-btn">›</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</body>
+</html>
