@@ -98,6 +98,8 @@ GALLERY_SITES: dict[str, str] = {
     "magmix.jp":            "#gallery_main",
     "jprime.jp":            ".article-body",
     "ddnavi.com":           "article",
+    "newsweekjapan.jp":    "article, .article-body, .photo-area img",
+    "bunshun.jp":          ".photo-area, article",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -109,7 +111,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
-                         "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv"}
+                         "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv",
+                         "bunshun.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -2467,6 +2470,13 @@ def _scrape_ddnavi(gallery_url: str) -> list[str]:
     from scrapers.ddnavi_dl import scrape
     return scrape(gallery_url)
 
+
+def _scrape_bunshun(gallery_url: str) -> list[str]:
+    """bunshun.jp 图集（独立脚本 scripts/scrapers/bunshun_dl.py）"""
+    from scrapers.bunshun_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2754,6 +2764,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "ddnavi.com" in domain:
         images = _scrape_ddnavi(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "bunshun.jp" in domain:
+        images = _scrape_bunshun(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
