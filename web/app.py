@@ -780,7 +780,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th onclick="setSort('title_score')" style="width:64px">评分 ↕</th>
             <th style="width:60px">状态</th>
             <th style="width:50px">发布</th>
-            <th onclick="setSort('xhs_pub_time')" style="width:88px">XHS发布 ↕</th>
+            <th onclick="setSort('publish_time')" style="width:88px">XHS发布 ↕</th>
             <th onclick="setSort('created_at')" style="width:88px">入库时间 ↕</th>
             <th onclick="setSort('pub_time')" style="width:88px">新闻时间 ↕</th>
             <th>标签</th>
@@ -942,14 +942,14 @@ async function loadList(){
     <td><span class="score ${scCls}">${sc.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
     <td>${(()=>{
-      const locked=n.publish_xhs&&n.xhs_pub_time;
+      const locked=n.publish_xhs&&n.publish_time;
       const cls='pub-toggle'+(n.publish_xhs?' on':'');
       const sty=locked?'opacity:.4;cursor:not-allowed':'';
       const fn=locked?'':'togglePublish(\''+n.key+'\','+(n.publish_xhs?0:1)+',this)';
       const ttl=locked?'已发布，不可撤销':(n.publish_xhs?'取消发布':'标记发布');
       return`<div class="${cls}" style="${sty}" onclick="event.stopPropagation();${fn}" title="${ttl}"></div>`;
     })()}</td>
-    <td style="font-size:11px;color:${n.xhs_pub_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.xhs_pub_time?600:400}">${n.xhs_pub_time||'—'}</td>
+    <td style="font-size:11px;color:${n.publish_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.publish_time?600:400}">${n.publish_time||'—'}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${(n.created_at||'').substring(0,16)}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${n.pub_time||'—'}</td>
     <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
