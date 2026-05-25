@@ -624,6 +624,40 @@ def download_instagram(url: str, output_dir: Path, *,
 # Twitter / X
 # ================================================================
 
+def _download_twitter_images_fx(url: str, output_dir: Path, tweet_id: str) -> list[str]:
+    """通过 fxTwitter API 下载推文图片。"""
+    import requests as _req
+    import re as _re
+    m = _re.search(r'(?:x\.com|twitter\.com)/(\w+)/status/(\d+)', url)
+    if not m:
+        return []
+    fx_url = f"https://api.fxtwitter.com/{m.group(1)}/status/{m.group(2)}"
+    try:
+        resp = _req.get(fx_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        data = resp.json()
+        media = (data.get("tweet", {}) or {}).get("media", {}) or {}
+        photos = media.get("photos", [])
+        if not photos:
+            print("  ❌ 推文无图片")
+            return []
+        saved = []
+        for i, p in enumerate(photos, 1):
+            img_url = p.get("url", "")
+            if not img_url:
+                continue
+            img_url = img_url.split("?")[0] + "?name=orig"
+            dst = output_dir / f"{i:03d}.jpg"
+            img_data = _req.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+            dst.write_bytes(img_data.content)
+            size = dst.stat().st_size // 1024
+            print(f"    ✓ {dst.name}  ({size} KB)  fxTwitter")
+            saved.append(dst.name)
+        return saved
+    except Exception as e:
+        print(f"  ❌ fxTwitter 失败: {e}")
+        return []
+
+
 def download_twitter(url: str, output_dir: Path, *,
                      timeout: int = 300) -> list[str]:
     """用 yt-dlp 下载 x.com 推文的视频/图片。返回 ['001_video.mp4', ...] 或 []。"""
@@ -631,6 +665,10 @@ def download_twitter(url: str, output_dir: Path, *,
     tweet_id = extract_tweet_id(url)
     out_tmpl = str(output_dir / f"{tweet_id}.%(ext)s" if tweet_id
                    else str(output_dir / "%(id)s.%(ext)s"))
+    if not os.path.exists(YTDLP_BIN):
+        print(f"  ⚠️ yt-dlp 未安装，直接用 fxTwitter API")
+        return _download_twitter_images_fx(url, output_dir, tweet_id)
+
     cmd = [
         YTDLP_BIN, url,
         "-o", out_tmpl,
@@ -647,10 +685,13 @@ def download_twitter(url: str, output_dir: Path, *,
     except subprocess.TimeoutExpired:
         print("  ✗ yt-dlp 超时")
         return []
+    except (FileNotFoundError, OSError):
+        print(f"  ⚠️ yt-dlp 不可用，用 fxTwitter API")
+        return _download_twitter_images_fx(url, output_dir, tweet_id)
 
     if result.returncode != 0:
-        print(f"  ❌ yt-dlp 失败: {result.stderr[-300:]}")
-        return []
+        print(f"  ⚠️ yt-dlp 失败（非视频推文），尝试 fxTwitter API...")
+        return _download_twitter_images_fx(url, output_dir, tweet_id)
 
     # 找到下载的文件并重命名为统一格式
     mp4_files = sorted(output_dir.glob("*.mp4"),
