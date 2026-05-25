@@ -13,6 +13,7 @@ from gallery_fetch import detect_gallery_link, scrape_gallery_images, HEADERS
 # Import Instagram/YouTube downloaders
 from unified_media_downloader import download_instagram as _dl_ig
 from unified_media_downloader import download_youtube as _dl_yt
+from unified_media_downloader import download_twitter as _dl_tw
 
 CACHE_DIR = Path(GALLERY_CACHE_DIR).expanduser()
 
@@ -117,13 +118,12 @@ def _download(key: str, gallery_url: str = ""):
             if image_urls:
                 log.append(f'📷 抓到 {len(image_urls)} 张图片')
             task['log'] = '\n'.join(log)
-            # Download twitter videos via yt-dlp
+            # Download twitter videos/images via unified downloader
             for tw_url in video_urls:
                 try:
-                    import subprocess as _sp2, shutil as _sh
-                    ytdlp = _sh.which('yt-dlp') or os.path.join(os.path.dirname(sys.executable), 'yt-dlp')
-                    _sp2.run([ytdlp, tw_url, '-o', str(d / 'twitter_%(id)s.%(ext)s'), '--no-playlist', '--merge-output-format', 'mp4'], capture_output=True, timeout=120, cwd=str(d))
-                    log.append('    ✓ ' + tw_url.split('/')[-1])
+                    files = _dl_tw(tw_url, d)
+                    for f in files:
+                        log.append(f'    ✓ {f}')
                 except Exception as e2:
                     log.append(f'    ✗ twitter: {e2}')
                 task['log'] = '\n'.join(log)

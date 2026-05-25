@@ -46,12 +46,18 @@ def _extract_instagram_urls(soup: BeautifulSoup, limit: int = 20) -> list[str]:
     return urls
 
 
-def _extract_upload_images(soup: BeautifulSoup, limit: int = 20) -> list[str]:
-    """Extract wp-content/uploads images from article body, excluding banners."""
-    body = soup.find(class_="single__content__txt") or soup
+def _extract_article_images(soup: BeautifulSoup, limit: int = 20) -> list[str]:
+    """Extract wp-content/uploads images from article body, excluding banners and sidebars."""
+    body = soup.find(class_="single__content__txt") or soup.find("article") or soup
     images: list[str] = []
     seen: set[str] = set()
     for img in body.find_all("img"):
+        parent = img.parent
+        # Skip sidebar/post-list thumbnails
+        if parent and parent.get('class'):
+            parent_cls = ' '.join(parent.get('class'))
+            if 'post-list__thumb' in parent_cls or 'post-list--type' in parent_cls:
+                continue
         src = img.get("data-src") or img.get("src") or ""
         if "wp-content/uploads/" not in src:
             continue
@@ -74,6 +80,22 @@ def _extract_upload_images(soup: BeautifulSoup, limit: int = 20) -> list[str]:
     return images
 
 
+def _extract_twitter_links(soup: BeautifulSoup) -> list[str]:
+    """Extract Twitter/X post URLs from article body."""
+    article = soup.find("article") or soup
+    urls: list[str] = []
+    seen: set[str] = set()
+    for a in article.find_all("a", href=True):
+        href = a["href"]
+        m = re.search(r'(?:twitter\.com|x\.com)/(\w+)/status/(\d+)', href)
+        if m:
+            url = f"https://x.com/{m.group(1)}/status/{m.group(2)}"
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
 def scrape(gallery_url: str) -> list[str]:
     """从 encount.press 文章页抓取所有图集 URL。支持 Instagram embed 和直接图片。"""
     session = requests.Session()
@@ -91,8 +113,12 @@ def scrape(gallery_url: str) -> list[str]:
     ig_urls = _extract_instagram_urls(soup)
     results.extend(ig_urls)
 
-    # 2. Direct upload images in article body
-    upload_imgs = _extract_upload_images(soup)
+    # 2. Twitter/X embeds in article body
+    tw_urls = _extract_twitter_links(soup)
+    results.extend(tw_urls)
+
+    # 3. Direct upload images in article body (excl sidebars)
+    upload_imgs = _extract_article_images(soup)
     results.extend(upload_imgs)
 
     if results:
@@ -104,11 +130,11 @@ def download(gallery_url: str, out_dir: Path) -> int:
     urls = scrape(gallery_url)
     if not urls:
         return 0
-    # Instagram URLs are returned as-is for the downstream downloader to handle
-    img_urls = [u for u in urls if not u.startswith("https://www.instagram.com")]
-    ig_urls = [u for u in urls if u.startswith("https://www.instagram.com")]
-    if ig_urls:
-        print(f"  📸 {len(ig_urls)} Instagram embeds (delegated to Instagram downloader)")
+    # Instagram/Twitter URLs are returned as-is for the downstream downloader to handle
+    embed_urls = [u for u in urls if u.startswith("https://www.instagram.com") or u.startswith("https://x.com") or u.startswith("https://twitter.com")]
+    img_urls = [u for u in urls if u not in embed_urls]
+    if embed_urls:
+        print(f"  📸 {len(embed_urls)} embeds (delegated to downloader)")
     if img_urls:
         return download_images(img_urls, out_dir, referer_url=gallery_url)
     return 0

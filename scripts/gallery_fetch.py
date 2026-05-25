@@ -73,6 +73,7 @@ GALLERY_SITES: dict[str, str] = {
     "efight.jp":            ".attachment img, article img",
     "maidonanews.jp":       ".photo, article",
     "encount.press":        ".article-image, article",
+    "full-count.jp":        ".photo_main, article",
     "nishispo.nishinippon.co.jp": "article, .contents",
     "thefirsttimes.jp":          "article, .m-gallery-list",
     "kstyle.com":           "article, body",
@@ -112,7 +113,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
                          "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv",
-                         "bunshun.jp"}
+                         "bunshun.jp", "full-count.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
