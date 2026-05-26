@@ -714,17 +714,25 @@ def main():
 
         # 发布
         print("📤 发布中...")
+        # 每条读取自己的 xhs_pub_time 作为排期
+        sqlite_key = page.get("_key", "") if is_sqlite else ""
+        article_post_time = None
+        if sqlite_key:
+            from sqlite_db import get_by_key
+            row = get_by_key(sqlite_key)
+            if row and row.get("xhs_pub_time"):
+                article_post_time = row["xhs_pub_time"]
+        post_time = article_post_time or args.post_time
         ok, note_id = publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
                           preview=args.preview, headless=not args.no_headless,
-                          post_time=args.post_time, timing_jitter=args.timing_jitter,
+                          post_time=post_time, timing_jitter=args.timing_jitter,
                           reuse_existing_tab=args.reuse_existing_tab)
         if ok:
-            sqlite_key = page.get("_key", "") if is_sqlite else ""
             if note_id and sqlite_key:
                 from sqlite_db import update_news
                 update_news(sqlite_key, {"xhs_note_id": note_id, "xhs_title": full_title})
                 print(f"  📌 note_id: {note_id}")
-            if mark_as_published(page["id"], sqlite_key, args.post_time or ""):
+            if mark_as_published(page["id"], sqlite_key, post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
                 print(f"✅ 发布成功，但更新时间失败\n")
