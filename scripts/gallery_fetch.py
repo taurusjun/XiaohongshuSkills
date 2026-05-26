@@ -100,6 +100,7 @@ GALLERY_SITES: dict[str, str] = {
     "jprime.jp":            ".article-body",
     "ddnavi.com":           "article",
     "newsweekjapan.jp":    "article, .article-body, .photo-area img",
+    "newsdig.tbs.co.jp":  "article",
     "bunshun.jp":          ".photo-area, article",
 }
 
@@ -2478,6 +2479,12 @@ def _scrape_bunshun(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_newsdig(gallery_url: str) -> list[str]:
+    """newsdig.tbs.co.jp 图集（独立脚本 scripts/scrapers/newsdig_dl.py）"""
+    from scrapers.newsdig_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2769,6 +2776,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "bunshun.jp" in domain:
         images = _scrape_bunshun(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "newsdig.tbs.co.jp" in domain:
+        images = _scrape_newsdig(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
