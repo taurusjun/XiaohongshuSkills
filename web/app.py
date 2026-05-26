@@ -806,7 +806,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="action-bar" id="publishBar">
       <span class="lbl"><b id="pendingCount">0</b> 条待发布</span>
       <span class="sp"></span>
-      <input type="datetime-local" id="postTime" title="定时发布" style="height:26px;border:1px solid rgba(255,255,255,.2);border-radius:5px;background:rgba(255,255,255,.1);color:#fff;font-size:11px;padding:0 8px;width:135px">
       <button class="btn-ghost" onclick="setQuickTime(8,0)">今 8:00</button>
       <button class="btn-ghost" onclick="setQuickTime(12,0)">今 12:00</button>
       <button class="btn-ghost" onclick="setQuickTime(18,0)">今 18:00</button>
@@ -1307,8 +1306,7 @@ async function triggerFetch(mode){
 
 async function triggerPublish(){
   var b=document.getElementById('pubBtn');var orig=b.textContent;
-  var pt=S('postTime').value;pt=pt?pt.replace('T',' '):'';
-  runTask({title:'📤 发布到小红书',apiUrl:'/api/trigger-publish',apiBody:{post_time:pt},btn:b,origText:orig,taskLabel:'发布',onDone:null});
+  runTask({title:'📤 发布到小红书',apiUrl:'/api/trigger-publish',apiBody:{},btn:b,origText:orig,taskLabel:'发布',onDone:null});
 }
 async function togglePublish(key,val,el){
   if(el)el.classList.toggle('on',!!val);
