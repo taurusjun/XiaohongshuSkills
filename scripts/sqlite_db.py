@@ -380,9 +380,13 @@ def update_news(key: str, fields: dict) -> bool:
 def mark_published(key: str, publish_time: str = "", xhs_pub_time: str = "") -> bool:
     if not publish_time:
         publish_time = datetime.now().strftime('%Y-%m-%d %H:%M')
-    if not xhs_pub_time:
-        xhs_pub_time = publish_time
     with _connect() as db:
+        # 如果用户已预设 xhs_pub_time，保留它；否则用 publish_time 兜底
+        existing = db.execute("SELECT xhs_pub_time FROM news WHERE key=?", (key,)).fetchone()
+        if existing and existing["xhs_pub_time"]:
+            xhs_pub_time = existing["xhs_pub_time"]
+        elif not xhs_pub_time:
+            xhs_pub_time = publish_time
         db.execute("UPDATE news SET publish_xhs=1, publish_time=?, xhs_pub_time=?, updated_at=datetime('now','localtime') WHERE key=?",
                    (publish_time, xhs_pub_time, key))
     return True

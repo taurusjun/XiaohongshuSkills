@@ -839,6 +839,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th onclick="setSort('title_score')" style="width:64px">评分 ↕</th>
             <th style="width:60px">状态</th>
             <th style="width:50px">发布</th>
+            <th style="width:140px">预发布时间</th>
             <th onclick="setSort('publish_time')" style="width:88px">XHS发布 ↕</th>
             <th onclick="setSort('created_at')" style="width:88px">入库时间 ↕</th>
             <th onclick="setSort('pub_time')" style="width:88px">新闻时间 ↕</th>
@@ -1027,12 +1028,18 @@ async function loadList(){
     <td><span class="score ${scCls}">${ts.toFixed(1)}/${cs.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
     <td>${(()=>{
-      const locked=n.publish_xhs&&n.publish_time;
+      const locked=n.publish_xhs&&n.publish_time, pending=n.publish_xhs&&!n.publish_time;
       const cls='pub-toggle'+(n.publish_xhs?' on':'');
       const sty=locked?'opacity:.4;cursor:not-allowed':'';
       const fn=locked?'':'togglePublish(\''+n.key+'\','+(n.publish_xhs?0:1)+',this)';
       const ttl=locked?'已发布，不可撤销':(n.publish_xhs?'取消发布':'标记发布');
       return`<div class="${cls}" style="${sty}" onclick="event.stopPropagation();${fn}" title="${ttl}"></div>`;
+    })()}</td>
+    <td>${(()=>{
+      const locked=n.publish_xhs&&n.publish_time, pending=n.publish_xhs&&!n.publish_time;
+      if(locked)return`<input type="datetime-local" value="${n.xhs_pub_time||''}" disabled style="width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;font-size:10px;background:#f5f5f5;color:var(--text2);opacity:.6" title="已发布">`;
+      if(pending)return`<input type="datetime-local" value="${n.xhs_pub_time||''}" onchange="setPostTime('${n.key}',this.value)" style="width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;font-size:10px;background:var(--card-bg);color:var(--text)" title="${n.xhs_pub_time?'定时: '+n.xhs_pub_time:'不设=立即发布'}">`;
+      return`<span style="font-size:10px;color:var(--text3)">—</span>`;
     })()}</td>
     <td style="font-size:11px;color:${n.publish_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.publish_time?600:400}">${n.publish_time||'—'}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${(n.created_at||'').substring(0,16)}</td>
@@ -1308,6 +1315,9 @@ async function togglePublish(key,val,el){
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
   loadList();
 }
+async function setPostTime(key,val){
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({xhs_pub_time:val||null})});
+}
 function selectAllRows(val){document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val});updateArchiveBar()}
 function updateArchiveBar(){
   const n=document.querySelectorAll('.rowSel:checked').length;
@@ -1358,12 +1368,16 @@ async function loadCategories(){
 window.addEventListener('pageshow',e=>{if(e.persisted)loadList()});
 // Save scroll position only when navigating to detail page
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/detail/"]');if(a){const ts=document.querySelector('.table-scroll');sessionStorage.setItem('listScrollY',ts?ts.scrollTop:0)}},true);
-// Quick time buttons for publish schedule
+// Quick time buttons for publish schedule — set on checked rows
 function setQuickTime(h,dayOffset){
   const d=new Date();d.setDate(d.getDate()+dayOffset);
   const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  S('postTime').value=`${ds}T${String(h).padStart(2,'0')}:00`;
-  updateQuickTimeBtns();
+  const val=`${ds}T${String(h).padStart(2,'0')}:00`;
+  document.querySelectorAll('.rowSel:checked').forEach(cb=>{
+    const tr=cb.closest('tr');if(!tr)return;
+    const inp=tr.querySelector('input[type=datetime-local]');
+    if(inp&&!inp.disabled){inp.value=val;setPostTime(cb.value,val);}
+  });
 }
 function updateQuickTimeBtns(){
   const now=new Date();const today=now.getDate();const h=now.getHours();
