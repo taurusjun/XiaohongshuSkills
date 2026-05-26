@@ -806,12 +806,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="action-bar" id="publishBar">
       <span class="lbl"><b id="pendingCount">0</b> 条待发布</span>
       <span class="sp"></span>
-      <button class="btn-ghost" onclick="setQuickTime(8,0)">今 8:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(12,0)">今 12:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(18,0)">今 18:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(8,1)">明 8:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(12,1)">明 12:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(18,1)">明 18:00</button>
       <button class="btn btn-red btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
     </div>
   </div>
@@ -1314,7 +1308,8 @@ async function togglePublish(key,val,el){
   loadList();
 }
 async function setPostTime(key,val){
-  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({xhs_pub_time:val||null})});
+  const fmt=val?val.replace('T',' '):null;
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({xhs_pub_time:fmt})});
 }
 function selectAllRows(val){document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val});updateArchiveBar()}
 function updateArchiveBar(){
@@ -1370,11 +1365,11 @@ document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/detail
 function setQuickTime(h,dayOffset){
   const d=new Date();d.setDate(d.getDate()+dayOffset);
   const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const val=`${ds}T${String(h).padStart(2,'0')}:00`;
+  const dtVal=`${ds}T${String(h).padStart(2,'0')}:00`;
   document.querySelectorAll('.rowSel:checked').forEach(cb=>{
     const tr=cb.closest('tr');if(!tr)return;
     const inp=tr.querySelector('input[type=datetime-local]');
-    if(inp&&!inp.disabled){inp.value=val;setPostTime(cb.value,val);}
+    if(inp&&!inp.disabled){inp.value=dtVal;setPostTime(cb.value,dtVal);}
   });
 }
 function updateQuickTimeBtns(){
