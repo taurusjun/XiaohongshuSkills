@@ -291,7 +291,7 @@ def insert_news(news: dict) -> bool:
 
 def load_today_keys(date_str: str = "") -> set[str]:
     if not date_str:
-        date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        date_str = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     with _connect() as db:
         rows = db.execute(
             "SELECT key FROM news WHERE created_at >= ?",
