@@ -2629,6 +2629,7 @@ def api_list():
         needs_review=_needs_review,
         fmt=request.args.get('fmt',''),
         score_min=request.args.get('score_min',''),
+        fetch_by=request.args.get('fetch_by',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=10000,
