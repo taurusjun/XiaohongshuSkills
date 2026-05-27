@@ -1344,7 +1344,7 @@ def generate_title_only(title_ja: str, content_ja: str) -> str:
     """只生成标题（轻量），返回标题文本；失败返回空字符串"""
     import json as _json, re as _re
     prompt = _build_title_prompt(title_ja, content_ja)
-    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=1000, temperature=0.7, thinking_disabled=True)
+    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=1000, temperature=1.0, thinking_disabled=True)
     if not result:
         return ""
     # 解析 JSON
