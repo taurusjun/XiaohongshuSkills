@@ -1362,6 +1362,27 @@ def _build_story_title_prompt(title_ja: str, content_ja: str, story_type: str = 
 格式：{{"title":"生成的中文标题"}}"""
 
 
+def generate_title_only(title_ja: str, content_ja: str,
+                        is_story: bool = False, story_type: str = "叙事型") -> str:
+    """只生成标题（轻量），返回标题文本；失败返回空字符串"""
+    import json as _json, re as _re
+    if is_story:
+        prompt = _build_story_title_prompt(title_ja, content_ja, story_type)
+    else:
+        prompt = _build_news_title_prompt(title_ja, content_ja)
+    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=100, temperature=0.4)
+    if not result:
+        return ""
+    # 解析 JSON
+    try:
+        data = _json.loads(result.strip())
+        return data.get("title", "").strip()
+    except Exception:
+        pass
+    m = _re.search(r'"title"\s*:\s*"([^"]+)"', result)
+    return m.group(1).strip() if m else ""
+
+
 def _build_final_tags(raw_tags: list[str]) -> list[str]:
     """生成最终标签：展开 keyword_tag_map + 必选标签 + 分类补足 + 去重。"""
     import random
