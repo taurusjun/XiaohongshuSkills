@@ -289,17 +289,17 @@ def api_regenerate_title(key):
         log = []
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-            from yahoo_common import generate_content_and_comment, evaluate_quality
+            from yahoo_common import generate_title_only, evaluate_quality
             from sqlite_db import update_news
             title_ja = row.get('title_ja') or row.get('title', '')
             content_ja = row.get('content_ja') or row.get('content', '') or ''
+            is_story = row.get('is_long_form') or 'story' in (row.get('format_suitability') or '')
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
-            gen = generate_content_and_comment(title_ja, row.get('title', ''), body_text=content_ja)
-            if not gen:
+            new_title = generate_title_only(title_ja, content_ja, is_story, row.get('story_type', '叙事型'))
+            if not new_title:
                 _tasks[tid] = {'status': 'error: 标题生成失败', 'log': '\n'.join(log)}
                 return
-            new_title = gen[0]
             log.append(f'新标题: {new_title[:50]}')
             log.append('评估质量...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}

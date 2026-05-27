@@ -164,8 +164,9 @@ def is_china_related(title: str) -> bool:
 
 
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
-                 response_format: dict | None = None, temperature: float = 0.7) -> str:
-    """调用 LiteLLM API，返回文本；未配置或失败时返回空字符串"""
+                 response_format: dict | None = None, temperature: float = 0.7,
+                 thinking_disabled: bool = False) -> str:
+    """调用 DeepSeek API，返回文本；未配置或失败时返回空字符串"""
     if not LITELLM_API_KEY:
         return ""
     import time as _time
@@ -179,6 +180,8 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
             messages.append({"role": "user", "content": prompt})
 
             body = {"model": LITELLM_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+            if thinking_disabled:
+                body["thinking"] = {"type": "disabled"}
             if response_format:
                 body["response_format"] = response_format
 
@@ -234,7 +237,7 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 最后一句：互动召唤，≤10字，如"你怎么看？""你知道吗？"。
 全文80-120字，口语化，不要新闻腔。）"""
 
-    result = call_litellm(prompt, system_prompt="只输出短配文正文，不要任何分析、推理过程、字数检查。", max_tokens=3000)
+    result = call_litellm(prompt, system_prompt="只输出短配文正文，不要任何分析、推理过程、字数检查。", max_tokens=3000, thinking_disabled=True)
     if not result:
         return ""
 
@@ -348,6 +351,7 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
     result_str = call_litellm(
         prompt, max_tokens=300, temperature=0.2,
         response_format={"type": "json_object"},
+        thinking_disabled=True,
     ) if LITELLM_API_KEY else None
 
     title_zh = ""
@@ -399,6 +403,7 @@ def translate_title(title_ja: str) -> str:
         result = call_litellm(
             prompt=f"日译中，只输出一行中文译文，不要任何解释：\n\n{title_ja}\n\n译文：",
             max_tokens=300,
+            thinking_disabled=True,
         )
         if result and len(result) > 2 and result != title_ja:
             result = result.strip()
@@ -1370,7 +1375,7 @@ def generate_title_only(title_ja: str, content_ja: str,
         prompt = _build_story_title_prompt(title_ja, content_ja, story_type)
     else:
         prompt = _build_news_title_prompt(title_ja, content_ja)
-    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=100, temperature=0.4)
+    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=100, temperature=0.7, thinking_disabled=True)
     if not result:
         return ""
     # 解析 JSON
