@@ -186,10 +186,10 @@ def api_task_stop(tid):
         if proc:
             try:
                 proc.kill()
-                _tasks[tid] = {'status': 'error: 用户终止', 'log': t.get('log', '') + '\n\n🛑 任务已终止'}
-                return jsonify({"ok": True})
-            except Exception as e:
-                return jsonify({"ok": False, "msg": str(e)})
+            except Exception:
+                pass
+        _tasks[tid] = {'status': 'error: 用户终止', 'log': t.get('log', '') + '\n\n🛑 任务已终止'}
+        return jsonify({"ok": True})
     return jsonify({"ok": False, "msg": "无运行中的任务"})
 
 @app.route('/api/task-logs')
