@@ -295,7 +295,11 @@ def api_regenerate_title(key):
             content_ja = row.get('content_ja') or ''
             content_zh = row.get('content') or ''
             summary = row.get('summary') or ''
-            story_type = row.get('story_type') or ''
+            import json as _j
+            fs = row.get('format_suitability') or '["news"]'
+            primary_format = (_j.loads(fs) if isinstance(fs, str) else fs or ['news'])[0]
+            # 资讯体直接标记，不让模型猜；故事体用 story_type 细分
+            story_type = row.get('story_type') or ('' if primary_format == 'story' else '资讯体')
             current_title = row.get('title') or ''
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
