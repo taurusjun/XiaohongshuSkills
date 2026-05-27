@@ -101,6 +101,7 @@ GALLERY_SITES: dict[str, str] = {
     "ddnavi.com":           "article",
     "newsweekjapan.jp":    "article, .article-body, .photo-area img",
     "newsdig.tbs.co.jp":  "article",
+    "asahi.com":          "main[role=main]",
     "bunshun.jp":          ".photo-area, article",
 }
 

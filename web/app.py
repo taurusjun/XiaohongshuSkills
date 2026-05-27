@@ -332,7 +332,14 @@ def api_regenerate(key):
                 log.append('故事体重新生成...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                 title_zh = translate_title(title_ja) if title_ja else row.get('title', '')
-                story = generate_story_article(title_ja, title_zh, content_ja or row.get('content', ''))
+                # Use fresh images from re-fetch if available, else DB cached
+                try:
+                    _ = fresh
+                    article_imgs = fresh.get('article_images') or []
+                except NameError:
+                    article_imgs = row.get('_article_images') or []
+                story = generate_story_article(title_ja, title_zh, content_ja or row.get('content', ''),
+                                               article_images=article_imgs)
                 if not story:
                     _tasks['regen_'+key] = {'status': 'error: 故事体生成失败', 'log': '故事体生成失败'}
                     return
