@@ -98,6 +98,12 @@ def process_article(task):
 
     _log_ctx.prefix = f"[{keyword}/{key[:8]}] "
     try:
+        # 处理前二次检查：防止并行重复或窗口外漏网
+        from sqlite_db import get_by_key
+        if get_by_key(key):
+            print(f"    ⏭️ 已存在，跳过")
+            return key, news
+
         process_news_item(news, no_translate=False, extra_tags=extra_tags, keyword=keyword)
         if not news.get('_skip'):
             push_with_gallery(news)
