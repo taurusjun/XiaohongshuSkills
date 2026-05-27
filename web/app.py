@@ -271,6 +271,30 @@ def api_active_tasks():
     return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
 
 @app.route('/api/regenerate/<key>', methods=['POST'])
+@app.route('/api/regenerate-title/<key>', methods=['POST'])
+def api_regenerate_title(key):
+    from sqlite_db import get_by_key, update_news
+    row = get_by_key(key)
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    title_ja = row.get('title_ja') or row.get('title', '')
+    content_ja = row.get('content_ja') or row.get('content', '') or ''
+    body_snippet = content_ja[:800]
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+    from yahoo_common import translate_title, evaluate_quality
+    new_title = translate_title(title_ja)
+    quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, body_snippet)
+    new_ts = quality.get('title_score', 0)
+    update_news(key, {'title': new_title, 'title_score': new_ts})
+    if quality.get('scores'):
+        try:
+            from sqlite_db import upsert_score_dims
+            upsert_score_dims(key, quality['scores'])
+        except: pass
+    print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
+    return jsonify({"ok": True, "title": new_title, "title_score": new_ts})
+
+@app.route('/api/regenerate/<key>', methods=['POST'])
 def api_regenerate(key):
     global _regen_keys
     if key in _regen_keys:
@@ -1602,6 +1626,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   <span class="topbar-title">{{news.title}}</span>
   <span id="taskBar" style="display:none;font-size:11px;cursor:pointer;color:var(--orange);font-weight:600;background:#fff7ed;padding:3px 9px;border-radius:5px;border:1px solid #fed7aa;flex-shrink:0" onclick="showTaskModal()"></span>
   <button class="btn btn-outline btn-sm" id="regenBtn" onclick="regenerateContent()" style="flex-shrink:0">🔄 重新生成</button>
+  <button class="btn btn-outline btn-sm" onclick="regenerateTitleOnly()" style="flex-shrink:0">📝 重拟标题</button>
   <button class="btn btn-red btn-sm" id="saveBtn" style="flex-shrink:0">💾 保存修改</button>
 </div>
 
@@ -1936,6 +1961,14 @@ async function runTask(opts){
     if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;return}
   }
   btn.textContent='⏰ 超时';btn.style.opacity='1';btn.style.background='';btn.style.color='';btn.disabled=false;
+}
+async function regenerateTitleOnly(){
+  var btn=document.querySelector('[onclick=\"regenerateTitleOnly()\"]'),orig=btn.textContent;
+  btn.disabled=true;btn.textContent='⏳...';
+  var r=await fetch('/api/regenerate-title/'+key,{method:'POST'});
+  var d=await r.json();
+  if(d.ok){document.querySelector('[name=title]').value=d.title;location.reload()}
+  else{alert('失败');btn.disabled=false;btn.textContent=orig}
 }
 async function regenerateContent(){
   if(!await showConfirm('重新生成会覆盖当前内容','标题和正文将被重新生成，无法撤销','重新生成','btn-red','🔄'))return;
