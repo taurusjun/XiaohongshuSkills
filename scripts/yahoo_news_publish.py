@@ -560,24 +560,41 @@ def main():
         # 拼装发布内容
         full_title = info['title']
 
+        # 发布模式
+        publish_mode = info.get('publish_mode', 'normal') or 'normal'
+
         # 构建小红书正文
-        parts = []
+        if publish_mode == 'free':
+            free_text = info.get('publish_free_text', '') or ''
+            if not free_text.strip():
+                print("⚠️ 自由发布模式但未填写内容，跳过\n")
+                continue
+            xhs_content = free_text
+            print(f"  ✏️ 自由发布模式：{len(xhs_content)} 字")
+        elif publish_mode == 'caption':
+            if not video_caption:
+                print("⚠️ 短配文模式但无短配文，跳过\n")
+                continue
+            xhs_content = video_caption
+            print(f"  🎬 短配文模式：{len(xhs_content)} 字")
+        else:
+            parts = []
 
-        # 引流摘要（如有）作为开头
-        if summary:
-            parts.append(summary)
+            # 引流摘要（如有）作为开头
+            if summary:
+                parts.append(summary)
+                parts.append("")
+
+            # 新闻要点
+            parts.append(content)
             parts.append("")
 
-        # 新闻要点
-        parts.append(content)
-        parts.append("")
+            # 我的解读（SQLite: comment 在 vocab 位置; Notion: 词汇部分）
+            if vocab:
+                parts.append(vocab)
+                parts.append("")
 
-        # 我的解读（SQLite: comment 在 vocab 位置; Notion: 词汇部分）
-        if vocab:
-            parts.append(vocab)
-            parts.append("")
-
-        xhs_content = "\n".join(parts)
+            xhs_content = "\n".join(parts)
 
         # 添加标签（最后一行 #标签1 #标签2 格式）
         import random
