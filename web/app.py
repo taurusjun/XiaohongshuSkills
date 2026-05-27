@@ -1418,9 +1418,7 @@ function setQuickTime(h,dayOffset){
     const inp=tr.querySelector('input[type=datetime-local]');
     if(!inp||inp.disabled)return;
     inp.value=dtVal;
-    const tr=inp.closest('tr');
-    const cb=tr?tr.querySelector('.rowSel'):null;
-    if(cb)setPostTime(cb.value,dtVal);
+    setPostTime(cb.value,dtVal);
   });
 }
 function updateQuickTimeBtns(){
