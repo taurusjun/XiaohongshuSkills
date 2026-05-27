@@ -880,11 +880,11 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th onclick="setSort('title_score')" style="width:64px">评分 ↕</th>
             <th style="width:60px">状态</th>
             <th style="width:50px">发布</th>
-            <th style="width:140px">预发布时间</th>
+            <th style="width:60px">模式</th>
+            <th style="width:140px">预发布</th>
             <th onclick="setSort('publish_time')" style="width:88px">XHS发布 ↕</th>
-            <th onclick="setSort('created_at')" style="width:88px">入库时间 ↕</th>
-            <th onclick="setSort('pub_time')" style="width:88px">新闻时间 ↕</th>
-            <th style="width:60px">发布模式</th>
+            <th onclick="setSort('created_at')" style="width:88px">入库 ↕</th>
+            <th onclick="setSort('pub_time')" style="width:88px">新闻 ↕</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
         </table>
@@ -1076,6 +1076,7 @@ async function loadList(){
       const ttl=locked?'已发布，不可撤销':(n.publish_xhs?'取消发布':'标记发布');
       return`<div class="${cls}" style="${sty}" onclick="event.stopPropagation();${fn}" title="${ttl}"></div>`;
     })()}</td>
+    <td style="font-size:11px;color:var(--text2)">${n.publish_mode==='caption'?'短配文':n.publish_mode==='free'?'自由':'默认'}</td>
     <td>${(()=>{
       const locked=n.publish_xhs&&n.publish_time, pending=n.publish_xhs&&!n.publish_time;
       if(locked)return`<input type="datetime-local" value="${n.xhs_pub_time||''}" disabled style="width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;font-size:10px;background:#f5f5f5;color:var(--text2);opacity:.6" title="已发布">`;
@@ -1085,7 +1086,6 @@ async function loadList(){
     <td style="font-size:11px;color:${n.publish_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.publish_time?600:400}">${n.publish_time||'—'}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${(n.created_at||'').substring(0,16)}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${n.pub_time||'—'}</td>
-    <td style="font-size:11px;color:var(--text2)">${n.publish_mode==='caption'?'短配文':n.publish_mode==='free'?'自由':'默认'}</td>
   </tr>`;}).join('');
 
   // Update metrics
