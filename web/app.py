@@ -1592,7 +1592,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .field-row .field-label{width:60px;flex-shrink:0;text-align:right}
 .field-row .value{flex:1;position:relative}
 /* cover */
-.cover-img{width:100%;max-height:200px;object-fit:cover;display:block}
+.cover-img{width:100%;max-height:200px;object-fit:contain;display:block;background:#f0f0f0}
 /* url inputs */
 .url-input{width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text2);background:#fafafa;cursor:text;font-family:var(--font)}
 /* select */
