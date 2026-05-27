@@ -1606,6 +1606,18 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       </div>
     </div>
 
+    {% if news.publish_mode == 'free' %}
+    <div class="card-section" id="freeTextSection">
+      <div class="card-section-title">自由发布内容</div>
+      <textarea class="inline-textarea auto-resize" name="publish_free_text" style="min-height:80px" oninput="autoSaveField('publish_free_text',this.value)">{{news.publish_free_text or ''}}</textarea>
+    </div>
+    {% endif %}
+    <script>function toggleFreeText(){
+      var m=document.querySelector('[name=publish_mode]').value;
+      var s=document.getElementById('freeTextSection');
+      if(m==='free'){if(!s)location.reload()}else{if(s)s.remove()}
+    }</script>
+
     <!-- Settings -->
     <div class="card-section">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px">
@@ -1613,6 +1625,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
           <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
+        </select>
+        <select name="publish_mode" onchange="autoSaveField('publish_mode',this.value);toggleFreeText()" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认发布</option>
+          <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
+          <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由发布</option>
         </select>
         <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
