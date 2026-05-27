@@ -856,15 +856,16 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="table-card">
       <div class="table-hdr">
         <input type="checkbox" onclick="selectAllRows(this.checked)" title="全选" style="width:14px;height:14px">
-        <span class="table-hdr-title">文章列表</span>
-        <span class="table-hdr-count" id="tableCount"></span>
-        <div style="flex:1"></div>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(8,0)">今8</button>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(12,0)">今12</button>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(18,0)">今18</button>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(8,1)">明8</button>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(12,1)">明12</button>
         <button class="btn btn-xs btn-outline" onclick="setQuickTime(18,1)">明18</button>
+        <button class="btn btn-xs btn-outline" onclick="clearPostTime()" style="color:var(--red)">✕</button>
+        <span class="table-hdr-title">文章列表</span>
+        <span class="table-hdr-count" id="tableCount"></span>
+        <div style="flex:1"></div>
         <select class="fs" style="height:26px;font-size:11px" onchange="pageSize=parseInt(this.value);page=0;loadList()" id="pageSizeSelect">
           <option value="50">50条/页</option><option value="100">100条/页</option><option value="200">200条/页</option>
         </select>
@@ -1357,6 +1358,13 @@ async function togglePublish(key,val,el){
 async function setPostTime(key,val){
   const fmt=val?val.replace('T',' '):null;
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({xhs_pub_time:fmt})});
+}
+function clearPostTime(){
+  document.querySelectorAll('.rowSel:checked').forEach(cb=>{
+    const tr=cb.closest('tr');if(!tr)return;
+    const inp=tr.querySelector('input[type=datetime-local]');
+    if(inp&&!inp.disabled){inp.value='';setPostTime(cb.value,'');}
+  });
 }
 function selectAllRows(val){document.querySelectorAll('.rowSel').forEach(cb=>{cb.checked=val});updateArchiveBar()}
 function updateArchiveBar(){
