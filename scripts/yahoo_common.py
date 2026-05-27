@@ -1128,7 +1128,8 @@ def fetch_article_details(url: str) -> dict:
 
 def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
                            twitter_embeds: list[str] | None = None,
-                           angle: str = "") -> dict | None:
+                           angle: str = "",
+                           article_images: list[str] | None = None) -> dict | None:
     """生成故事体文章（导语 + 翻译正文 + 结语），风格对齐严肃新闻媒体。
 
     与 generate_content_and_comment 完全不同的格式，不含娱乐化语气和词汇教学。
@@ -1160,6 +1161,16 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
             "分散分布在全文各处，绝不能将所有占位符集中堆放在正文末尾。\n"
             "格式：【图片N：@screen_name — 一句话说明】（N从1开始按出现顺序递增）\n"
             "占位符单独成行，上下各留一个空行。"
+        )
+    elif article_images:
+        img_count = len(article_images)
+        img_note = (
+            f"\n\n原文共附有 {img_count} 张图片。\n"
+            "⚠️ 重要：翻译正文时，必须在对应的叙事段落间均匀插入图片占位符，"
+            "分散分布在全文各处，绝不能将所有占位符集中堆放在正文末尾。\n"
+            "格式：【图片N：一句话描述图片内容】（N从1开始按出现顺序递增）\n"
+            "占位符单独成行，上下各留一个空行。\n"
+            "根据上下文合理推断每张图片可能的内容并描述。"
         )
 
     angle_note = f"\n【内容角度】今日重点关注：{angle}\n" if angle else ""
@@ -1265,6 +1276,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
         body_ja=news.get('content_ja', '') or news.get('body_text', ''),
         twitter_embeds=news.get('_twitter_embeds', []),
         angle=angle,
+        article_images=news.get('_article_images', []),
     )
     if not story:
         print("    ⚠️ 故事体生成失败，回退到资讯体")
