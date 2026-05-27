@@ -1427,7 +1427,7 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
         print(f"  ⚠️ 获取 SNS 页数失败: {e}")
         max_page = 1
 
-    # 收集每页的 Instagram post URL
+    # 收集每页的 Instagram / Twitter post URL
     for i in range(1, min(max_page, MAX_IMAGES) + 1):
         page_url = f"{base_sns}/{i}/"
         try:
@@ -1436,27 +1436,35 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
             bq = s.find("blockquote", class_="instagram-media")
             if bq:
                 permalink = bq.get("data-instgrm-permalink", "")
-                # 提取 /p/SHORTCODE/ 或 /reel/SHORTCODE/
                 m2 = re.search(r'/(p|reel)/([A-Za-z0-9_-]+)/', permalink)
                 if m2:
                     post_frag = f"/{m2.group(1)}/{m2.group(2)}/"
                     page_infos.append((page_url, post_frag))
+            else:
+                # Check for Twitter/X embed
+                tw_a = s.find("a", href=re.compile(r'(?:twitter\.com|x\.com)/\w+/status/\d+'))
+                if tw_a:
+                    page_infos.append((page_url, tw_a["href"]))
         except Exception:
             pass
 
     if not page_infos:
         return []
 
-    print(f"  📄 共 {len(page_infos)} 页 SNS embed，通过 CDP 逐页读取 Instagram iframe...")
+    print(f"  📄 共 {len(page_infos)} 页 SNS embed")
 
     images: list[str] = []
     seen: set[str] = set()
 
     for i, (page_url, post_frag) in enumerate(page_infos, 1):
+        # Twitter/X embed: return the URL directly for the downloader to handle
+        if "twitter.com" in post_frag or "x.com" in post_frag:
+            print(f"    [{i}/{len(page_infos)}] Twitter: {post_frag}")
+            images.append(post_frag)
+            continue
+        # Instagram embed: use CDP to render and extract
         print(f"    [{i}/{len(page_infos)}] 导航到: {page_url}")
-        # 导航 + 等待 embed 加载
         _cdp_navigate(page_url, wait_seconds=6.0)
-        # 读 Instagram iframe target
         page_imgs = _cdp_read_instagram_iframe(post_frag)
         print(f"    找到 {len(page_imgs)} 张图片")
         for u in page_imgs:
