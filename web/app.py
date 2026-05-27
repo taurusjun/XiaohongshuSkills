@@ -829,7 +829,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <span style="font-size:11px;color:var(--text3)">→</span>
     <input type="date" id="dateTo" class="fd" title="结束日期" onchange="page=0;loadList()">
     <div class="filter-divider"></div>
-    <select id="category" class="fs" onchange="page=0;loadList()"><option value="">全部分类</option></select>
+    <select id="fetchBy" class="fs" onchange="page=0;loadList()"><option value="">全部来源</option></select>
     <select id="status" class="fs" onchange="page=0;loadList()"><option value="active">活跃</option><option value="discarded">已丢弃</option><option value="archived">已归档</option></select>
     <select id="publishXhs" class="fs" onchange="page=0;loadList()"><option value="">发布状态</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
     <select id="fmtFilter" class="fs" onchange="page=0;loadList()"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
@@ -1045,7 +1045,7 @@ function _fmtBadge(fs,cat){
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:pageSize,offset:page*pageSize,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
-    category:S('category').value,status:S('status').value,publish_xhs:S('publishXhs').value,
+    fetch_by:S('fetchBy').value,status:S('status').value,publish_xhs:S('publishXhs').value,
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
@@ -1125,7 +1125,7 @@ async function loadList(){
   // Push state to URL so browser back button restores filters
   const up=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,page:page,
     date_from:S('dateFrom').value,date_to:S('dateTo').value,
-    search:S('search').value,category:S('category').value,
+    search:S('search').value,fetch_by:S('fetchBy').value,
     status:S('status').value,publish_xhs:S('publishXhs').value,
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
   history.replaceState(null,'','/?'+up.toString());
@@ -1385,8 +1385,8 @@ async function collectBatchMetrics(){
   btn.disabled=false;btn.textContent='🔄 回收数据';
 }
 async function loadCategories(){
-  const cats=[...new Set((await(await fetch('/api/news?limit=500')).json()).rows.map(r=>r.category).filter(Boolean))];
-  S('category').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  const fbs=[...new Set((await(await fetch('/api/news?limit=500&status=active')).json()).rows.map(r=>r.fetch_by).filter(Boolean))];
+  S('fetchBy').innerHTML='<option value="">全部来源</option>'+fbs.sort().map(f=>`<option>${esc(f)}</option>`).join('');
 }
 	// Read state from URL params (set by loadList via history.replaceState)
 	const d=new Date();
@@ -1396,7 +1396,7 @@ async function loadCategories(){
 	sortDir=qp.get("sort_dir")||"DESC";
 	page=parseInt(qp.get("page"))||0;
 	S("search").value=qp.get("search")||"";
-	S("category").value=qp.get("category")||"";
+	S("fetchBy").value=qp.get("category")||qp.get("fetch_by")||"";
 	S("status").value=qp.get("status")||"active";
 	S("publishXhs").value=qp.get("publish_xhs")||"";
 	S("fmtFilter").value=qp.get("fmt")||"";
@@ -2585,6 +2585,7 @@ def api_list():
         needs_review=_needs_review,
         fmt=request.args.get('fmt',''),
         score_min=request.args.get('score_min',''),
+        fetch_by=request.args.get('fetch_by',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),

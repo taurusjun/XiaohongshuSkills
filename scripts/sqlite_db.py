@@ -307,6 +307,7 @@ def get_by_key(key: str) -> dict | None:
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
                needs_review: bool = False, fmt: str = "", score_min: str = "",
+               fetch_by: str = "",
                limit: int = 200, offset: int = 0,
                sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
@@ -326,6 +327,8 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
         sql += "AND created_at <= ? || ' 23:59:59' "; params.append(date_to)
     if category:
         sql += "AND category = ? "; params.append(category)
+    if fetch_by:
+        sql += "AND fetch_by = ? "; params.append(fetch_by)
     if fmt:
         sql += "AND n.format_suitability LIKE ? " if needs_review else "AND format_suitability LIKE ? "
         params.append(f"%{fmt}%")
