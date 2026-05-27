@@ -2480,6 +2480,12 @@ def _scrape_bunshun(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_asahi(gallery_url: str) -> list[str]:
+    """asahi.com 图集（独立脚本 scripts/scrapers/asahi_dl.py）"""
+    from scrapers.asahi_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_newsdig(gallery_url: str) -> list[str]:
     """newsdig.tbs.co.jp 图集（独立脚本 scripts/scrapers/newsdig_dl.py）"""
     from scrapers.newsdig_dl import scrape
@@ -2781,6 +2787,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "newsdig.tbs.co.jp" in domain:
         images = _scrape_newsdig(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "asahi.com" in domain:
+        images = _scrape_asahi(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
