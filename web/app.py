@@ -292,7 +292,29 @@ def api_regenerate(key):
             log = []
             is_story = row.get('is_long_form') or 'story' in (row.get('format_suitability') or '')
             title_ja = row.get('title_ja', row.get('title', ''))
+            # 优先重新抓取原文（获取翻页内容），失败则用 DB 缓存
             content_ja = row.get('content_ja', '')
+            article_link = row.get('link', '')
+            if article_link and 'news.yahoo.co.jp' in article_link:
+                try:
+                    from yahoo_common import fetch_article_details as _fetch_details
+                    log.append('重新抓取原文...')
+                    fresh = _fetch_details(article_link)
+                    if fresh.get('original_title'):
+                        title_ja = fresh['original_title']
+                        log.append(f'标题已刷新: {title_ja[:50]}')
+                    if fresh.get('body_text'):
+                        content_ja = fresh['body_text']
+                        log.append(f'✅ 原文已更新 ({len(content_ja)} 字)')
+                        # 更新 DB 中的原文、标题和图片
+                        updates = {'content_ja': content_ja, 'body_text': content_ja}
+                        if fresh.get('original_title'):
+                            updates['title_ja'] = fresh['original_title']
+                        update_news(key, updates)
+                        if fresh.get('article_images'):
+                            update_news(key, {'_article_images': fresh['article_images']})
+                except Exception as e:
+                    log.append(f'⚠️ 重新抓取失败，使用缓存: {e}')
 
             if is_story:
                 log.append('故事体重新生成...')
@@ -887,7 +909,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 </div>
 
 <!-- Confirm modal -->
-<div class="modal" id="confirmModal">
+<div class="modal" id="confirmModal" style="z-index:300">
   <div class="modal-card" style="max-width:380px;text-align:center">
     <div style="font-size:32px;margin-bottom:12px" id="confirmIcon">⚠️</div>
     <p id="confirmMsg" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px"></p>
