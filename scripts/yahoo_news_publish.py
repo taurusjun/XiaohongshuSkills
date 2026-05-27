@@ -77,6 +77,8 @@ def _get_pending_sqlite() -> list:
                 "内容评分": {"number": r.get('content_score',0)},
                 "发布XHS": {"checkbox": bool(r.get('publish_xhs'))},
                 "发布XHS时间": {"date": {"start": r.get('publish_time','')} if r.get('publish_time') else None},
+                "发布模式": {"select": {"name": r.get('publish_mode','normal')}},
+                "自由发布内容": {"rich_text": [{"plain_text": r.get('publish_free_text','')}]},
             },
         })
     return result
@@ -353,6 +355,8 @@ def parse_page(page: dict) -> dict:
         "gallery_url": props.get("图集链接", {}).get("url", ""),
         "category": props.get("分类", {}).get("select", {}).get("name", ""),
         "tags": [t.get("name", "") for t in props.get("标签", {}).get("multi_select", [])],
+        "publish_mode": props.get("发布模式", {}).get("select", {}).get("name", "normal"),
+        "publish_free_text": get_text("自由发布内容"),
     }
 
 
