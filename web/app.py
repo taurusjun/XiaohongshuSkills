@@ -292,10 +292,18 @@ def api_regenerate_title(key):
             from yahoo_common import generate_title_only, evaluate_quality
             from sqlite_db import update_news
             title_ja = row.get('title_ja') or row.get('title', '')
-            content_ja = row.get('content_ja') or row.get('content', '') or ''
+            content_ja = row.get('content_ja') or ''
+            content_zh = row.get('content') or ''
+            summary = row.get('summary') or ''
+            story_type = row.get('story_type') or ''
+            current_title = row.get('title') or ''
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
-            new_title = generate_title_only(title_ja, content_ja)
+            new_title = generate_title_only(
+                title_ja, content_ja,
+                summary=summary, story_type=story_type,
+                current_title=current_title, content_zh=content_zh,
+            )
             if not new_title:
                 _tasks[tid] = {'status': 'error: 标题生成失败', 'log': '\n'.join(log)}
                 return
