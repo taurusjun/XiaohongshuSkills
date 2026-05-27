@@ -1018,6 +1018,10 @@ def fetch_article_details(url: str) -> dict:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
 
+            skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
+                       "avatar", "profile", "favicon", "tracking", "pixel",
+                       "h30.png", "h20.png", "h16.png", "profile_images"]
+
             # 检测分页：Yahoo 文章含 ?page=2, ?page=3 等链接
             page_urls = set()
             for a in soup.find_all("a", href=True):
@@ -1067,9 +1071,6 @@ def fetch_article_details(url: str) -> dict:
                 except Exception:
                     pass
 
-            skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
-                       "avatar", "profile", "favicon", "tracking", "pixel",
-                       "h30.png", "h20.png", "h16.png", "profile_images"]
             # 提取文章内嵌图片（优先用 #uamods-article 精确容器）
         story_container = soup.find("article", id="uamods-article") or article
         if story_container:
