@@ -313,6 +313,17 @@ def api_regenerate(key):
                         update_news(key, updates)
                         if fresh.get('article_images'):
                             update_news(key, {'_article_images': fresh['article_images']})
+                            log.append(f'📷 下载 {len(fresh[\"article_images\"])} 张图片...')
+                            _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
+                            try:
+                                from yahoo_common import _download_article_images as _dl_art_imgs
+                                news = dict(row)
+                                news['_article_images'] = fresh['article_images']
+                                _dl_art_imgs(news, fresh['article_images'])
+                                update_news(key, {'gallery_images': news.get('gallery_images', [])})
+                                log.append(f'✅ 图片已下载')
+                            except Exception as e:
+                                log.append(f'⚠️ 图片下载失败: {e}')
                 except Exception as e:
                     log.append(f'⚠️ 重新抓取失败，使用缓存: {e}')
 
