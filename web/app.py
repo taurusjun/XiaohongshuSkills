@@ -1247,6 +1247,7 @@ function _renderTagChips(container, tags){
   inp.style.cssText='width:60px;border:none;outline:none;font-size:10px;padding:1px 4px;background:transparent';
   inp.onkeydown=function(e){
     if(e.key==='Enter'){
+      e.preventDefault();
       var v=inp.value.trim();
       if(v){
         var hidden=container.parentElement.querySelector('.chip-hidden');
@@ -1254,8 +1255,10 @@ function _renderTagChips(container, tags){
         arr.push(v);
         hidden.value=arr.join(' ');
         _renderTagChips(container, arr);
-        var next=container.querySelector('input');
-        if(next)next.focus();
+        setTimeout(function(){
+          var next=container.querySelector('input');
+          if(next)next.focus();
+        },50);
       }
     }
   };
