@@ -600,66 +600,8 @@ def main():
 
             xhs_content = "\n".join(parts)
 
-        # 添加标签（最后一行 #标签1 #标签2 格式）
-        import random
-        from sqlite_db import get_config
-        tc = get_config("tag_config", default={})
-        MUST_TAGS = tc.get("must_tags", ["日本娱乐", "日本文化", "日本新闻"])
-        TAG_POOLS = tc.get("random_tag_pools", {})
-        FASHION_TAGS = TAG_POOLS.get("fashion", [])
-        BEAUTY_TAGS = TAG_POOLS.get("beauty", [])
-        KEYWORD_TAG_MAP = tc.get("keyword_tag_map", {})
-
-        # 根据内容标签判断分类，选对应的标签池
-        existing_tag_str = " ".join(info.get("tags", []))
-        is_fashion = any(k in existing_tag_str for k in ["穿搭", "ファッション", "コーデ", "fashion"])
-        is_beauty = any(k in existing_tag_str for k in ["メイク", "コスメ", "スキンケア", "美妆", "化妆", "护肤"])
-
-        if is_fashion:
-            hot_tags = FASHION_TAGS
-        elif is_beauty:
-            hot_tags = BEAUTY_TAGS
-        else:
-            hot_tags = []
-
-        def add_tag(lst: list[str], seen_set: set[str], tag: str):
-            tag = tag.lstrip("#")
-            if tag not in seen_set:
-                seen_set.add(tag)
-                lst.append(tag)
-
-        seen_set: set[str] = set()
-        all_tags: list[str] = []
-
-        # 1. 先收集 KEYWORD_TAG_MAP 匹配的标签，优先展开（避免去重后优先级丢失）
-        raw_tags = info.get("tags", [])
-        mapped_tags: list[str] = []
-        other_tags: list[str] = []
-        for t in raw_tags:
-            if t in KEYWORD_TAG_MAP:
-                mapped_tags.append(t)
-            else:
-                other_tags.append(t)
-
-        for t in mapped_tags:
-            for mapped in KEYWORD_TAG_MAP[t]:
-                add_tag(all_tags, seen_set, mapped)
-
-        for t in other_tags:
-            add_tag(all_tags, seen_set, t)
-
-        # 2. 必选标签
-        for t in MUST_TAGS:
-            add_tag(all_tags, seen_set, t)
-
-        # 3. 分类补足标签
-        if hot_tags:
-            n_extra = min(4, len(hot_tags))
-            random_hot = random.sample(hot_tags, n_extra)
-            for t in random_hot:
-                add_tag(all_tags, seen_set, t)
-
-        tags_str = " ".join(f"#{t}" for t in all_tags[:10])
+        # 添加标签：直接读 DB 中已预展开的 tags（生成阶段已完成展开+必选+补足）
+        tags_str = " ".join(f"#{t}" for t in info.get("tags", [])[:10])
         xhs_content = f"{xhs_content}\n{tags_str}"
 
         print(f"正文预览: {content[:80]}...")
