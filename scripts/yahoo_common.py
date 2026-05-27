@@ -1225,20 +1225,22 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
 def _build_title_prompt(title_ja: str, content_ja: str,
                         summary: str = "", story_type: str = "",
-                        current_title: str = "", content_zh: str = "") -> str:
+                        current_title: str = "", content_zh: str = "",
+                        outro: str = "") -> str:
     """统一标题 prompt：先判断体裁，再按对应规则生成标题"""
-    # 正文上下文：优先日文（截500字），没有则用中文
+    # 正文上下文：优先日文（截500字），没有则用中文正文摘要
     if content_ja:
         content_block = f"日文正文（前500字）：{content_ja[:500]}"
     elif content_zh:
-        content_block = f"中文正文（前500字）：{content_zh[:500]}"
+        content_block = f"中文正文摘要：{content_zh[:300]}"
     else:
         content_block = ""
-    # 可选上下文行
-    summary_line = f"中文导语（最有钩子感）：{summary}" if summary else ""
+    # 可选上下文行（已生成的中文内容，最能反映文章精华）
+    summary_line = f"中文导语：{summary}" if summary else ""
+    outro_line = f"中文结语：{outro}" if outro else ""
     story_type_line = f"文章类型：{story_type}（已确认，跳过体裁判断，直接用对应规则）" if story_type else ""
     current_title_line = f"当前标题（不要和它太像，必须有明显差异）：{current_title}" if current_title else ""
-    extra = "\n".join(x for x in [summary_line, story_type_line, current_title_line] if x)
+    extra = "\n".join(x for x in [summary_line, outro_line, story_type_line, current_title_line] if x)
     from config.prompts import TITLE_RULES_NEWS, TITLE_RULES_STORY, TITLE_QUALITY
     return f"""你是专业新闻编辑。根据以下素材，生成一个适合小红书发布的中文标题。
 
@@ -1257,12 +1259,14 @@ def _build_title_prompt(title_ja: str, content_ja: str,
 
 def generate_title_only(title_ja: str, content_ja: str,
                         summary: str = "", story_type: str = "",
-                        current_title: str = "", content_zh: str = "") -> str:
+                        current_title: str = "", content_zh: str = "",
+                        outro: str = "") -> str:
     """只生成标题（轻量），返回标题文本；失败返回空字符串"""
     import json as _json, re as _re
     prompt = _build_title_prompt(title_ja, content_ja,
                                  summary=summary, story_type=story_type,
-                                 current_title=current_title, content_zh=content_zh)
+                                 current_title=current_title, content_zh=content_zh,
+                                 outro=outro)
     result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9, thinking_disabled=False)
     if not result:
         return ""
