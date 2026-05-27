@@ -1610,9 +1610,6 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     <div class="card-section">
       <div class="card-section-title">状态</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px">
-        <span style="color:var(--text2)">分类</span>
-        <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:80px;padding:2px 0;color:var(--text)" placeholder="分类">
-        <span class="sep" style="margin:0 2px"></span>
         <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
           <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
