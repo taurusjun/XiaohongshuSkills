@@ -1259,12 +1259,27 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     return None
 
 
-def _build_title_prompt(title_ja: str, content_ja: str) -> str:
+def _build_title_prompt(title_ja: str, content_ja: str,
+                        summary: str = "", story_type: str = "",
+                        current_title: str = "", content_zh: str = "") -> str:
     """统一标题 prompt：先判断体裁，再按对应规则生成标题"""
-    return f"""你是专业新闻编辑。根据日文原标题和正文，生成一个适合小红书发布的中文标题。
+    # 正文上下文：优先日文（截500字），没有则用中文
+    if content_ja:
+        content_block = f"日文正文（前500字）：{content_ja[:500]}"
+    elif content_zh:
+        content_block = f"中文正文（前500字）：{content_zh[:500]}"
+    else:
+        content_block = ""
+    # 可选上下文行
+    summary_line = f"中文导语（最有钩子感）：{summary}" if summary else ""
+    story_type_line = f"文章类型：{story_type}（已确认，跳过体裁判断，直接用对应规则）" if story_type else ""
+    current_title_line = f"当前标题（不要和它太像，必须有明显差异）：{current_title}" if current_title else ""
+    extra = "\n".join(x for x in [summary_line, story_type_line, current_title_line] if x)
+    return f"""你是专业新闻编辑。根据以下素材，生成一个适合小红书发布的中文标题。
 
 日文原标题：{title_ja}
-日文正文：{content_ja or ''}
+{content_block}
+{extra}
 
 通读全文。标题必须做到：一个字，勾人。
 
@@ -1340,10 +1355,14 @@ def _build_title_prompt(title_ja: str, content_ja: str) -> str:
 格式：{{"title":"生成的中文标题"}}"""
 
 
-def generate_title_only(title_ja: str, content_ja: str) -> str:
+def generate_title_only(title_ja: str, content_ja: str,
+                        summary: str = "", story_type: str = "",
+                        current_title: str = "", content_zh: str = "") -> str:
     """只生成标题（轻量），返回标题文本；失败返回空字符串"""
     import json as _json, re as _re
-    prompt = _build_title_prompt(title_ja, content_ja)
+    prompt = _build_title_prompt(title_ja, content_ja,
+                                 summary=summary, story_type=story_type,
+                                 current_title=current_title, content_zh=content_zh)
     result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9, thinking_disabled=False)
     if not result:
         return ""
