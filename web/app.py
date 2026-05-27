@@ -2182,7 +2182,7 @@ document.getElementById('saveBtn').addEventListener('click',async()=>{
     try{const out=await _ejsEditor.save();document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);}catch(e){}
   }
   const data={};
-  ['title','summary','content','comment','category','video_caption','gallery_url','image_url'].forEach(k=>{data[k]=document.querySelector('[name='+k+']').value});
+  ['title','summary','content','comment','video_caption','gallery_url','image_url'].forEach(k=>{var el=document.querySelector('[name='+k+']');if(el)data[k]=el.value});
   data.tags=tags;
   data.publish_xhs=parseInt(document.querySelector('[name=publish_xhs]').value);
   data.status=document.querySelector('[name=status]').value;
