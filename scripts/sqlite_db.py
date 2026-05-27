@@ -363,6 +363,7 @@ def update_news(key: str, fields: dict) -> bool:
                'xhs_views','xhs_likes','xhs_saves','xhs_comments','xhs_collected_at',
                'xhs_shares','xhs_fans_gained','xhs_impression','xhs_click_rate','xhs_watch_time','xhs_danmaku',
                'format_suitability','is_long_form','story_type',
+               'publish_mode','publish_free_text',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
