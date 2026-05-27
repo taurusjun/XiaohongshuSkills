@@ -847,12 +847,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="action-bar" id="publishBar">
       <span class="lbl"><b id="pendingCount">0</b> 条待发布</span>
       <span class="sp"></span>
-      <button class="btn-ghost" onclick="setQuickTime(8,0)">今 8:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(12,0)">今 12:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(18,0)">今 18:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(8,1)">明 8:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(12,1)">明 12:00</button>
-      <button class="btn-ghost" onclick="setQuickTime(18,1)">明 18:00</button>
       <button class="btn btn-red btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
     </div>
   </div>
@@ -865,6 +859,12 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
         <span class="table-hdr-title">文章列表</span>
         <span class="table-hdr-count" id="tableCount"></span>
         <div style="flex:1"></div>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(8,0)">今8</button>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(12,0)">今12</button>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(18,0)">今18</button>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(8,1)">明8</button>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(12,1)">明12</button>
+        <button class="btn btn-xs btn-outline" onclick="setQuickTime(18,1)">明18</button>
         <select class="fs" style="height:26px;font-size:11px" onchange="pageSize=parseInt(this.value);page=0;loadList()" id="pageSizeSelect">
           <option value="50">50条/页</option><option value="100">100条/页</option><option value="200">200条/页</option>
         </select>
@@ -1413,7 +1413,10 @@ function setQuickTime(h,dayOffset){
   const d=new Date();d.setDate(d.getDate()+dayOffset);
   const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const dtVal=`${ds}T${String(h).padStart(2,'0')}:00`;
-  document.querySelectorAll('input[type=datetime-local]:not([disabled])').forEach(inp=>{
+  document.querySelectorAll('.rowSel:checked').forEach(cb=>{
+    const tr=cb.closest('tr');if(!tr)return;
+    const inp=tr.querySelector('input[type=datetime-local]');
+    if(!inp||inp.disabled)return;
     inp.value=dtVal;
     const tr=inp.closest('tr');
     const cb=tr?tr.querySelector('.rowSel'):null;
