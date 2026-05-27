@@ -1606,39 +1606,36 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       </div>
     </div>
 
+    <!-- Settings -->
+    <div class="card-section">
+      <div class="card-section-title">状态</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px">
+        <span style="color:var(--text2)">分类</span>
+        <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:80px;padding:2px 0;color:var(--text)" placeholder="分类">
+        <span class="sep" style="margin:0 2px"></span>
+        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
+          <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
+        </select>
+        <select name="publish_mode" onchange="onModeChange(this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
+          <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
+          <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
+        </select>
+        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+          <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>丢弃</option>
+          <option value="archived" {{'selected' if news.status=='archived' else ''}}>归档</option>
+        </select>
+      </div>
+    </div>
+
     {% if news.publish_mode == 'free' %}
     <div class="card-section" id="freeTextSection">
       <div class="card-section-title">自由发布内容</div>
       <textarea class="inline-textarea auto-resize" name="publish_free_text" style="min-height:80px" oninput="autoSaveField('publish_free_text',this.value)">{{news.publish_free_text or ''}}</textarea>
     </div>
     {% endif %}
-    <script>async function onModeChange(val){
-      await autoSaveField('publish_mode',val);
-      if(val==='free'){location.reload();return}
-      var s=document.getElementById('freeTextSection');
-      if(s)s.remove();
-    }</script>
-
-    <!-- Settings -->
-    <div class="card-section">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px">
-        <input class="inline-input" name="category" value="{{news.category or ''}}" style="width:60px;font-size:11.5px;padding:2px 0;color:var(--text)" placeholder="分类">
-        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
-          <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
-        </select>
-        <select name="publish_mode" onchange="onModeChange(this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认发布</option>
-          <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
-          <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由发布</option>
-        </select>
-        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
-          <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>已丢弃</option>
-          <option value="archived" {{'selected' if news.status=='archived' else ''}}>已归档</option>
-        </select>
-      </div>
-    </div>
 
     <!-- Tags -->
     <div class="card-section">
@@ -1895,6 +1892,12 @@ async function autoSaveField(field,val){
   var data={};data[field]=field==='publish_xhs'?parseInt(val):val;
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   var t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1000);
+}
+async function onModeChange(val){
+  await autoSaveField('publish_mode',val);
+  if(val==='free'){location.reload();return}
+  var s=document.getElementById('freeTextSection');
+  if(s)s.remove();
 }
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone} = opts;
