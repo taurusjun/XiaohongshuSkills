@@ -313,7 +313,8 @@ def api_regenerate(key):
                         update_news(key, updates)
                         if fresh.get('article_images'):
                             update_news(key, {'_article_images': fresh['article_images']})
-                            log.append(f'📷 下载 {len(fresh[\"article_images\"])} 张图片...')
+                            n_imgs = len(fresh.get('article_images', []))
+                            log.append(f'📷 下载 {n_imgs} 张图片...')
                             _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                             try:
                                 from yahoo_common import _download_article_images as _dl_art_imgs
