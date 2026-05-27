@@ -67,20 +67,23 @@ def approach_b(article: dict) -> dict:
         return {}
 
     intro = result.get('intro', '')
+    outro = result.get('outro', '')
     story_type = result.get('story_type', '')
     body_preview = result.get('body', '')[:300]
     print(f"  story_type : {story_type}")
     print(f"  导语       : {intro[:60]}...")
+    print(f"  结语       : {outro[:60]}...")
     print(f"  Pass 1 标题（暂存）: {result.get('title')}")
 
-    # Pass 2：用导语 + body摘要 生成标题
-    print("\n  → Pass 2：用导语+正文摘要生成标题...")
+    # Pass 2：用导语 + 结语 + 正文摘要 生成标题
+    print("\n  → Pass 2：用导语+结语+正文摘要生成标题...")
     new_title = generate_title_only(
         article['title_ja'],
         article.get('content_ja', ''),
         summary=intro,
+        outro=outro,
         story_type=story_type,
-        current_title=result.get('title', ''),  # 告诉模型要和第一次不同
+        current_title=result.get('title', ''),
         content_zh=body_preview,
     )
     if not new_title:
