@@ -640,9 +640,10 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 .tc{display:flex;align-items:flex-start;gap:10px}
 .tc-body{min-width:0}
 .tc-kw{display:inline-block;background:#f0f0ff;color:var(--purple);font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:4px;margin-bottom:3px;letter-spacing:.02em}
-.tc-title{font-size:12.5px;font-weight:600;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tc-title{font-size:12.5px;font-weight:600;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:380px}
 .tc-title:hover{color:var(--red)}
-.tc-snip{font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:300px}
+.tc-snip{font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:240px}
+.tc-snip:hover{overflow:visible;white-space:normal;max-width:none;background:var(--card-bg);padding:4px 8px;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);position:relative;z-index:10}
 
 /* Badges */
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600}
