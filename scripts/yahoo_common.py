@@ -1375,7 +1375,7 @@ def generate_title_only(title_ja: str, content_ja: str,
         prompt = _build_story_title_prompt(title_ja, content_ja, story_type)
     else:
         prompt = _build_news_title_prompt(title_ja, content_ja)
-    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=100, temperature=0.7, thinking_disabled=True)
+    result = call_litellm(prompt, system_prompt="只输出JSON。", max_tokens=1000, temperature=0.7, thinking_disabled=True)
     if not result:
         return ""
     # 解析 JSON
