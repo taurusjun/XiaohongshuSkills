@@ -1077,7 +1077,14 @@ async function loadList(){
       const ttl=locked?'已发布，不可撤销':(n.publish_xhs?'取消发布':'标记发布');
       return`<div class="${cls}" style="${sty}" onclick="event.stopPropagation();${fn}" title="${ttl}"></div>`;
     })()}</td>
-    <td style="font-size:11px;color:var(--text2)">${n.publish_mode==='caption'?'短配文':n.publish_mode==='free'?'自由':'默认'}</td>
+    <td>${(()=>{
+      const pm=n.publish_mode||'normal';
+      return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_mode:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':'#f0fdf4'};color:${pm==='free'?'#b91c1c':pm==='caption'?'#a16207':'#15803d'};cursor:pointer">
+        <option value="normal" ${pm==='normal'?'selected':''}>默认</option>
+        <option value="caption" ${pm==='caption'?'selected':''}>短配文</option>
+        <option value="free" ${pm==='free'?'selected':''}>自由</option>
+      </select>`;
+    })()}</td>
     <td>${(()=>{
       const locked=n.publish_xhs&&n.publish_time, pending=n.publish_xhs&&!n.publish_time;
       if(locked)return`<input type="datetime-local" value="${n.xhs_pub_time||''}" disabled style="width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;font-size:10px;background:#f5f5f5;color:var(--text2);opacity:.6" title="已发布">`;
