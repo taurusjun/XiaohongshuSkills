@@ -1237,6 +1237,7 @@ function _renderTagChips(container, tags){
   (tags||[]).forEach(function(t){
     if(!t)return;
     var chip=document.createElement('span');
+    chip.className='tag-chip';
     chip.style.cssText='display:inline-flex;align-items:center;gap:2px;background:#e8ecf1;color:#333;border-radius:10px;padding:1px 6px;font-size:10px;margin:1px 2px';
     chip.innerHTML=esc(t)+'<button onclick="this.parentElement.remove();_syncChipInput(this)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 2px;line-height:1">×</button>';
     container.appendChild(chip);
@@ -1265,7 +1266,7 @@ function _syncChipInput(btn){
   if(!container)return;
   var hidden=container.parentElement.querySelector('.chip-hidden');
   var tags=[];
-  container.querySelectorAll('.tag-chip-style, span[style*="border-radius:10px"]').forEach(function(c){tags.push(c.textContent.replace('×','').trim())});
+  container.querySelectorAll('.tag-chip').forEach(function(c){tags.push(c.textContent.replace('×','').trim())});
   hidden.value=tags.join(' ');
 }
 function _chipInput(name, tags){
