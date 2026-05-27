@@ -1612,14 +1612,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <textarea class="inline-textarea auto-resize" name="publish_free_text" style="min-height:80px" oninput="autoSaveField('publish_free_text',this.value)">{{news.publish_free_text or ''}}</textarea>
     </div>
     {% endif %}
-    <script>async function toggleFreeText(){
-      var m=document.querySelector('[name=publish_mode]').value;
+    <script>async function onModeChange(val){
+      await autoSaveField('publish_mode',val);
+      if(val==='free'){location.reload();return}
       var s=document.getElementById('freeTextSection');
-      if(m==='free'){
-        if(!s){await autoSaveField('publish_mode',m);location.reload()}
-      }else{
-        if(s)s.remove();
-      }
+      if(s)s.remove();
     }</script>
 
     <!-- Settings -->
@@ -1630,7 +1627,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
           <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
         </select>
-        <select name="publish_mode" onchange="(async()=>{await autoSaveField('publish_mode',this.value);toggleFreeText()})()" class="meta-select" style="font-size:11px;padding:2px 5px">
+        <select name="publish_mode" onchange="onModeChange(this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认发布</option>
           <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
           <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由发布</option>
