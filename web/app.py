@@ -2193,7 +2193,9 @@ function resetGalleryBtn(){
 })();
 function toggleGalleryModal(){var m=document.getElementById('galleryModal');if(m.classList.contains('active'))closeGalleryModal();else showGalleryModal()}
 function showGalleryModal(){
-  const grid=document.getElementById('galleryGrid');
+  // 去重：同路径保留第一个（sel=true 先入为主）
+  var seen=new Set(); galleryImages=galleryImages.filter(function(p){if(seen.has(p.path))return false;seen.add(p.path);return true});
+  var grid=document.getElementById('galleryGrid');
   grid.innerHTML=galleryImages.map(function(p,i){
     var isVideo=p.path.endsWith('.mp4');
     var media=isVideo?`<video src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;height:120px;object-fit:cover;border-radius:6px"></video>`:`<img src="/local-image?path=${encodeURIComponent(p.path)}" style="width:100%;height:120px;object-fit:cover;border-radius:6px">`;
