@@ -1276,11 +1276,10 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 
 def _build_news_title_prompt(title_ja: str, content_ja: str) -> str:
     """资讯体标题 prompt（20字上限、4种策略、铁律、禁用词）"""
-    snippet = (content_ja or '')[:1500]
     return f"""你是专业新闻编辑。根据日文原标题和正文，生成一个适合小红书发布的中文标题。
 
 日文原标题：{title_ja}
-日文正文（前1500字）：{snippet}
+日文正文：{content_ja or ''}
 
 【SEO标题】
 （20字上限。汉字/日语/标点各1字，英文字母2个算1字。每次从以下4种策略中选一种：
@@ -1328,11 +1327,10 @@ def _build_news_title_prompt(title_ja: str, content_ja: str) -> str:
 
 def _build_story_title_prompt(title_ja: str, content_ja: str, story_type: str = "叙事型") -> str:
     """故事体标题 prompt（25字上限、按类型选格式、通用禁止）"""
-    snippet = (content_ja or '')[:1500]
     return f"""你是专业新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。根据日文原标题和正文，生成一个适合小红书发布的中文标题。
 
 日文原标题：{title_ja}
-日文正文（前1500字）：{snippet}
+日文正文：{content_ja or ''}
 
 【标题要求】
 不超过25字，全部简体中文，人名不加【】括号。
