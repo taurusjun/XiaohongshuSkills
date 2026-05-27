@@ -1018,6 +1018,35 @@ def fetch_article_details(url: str) -> dict:
                     body_parts.append(t)
             body_text = "\n".join(body_parts)
 
+            # 检测分页：Yahoo 文章含 ?page=2, ?page=3 等链接
+            page_urls = set()
+            for a in soup.find_all("a", href=True):
+                m = re.search(r'[?&]page=(\d+)$', a["href"])
+                if m and int(m.group(1)) > 1:
+                    page_url = url.split("?")[0] + f"?page={m.group(1)}"
+                    page_urls.add(page_url)
+            for pn in sorted(page_urls, key=lambda u: int(re.search(r'page=(\d+)', u).group(1))):
+                try:
+                    pr = _direct_session.get(pn, headers={
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                    }, timeout=15)
+                    ps = BeautifulSoup(pr.text, "html.parser")
+                    pa = ps.find("article") or ps.find(class_="article")
+                    if pa:
+                        page_parts = []
+                        for elem in pa.find_all(['p', 'h2', 'h3', 'h4']):
+                            t = elem.get_text(strip=True)
+                            if not t:
+                                continue
+                            if elem.name in ('h2', 'h3', 'h4'):
+                                page_parts.append(f'## {t}')
+                            elif len(t) > 20:
+                                page_parts.append(t)
+                        if page_parts:
+                            body_text += "\n" + "\n".join(page_parts)
+                except Exception:
+                    pass
+
             # 提取文章内嵌图片（优先用 #uamods-article 精确容器）
         story_container = soup.find("article", id="uamods-article") or article
         if story_container:
