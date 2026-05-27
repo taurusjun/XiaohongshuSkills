@@ -741,8 +741,8 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 
         title_score = weighted_sum(title_plus) + weighted_sum(title_minus, minus=True)
         content_score = weighted_sum(content_plus) + weighted_sum(content_minus, minus=True)
-        title_score = max(0.0, min(5.0, title_score))
-        content_score = max(0.0, min(5.0, content_score))
+        title_score = round(max(0.0, min(5.0, title_score)), 1)
+        content_score = round(max(0.0, min(5.0, content_score)), 1)
         return {
             "title_score": title_score,
             "content_score": content_score,
