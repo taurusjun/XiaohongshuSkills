@@ -45,6 +45,11 @@ HEADERS = {
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
 YTDLP_BIN = shutil.which("yt-dlp") or "/opt/homebrew/bin/yt-dlp"
+# Also try project venv path (for launchd subprocesses without full PATH)
+if not os.path.exists(YTDLP_BIN):
+    for _p in [os.path.expanduser("~/PG/XiaohongshuSkills/.venv/bin/yt-dlp"),
+               os.path.join(os.path.dirname(__file__), "..", ".venv", "bin", "yt-dlp")]:
+        if os.path.exists(_p): YTDLP_BIN = _p; break
 
 
 # ================================================================
