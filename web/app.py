@@ -355,6 +355,11 @@ def api_regenerate(key):
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
                 if story.get('story_type'):
                     updates['story_type'] = story['story_type']
+                # 更新标签：保留原标签 + LLM 提取的人物
+                old_tags = row.get('tags') or []
+                if isinstance(old_tags, str): old_tags = old_tags.split(',')
+                person_tags = [p.strip() for p in story.get('persons','').split(',') if p.strip()]
+                updates['tags'] = list({*old_tags, *person_tags})
             else:
                 log.append('翻译标题...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
@@ -379,6 +384,11 @@ def api_regenerate(key):
                 if len(content or '') >= 950:
                     updates['is_long_form'] = True
                     updates['format_suitability'] = '["news"]'
+                # 更新标签：LLM 生成的 topic_tags
+                if topic_tags:
+                    old_tags = row.get('tags') or []
+                    if isinstance(old_tags, str): old_tags = old_tags.split(',')
+                    updates['tags'] = list({*old_tags, *(list(topic_tags) if topic_tags else [])})
 
             update_news(key, updates)
             if quality.get('scores'):
