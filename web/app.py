@@ -286,11 +286,16 @@ def api_regenerate_title(key):
             return jsonify({"error": "not found"}), 404
         title_ja = row.get('title_ja') or row.get('title', '')
         content_ja = row.get('content_ja') or row.get('content', '') or ''
-        body_snippet = content_ja[:800]
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-        from yahoo_common import translate_title, evaluate_quality
-        new_title = translate_title(title_ja)
-        quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, body_snippet)
+        from yahoo_common import generate_content_and_comment, evaluate_quality
+
+        # 复用现有 generate_content_and_comment，只取标题（prompt 已有完整约束）
+        gen = generate_content_and_comment(title_ja, row.get('title', ''), body_text=content_ja)
+        if not gen:
+            with _regen_lock: _regen_keys.discard(key)
+            return jsonify({"error": "标题生成失败"}), 500
+        new_title = gen[0]  # seo_title is the first element
+        quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, content_ja[:800])
         new_ts = quality.get('title_score', 0)
         update_news(key, {'title': new_title, 'title_score': new_ts})
         if quality.get('scores'):
