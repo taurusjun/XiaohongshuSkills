@@ -148,6 +148,12 @@ def _download(key: str, gallery_url: str = ""):
                   if f != 'meta.json' and not f.startswith('.')]
         task['images'] = images
         log.append(f'✅ 已缓存 {len(images)} 张')
+        # Save video to DB if any
+        vids = [str(d / f) for f in sorted(os.listdir(d))
+                if f.endswith('.mp4') and not f.startswith('.')]
+        if vids:
+            update_news(key, {'gallery_video': vids[0],
+                              'gallery_images': [i for i in images if not i.endswith('.mp4')]})
         task['log'] = '\n'.join(log)
 
     except Exception as e:
