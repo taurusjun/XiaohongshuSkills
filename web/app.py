@@ -383,7 +383,8 @@ def api_regenerate(key):
                 old_tags = row.get('tags') or []
                 if isinstance(old_tags, str): old_tags = old_tags.split(',')
                 person_tags = [p.strip() for p in story.get('persons','').split(',') if p.strip()]
-                updates['tags'] = list({*old_tags, *person_tags})
+                from yahoo_common import _build_final_tags
+                updates['tags'] = _build_final_tags(list({*old_tags, *person_tags}))
             else:
                 log.append('翻译标题...')
                 _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
@@ -412,7 +413,8 @@ def api_regenerate(key):
                 if topic_tags:
                     old_tags = row.get('tags') or []
                     if isinstance(old_tags, str): old_tags = old_tags.split(',')
-                    updates['tags'] = list({*old_tags, *(list(topic_tags) if topic_tags else [])})
+                    from yahoo_common import _build_final_tags
+                    updates['tags'] = _build_final_tags(list({*old_tags, *(list(topic_tags) if topic_tags else [])}))
 
             update_news(key, updates)
             if quality.get('scores'):

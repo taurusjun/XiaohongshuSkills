@@ -1269,6 +1269,41 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     return None
 
 
+def _build_final_tags(raw_tags: list[str]) -> list[str]:
+    """生成最终标签：展开 keyword_tag_map + 必选标签 + 分类补足 + 去重。"""
+    import random
+    from sqlite_db import get_config
+    tc = get_config("tag_config", default={})
+    km = tc.get("keyword_tag_map", {})
+    must = tc.get("must_tags", ["日本娱乐", "日本文化", "日本新闻"])
+    pools = tc.get("random_tag_pools", {})
+    fashion_pool = pools.get("fashion", [])
+    beauty_pool = pools.get("beauty", [])
+
+    seen, result = set(), []
+    for t in raw_tags:
+        if t in km:
+            for expanded in km[t]:
+                if expanded not in seen:
+                    seen.add(expanded); result.append(expanded)
+        elif t not in seen:
+            seen.add(t); result.append(t)
+
+    for t in must:
+        if t not in seen:
+            seen.add(t); result.append(t)
+
+    tag_str = " ".join(result)
+    is_fashion = any(k in tag_str for k in ["穿搭", "ファッション", "コーデ", "fashion"])
+    is_beauty = any(k in tag_str for k in ["メイク", "コスメ", "美妆", "化妆", "护肤"])
+    pool = fashion_pool if is_fashion else (beauty_pool if is_beauty else [])
+    for t in random.sample(pool, min(4, len(pool))):
+        if t not in seen:
+            seen.add(t); result.append(t)
+
+    return result[:10]
+
+
 def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str = "") -> dict:
     """故事体文章的完整独立处理路径：生成 → 评分 → 分类 → 图片 → 返回。"""
     story = generate_story_article(
@@ -1326,7 +1361,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     news['category'] = category or '新闻'
     # 合并 auto_classify 标签 + LLM 提取的人物/团体标签
     person_tags = [p.strip() for p in story.get('persons', '').split(',') if p.strip()]
-    news['tags'] = list({*tags, *person_tags, *extra_tags, *(news.get('tags') or [])})
+    news['tags'] = _build_final_tags(list({*tags, *person_tags, *extra_tags, *(news.get('tags') or [])}))
 
     # 封面图（与资讯体一致）
     if news.get('original_image_url') and not news.get('image_url'):
@@ -1807,7 +1842,7 @@ def process_news_item(news: dict, no_translate: bool = False,
             if t not in tags:
                 tags.append(t)
     news['category'] = category
-    news['tags']     = tags
+    news['tags']     = _build_final_tags(tags)
     news['source']   = news.get('source', 'Yahoo Japan')
 
     # 短配文（tags 确定后生成）
