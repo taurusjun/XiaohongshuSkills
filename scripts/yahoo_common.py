@@ -1044,15 +1044,35 @@ def fetch_article_details(url: str) -> dict:
                                 page_parts.append(t)
                         if page_parts:
                             body_text += "\n" + "\n".join(page_parts)
+                    # 也提取分页图片
+                    pc = ps.find("article", id="uamods-article") or pa
+                    if pc:
+                        for img in pc.find_all("img"):
+                            src = img.get("src") or img.get("data-src") or ""
+                            if not src or not src.startswith("http"):
+                                continue
+                            if any(k in src.lower() for k in skip_kw):
+                                continue
+                            is_tweet = "pbs.twimg.com/media/" in src
+                            if not is_tweet:
+                                try:
+                                    w = int(img.get("width", 0))
+                                    h = int(img.get("height", 0))
+                                    if (w and w < 200) or (h and h < 150):
+                                        continue
+                                except (ValueError, TypeError):
+                                    pass
+                            if src not in article_images:
+                                article_images.append(src)
                 except Exception:
                     pass
 
-            # 提取文章内嵌图片（优先用 #uamods-article 精确容器）
-        story_container = soup.find("article", id="uamods-article") or article
-        if story_container:
             skip_kw = ["logo", "icon", "ico_", "banner", "ad/", "sprite", "dummy",
                        "avatar", "profile", "favicon", "tracking", "pixel",
                        "h30.png", "h20.png", "h16.png", "profile_images"]
+            # 提取文章内嵌图片（优先用 #uamods-article 精确容器）
+        story_container = soup.find("article", id="uamods-article") or article
+        if story_container:
             for img in story_container.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if not src or not src.startswith("http"):
