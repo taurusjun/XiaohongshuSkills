@@ -270,29 +270,38 @@ def api_active_tasks():
             active.append({'task_id': tid, 'status': 'running', 'log': t.get('log', '')})
     return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
 
-@app.route('/api/regenerate/<key>', methods=['POST'])
 @app.route('/api/regenerate-title/<key>', methods=['POST'])
 def api_regenerate_title(key):
-    from sqlite_db import get_by_key, update_news
-    row = get_by_key(key)
-    if not row:
-        return jsonify({"error": "not found"}), 404
-    title_ja = row.get('title_ja') or row.get('title', '')
-    content_ja = row.get('content_ja') or row.get('content', '') or ''
-    body_snippet = content_ja[:800]
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-    from yahoo_common import translate_title, evaluate_quality
-    new_title = translate_title(title_ja)
-    quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, body_snippet)
-    new_ts = quality.get('title_score', 0)
-    update_news(key, {'title': new_title, 'title_score': new_ts})
-    if quality.get('scores'):
-        try:
-            from sqlite_db import upsert_score_dims
-            upsert_score_dims(key, quality['scores'])
-        except: pass
-    print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
-    return jsonify({"ok": True, "title": new_title, "title_score": new_ts})
+    global _regen_keys
+    if key in _regen_keys:
+        return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
+    with _regen_lock:
+        if key in _regen_keys: return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
+        _regen_keys.add(key)
+    try:
+        from sqlite_db import get_by_key, update_news
+        row = get_by_key(key)
+        if not row:
+            with _regen_lock: _regen_keys.discard(key)
+            return jsonify({"error": "not found"}), 404
+        title_ja = row.get('title_ja') or row.get('title', '')
+        content_ja = row.get('content_ja') or row.get('content', '') or ''
+        body_snippet = content_ja[:800]
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+        from yahoo_common import translate_title, evaluate_quality
+        new_title = translate_title(title_ja)
+        quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, body_snippet)
+        new_ts = quality.get('title_score', 0)
+        update_news(key, {'title': new_title, 'title_score': new_ts})
+        if quality.get('scores'):
+            try:
+                from sqlite_db import upsert_score_dims
+                upsert_score_dims(key, quality['scores'])
+            except: pass
+        print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
+        return jsonify({"ok": True, "title": new_title, "title_score": new_ts})
+    finally:
+        with _regen_lock: _regen_keys.discard(key)
 
 @app.route('/api/regenerate/<key>', methods=['POST'])
 def api_regenerate(key):
