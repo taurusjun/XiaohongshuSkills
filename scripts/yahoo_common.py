@@ -1333,7 +1333,7 @@ def _build_story_title_prompt(title_ja: str, content_ja: str, story_type: str = 
 日文正文：{content_ja or ''}
 
 【标题要求】
-不超过25字，全部简体中文，人名不加【】括号。
+不超过40字，全部简体中文，人名不加【】括号。
 
 根据文章类型「{story_type}」选择格式：
 
