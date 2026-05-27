@@ -884,7 +884,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th onclick="setSort('publish_time')" style="width:88px">XHS发布 ↕</th>
             <th onclick="setSort('created_at')" style="width:88px">入库时间 ↕</th>
             <th onclick="setSort('pub_time')" style="width:88px">新闻时间 ↕</th>
-            <th>标签</th>
+            <th style="width:60px">发布模式</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
         </table>
@@ -1085,7 +1085,7 @@ async function loadList(){
     <td style="font-size:11px;color:${n.publish_time?'var(--green)':'var(--text3)'};white-space:nowrap;font-weight:${n.publish_time?600:400}">${n.publish_time||'—'}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${(n.created_at||'').substring(0,16)}</td>
     <td style="font-size:11px;color:var(--text3);white-space:nowrap">${n.pub_time||'—'}</td>
-    <td>${(n.tags||[]).slice(0,3).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
+    <td style="font-size:11px;color:var(--text2)">${n.publish_mode==='caption'?'短配文':n.publish_mode==='free'?'自由':'默认'}</td>
   </tr>`;}).join('');
 
   // Update metrics

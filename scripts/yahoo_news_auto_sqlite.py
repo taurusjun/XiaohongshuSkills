@@ -59,7 +59,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         if len(articles) == 0:
             retry_queue.append(kw)
             continue
-        tags = KEYWORD_TAG_MAP.get(k, []) or [k]
+        tags = [k] + (KEYWORD_TAG_MAP.get(k, []) or [])
         for a in articles:
             key = extract_key_from_url(a['link'])
             if key not in seen_keys:
@@ -78,7 +78,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
         _log_ctx.prefix = ""
         print(f"  {'✅' if articles else '❌'} [{k}] 找到 {len(articles)} 条\n")
-        tags = KEYWORD_TAG_MAP.get(k, []) or [k]
+        tags = [k] + (KEYWORD_TAG_MAP.get(k, []) or [])
         for a in articles:
             key = extract_key_from_url(a['link'])
             if key not in seen_keys:
