@@ -278,35 +278,48 @@ def api_regenerate_title(key):
     with _regen_lock:
         if key in _regen_keys: return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
         _regen_keys.add(key)
-    try:
-        from sqlite_db import get_by_key, update_news
-        row = get_by_key(key)
-        if not row:
-            with _regen_lock: _regen_keys.discard(key)
-            return jsonify({"error": "not found"}), 404
-        title_ja = row.get('title_ja') or row.get('title', '')
-        content_ja = row.get('content_ja') or row.get('content', '') or ''
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-        from yahoo_common import generate_content_and_comment, evaluate_quality
-
-        # 复用现有 generate_content_and_comment，只取标题（prompt 已有完整约束）
-        gen = generate_content_and_comment(title_ja, row.get('title', ''), body_text=content_ja)
-        if not gen:
-            with _regen_lock: _regen_keys.discard(key)
-            return jsonify({"error": "标题生成失败"}), 500
-        new_title = gen[0]  # seo_title is the first element
-        quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, content_ja[:800])
-        new_ts = quality.get('title_score', 0)
-        update_news(key, {'title': new_title, 'title_score': new_ts})
-        if quality.get('scores'):
-            try:
-                from sqlite_db import upsert_score_dims
-                upsert_score_dims(key, quality['scores'])
-            except: pass
-        print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
-        return jsonify({"ok": True, "title": new_title, "title_score": new_ts})
-    finally:
+    from sqlite_db import get_by_key
+    row = get_by_key(key)
+    if not row:
         with _regen_lock: _regen_keys.discard(key)
+        return jsonify({"error": "not found"}), 404
+    tid = f"regen-title_{key}"
+    _tasks[tid] = {'status': 'running', 'log': ''}
+    def do_regen_title():
+        log = []
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+            from yahoo_common import generate_content_and_comment, evaluate_quality
+            from sqlite_db import update_news
+            title_ja = row.get('title_ja') or row.get('title', '')
+            content_ja = row.get('content_ja') or row.get('content', '') or ''
+            log.append('生成标题...')
+            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
+            gen = generate_content_and_comment(title_ja, row.get('title', ''), body_text=content_ja)
+            if not gen:
+                _tasks[tid] = {'status': 'error: 标题生成失败', 'log': '\n'.join(log)}
+                return
+            new_title = gen[0]
+            log.append(f'新标题: {new_title[:50]}')
+            log.append('评估质量...')
+            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
+            quality = evaluate_quality(new_title, content_ja or row.get('content',''), row.get('comment',''), title_ja, content_ja[:800])
+            new_ts = quality.get('title_score', 0)
+            update_news(key, {'title': new_title, 'title_score': new_ts})
+            if quality.get('scores'):
+                try:
+                    from sqlite_db import upsert_score_dims
+                    upsert_score_dims(key, quality['scores'])
+                except: pass
+            log.append(f'✅ 完成 评分:{new_ts:.1f}')
+            _tasks[tid] = {'status': 'done', 'log': '\n'.join(log)}
+            print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
+        except Exception as e:
+            _tasks[tid] = {'status': f'error: {e}', 'log': '\n'.join(log)}
+        finally:
+            with _regen_lock: _regen_keys.discard(key)
+    threading.Thread(target=do_regen_title, daemon=True).start()
+    return jsonify({"task_id": tid})
 
 @app.route('/api/regenerate/<key>', methods=['POST'])
 def api_regenerate(key):
@@ -1980,35 +1993,36 @@ async function runTask(opts){
 }
 async function regenerateTitleOnly(){
   var btn=document.querySelector('[onclick=\"regenerateTitleOnly()\"]'),orig=btn.textContent;
-  btn.disabled=true;btn.textContent='⏳...';
-  var r=await fetch('/api/regenerate-title/'+key,{method:'POST'});
-  var d=await r.json();
-  if(d.ok){document.querySelector('[name=title]').value=d.title;location.reload()}
-  else{alert('失败');btn.disabled=false;btn.textContent=orig}
+  runTask({title:'📝 重拟标题',apiUrl:'/api/regenerate-title/'+key,apiBody:{},btn:btn,origText:orig,onDone:()=>location.reload()});
 }
 async function regenerateContent(){
   if(!await showConfirm('重新生成会覆盖当前内容','标题和正文将被重新生成，无法撤销','重新生成','btn-red','🔄'))return;
   var btn=document.getElementById('regenBtn'),orig=btn.textContent;
   runTask({title:'🔄 重新生成',apiUrl:'/api/regenerate/'+key,apiBody:{},btn:btn,origText:orig,onDone:()=>location.reload()});
 }
-// Check if regen is already running on page load
+// Check if regen / regen-title is already running on page load
 (async function checkRegenRunning(){
+  // 先查重新生成
   var r=await fetch('/api/task/regen_'+key);var d=await r.json();
+  var tid='regen_'+key,title='🔄 重新生成',btnId='regenBtn';
+  if(d.status!=='running'){
+    // 再查重拟标题
+    r=await fetch('/api/task/regen-title_'+key);d=await r.json();
+    tid='regen-title_'+key;title='📝 重拟标题';btnId='';
+  }
   if(d.status==='running'){
-    var btn=document.getElementById('regenBtn');
-    btn.disabled=true;btn.style.opacity='0.6';btn.style.background='var(--red)';btn.style.color='#fff';
-    btn.textContent='⏳ 运行中...';
-    document.getElementById('taskModalTitle').textContent='🔄 重新生成';
+    var btn=btnId?document.getElementById(btnId):document.querySelector('[onclick=\"regenerateTitleOnly()\"]');
+    if(btn){btn.disabled=true;btn.style.opacity='0.6';btn.style.background='var(--red)';btn.style.color='#fff';btn.textContent='⏳ 运行中...'}
+    document.getElementById('taskModalTitle').textContent=title;
     document.getElementById('taskLog').textContent=d.log||'⏳ 运行中...';
     document.getElementById('taskModal').classList.add('active');
-    // Keep polling
-    var tid='regen_'+key,lastLen=(d.log||'').length;
+    var lastLen=(d.log||'').length;
     for(var i=0;i<60;i++){
       await new Promise(r=>setTimeout(r,2000));
       try{var sr=await fetch('/api/task/'+tid);var sd=await sr.json()}catch(e){continue}
       if(sd.log&&sd.log.length>lastLen){document.getElementById('taskLog').textContent=sd.log;lastLen=sd.log.length}
-      if(sd.status==='done'){btn.textContent='✅ 完成';btn.style.background='';btn.style.color='';btn.style.opacity='1';setTimeout(()=>location.reload(),1000);return}
-      if(sd.status&&sd.status.startsWith('error')){btn.textContent='❌ 失败';btn.style.background='';btn.style.color='';btn.style.opacity='1';btn.disabled=false;return}
+      if(sd.status==='done'){if(btn){btn.textContent='✅ 完成';btn.style.background='';btn.style.color='';btn.style.opacity='1'}setTimeout(()=>location.reload(),1000);return}
+      if(sd.status&&sd.status.startsWith('error')){if(btn){btn.textContent='❌ 失败';btn.style.background='';btn.style.color='';btn.style.opacity='1';btn.disabled=false}return}
     }
   }
 })();
