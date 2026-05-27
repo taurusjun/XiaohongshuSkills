@@ -1328,17 +1328,37 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
         print("    ⚠️ 故事体生成失败，回退到资讯体")
         return _fallback_to_news(news, keyword, extra_tags)
 
-    news['title']    = story.get('title', news['title_zh'])
-    news['title_zh'] = story.get('title', news['title_zh'])
+    pass1_title = story.get('title', news['title_zh'])
+    intro  = story.get('intro', '')
+    outro  = story.get('outro', '')
+    story_type = story.get('story_type', '')
+
+    # Pass 2: 用导语+结语生成更好的标题
+    try:
+        pass2_title = generate_title_only(
+            news['title_ja'], "",
+            summary=intro, outro=outro,
+            story_type=story_type,
+            current_title=pass1_title,
+        )
+        final_title = pass2_title if pass2_title else pass1_title
+        print(f"    📝 Pass1标题: {pass1_title[:30]}")
+        print(f"    📝 Pass2标题: {final_title[:30]}")
+    except Exception as e:
+        print(f"    ⚠️ Pass2标题生成失败，使用Pass1: {e}")
+        final_title = pass1_title
+
+    news['title']    = final_title
+    news['title_zh'] = final_title
     news['content']  = story['body']
-    news['comment']  = story.get('outro', '')
-    news['summary']  = story.get('intro', '')[:100]
+    news['comment']  = outro
+    news['summary']  = intro[:100]
     news['category'] = '新闻'
     news['is_long_form'] = True
     news['format_suitability'] = ['story']
-    if story.get('story_type'):
-        news['story_type'] = story['story_type']
-    print(f"    故事体生成完成 [{story.get('story_type','?')}]: {len(news['content'])} 字")
+    if story_type:
+        news['story_type'] = story_type
+    print(f"    故事体生成完成 [{story_type or '?'}]: {len(news['content'])} 字")
 
     # 评分
     quality = evaluate_quality(news['title_zh'], news['content'], news['comment'])
