@@ -293,10 +293,9 @@ def api_regenerate_title(key):
             from sqlite_db import update_news
             title_ja = row.get('title_ja') or row.get('title', '')
             content_ja = row.get('content_ja') or row.get('content', '') or ''
-            is_story = row.get('is_long_form') or 'story' in (row.get('format_suitability') or '')
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
-            new_title = generate_title_only(title_ja, content_ja, is_story, row.get('story_type', '叙事型'))
+            new_title = generate_title_only(title_ja, content_ja)
             if not new_title:
                 _tasks[tid] = {'status': 'error: 标题生成失败', 'log': '\n'.join(log)}
                 return
