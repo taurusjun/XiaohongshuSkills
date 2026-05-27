@@ -1228,8 +1228,13 @@ def _build_title_prompt(title_ja: str, content_ja: str,
                         current_title: str = "", content_zh: str = "",
                         outro: str = "") -> str:
     """统一标题 prompt：先判断体裁，再按对应规则生成标题"""
-    # 正文上下文：只用日文原文（导语+结语已是中文精华，不需要再加中文正文摘要）
-    content_block = f"日文正文（前500字）：{content_ja[:500]}" if content_ja else ""
+    # 正文上下文：content_zh 优先（已处理的中文），无则用日文原文
+    if content_zh:
+        content_block = f"中文正文摘要：{content_zh[:400]}"
+    elif content_ja:
+        content_block = f"日文正文（前500字）：{content_ja[:500]}"
+    else:
+        content_block = ""
     # 可选上下文行（已生成的中文内容，最能反映文章精华）
     summary_line = f"中文导语：{summary}" if summary else ""
     outro_line = f"中文结语：{outro}" if outro else ""
