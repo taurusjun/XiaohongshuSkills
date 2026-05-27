@@ -1901,7 +1901,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
 <!-- Story 预览 Modal -->
 <!-- Confirm modal (detail) -->
-<div class="modal" id="confirmModal">
+<div class="modal" id="confirmModal" style="z-index:300">
   <div class="modal-card" style="max-width:380px;text-align:center">
     <div style="font-size:32px;margin-bottom:12px" id="confirmIcon">⚠️</div>
     <p id="confirmMsg" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px"></p>
@@ -1931,7 +1931,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   </div>
 </div>
 <script>function closeTaskModal(){document.getElementById('taskModal').classList.remove('active')}
-async function stopTask(){if(await showConfirm('确定终止当前任务？','','终止','btn-red','🛑')){await fetch('/api/task/regen_'+key+'/stop',{method:'POST'});location.reload()}}</script>
+async function stopTask(){if(await showConfirm('确定终止当前任务？','','终止','btn-red','🛑')){await fetch('/api/task/regen_'+key+'/stop',{method:'POST'});await fetch('/api/task/regen-title_'+key+'/stop',{method:'POST'});location.reload()}}</script>
 
 <div class="modal" id="galleryModal" onclick="if(event.target===this)closeGalleryModal()">
   <div class="modal-card" style="max-width:800px">
