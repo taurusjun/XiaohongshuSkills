@@ -251,8 +251,9 @@ def insert_news(news: dict) -> bool:
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
                     pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by,
-                    format_suitability, is_long_form, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                    format_suitability, is_long_form, publish_mode, publish_free_text,
+                    updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -268,6 +269,8 @@ def insert_news(news: dict) -> bool:
                     fetch_by=excluded.fetch_by, status=excluded.status,
                     format_suitability=excluded.format_suitability,
                     is_long_form=excluded.is_long_form,
+                    publish_mode=excluded.publish_mode,
+                    publish_free_text=excluded.publish_free_text,
                     updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
                   news.get('link',''), news.get('source',''), news.get('category',''),
@@ -279,7 +282,8 @@ def insert_news(news: dict) -> bool:
                   news.get('content_ja',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
                   news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by',''),
-                  fs_str, 1 if news.get('is_long_form') else 0))
+                  fs_str, 1 if news.get('is_long_form') else 0,
+                  news.get('publish_mode','normal'), news.get('publish_free_text','')))
             return True
         except Exception as e:
             print(f"  ⚠️ SQLite 写入失败: {e}")
