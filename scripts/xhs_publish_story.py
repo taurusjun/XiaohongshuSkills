@@ -299,7 +299,9 @@ def export_to_md(news_key: str):
         md += "---\n\n"
         md += f"<mark>{comment}</mark>\n"
 
-    fname = f"{news_key[:16]}.md"
+    # 文件名: 标题前10字_key前8位.md，去掉文件名不合法字符
+    safe_title = re.sub(r'[\\/:*?"<>|]', '', title)[:10]
+    fname = f"{safe_title}_{news_key[:8]}.md"
     out_path = os.path.join(EXPORT_DIR, fname)
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(md)
