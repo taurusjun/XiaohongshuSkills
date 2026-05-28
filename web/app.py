@@ -1738,7 +1738,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div class="meta-item">来源 <b>{{news.source or '-'}}</b></div>
       <div class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></div>
       <div class="meta-item">入库时间 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></div>
-      {% if news.publish_time %}<div class="meta-item" style="color:var(--green)">XHS发布 <b>{{news.publish_time}}</b> <span style="cursor:pointer;color:var(--red);font-size:10px;margin-left:4px" onclick="autoSaveField('publish_time','');location.reload()">[清除]</span></div>{% endif %}
+      <div class="meta-item">XHS发布时间 <input type="datetime-local" name="publish_time" value="{{news.publish_time or ''}}" onchange="autoSaveField('publish_time',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:{% if news.publish_time %}var(--green){% else %}var(--text2){% endif %};width:175px" title="手动设置XHS发布时间"></div>
       <div style="margin-top:8px">
         <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{news.link or ''}}">🔗 查看原文</a>
       </div>
