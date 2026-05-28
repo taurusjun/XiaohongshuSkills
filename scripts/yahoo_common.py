@@ -744,6 +744,11 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
         }
     except (_json.JSONDecodeError, ValueError, KeyError) as e:
         print(f"    ⚠️ 评分JSON解析失败: {e} | 输出: {result[:150]}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"评分JSON解析失败 title={title_zh[:50]}: {e}\n原始输出前500字: {result[:500]}")
+        except Exception:
+            pass
         return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
 
