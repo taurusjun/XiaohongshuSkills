@@ -50,21 +50,25 @@ def _fetch_page_images_cdp(gallery_url: str) -> list[str]:
         pub._evaluate("window.scrollTo(0, document.body.scrollHeight)")
         time.sleep(1.5)
 
-        # 提取当前页图片
+        # 只抓 articleDetail-contentImages-screen 内的大图
         def _extract():
             return pub._evaluate("""
                 (() => {
-                    const imgs = new Set();
-                    document.querySelectorAll('img, [data-src]').forEach(el => {
-                        const src = el.src || el.dataset.src || '';
-                        if (src && src.includes('news.ntv.co.jp') && src.includes('gimage'))
-                            imgs.add(src);
+                    const imgs = [];
+                    const screens = document.querySelectorAll('[class*="articleDetail-contentImages-screen"]');
+                    screens.forEach(el => {
+                        el.querySelectorAll('img').forEach(img => {
+                            const src = img.src || img.dataset.src || '';
+                            if (src && src.includes('gimage') && !imgs.includes(src))
+                                imgs.push(src);
+                        });
+                        el.querySelectorAll('picture source').forEach(s => {
+                            const url = (s.srcset || '').split(' ')[0];
+                            if (url && url.includes('gimage') && !imgs.includes(url))
+                                imgs.push(url);
+                        });
                     });
-                    document.querySelectorAll('picture source').forEach(el => {
-                        const url = (el.srcset || '').split(' ')[0];
-                        if (url && url.includes('gimage')) imgs.add(url);
-                    });
-                    return Array.from(imgs);
+                    return imgs;
                 })()
             """) or []
 
