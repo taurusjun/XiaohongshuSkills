@@ -23,13 +23,15 @@ def _init_log_dir():
         if f.stat().st_mtime < cutoff:
             f.unlink()
 _init_log_dir()
+_log_file_lock = threading.Lock()      # L-3: serialize concurrent log writes
 
 def _save_task_log(task_id: str, log_text: str):
     try:
         today = _dt_ad2.now().strftime('%Y-%m-%d')
         log_path = os.path.join(TASK_LOG_DIR, f'task_{today}.log')
-        with open(log_path, 'a') as f:
-            f.write(f"\n=== {task_id} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n{log_text}\n")
+        with _log_file_lock:
+            with open(log_path, 'a') as f:
+                f.write(f"\n=== {task_id} {_dt_ad2.now().strftime('%H:%M:%S')} ===\n{log_text}\n")
     except Exception:
         pass
 
@@ -52,12 +54,14 @@ def check_backend():
 # Background task tracking {task_id: status}
 _tasks = {}
 _task_counter = 0
+_task_counter_lock = threading.Lock()   # C-2: protect counter
 _publish_lock = threading.Lock()
 _publish_running = False
 _fetch_lock = threading.Lock()
 _fetch_running = False
 _regen_lock = threading.Lock()
 _regen_keys = set()
+_tasks_lock = threading.Lock()          # H-3: protect _tasks reads/writes
 
 def _run_task(cmd, task_id, env=None, on_done=None):
     log_lines = []
@@ -102,14 +106,13 @@ def api_gallery_download(key):
 @app.route('/api/trigger-fetch', methods=['POST'])
 def api_trigger_fetch():
     global _task_counter, _fetch_running
-    if _fetch_running:
-        return jsonify({"locked": True, "msg": "已有抓取任务在运行，请等待完成"})
-    with _fetch_lock:
+    with _fetch_lock:                   # C-1: acquire lock first
         if _fetch_running:
             return jsonify({"locked": True, "msg": "已有抓取任务在运行，请等待完成"})
         _fetch_running = True
     data = request.json or {}
-    tid = str(_task_counter); _task_counter += 1
+    with _task_counter_lock:            # C-2: atomic counter
+        tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
     py = sys.executable
     scripts_dir_abs = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
@@ -147,13 +150,12 @@ def api_trigger_fetch():
 @app.route('/api/trigger-publish', methods=['POST'])
 def api_trigger_publish():
     global _task_counter, _publish_running
-    if _publish_running:
-        return jsonify({"locked": True, "msg": "已有发布任务在运行，请等待完成"})
-    with _publish_lock:
+    with _publish_lock:                 # C-1: acquire lock first
         if _publish_running:
             return jsonify({"locked": True, "msg": "已有发布任务在运行，请等待完成"})
         _publish_running = True
-    tid = str(_task_counter); _task_counter += 1
+    with _task_counter_lock:            # C-2: atomic counter
+        tid = str(_task_counter); _task_counter += 1
     _tasks[tid] = {'status': 'running', 'log': ''}
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
     post_time = (request.json or {}).get('post_time', '')
@@ -171,10 +173,10 @@ def api_trigger_publish():
 def api_task(tid):
     t = _tasks.get(tid, 'unknown')
     if isinstance(t, dict):
-        if 'log' in t and t['log']:
-            t['log'] = t['log'].replace('\x00','').replace('\x1b','')
-        # Don't expose proc object
+        # H-3: copy before mutating to avoid racing with background thread
         r = {k: v for k, v in t.items() if k != 'proc'}
+        if r.get('log'):
+            r['log'] = r['log'].replace('\x00', '').replace('\x1b', '')
         return jsonify(r)
     return jsonify({"status": t, "log": ""})
 
@@ -273,9 +275,7 @@ def api_active_tasks():
 @app.route('/api/regenerate-title/<key>', methods=['POST'])
 def api_regenerate_title(key):
     global _regen_keys
-    if key in _regen_keys:
-        return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
-    with _regen_lock:
+    with _regen_lock:                   # H-1: remove pre-lock check
         if key in _regen_keys: return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
         _regen_keys.add(key)
     from sqlite_db import get_by_key
@@ -285,7 +285,7 @@ def api_regenerate_title(key):
         return jsonify({"error": "not found"}), 404
     tid = f"regen-title_{key}"
     _tasks[tid] = {'status': 'running', 'log': ''}
-    def do_regen_title():
+    def do_regen_title(row=row):  # L-2: capture row by value
         log = []
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
@@ -321,7 +321,7 @@ def api_regenerate_title(key):
                 try:
                     from sqlite_db import upsert_score_dims
                     upsert_score_dims(key, quality['scores'])
-                except: pass
+                except Exception as _e: app.logger.warning(f"[regen] upsert_score_dims failed: {_e}")
             log.append(f'✅ 完成 评分:{new_ts:.1f}')
             _tasks[tid] = {'status': 'done', 'log': '\n'.join(log)}
             print(f'📝 标题重拟: {new_title[:40]} 评分:{new_ts:.1f}')
@@ -335,9 +335,7 @@ def api_regenerate_title(key):
 @app.route('/api/regenerate/<key>', methods=['POST'])
 def api_regenerate(key):
     global _regen_keys
-    if key in _regen_keys:
-        return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
-    with _regen_lock:
+    with _regen_lock:                   # H-1: remove pre-lock check
         if key in _regen_keys: return jsonify({"locked": True, "msg": "该新闻正在重新生成中"})
         _regen_keys.add(key)
     from sqlite_db import get_by_key
@@ -345,7 +343,7 @@ def api_regenerate(key):
     if not row:
         with _regen_lock: _regen_keys.discard(key)
         return jsonify({"error": "not found"}), 404
-    def do_regenerate():
+    def do_regenerate(row=row):  # L-2: capture row by value
         _tasks['regen_'+key] = {'status': 'running', 'log': ''}
         try:
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
@@ -459,7 +457,7 @@ def api_regenerate(key):
                 try:
                     from sqlite_db import upsert_score_dims
                     upsert_score_dims(key, quality['scores'])
-                except: pass
+                except Exception as _e: app.logger.warning(f"[regen] upsert_score_dims failed: {_e}")
             ts = quality.get('title_score', 0)
             cs = quality.get('content_score', 0)
             log.append('✅ 完成 标题' + str(round(ts,2)) + ' 内容' + str(round(cs,2)))
@@ -2668,7 +2666,8 @@ def detail(key):
                 with open(meta_path) as f:
                     meta = _json.load(f)
                 news['gallery_url'] = meta.get('gallery_url', '')
-            except: pass
+            except Exception:
+                pass
     scores = get_score_dims(key)
 
     # 解析体裁（现在是单一字符串）

@@ -33,7 +33,9 @@ def run(dry_run: bool = False, live_preview: bool = False):
     """智能体主循环：感知→规划→执行→通知"""
     if dry_run:
         import tempfile
-        os.environ["SQLITE_PATH"] = tempfile.mktemp(suffix=".db")
+        _fd, _tmp_path = tempfile.mkstemp(suffix=".db")  # M-1: safe temp file
+        os.close(_fd)
+        os.environ["SQLITE_PATH"] = _tmp_path
         # 强制重载 yahoo_conf 以获取新 DB_PATH
         import config.yahoo_conf, importlib
         importlib.reload(config.yahoo_conf)
@@ -51,6 +53,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
 
     date_str = datetime.now().strftime("%Y%m%d")
     progress = get_state(f"runner_progress_{date_str}", default={"phase": 0})
+    planner_mode = get_config("planner_mode", default="rule")  # C-3: define before phase blocks
 
     # Phase 1: 感知
     if progress.get("phase", 0) < 1:
@@ -106,10 +109,17 @@ def run(dry_run: bool = False, live_preview: bool = False):
                         })()
                     """)
                     if isinstance(raw, dict):
-                        fans_str = raw.get("粉丝", "")
+                        fans_str = str(raw.get("粉丝", "")).replace(",", "").strip()
                         if fans_str:
-                            fans_str = str(fans_str).replace(",", "")
-                            followers = int(float(fans_str.replace("万", "")) * 10000) if "万" in fans_str else int(fans_str)
+                            try:  # M-6: robust parsing for k/万/plain formats
+                                if "万" in fans_str:
+                                    followers = round(float(fans_str.replace("万", "")) * 10000)
+                                elif fans_str.replace(".", "", 1).isdigit():
+                                    followers = int(float(fans_str))
+                                else:
+                                    raise ValueError(f"Unrecognised fans format: {fans_str!r}")
+                            except (ValueError, AttributeError) as _fe:
+                                raise ValueError(f"粉丝数解析失败 fans_str={fans_str!r}: {_fe}") from _fe
                     if followers is None:
                         raise ValueError(f"DOM 中未找到粉丝数（raw={raw}），页面结构可能已变化")
                     logger.info(f"  粉丝数: {followers}  关注: {raw.get('关注')}  获赞收藏: {raw.get('获赞与收藏')}")
@@ -133,7 +143,6 @@ def run(dry_run: bool = False, live_preview: bool = False):
     # Phase 2: 规划
     if progress.get("phase", 0) < 2:
         logger.info("=== Phase 2: 规划 ===")
-        planner_mode = get_config("planner_mode", default="rule")
         if planner_mode == "llm":
             from scripts.agent_planner_llm import plan_today_llm
             plan = plan_today_llm(date_str)
@@ -233,6 +242,7 @@ def run(dry_run: bool = False, live_preview: bool = False):
             logger.info(f"  选稿完成: {len(selected)} 篇标记为 publish_xhs=1")
         except Exception as e:
             logger.warning(f"  Content Review 失败（不影响后续）: {e}")
+        set_state(f"runner_progress_{date_str}", {"phase": 4}, date=date_str)  # M-7: advance past 3.5
 
     # Phase 4: 通知（飞书纯通知 + Web UI 链接，不依赖回调）
     if progress.get("phase", 0) < 4:

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """SQLite 数据库模块 — 替代 Notion 的读写操作"""
 
-import sqlite3, os, json
+import sqlite3, os, json, threading
 from datetime import datetime, timedelta
 from pathlib import Path as _Path
 
 from config.yahoo_conf import DB_PATH
+
+# H-2: module-level cache locks
+_dim_weights_cache_lock = threading.Lock()
+_dim_cache_lock = threading.Lock()
 
 # Error log: writes to data/logs/error-YYYY-MM-DD.log
 def _log_db_error(msg: str):
@@ -26,10 +30,12 @@ class _ConnectionContext:
     __slots__ = ("_conn",)
 
     def __init__(self):
-        path = "file::memory:?cache=shared" if DB_PATH == ":memory:" else DB_PATH
-        self._conn = sqlite3.connect(path, uri=DB_PATH == ":memory:")
+        is_memory = DB_PATH == ":memory:"
+        is_uri = is_memory or DB_PATH.startswith("file:")  # M-4: explicit URI detection
+        path = "file::memory:?cache=shared" if is_memory else DB_PATH
+        self._conn = sqlite3.connect(path, uri=is_uri)
         self._conn.row_factory = sqlite3.Row
-        if DB_PATH != ":memory:":
+        if not is_memory:
             self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=OFF")
 
@@ -346,7 +352,7 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
                fetch_by: str = "", preselected: str = "",
                limit: int = 200, offset: int = 0,
                sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
-    valid_sort = {'pub_time','created_at','title_score','content_score','title'}
+    valid_sort = {'pub_time','created_at','title_score','content_score','title'}  # M-5: whitelist prevents injection — never add unquoted user-supplied columns
     if sort_by not in valid_sort:
         sort_by = 'created_at'
     sort_dir = 'DESC' if sort_dir.upper() == 'DESC' else 'ASC'
@@ -635,7 +641,7 @@ def get_config(key: str, default=None):
         return default
     try:
         return _json.loads(row["value"])
-    except Exception:
+    except _json.JSONDecodeError:  # L-4
         return row["value"]
 
 
@@ -666,7 +672,7 @@ def get_state(key: str, default=None):
         return default
     try:
         return _json.loads(row["value"])
-    except Exception:
+    except _json.JSONDecodeError:  # L-4
         return row["value"]
 
 
@@ -736,10 +742,11 @@ def load_dim_weights() -> dict:
         ).fetchone()
     if not row:
         return {}
-    if row["updated_at"] != _dim_weights_cache["cached_updated_at"]:
-        _dim_weights_cache["weights"] = _json.loads(row["value"])
-        _dim_weights_cache["cached_updated_at"] = row["updated_at"]
-    return _dim_weights_cache["weights"]
+    with _dim_weights_cache_lock:       # H-2: atomic cache update
+        if row["updated_at"] != _dim_weights_cache["cached_updated_at"]:
+            _dim_weights_cache["weights"] = _json.loads(row["value"])
+            _dim_weights_cache["cached_updated_at"] = row["updated_at"]
+        return _dim_weights_cache["weights"]
 
 
 # ── 评分 ──
@@ -765,12 +772,15 @@ _DIM_DEFS = {
 _dim_cache = {"dims": [], "cached_created_at": ""}
 
 
+_init_dim_lock = threading.Lock()
+
 def init_dimension_versions():
     """从 scoring_dimensions.json 初始化版本表（仅首次）"""
-    with _connect() as db:
-        existing = db.execute("SELECT COUNT(*) as n FROM scoring_dimension_versions").fetchone()
-        if existing["n"] > 0:
-            return
+    with _init_dim_lock:                # L-5: prevent TOCTOU double-init
+        with _connect() as db:
+            existing = db.execute("SELECT COUNT(*) as n FROM scoring_dimension_versions").fetchone()
+            if existing["n"] > 0:
+                return
     from pathlib import Path
     import json as _json
     json_path = Path(__file__).parent.parent / "config" / "scoring_dimensions.json"
@@ -801,10 +811,11 @@ def load_active_dimensions() -> list[dict]:
             ).fetchone()
         if not row:
             return []
-        if row["created_at"] != _dim_cache["cached_created_at"]:
-            _dim_cache["dims"] = _json.loads(row["dimensions_json"])
-            _dim_cache["cached_created_at"] = row["created_at"]
-    return _dim_cache["dims"]
+        with _dim_cache_lock:           # H-2: atomic cache update
+            if row["created_at"] != _dim_cache["cached_created_at"]:
+                _dim_cache["dims"] = _json.loads(row["dimensions_json"])
+                _dim_cache["cached_created_at"] = row["created_at"]
+            return _dim_cache["dims"]
 
 
 def update_active_dimensions(dims: list[dict]) -> None:
@@ -829,9 +840,15 @@ def commit_dimension_version(dims: list[dict], change_note: str, created_by: str
             "SELECT version FROM scoring_dimension_versions WHERE is_active=1"
         ).fetchone()
         if current:
-            parts = current["version"].split(".")
-            parts[1] = str(int(parts[1]) + 1)
-            new_version = ".".join(parts)
+            try:                        # M-2: robust version parsing
+                parts = current["version"].split(".")
+                if len(parts) >= 2:
+                    parts[1] = str(int(parts[1]) + 1)
+                else:
+                    parts.append("1")
+                new_version = ".".join(parts)
+            except (IndexError, ValueError):
+                new_version = "1.0.0"
         else:
             new_version = "1.0.0"
         dims_json = _json.dumps(dims, ensure_ascii=False)

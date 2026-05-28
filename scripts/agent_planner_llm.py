@@ -191,7 +191,11 @@ def _llm_select(pool: list[dict], quota: int, include_summary: bool, label: str)
     logger.info(f"[review:{label}] 理由: {reasoning}")
     selected = []
     for idx in out.get("selected", [])[:quota]:
-        key = keys_by_idx.get(int(idx))
+        try:                            # M-3: LLM may return non-integer indices
+            key = keys_by_idx.get(int(idx))
+        except (ValueError, TypeError):
+            logger.warning(f"[review:{label}] LLM returned non-integer index: {idx!r}, skipping")
+            continue
         if key:
             selected.append(key)
     return selected
@@ -199,19 +203,16 @@ def _llm_select(pool: list[dict], quota: int, include_summary: bool, label: str)
 
 def content_review_brain(date: str, plan_quota: int) -> list[str]:
     """Phase 3.5: 长文和资讯分开选稿，标记 publish_xhs=1。返回选中 key 列表。"""
-    import sqlite3
-    from scripts.sqlite_db import update_news, DB_PATH
+    from scripts.sqlite_db import update_news, _connect  # C-4: use _connect() for WAL + safe close
 
     today = date[:4] + '-' + date[4:6] + '-' + date[6:8]
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    rows = [dict(r) for r in conn.execute(
-        "SELECT key, title, title_score, content_score, fetch_by, summary, format "
-        "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
-        "ORDER BY title_score DESC LIMIT 30",
-        (today,)
-    ).fetchall()]
-    conn.close()
+    with _connect() as db:
+        rows = [dict(r) for r in db.execute(
+            "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
+            "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
+            "ORDER BY title_score DESC LIMIT 30",
+            (today,)
+        ).fetchall()]
 
     if not rows:
         logger.info("[review] 今日无候选文章，跳过")
