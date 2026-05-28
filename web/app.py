@@ -299,7 +299,7 @@ def api_regenerate_title(key):
             fs = row.get('format') or 'news'
             primary_format = fs if isinstance(fs, str) else (fs[0] if isinstance(fs, list) and fs else 'news')
             # 资讯体直接标记，不让模型猜；故事体用 story_type 细分
-            story_type = row.get('story_type') or ('' if primary_format == 'story' else '资讯体')
+            story_type = row.get('story_type') or ('故事体-自动判断子类型' if primary_format == 'story' else '资讯体')
             current_title = row.get('title') or ''
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}

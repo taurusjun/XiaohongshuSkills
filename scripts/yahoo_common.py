@@ -1236,7 +1236,12 @@ def _build_title_prompt(title_ja: str, content_ja: str,
     # 可选上下文行（已生成的中文内容，最能反映文章精华）
     summary_line = f"中文导语：{summary}" if summary else ""
     outro_line = f"中文结语：{outro}" if outro else ""
-    story_type_line = f"文章类型：{story_type}（已确认，跳过体裁判断，直接用对应规则）" if story_type else ""
+    if not story_type:
+        story_type_line = ""
+    elif story_type == "故事体-自动判断子类型":
+        story_type_line = "文章类型：故事体（请先判断是对谈/叙事/对比/评介，再用对应规则）"
+    else:
+        story_type_line = f"文章类型：{story_type}（已确认，跳过体裁判断，直接用对应规则）"
     current_title_line = f"当前标题（不要和它太像，必须有明显差异）：{current_title}" if current_title else ""
     extra = "\n".join(x for x in [summary_line, outro_line, story_type_line, current_title_line] if x)
     from config.prompts import TITLE_RULES_NEWS, TITLE_RULES_STORY, TITLE_QUALITY
