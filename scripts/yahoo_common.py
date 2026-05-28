@@ -698,7 +698,7 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 {{"维度名": {{"value": 0或0.5或1, "reason": "15-50字理由"}}, ...}}
 所有 {len(all_dims)} 个维度都必须出现，value 只能是 0、0.5、1 三个值之一。"""
 
-    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=8000, response_format={"type": "json_object"}, temperature=0.1)
+    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=2000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
     if not result:
         return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
