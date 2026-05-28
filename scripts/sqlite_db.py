@@ -457,6 +457,16 @@ def get_pending_publish(limit: int = 20) -> list[dict]:
         rows = db.execute("SELECT * FROM news WHERE publish_xhs=1 AND (publish_time IS NULL OR publish_time='') AND status='active' ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
 
+def get_pending_longform() -> list[str]:
+    """返回待发布的 longform 文章 key 列表"""
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT key FROM news WHERE publish_mode='longform' AND publish_xhs=1"
+            " AND (publish_time IS NULL OR publish_time='') AND status='active'"
+            " ORDER BY created_at DESC"
+        ).fetchall()
+    return [r['key'] for r in rows]
+
 def archive_old(days: int = 30):
     with _connect() as db:
         db.execute("UPDATE news SET status='archived', updated_at=datetime('now','localtime') WHERE status='active' AND created_at < datetime('now','localtime', ?)", (f'-{days} days',))

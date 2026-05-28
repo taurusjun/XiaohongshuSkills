@@ -215,6 +215,10 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
         except Exception as e:
             if attempt == 2:
                 print(f"    ⚠️ LiteLLM 调用失败(最终): {e}")
+                try:
+                    from sqlite_db import _log_db_error
+                    _log_db_error(f"LiteLLM 调用失败(重试3次后): {e}")
+                except: pass
     return ""
 
 
@@ -1194,6 +1198,10 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     )
     if not result:
         print(f"    ⚠️ 故事体 LLM 调用返回空")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"generate_story_article LLM返回空: title={title_ja[:80]}")
+        except: pass
         return None
     import json as _j, re as _re
     # 先尝试直接解析
@@ -1218,6 +1226,10 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     except Exception:
         pass
     print(f"    ⚠️ 故事体 JSON 解析失败，原始返回前300: {result[:300]}")
+    try:
+        from sqlite_db import _log_db_error
+        _log_db_error(f"generate_story_article JSON解析失败: title={title_ja[:80]}\n原始返回: {result[:800]}")
+    except: pass
     return None
 
 
@@ -1329,6 +1341,10 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     )
     if not story:
         print("    ⚠️ 故事体生成失败，回退到资讯体")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"故事体生成失败回退: title={title_ja[:80]}")
+        except: pass
         return _fallback_to_news(news, keyword, extra_tags)
 
     pass1_title = story.get('title', news['title_zh'])
@@ -1349,6 +1365,10 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
         print(f"    📝 Pass2标题: {final_title[:30]}")
     except Exception as e:
         print(f"    ⚠️ Pass2标题生成失败，使用Pass1: {e}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"Pass2标题生成失败: title={pass1_title[:50]}, error={e}")
+        except: pass
         final_title = pass1_title
 
     news['title']    = final_title
@@ -1457,7 +1477,10 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
                 print(f"    📊 评分明细已写入: {len(quality['scores'])}项")
         except Exception as e:
             print(f"  ❌ 故事体入库失败，跳过后续处理: {e}")
-
+            try:
+                from sqlite_db import _log_db_error
+                _log_db_error(f"故事体入库失败: key={extract_key_from_url(news.get('link',''))}, error={e}")
+            except: pass
     return news
 
 
@@ -1714,6 +1737,10 @@ def process_news_item(news: dict, no_translate: bool = False,
         # 文章被 region block 或无法访问时，跳过本条（没有正文没法生成靠谱内容）
         if not news['body_text'] or len(news['body_text']) < 50:
             print("    ⚠️ 文章无法完整访问（可能被 region block），跳过本条")
+            try:
+                from sqlite_db import _log_db_error
+                _log_db_error(f"文章无法访问: link={news.get('link','')[:100]}")
+            except: pass
             news['_skip'] = True
             return news
 
@@ -1768,6 +1795,10 @@ def process_news_item(news: dict, no_translate: bool = False,
         )
         if generated is None:
             print("    ⚠️ LLM 调用失败，跳过此条新闻")
+            try:
+                from sqlite_db import _log_db_error
+                _log_db_error(f"LLM调用失败跳过: link={news.get('link','')[:100]}")
+            except: pass
             news['_skip'] = True
             return news
         seo_title, summary, content, comment, _, topic_tags = generated
@@ -1814,6 +1845,10 @@ def process_news_item(news: dict, no_translate: bool = False,
                 )
                 if generated is None:
                     print("    ⚠️ 重生成失败，保留当前内容")
+                    try:
+                        from sqlite_db import _log_db_error
+                        _log_db_error(f"评分重试失败: link={news.get('link','')[:100]}")
+                    except: pass
                     break
                 seo_title, summary, content, comment, _, topic_tags = generated
                 news['title_zh'] = seo_title
@@ -1969,6 +2004,10 @@ def process_news_item(news: dict, no_translate: bool = False,
         except Exception as e:
             if "ImportError" not in type(e).__name__:
                 print(f"  ❌ 入库失败，跳过后续处理: {e}")
+            try:
+                from sqlite_db import _log_db_error
+                _log_db_error(f"入库失败: key={news_key}, error={e}")
+            except: pass
 
     return news
 
