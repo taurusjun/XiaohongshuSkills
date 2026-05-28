@@ -171,7 +171,7 @@ def api_trigger_publish():
                     log_lines.append(f'[{i+1}/{len(longform_keys)}] {key[:16]}...')
                     _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
                     result = _sp.run(
-                        [sys.executable, 'xhs_publish_story.py', key],
+                        [sys.executable, 'xhs_publish_story.py', key, '--export'],
                         capture_output=True, text=True, timeout=120,
                         cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
                         env={**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'SQLITE_PATH': DB_PATH}

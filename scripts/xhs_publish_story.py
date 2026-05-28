@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""将数据库中的 story 长文填入小红书创作服务平台。
-用法: python xhs_publish_story.py <news_key>
+"""将数据库中的 story 长文填入小红书创作服务平台，或导出为 markdown 文件。
+用法:
+  python xhs_publish_story.py <news_key>           # CDP 自动填入 XHS 编辑器
+  python xhs_publish_story.py <news_key> --export  # 导出 md 文件到 ~/.cache/xhs_exports/
 
 功能:
-1. 自动找到 CDP 浏览器中的 XHS 创作页 tab
-2. 填入标题、正文（含导语）、图片
-3. 图片通过 CDP DOM.setFileInputFiles 上传
-4. 完成后停止，等待人工微调后手动发布
+1. CDP 模式: 自动填入标题、正文、图片到 XHS 创作页
+2. 导出模式: 生成带 base64 图片的 markdown，手动导入 XHS
 """
 import sys, os, time, json, re
 import requests
@@ -245,6 +245,68 @@ def upload_images(ws, image_paths: list[str]):
     return f"uploaded {len(valid)}, {final}"
 
 XHS_PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?source=official&from=menu&target=article"
+EXPORT_DIR = os.path.expanduser("~/.cache/xhs_exports")
+
+def export_to_md(news_key: str):
+    """导出文章为 markdown 文件（base64 内嵌图片），返回文件路径"""
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)
+    sys.path.insert(0, _script_dir)
+    sys.path.insert(0, _project_root)
+    from scripts.sqlite_db import get_by_key
+
+    row = get_by_key(news_key)
+    if not row:
+        print(f"❌ 文章不存在: {news_key}")
+        return None
+
+    title = row.get('title', '')
+    content = row.get('content', '')
+    summary = row.get('summary', '')
+    comment = row.get('comment', '')
+    gallery = row.get('gallery_images', [])
+    if isinstance(gallery, str):
+        gallery = json.loads(gallery)
+
+    # Build markdown
+    md = f"# {title}\n\n"
+    if summary:
+        md += f"> {summary}\n\n"
+
+    paragraphs = content.split('\n\n') if content else []
+    img_idx = 0
+    for p in paragraphs:
+        p = p.strip()
+        if not p: continue
+        if p.startswith('## '):
+            md += f"## {p[3:]}\n\n"
+        elif (p.startswith('【图片') or p.startswith('【推文')) and ('：' in p or ':' in p):
+            if img_idx < len(gallery):
+                img_path = gallery[img_idx]
+                if os.path.exists(img_path):
+                    import base64 as _b64
+                    with open(img_path, 'rb') as f:
+                        b64 = _b64.b64encode(f.read()).decode()
+                    ext = os.path.splitext(img_path)[1].lower().replace('.jpg','jpeg')
+                    md += f"![图片{img_idx+1}](data:image/{ext};base64,{b64})\n\n"
+                img_idx += 1
+        else:
+            md += f"{p}\n\n"
+
+    if comment:
+        md += "---\n\n"
+        md += f"<mark>{comment}</mark>\n"
+
+    fname = f"{news_key[:16]}.md"
+    out_path = os.path.join(EXPORT_DIR, fname)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(md)
+
+    size_kb = os.path.getsize(out_path) // 1024
+    print(f"✅ {out_path} ({size_kb}KB, {img_idx} 张图片)")
+    return out_path
 
 def ensure_editor_page(ws):
     """确保页面在长文编辑器中。如果不是，导航过去并点击"新的创作"。"""
@@ -304,10 +366,15 @@ def ensure_editor_page(ws):
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python xhs_publish_story.py <news_key>")
+        print("用法: python xhs_publish_story.py <news_key> [--export]")
         sys.exit(1)
 
     news_key = sys.argv[1]
+    export_only = '--export' in sys.argv
+
+    if export_only:
+        export_to_md(news_key)
+        return
 
     # 从 DB 读取文章
     _script_dir = os.path.dirname(os.path.abspath(__file__))
