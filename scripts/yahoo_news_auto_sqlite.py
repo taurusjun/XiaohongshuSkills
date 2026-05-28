@@ -16,6 +16,8 @@ _log_ctx = threading.local()
 _log_ctx.prefix = ""
 
 class _PrefixedStdout:
+    # L-1: replaces sys.stdout globally; prefix is thread-local so safe under threading.
+    # __getattr__ delegates buffer/fileno/etc to the real stdout for binary-write compatibility.
     def __init__(self, real): self._real = real
     def write(self, s):
         p = getattr(_log_ctx, 'prefix', '')
