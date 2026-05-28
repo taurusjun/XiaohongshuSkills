@@ -323,15 +323,15 @@ def _normalize_kanji(text: str) -> str:
     return text.translate(_SHINJITAI_MAP)
 
 def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
-    """翻译标题 + 判断体裁适用性，一次 LLM 调用完成。
-    返回 {"title_zh": str, "format_suitability": list[str], "is_long_form": bool}
+    """翻译标题 + 判断体裁，一次 LLM 调用完成。
+    返回 {"title_zh": str, "format": str, "is_long_form": bool}
     """
     import re as _re, json as _json
     FORMAT_TYPES = ["news", "story", "ranking", "comparison"]
 
     body_snippet = body_ja if body_ja else ""  # 長度由調用方控制
     format_guide = (
-        "体裁判断标准：\n"
+        "体裁判断标准（必须从4个中选唯一1个最合适的）：\n"
         "- news（资讯体）：任何内容都适用，是兜底选项\n"
         "- story（故事体）：内容有时间弧度或前后变化，如「从默默无闻到走红」「克服困难最终成功」「意外转折」。适用示例：长访谈/周年回顾/突发反转新闻\n"
         "- ranking（盘点体）：可以提炼出≥3个并列元素，如代表作Top5/历代比较。适用示例：周年精选/历代比较/分类推荐\n"
@@ -340,12 +340,12 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
 
     prompt = (
         f"任务1：将以下日文标题翻译为中文（一行，不加解释）\n"
-        f"任务2：判断这篇文章适合哪些体裁\n\n"
+        f"任务2：判断这篇文章最合适的体裁（必须选唯一1个）\n\n"
         f"日文标题：{title_ja}\n"
         f"正文摘要（前500字）：{body_snippet}\n\n"
         f"{format_guide}\n"
-        f"返回严格JSON（两个任务独立）：\n"
-        f'{{\"title_zh\": \"中文标题\", \"format_suitability\": [\"news\"], \"reason\": \"简短说明\"}}'
+        f"返回严格JSON：\n"
+        f'{{"title_zh": "中文标题", "format": "news", "reason": "简短说明"}}'
     )
 
     result_str = call_litellm(
@@ -355,15 +355,15 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
     ) if LITELLM_API_KEY else None
 
     title_zh = ""
-    formats = ["news"]
+    fmt = "news"
     if result_str:
         try:
             data = _json.loads(result_str)
             title_zh = data.get("title_zh", "").strip()
-            fs = data.get("format_suitability", ["news"])
-            if isinstance(fs, str):
-                fs = [fs]
-            formats = [f for f in fs if f in FORMAT_TYPES] or ["news"]
+            f_val = data.get("format", data.get("format_suitability", "news"))
+            if isinstance(f_val, list):
+                f_val = f_val[0] if f_val else "news"
+            fmt = f_val if f_val in FORMAT_TYPES else "news"
         except Exception:
             pass
 
@@ -371,16 +371,9 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
     if not title_zh:
         title_zh = translate_title(title_ja)
 
-    # Q&A格式检测：不自动注入 story
-    qa_markers = sum(1 for m in _re.finditer(r'(?:^|\n)\s*[Ｑq][:：]', body_ja or ""))
-    if qa_markers >= 3 and "story" in formats:
-        formats = [f for f in formats if f != "story"]
-        if not formats:
-            formats = ["news"]
-
     return {
         "title_zh": _normalize_kanji(title_zh),
-        "format_suitability": formats,
+        "format": fmt,
         "is_long_form": False,
     }
 
@@ -705,7 +698,7 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 {{"维度名": {{"value": 0或0.5或1, "reason": "15-50字理由"}}, ...}}
 所有 {len(all_dims)} 个维度都必须出现，value 只能是 0、0.5、1 三个值之一。"""
 
-    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1)
+    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=8000, response_format={"type": "json_object"}, temperature=0.1)
     if not result:
         return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
@@ -1355,7 +1348,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     news['summary']  = intro[:100]
     news['category'] = '新闻'
     news['is_long_form'] = True
-    news['format_suitability'] = ['story']
+    news['format'] = 'story'
     if story_type:
         news['story_type'] = story_type
     print(f"    故事体生成完成 [{story_type or '?'}]: {len(news['content'])} 字")
@@ -1418,6 +1411,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     # 写入 DB（故事体走了独立路径，不会回到 process_news_item 的 insert_news）
     if STORAGE_BACKEND == "sqlite":
         try:
+            news_key = extract_key_from_url(news.get('link', ''))
             from sqlite_db import insert_news as _sql_insert
             _sql_insert({
                 'title': news.get('title_zh', news.get('title_ja', '')),
@@ -1436,15 +1430,14 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
                 'pub_time': news.get('pub_time', ''),
                 'title_score': news.get('title_score', 0),
                 'content_score': news.get('content_score', 0),
-                'key': extract_key_from_url(news.get('link', '')),
+                'key': news_key,
                 'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
-                'format_suitability': news.get('format_suitability', ['story']),
+                'format': news.get('format', 'story'),
                 'is_long_form': news.get('is_long_form', True),
             })
             if news.get('_discard'):
                 print(f"    🗑️ 已标记为 discarded")
-            news_key = extract_key_from_url(news.get('link', ''))
             # 写入评分明细
             quality = news.get('_quality', {})
             if quality.get('scores'):
@@ -1453,14 +1446,14 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
                                  dim_version=quality.get('_dim_version', ''))
                 print(f"    📊 评分明细已写入: {len(quality['scores'])}项")
         except Exception as e:
-            print(f"    ⚠️ 故事体入库失败: {e}")
+            print(f"  ❌ 故事体入库失败，跳过后续处理: {e}")
 
     return news
 
 
 def _fallback_to_news(news: dict, keyword: str, extra_tags: list) -> dict:
     """故事体失败时的回退：用标准资讯体路径处理。"""
-    news['format_suitability'] = ['news']
+    news['format'] = 'news'
     news['is_long_form'] = False
     return process_news_item(news, keyword=keyword, extra_tags=extra_tags)
 
@@ -1721,7 +1714,7 @@ def process_news_item(news: dict, no_translate: bool = False,
             body_ja=news.get('content_ja', '') or news.get('body_text', ''),
         )
         news['title_zh'] = tc['title_zh']
-        news['format_suitability'] = tc['format_suitability']  # list[str]
+        news['format'] = tc['format']  # str: "news"/"story"/"ranking"/"comparison"
 
         # 长文检测：分页文章 OR 正文超过950字的单页长文
         body_len = len(news.get('body_text', '') or news.get('content_ja', ''))
@@ -1729,23 +1722,11 @@ def process_news_item(news: dict, no_translate: bool = False,
             news['is_long_form'] = True
             print(f"    📄 检测为长文（正文{body_len}字）")
 
-        if news.get('is_long_form'):
-            qa_markers = sum(1 for _ in __import__('re').finditer(
-                r'(?:^|\n)\s*[Ｑq][:：]', news.get('content_ja', '')))
-            if qa_markers < 3 and 'story' not in news['format_suitability']:
-                news['format_suitability'] = ['story'] + news['format_suitability']
-
-        # 从 format_suitability 中取体裁：
-        # 优先使用规划层指定的 target_format（若 LLM 认为适用），否则用 LLM 的第一推荐
-        target_fmt = news.get('_target_format', '')
-        suitability = news['format_suitability'] or ['news']
-        if target_fmt and target_fmt in suitability:
-            selected_format = target_fmt
-        else:
-            selected_format = suitability[0]
+        # LLM 已给出唯一体裁
+        selected_format = news['format']
         news['_selected_format'] = selected_format
 
-        print(f"    体裁: {selected_format} (适用: {suitability}, 目标: {target_fmt or '无'})")
+        print(f"    体裁: {selected_format}")
         print("    生成内容...")
 
         # pub_time 在 story/非story 路径前统一处理，避免 story 提前 return 导致遗漏
@@ -1919,6 +1900,7 @@ def process_news_item(news: dict, no_translate: bool = False,
     print(f"    分类: {category} | 标签: {', '.join(tags[:3])}")
 
     # 存储后端写入
+    news_key = extract_key_from_url(news.get('link', ''))
     if STORAGE_BACKEND == "sqlite":
         try:
             from sqlite_db import insert_news as sqlite_insert
@@ -1940,15 +1922,14 @@ def process_news_item(news: dict, no_translate: bool = False,
                 'pub_time': news.get('pub_time', ''),
                 'title_score': news.get('_title_score', 0),
                 'content_score': news.get('_content_score', 0),
-                'key': extract_key_from_url(news.get('link', '')),
+                'key': news_key,
                 'status': 'discarded' if news.get('_discard') else 'active',
                 'fetch_by': keyword if keyword else 'recomm',
-                'format_suitability': news.get('format_suitability', ['news']),
+                'format': news.get('format', 'news'),
                 'is_long_form': 1 if news.get('is_long_form') else 0,
             })
             if news.get('_discard'):
                 print(f"    🗑️ 已标记为 discarded")
-            news_key = extract_key_from_url(news.get('link', ''))
             # 封面图存本地（SQLite 专属）
             cover_url = news.get('image_url', '')
             if cover_url and cover_url.startswith('http'):
@@ -1975,8 +1956,9 @@ def process_news_item(news: dict, no_translate: bool = False,
                     print(f"    📊 评分明细已写入: {len(quality_scores)}项")
                 except Exception as e:
                     print(f"    ⚠️ 评分写入失败: {e}")
-        except ImportError:
-            pass
+        except Exception as e:
+            if "ImportError" not in type(e).__name__:
+                print(f"  ❌ 入库失败，跳过后续处理: {e}")
 
     return news
 

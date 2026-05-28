@@ -206,7 +206,7 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = [dict(r) for r in conn.execute(
-        "SELECT key, title, title_score, content_score, fetch_by, summary, format_suitability "
+        "SELECT key, title, title_score, content_score, fetch_by, summary, format "
         "FROM news WHERE DATE(created_at)=? AND status='active' AND publish_xhs=0 "
         "ORDER BY title_score DESC LIMIT 30",
         (today,)
@@ -218,8 +218,8 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
         return []
 
     # 按体裁拆分
-    story_rows = [r for r in rows if "story" in (r.get("format_suitability") or "")]
-    news_rows  = [r for r in rows if "story" not in (r.get("format_suitability") or "")]
+    story_rows = [r for r in rows if r.get("format") == "story"]
+    news_rows  = [r for r in rows if r.get("format") != "story"]
 
     # 去重 + 预筛（每路独立）
     story_pool = _dedup_and_prefilter(story_rows)
@@ -245,7 +245,7 @@ def content_review_brain(date: str, plan_quota: int) -> list[str]:
     logger.info(f"[review] 选中 {len(selected_keys)} 篇（长文 {len(story_keys)}，资讯 {len(news_keys)}）")
     for r in rows:
         tag = "✅" if r["key"] in all_keys_set else "❌"
-        fmt = "story" if "story" in (r.get("format_suitability") or "") else "news"
+        fmt = "story" if r.get("format") == "story" else "news"
         logger.info(f"[review]   {tag} [{fmt}][{r['fetch_by']}] {r['title'][:35]} (score={r['title_score']:.2f})")
         if r["key"] in all_keys_set:
             update_news(r["key"], {"publish_xhs": 1})

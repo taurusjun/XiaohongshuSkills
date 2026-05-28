@@ -23,7 +23,7 @@ def get_test_article(key: str = "") -> dict:
         return row
     with _connect() as db:
         row = db.execute(
-            "SELECT * FROM news WHERE format_suitability LIKE '%story%' "
+            "SELECT * FROM news WHERE format = 'story' "
             "AND length(content_ja) > 500 AND status='active' ORDER BY id DESC LIMIT 1"
         ).fetchone()
     if not row:

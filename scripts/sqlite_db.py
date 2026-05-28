@@ -3,8 +3,21 @@
 
 import sqlite3, os, json
 from datetime import datetime, timedelta
+from pathlib import Path as _Path
 
 from config.yahoo_conf import DB_PATH
+
+# Error log: writes to data/logs/error-YYYY-MM-DD.log
+def _log_db_error(msg: str):
+    try:
+        log_dir = _Path(__file__).parent.parent / "data" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        today = datetime.now().strftime('%Y-%m-%d')
+        now = datetime.now().strftime('%H:%M:%S')
+        with open(log_dir / f"error-{today}.log", "a") as f:
+            f.write(f"[{now}] {msg}\n")
+    except Exception:
+        pass  # never let logging failure mask the real error
 
 class _ConnectionContext:
     """sqlite3 连接上下文管理器，兼容 Python 3.14 的事务提交行为。
@@ -212,10 +225,26 @@ def init_db():
             ("xhs_watch_time", "INTEGER DEFAULT 0"),
             ("xhs_danmaku", "INTEGER DEFAULT 0"),
             ("story_type", "TEXT DEFAULT ''"),
+            ("format", "TEXT DEFAULT 'news'"),
+            ("preselected", "INTEGER DEFAULT 0"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError: pass  # column already exists
+
+        # 存量数据迁移：format_suitability JSON 数组 → format 单值字符串
+        try:
+            # Step 1: extract first element from JSON arrays like '["story"]' or '["news","story"]'
+            db.execute("UPDATE news SET format = json_extract(format_suitability, '$[0]') "
+                       "WHERE format_suitability LIKE '[%' AND (format IS NULL OR format = 'news')")
+            # Step 2: handle rows where step 1 didn't match (json_extract returned NULL or non-standard format)
+            db.execute("UPDATE news SET format = TRIM(format_suitability, '[]\" ') "
+                       "WHERE format_suitability IS NOT NULL AND format_suitability != '' "
+                       "AND format_suitability NOT LIKE '[%' AND (format IS NULL OR format = 'news')")
+            # Step 3: fallback — grab 'story' from any remaining mixed-format rows that still show news
+            db.execute("UPDATE news SET format = 'story' "
+                       "WHERE format_suitability LIKE '%\"story\"%' AND format = 'news'")
+        except Exception: pass  # migration may fail on older sqlite without json_extract
         for col, col_type in [("shares", "INTEGER DEFAULT 0"),
                                ("fans_gained", "INTEGER DEFAULT 0"),
                                ("impression", "INTEGER DEFAULT 0"),
@@ -244,14 +273,15 @@ def insert_news(news: dict) -> bool:
     with _connect() as db:
         try:
             import json as _j
-            fs = news.get('format_suitability', ['news'])
-            fs_str = _j.dumps(fs) if isinstance(fs, list) else str(fs)
+            fmt = news.get('format', news.get('format_suitability', 'news'))
+            if isinstance(fmt, list):
+                fmt = fmt[0] if fmt else 'news'
             db.execute("""
                 INSERT INTO news (key, title, title_ja, link, source, category, content, comment,
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
                     pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by,
-                    format_suitability, is_long_form, publish_mode, publish_free_text,
+                    format, is_long_form, publish_mode, publish_free_text,
                     updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
@@ -267,7 +297,7 @@ def insert_news(news: dict) -> bool:
                     content_score=excluded.content_score, publish_xhs=excluded.publish_xhs,
                     publish_time=excluded.publish_time, xhs_pub_time=excluded.xhs_pub_time,
                     fetch_by=excluded.fetch_by, status=excluded.status,
-                    format_suitability=excluded.format_suitability,
+                    format=excluded.format,
                     is_long_form=excluded.is_long_form,
                     publish_mode=excluded.publish_mode,
                     publish_free_text=excluded.publish_free_text,
@@ -282,12 +312,14 @@ def insert_news(news: dict) -> bool:
                   news.get('content_ja',''),
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
                   news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by',''),
-                  fs_str, 1 if news.get('is_long_form') else 0,
+                  fmt, 1 if news.get('is_long_form') else 0,
                   news.get('publish_mode','normal'), news.get('publish_free_text','')))
             return True
         except Exception as e:
-            print(f"  ⚠️ SQLite 写入失败: {e}")
-            return False
+            msg = f"SQLite 写入失败 key={news.get('key','?')} fetch_by={news.get('fetch_by','?')}: {e}"
+            print(f"  ❌ {msg}")
+            _log_db_error(msg)
+            raise
 
 def load_today_keys(date_str: str = "") -> set[str]:
     if not date_str:
@@ -311,7 +343,7 @@ def get_by_key(key: str) -> dict | None:
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
                needs_review: bool = False, fmt: str = "", score_min: str = "",
-               fetch_by: str = "",
+               fetch_by: str = "", preselected: str = "",
                limit: int = 200, offset: int = 0,
                sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}
@@ -333,9 +365,11 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
         sql += "AND category = ? "; params.append(category)
     if fetch_by:
         sql += "AND fetch_by = ? "; params.append(fetch_by)
+    if preselected:
+        sql += "AND preselected = ? "; params.append(int(preselected == '1'))
     if fmt:
-        sql += "AND n.format_suitability LIKE ? " if needs_review else "AND format_suitability LIKE ? "
-        params.append(f"%{fmt}%")
+        sql += "AND n.format = ? " if needs_review else "AND format = ? "
+        params.append(fmt)
     if score_min:
         sql += "AND (n.title_score + n.content_score) >= ? " if needs_review else "AND (title_score + content_score) >= ? "
         params.append(float(score_min))
@@ -367,6 +401,7 @@ def update_news(key: str, fields: dict) -> bool:
                'xhs_views','xhs_likes','xhs_saves','xhs_comments','xhs_collected_at',
                'xhs_shares','xhs_fans_gained','xhs_impression','xhs_click_rate','xhs_watch_time','xhs_danmaku',
                'format_suitability','is_long_form','story_type',
+               'format','preselected',
                'publish_mode','publish_free_text',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at'}
@@ -381,23 +416,35 @@ def update_news(key: str, fields: dict) -> bool:
         updates['publish_images'] = json.dumps(updates['publish_images'])
     set_clause = ', '.join(f"{k}=?" for k in updates)
     vals = list(updates.values()) + [key]
-    with _connect() as db:
-        db.execute(f"UPDATE news SET {set_clause}, updated_at=datetime('now','localtime') WHERE key=?", vals)
-    return True
+    try:
+        with _connect() as db:
+            db.execute(f"UPDATE news SET {set_clause}, updated_at=datetime('now','localtime') WHERE key=?", vals)
+        return True
+    except Exception as e:
+        msg = f"update_news 失败 key={key}: {e}"
+        print(f"  ❌ {msg}")
+        _log_db_error(msg)
+        raise
 
 def mark_published(key: str, publish_time: str = "", xhs_pub_time: str = "") -> bool:
     if not publish_time:
         publish_time = datetime.now().strftime('%Y-%m-%d %H:%M')
-    with _connect() as db:
-        # 如果用户已预设 xhs_pub_time，保留它；否则用 publish_time 兜底
-        existing = db.execute("SELECT xhs_pub_time FROM news WHERE key=?", (key,)).fetchone()
-        if existing and existing["xhs_pub_time"]:
-            xhs_pub_time = existing["xhs_pub_time"]
-        elif not xhs_pub_time:
-            xhs_pub_time = publish_time
-        db.execute("UPDATE news SET publish_xhs=1, publish_time=?, xhs_pub_time=?, updated_at=datetime('now','localtime') WHERE key=?",
-                   (publish_time, xhs_pub_time, key))
-    return True
+    try:
+        with _connect() as db:
+            # 如果用户已预设 xhs_pub_time，保留它；否则用 publish_time 兜底
+            existing = db.execute("SELECT xhs_pub_time FROM news WHERE key=?", (key,)).fetchone()
+            if existing and existing["xhs_pub_time"]:
+                xhs_pub_time = existing["xhs_pub_time"]
+            elif not xhs_pub_time:
+                xhs_pub_time = publish_time
+            db.execute("UPDATE news SET publish_xhs=1, publish_time=?, xhs_pub_time=?, updated_at=datetime('now','localtime') WHERE key=?",
+                       (publish_time, xhs_pub_time, key))
+        return True
+    except Exception as e:
+        msg = f"mark_published 失败 key={key}: {e}"
+        print(f"  ❌ {msg}")
+        _log_db_error(msg)
+        raise
 
 def get_pending_publish(limit: int = 20) -> list[dict]:
     with _connect() as db:
@@ -596,11 +643,17 @@ def set_config(key: str, value) -> None:
     global _dim_weights_cache
     import json as _json
     v = _json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
-    with _connect() as db:
-        db.execute(
-            "INSERT OR REPLACE INTO agent_config (key, value, updated_at) VALUES (?,?,datetime('now','localtime'))",
-            (key, v),
-        )
+    try:
+        with _connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO agent_config (key, value, updated_at) VALUES (?,?,datetime('now','localtime'))",
+                (key, v),
+            )
+    except Exception as e:
+        msg = f"set_config 失败 key={key}: {e}"
+        print(f"  ❌ {msg}")
+        _log_db_error(msg)
+        raise
     if key == "dim_weights":
         _dim_weights_cache = {"weights": {}, "cached_updated_at": ""}
 
@@ -622,11 +675,17 @@ def set_state(key: str, value, date: str = "") -> None:
     from datetime import datetime as _dt
     v = _json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
     d = date or _dt.now().strftime("%Y%m%d")
-    with _connect() as db:
-        db.execute(
-            "INSERT OR REPLACE INTO agent_state (key, value, date, updated_at) VALUES (?,?,?,datetime('now','localtime'))",
-            (key, v, d),
-        )
+    try:
+        with _connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO agent_state (key, value, date, updated_at) VALUES (?,?,?,datetime('now','localtime'))",
+                (key, v, d),
+            )
+    except Exception as e:
+        msg = f"set_state 失败 key={key}: {e}"
+        print(f"  ❌ {msg}")
+        _log_db_error(msg)
+        raise
 
 
 def cleanup_old_states(days: int = 7):
@@ -801,14 +860,20 @@ def rollback_dimension_version(version: str) -> bool:
 
 def upsert_score_dims(news_key: str, scores: dict, dim_version: str = ""):
     """scores: {dimension: {"value": 0|1, "reason": "..."}}"""
-    with _connect() as db:
-        for dim, data in scores.items():
-            v = data.get('value', 0) if isinstance(data, dict) else int(data)
-            r = data.get('reason', '') if isinstance(data, dict) else ''
-            db.execute(
-                "INSERT INTO score_dims (news_key, dimension, value, reason, dim_version) VALUES (?,?,?,?,?) ON CONFLICT(news_key, dimension) DO UPDATE SET value=excluded.value, reason=excluded.reason, dim_version=excluded.dim_version",
-                (news_key, dim, v, r, dim_version)
-            )
+    try:
+        with _connect() as db:
+            for dim, data in scores.items():
+                v = data.get('value', 0) if isinstance(data, dict) else int(data)
+                r = data.get('reason', '') if isinstance(data, dict) else ''
+                db.execute(
+                    "INSERT INTO score_dims (news_key, dimension, value, reason, dim_version) VALUES (?,?,?,?,?) ON CONFLICT(news_key, dimension) DO UPDATE SET value=excluded.value, reason=excluded.reason, dim_version=excluded.dim_version",
+                    (news_key, dim, v, r, dim_version)
+                )
+    except Exception as e:
+        msg = f"upsert_score_dims 失败 key={news_key}: {e}"
+        print(f"  ❌ {msg}")
+        _log_db_error(msg)
+        raise
 
 def recalculate_scores(news_key: str) -> dict:
     """根据 score_dims 重算 title_score/content_score，优先使用人工纠正值"""

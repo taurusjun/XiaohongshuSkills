@@ -10,7 +10,7 @@ DB = os.environ["SQLITE_PATH"]
 conn = sqlite3.connect(DB)
 rows = conn.execute("""
     SELECT key, title, title_ja, content_ja
-    FROM news WHERE format_suitability LIKE '%story%' ORDER BY id DESC
+    FROM news WHERE format = 'story' ORDER BY id DESC
 """).fetchall()
 conn.close()
 
