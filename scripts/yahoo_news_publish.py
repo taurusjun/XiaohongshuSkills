@@ -207,7 +207,7 @@ def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
             content = row.get('content','') or ''
             comment = row.get('comment','') or ''
             # Story-format articles have markdown; strip it for XHS
-            if row.get('is_long_form') or 'story' in (row.get('format_suitability') or ''):
+            if row.get('is_long_form') or row.get('format') == 'story':
                 content = _strip_markdown(content)
                 comment = _strip_markdown(comment)
             return (content, comment, row.get('title_ja',''), '',
@@ -692,9 +692,12 @@ def main():
                           reuse_existing_tab=args.reuse_existing_tab)
         if ok:
             if note_id and sqlite_key:
-                from sqlite_db import update_news
-                update_news(sqlite_key, {"xhs_note_id": note_id, "xhs_title": full_title})
-                print(f"  📌 note_id: {note_id}")
+                try:
+                    from sqlite_db import update_news
+                    update_news(sqlite_key, {"xhs_note_id": note_id, "xhs_title": full_title})
+                    print(f"  📌 note_id: {note_id}")
+                except Exception as e:
+                    print(f"  ⚠️ 更新 note_id 失败: {e}")
             if mark_as_published(page["id"], sqlite_key, post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
             else:

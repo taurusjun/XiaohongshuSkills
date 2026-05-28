@@ -296,8 +296,8 @@ def api_regenerate_title(key):
             content_zh = row.get('content') or ''
             summary = row.get('summary') or ''
             import json as _j
-            fs = row.get('format_suitability') or '["news"]'
-            primary_format = (_j.loads(fs) if isinstance(fs, str) else fs or ['news'])[0]
+            fs = row.get('format') or 'news'
+            primary_format = fs if isinstance(fs, str) else (fs[0] if isinstance(fs, list) and fs else 'news')
             # 资讯体直接标记，不让模型猜；故事体用 story_type 细分
             story_type = row.get('story_type') or ('' if primary_format == 'story' else '资讯体')
             current_title = row.get('title') or ''
@@ -352,7 +352,7 @@ def api_regenerate(key):
             from yahoo_common import translate_title, generate_content_and_comment, evaluate_quality, generate_video_caption, generate_story_article
             import json as _json
             log = []
-            is_story = row.get('is_long_form') or 'story' in (row.get('format_suitability') or '')
+            is_story = row.get('is_long_form') or row.get('format') == 'story'
             title_ja = row.get('title_ja', row.get('title', ''))
             # 优先重新抓取原文（获取翻页内容），失败则用 DB 缓存
             content_ja = row.get('content_ja', '')
@@ -413,7 +413,7 @@ def api_regenerate(key):
                 updates = {'title': new_title, 'summary': story.get('intro', ''),
                            'content': story['body'], 'comment': story.get('outro', ''),
                            'is_long_form': True,
-                           'format_suitability': row.get('format_suitability', '["story"]'),
+                           'format': row.get('format', 'story'),
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
                 if story.get('story_type'):
                     updates['story_type'] = story['story_type']
@@ -446,7 +446,7 @@ def api_regenerate(key):
                            'title_score': quality['title_score'], 'content_score': quality['content_score']}
                 if len(content or '') >= 950:
                     updates['is_long_form'] = True
-                    updates['format_suitability'] = '["news"]'
+                    updates['format'] = 'news'
                 # 更新标签：LLM 生成的 topic_tags
                 if topic_tags:
                     old_tags = row.get('tags') or []
@@ -909,6 +909,8 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <select id="publishXhs" class="fs" onchange="page=0;loadList()"><option value="">发布状态</option><option value="published">已发布</option><option value="pending">待发布</option><option value="unpublished">未发布</option></select>
     <select id="fmtFilter" class="fs" onchange="page=0;loadList()"><option value="">全部体裁</option><option value="news">news</option><option value="story">story</option><option value="ranking">ranking</option><option value="comparison">comparison</option></select>
     <select id="scoreFilter" class="fs" onchange="page=0;loadList()"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
+    <div class="filter-divider"></div>
+    <select id="preselectedFilter" class="fs" onchange="page=0;loadList()"><option value="">全部</option><option value="1">★ 已预选</option><option value="0">☆ 未预选</option></select>
   </div>
 
   <!-- Action bars -->
@@ -948,6 +950,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <div class="table-scroll">
         <table>
           <thead><tr>
+            <th style="width:28px"></th>
             <th style="width:30px"></th>
             <th style="width:50px">封面</th>
             <th>标题</th>
@@ -1111,18 +1114,18 @@ async function pollTaskLog(tid){
 }
 
 function _fmtBadge(fs,cat){
-  try{const a=JSON.parse(fs||'[]');const f=a[0]||cat||'';
-    if(f==='story')return`<span class="fmt fmt-story">长文</span>`;
-    if(f==='news')return`<span class="fmt fmt-news">资讯</span>`;
-    if(f==='ranking')return`<span class="fmt fmt-ranking">盘点</span>`;
-    if(f)return`<span class="fmt fmt-other">${esc(f)}</span>`;
-  }catch(e){}return'<span class="fmt fmt-other">—</span>';
+  const f=fs||cat||'';
+  if(f==='story')return`<span class="fmt fmt-story">长文</span>`;
+  if(f==='news')return`<span class="fmt fmt-news">资讯</span>`;
+  if(f==='ranking')return`<span class="fmt fmt-ranking">盘点</span>`;
+  if(f==='comparison')return`<span class="fmt fmt-other">对比</span>`;
+  return`<span class="fmt fmt-other">—</span>`;
 }
 async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:pageSize,offset:page*pageSize,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
     fetch_by:S('fetchBy').value,status:S('status').value,publish_xhs:S('publishXhs').value,
-    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
     const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
@@ -1133,6 +1136,7 @@ async function loadList(){
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
     const ts=n.title_score||0,cs=n.content_score||0,sc=ts+cs;const scCls=sc>6?'score-hi':sc>3?'score-mid':'score-lo';
     return`<tr>
+    <td style="text-align:center;cursor:pointer;font-size:15px;user-select:none" onclick="event.stopPropagation();togglePreselect('${n.key}',this)" title="${n.preselected?'取消预选':'预选标记'}">${n.preselected?'★':'☆'}</td>
     <td><input type="checkbox" class="rowSel" value="${n.key}" onclick="event.stopPropagation()" onchange="updateArchiveBar()" style="width:14px;height:14px"></td>
     <td>${thumb}</td>
     <td><div class="tc"><div class="tc-body">
@@ -1140,7 +1144,7 @@ async function loadList(){
       <a href="/detail/${n.key}" class="link tc-title" onclick="event.stopPropagation()">${esc(n.title||'')}</a>
       <div class="tc-snip">${esc((n.content||'').substring(0,60))}</div>
     </div></div></td>
-    <td>${_fmtBadge(n.format_suitability,n.category)}</td>
+    <td>${_fmtBadge(n.format,n.category)}</td>
     <td><span class="score ${scCls}">${ts.toFixed(1)}/${cs.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
     <td>${(()=>{
@@ -1210,7 +1214,7 @@ async function loadList(){
     date_from:S('dateFrom').value,date_to:S('dateTo').value,
     search:S('search').value,fetch_by:S('fetchBy').value,
     status:S('status').value,publish_xhs:S('publishXhs').value,
-    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value});
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
   history.replaceState(null,'','/?'+up.toString());
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
@@ -1228,7 +1232,7 @@ async function preview(key){
     const g=typeof n.gallery_images==='string'?JSON.parse(n.gallery_images):n.gallery_images;
     g.forEach(p=>{imgs+=`<img class="preview-img" src="/local-image?path=${encodeURIComponent(p)}">`});
   }catch(e){}}
-  const isStory=n.is_long_form||(n.format_suitability||'').includes('story');
+  const isStory=n.is_long_form||(n.format||'')==='story';
   S('modalContent').innerHTML=`
     ${imgs}
     <h2>${esc(n.title)}</h2>
@@ -1440,6 +1444,11 @@ async function togglePublish(key,val,el){
   if(el)el.classList.toggle('on',!!val);
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_xhs:val?1:0})});
   loadList();
+}
+async function togglePreselect(key,el){
+  const cur=el.textContent==='★';
+  el.textContent=cur?'☆':'★';
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({preselected:cur?0:1})});
 }
 async function setPostTime(key,val){
   const fmt=val?val.replace('T',' '):null;
@@ -1711,6 +1720,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>丢弃</option>
           <option value="archived" {{'selected' if news.status=='archived' else ''}}>归档</option>
         </select>
+        <span style="cursor:pointer;font-size:18px;user-select:none;line-height:1" id="preselectStar" title="{{'取消预选' if news.preselected else '预选标记'}}" onclick="toggleDetailPreselect('{{news.key}}',this)">{{'★' if news.preselected else '☆'}}</span>
       </div>
     </div>
 
@@ -1976,6 +1986,11 @@ async function autoSaveField(field,val){
   var data={};data[field]=field==='publish_xhs'?parseInt(val):val;
   await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   var t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1000);
+}
+async function toggleDetailPreselect(key,el){
+  const cur=el.textContent==='★';
+  el.textContent=cur?'☆':'★';
+  await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({preselected:cur?0:1})});
 }
 async function onModeChange(val){
   await autoSaveField('publish_mode',val);
@@ -2656,14 +2671,9 @@ def detail(key):
             except: pass
     scores = get_score_dims(key)
 
-    # 解析体裁
+    # 解析体裁（现在是单一字符串）
     import re as _re
-    fs_raw = news.get('format_suitability', '["news"]')
-    try:
-        fs_list = json.loads(fs_raw) if isinstance(fs_raw, str) else (fs_raw or ['news'])
-    except Exception:
-        fs_list = ['news']
-    news['primary_format'] = fs_list[0] if fs_list else 'news'
+    news['primary_format'] = news.get('format', 'news')
     _fmt_labels = {'news': '资讯', 'story': '故事体', 'ranking': '盘点', 'comparison': '对比'}
     news['format_label'] = _fmt_labels.get(news['primary_format'], news['primary_format'])
 
@@ -2711,6 +2721,7 @@ def api_list():
         fmt=request.args.get('fmt',''),
         score_min=request.args.get('score_min',''),
         fetch_by=request.args.get('fetch_by',''),
+        preselected=request.args.get('preselected',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),
@@ -2728,6 +2739,7 @@ def api_list():
         fmt=request.args.get('fmt',''),
         score_min=request.args.get('score_min',''),
         fetch_by=request.args.get('fetch_by',''),
+        preselected=request.args.get('preselected',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=10000,

@@ -18,22 +18,28 @@ def _error(code: str, msg: str) -> dict:
 
 @mcp.tool()
 def translate_and_classify(title_ja: str, content_ja: str) -> dict:
-    """翻译日文标题+摘要，判断内容适合的体裁类型"""
+    """翻译日文标题+摘要，判断内容适合的体裁类型（单选）"""
     system = (
         "You are a Japanese-to-Chinese translator and content classifier. "
         "Output ONLY valid JSON, no extra text."
     )
-    prompt = f"""翻译以下日文内容，并判断适合的小红书内容形式。
+    prompt = f"""翻译以下日文内容，并判断最适合的小红书内容形式（必须选唯一1个）。
 
 日文标题：{title_ja}
 日文正文（前800字）：{content_ja[:800]}
+
+体裁说明（从4个中选1个最合适的）：
+- news: 资讯体，任何内容都适用
+- story: 故事体，内容有时间弧度或前后变化
+- ranking: 盘点体，可提炼≥3个并列元素
+- comparison: 对比体，含两个以上可比较对象
 
 返回严格 JSON：
 {{
   "title_zh": "中文标题",
   "summary_zh": "2-3句中文摘要（共50-80字）",
-  "format_suitability": ["news", "story", "ranking", "comparison"] 中合适的1-3个,
-  "reason": "一句话说明为什么适合这些形式"
+  "format": "news",
+  "reason": "一句话说明为什么适合这个形式"
 }}"""
     try:
         result = call_litellm(
@@ -44,8 +50,11 @@ def translate_and_classify(title_ja: str, content_ja: str) -> dict:
         if not result:
             return _error("LLM_UNAVAILABLE", "LLM call returned empty")
         data = json.loads(result)
-        if isinstance(data.get("format_suitability"), str):
-            data["format_suitability"] = [data["format_suitability"]]
+        # Normalize: accept old "format_suitability" array or new "format" string
+        fs = data.get("format", data.get("format_suitability", "news"))
+        if isinstance(fs, list):
+            fs = fs[0] if fs else "news"
+        data["format"] = fs
         return data
     except json.JSONDecodeError as e:
         return _error("PARSE_ERROR", str(e))
