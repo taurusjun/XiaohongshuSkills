@@ -414,6 +414,12 @@ def update_news(key: str, fields: dict) -> bool:
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
+    # 自动补全 xhs_pub_time：如果设了 publish_time（非空）且 xhs_pub_time 为空，用 publish_time 填充
+    if 'publish_time' in updates and updates['publish_time'] and 'xhs_pub_time' not in updates:
+        with _connect() as db:
+            existing = db.execute("SELECT xhs_pub_time FROM news WHERE key=?", (key,)).fetchone()
+        if not existing or not existing["xhs_pub_time"]:
+            updates['xhs_pub_time'] = updates['publish_time']
     if 'tags' in updates and isinstance(updates['tags'], list):
         updates['tags'] = ','.join(updates['tags'])
     if 'gallery_images' in updates and isinstance(updates['gallery_images'], list):
