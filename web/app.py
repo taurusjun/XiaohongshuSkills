@@ -150,12 +150,47 @@ def api_trigger_fetch():
 @app.route('/api/trigger-publish', methods=['POST'])
 def api_trigger_publish():
     global _task_counter, _publish_running
-    with _publish_lock:                 # C-1: acquire lock first
+    with _publish_lock:
         if _publish_running:
             return jsonify({"locked": True, "msg": "已有发布任务在运行，请等待完成"})
         _publish_running = True
-    with _task_counter_lock:            # C-2: atomic counter
+    with _task_counter_lock:
         tid = str(_task_counter); _task_counter += 1
+
+    # Check for longform articles
+    from sqlite_db import get_pending_longform
+    longform_keys = get_pending_longform()
+    if longform_keys:
+        _tasks[tid] = {'status': 'running', 'log': f'长文发布: {len(longform_keys)} 篇\n'}
+        def do_longform_publish():
+            global _publish_running
+            log_lines = [f'长文发布: {len(longform_keys)} 篇']
+            try:
+                import subprocess as _sp
+                for i, key in enumerate(longform_keys):
+                    log_lines.append(f'[{i+1}/{len(longform_keys)}] {key[:16]}...')
+                    _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
+                    result = _sp.run(
+                        [sys.executable, 'xhs_publish_story.py', key],
+                        capture_output=True, text=True, timeout=120,
+                        cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
+                        env={**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'SQLITE_PATH': DB_PATH}
+                    )
+                    log_lines.append(result.stdout[-500:] if result.stdout else '(no output)')
+                    if result.returncode != 0:
+                        log_lines.append(f'⚠️ 返回码: {result.returncode}')
+                log_lines.append('✅ 长文发布准备完成，请在浏览器中微调后手动点击发布')
+                _tasks[tid] = {'status': 'done', 'log': '\n'.join(log_lines)}
+            except Exception as e:
+                log_lines.append(f'❌ 错误: {e}')
+                _tasks[tid] = {'status': f'error: {e}', 'log': '\n'.join(log_lines)}
+            finally:
+                with _publish_lock:
+                    _publish_running = False
+        threading.Thread(target=do_longform_publish, daemon=True).start()
+        return jsonify({"task_id": tid})
+
+    # Normal publish
     _tasks[tid] = {'status': 'running', 'log': ''}
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
     post_time = (request.json or {}).get('post_time', '')
@@ -301,6 +336,9 @@ def api_regenerate_title(key):
             # 资讯体直接标记，不让模型猜；故事体用 story_type 细分
             story_type = row.get('story_type') or ('故事体-自动判断子类型' if primary_format == 'story' else '资讯体')
             current_title = row.get('title') or ''
+            log.append(f'体裁: format={primary_format}, story_type={story_type or "(无)"}, is_long_form={row.get("is_long_form",0)}')
+            log.append(f'原标题: {title_ja[:60]}')
+            log.append(f'当前标题: {current_title[:60]}')
             log.append('生成标题...')
             _tasks[tid] = {'status': 'running', 'log': '\n'.join(log)}
             new_title = generate_title_only(
@@ -398,10 +436,13 @@ def api_regenerate(key):
                     article_imgs = fresh.get('article_images') or []
                 except NameError:
                     article_imgs = row.get('_article_images') or []
+                log.append(f'调用 generate_story_article: title_ja={title_ja[:60]}, body_ja_len={len(content_ja or row.get("content",""))}, imgs={len(article_imgs)}')
+                _tasks['regen_'+key] = {'status': 'running', 'log': '\n'.join(log)}
                 story = generate_story_article(title_ja, title_zh, content_ja or row.get('content', ''),
                                                article_images=article_imgs)
                 if not story:
-                    _tasks['regen_'+key] = {'status': 'error: 故事体生成失败', 'log': '故事体生成失败'}
+                    err_log = log + [f'❌ generate_story_article 返回 None — 检查 data/logs/error-{_dt_ad2.now().strftime("%Y-%m-%d")}.log']
+                    _tasks['regen_'+key] = {'status': 'error: 故事体生成失败', 'log': '\n'.join(err_log)}
                     return
                 new_title = story.get('title', title_zh)
                 log.append(f'标题: {new_title[:50]}')
@@ -1155,10 +1196,13 @@ async function loadList(){
     })()}</td>
     <td>${(()=>{
       const pm=n.publish_mode||'normal';
-      return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_mode:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':'#f0fdf4'};color:${pm==='free'?'#b91c1c':pm==='caption'?'#a16207':'#15803d'};cursor:pointer">
+      const bg=pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':pm==='longform'?'#f3e8ff':'#f0fdf4';
+      const fg=pm==='free'?'#b91c1c':pm==='caption'?'#a16207':pm==='longform'?'#7c3aed':'#15803d';
+      return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_mode:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${bg};color:${fg};cursor:pointer">
         <option value="normal" ${pm==='normal'?'selected':''}>默认</option>
         <option value="caption" ${pm==='caption'?'selected':''}>短配文</option>
         <option value="free" ${pm==='free'?'selected':''}>自由</option>
+        <option value="longform" ${pm==='longform'?'selected':''}>长文</option>
       </select>`;
     })()}</td>
     <td>${(()=>{
@@ -1712,6 +1756,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
           <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
           <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
+          <option value="longform" {{'selected' if news.publish_mode == 'longform' else ''}}>长文</option>
         </select>
         <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
