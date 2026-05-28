@@ -115,7 +115,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
                          "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv",
-                         "bunshun.jp", "full-count.jp"}
+                         "bunshun.jp", "full-count.jp",
+                         "news.ntv.co.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
@@ -2631,6 +2632,11 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
 # 站点专用抓取器（分页图集）
     if "natalie.mu" in domain and "/gallery/" in gallery_url:
         images = _scrape_natalie_gallery(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "news.ntv.co.jp" in domain:
+        from scrapers.ntv_dl import scrape as _ntv_scrape
+        images = _ntv_scrape(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "nikkansports.com" in domain:
