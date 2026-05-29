@@ -2814,17 +2814,16 @@ def api_detail(key):
 @app.route('/api/all-tags')
 def api_all_tags():
     from sqlite_db import _connect
+    from collections import Counter
     with _connect() as db:
-        rows = db.execute("SELECT DISTINCT tags FROM news WHERE tags IS NOT NULL AND tags!='' AND status='active'").fetchall()
-    seen = set()
-    all_tags = []
+        rows = db.execute("SELECT tags FROM news WHERE tags IS NOT NULL AND tags!='' AND status='active'").fetchall()
+    c = Counter()
     for r in rows:
         for t in (r['tags'] or '').split(','):
             t = t.strip()
-            if t and t not in seen:
-                seen.add(t)
-                all_tags.append(t)
-    return jsonify({"tags": sorted(all_tags)})
+            if t: c[t] += 1
+    # 只返回出现 >=2 次的标签，过滤单次使用的人名/杂项
+    return jsonify({"tags": sorted([t for t, n in c.items() if n >= 2])})
 
 @app.route('/api/news/<key>', methods=['PUT'])
 def api_update(key):
