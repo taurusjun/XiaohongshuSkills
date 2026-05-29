@@ -1912,7 +1912,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <div class="field-label">新闻要点 <span id="contentCount" style="float:right;font-size:11px;color:var(--text3);font-weight:400"></span></div>
           <textarea name="content" id="contentHidden" style="display:none">{{news.content or ''}}</textarea>
           {% if story_parts is defined and (story_parts or news.primary_format=='story') %}
-          <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px;max-width:752px"></div>
+          <div id="editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:200px"></div>
           <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
             <button class="btn btn-gray btn-sm" onclick="openImgPicker()">📷 插入图片</button>
             <button class="btn btn-sm" onclick="openStoryPreview()" style="background:#7c3aed;color:#fff">👁 预览</button>
@@ -1925,7 +1925,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
             <div id="imgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
           {% else %}
-          <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px;max-width:752px" oninput="updateContentCount()">{{news.content or ''}}</textarea>
+          <textarea class="inline-textarea auto-resize" name="content" style="min-height:120px" oninput="updateContentCount()">{{news.content or ''}}</textarea>
           {% endif %}
         </div>
         <div>
