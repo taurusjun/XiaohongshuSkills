@@ -1776,7 +1776,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- Tags -->
     <div class="card-section">
-      <div class="card-section-title">标签</div>
+      <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>标签</span>
+        <button onclick="copyTags()" style="font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);cursor:pointer;color:var(--text2)" title="复制所有标签">📋 复制</button>
+      </div>
       <div class="tag-row" id="tagBubbles"></div>
     </div>
 
@@ -2104,13 +2107,24 @@ let tags={% if news.tags %}{{news.tags|tojson}}{% else %}[]{% endif %};
 function renderTags(){
   const el=document.getElementById('tagBubbles');
   el.innerHTML=tags.map((t,i)=>`<span class="tag-bubble">${esc(t)}<span class="del" onclick="delTag(${i})">×</span></span>`).join('')
-    +'<input class="tag-input" id="tagInput" placeholder="+添加" onkeydown="addTag(event)">';
+    +'<input class="tag-input" id="tagInput" placeholder="+添加" list="tagSuggestions" onkeydown="addTag(event)">'
+    +'<datalist id="tagSuggestions"></datalist>';
+  // Load suggestions asynchronously
+  fetch('/api/all-tags').then(r=>r.json()).then(d=>{
+    const dl=document.getElementById('tagSuggestions');
+    dl.innerHTML=d.tags.map(t=>`<option value="${t}">`).join('');
+  });
 }
-function delTag(i){tags.splice(i,1);renderTags()}
+function delTag(i){tags.splice(i,1);renderTags();autoSaveField('tags',tags)}
+async function copyTags(){
+  const text=tags.map(t=>'#'+t).join(' ');
+  await navigator.clipboard.writeText(text);
+  const b=event.target; b.textContent='✅ 已复制'; setTimeout(()=>b.textContent='📋 复制',1500);
+}
 function addTag(e){
   if(e.key==='Enter'||e.key===','){
     e.preventDefault();const v=e.target.value.trim().replace(/,$/,'');
-    if(v){tags.push(v);e.target.value='';renderTags()}
+    if(v){tags.push(v);e.target.value='';renderTags();autoSaveField('tags',tags)}
   }
 }
 renderTags();
@@ -2796,6 +2810,21 @@ def api_detail(key):
     if not news: return jsonify({"error": "not found"}), 404
     news['scores'] = get_score_dims(key)
     return jsonify(news)
+
+@app.route('/api/all-tags')
+def api_all_tags():
+    from sqlite_db import _connect
+    with _connect() as db:
+        rows = db.execute("SELECT DISTINCT tags FROM news WHERE tags IS NOT NULL AND tags!='' AND status='active'").fetchall()
+    seen = set()
+    all_tags = []
+    for r in rows:
+        for t in (r['tags'] or '').split(','):
+            t = t.strip()
+            if t and t not in seen:
+                seen.add(t)
+                all_tags.append(t)
+    return jsonify({"tags": sorted(all_tags)})
 
 @app.route('/api/news/<key>', methods=['PUT'])
 def api_update(key):
