@@ -2104,16 +2104,32 @@ async function setAsCover(path){
 }
 
 let tags={% if news.tags %}{{news.tags|tojson}}{% else %}[]{% endif %};
+let allTagSuggestions=[];
+fetch('/api/all-tags').then(r=>r.json()).then(d=>{allTagSuggestions=d.tags});
+
 function renderTags(){
   const el=document.getElementById('tagBubbles');
   el.innerHTML=tags.map((t,i)=>`<span class="tag-bubble">${esc(t)}<span class="del" onclick="delTag(${i})">×</span></span>`).join('')
-    +'<input class="tag-input" id="tagInput" placeholder="+添加" list="tagSuggestions" onkeydown="addTag(event)">'
-    +'<datalist id="tagSuggestions"></datalist>';
-  // Load suggestions asynchronously
-  fetch('/api/all-tags').then(r=>r.json()).then(d=>{
-    const dl=document.getElementById('tagSuggestions');
-    dl.innerHTML=d.tags.map(t=>`<option value="${t}">`).join('');
-  });
+    +'<div style="position:relative;display:inline-flex;flex:1;min-width:60px">'
+    +'<input class="tag-input" id="tagInput" placeholder="+添加" autocomplete="off" oninput="filterTagSuggestions()" onkeydown="addTag(event)" onblur="setTimeout(()=>{const d=document.getElementById(\'tagDropdown\');if(d)d.style.display=\'none\'},200)" onfocus="filterTagSuggestions()">'
+    +'<div id="tagDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.1);font-size:11px;color:var(--text)"></div>'
+    +'</div>';
+}
+function filterTagSuggestions(){
+  const input=document.getElementById('tagInput');
+  const dropdown=document.getElementById('tagDropdown');
+  const val=(input.value||'').toLowerCase().trim();
+  if(!val){dropdown.style.display='none';return}
+  const matches=allTagSuggestions.filter(t=>t.toLowerCase().includes(val)&&!tags.includes(t)).slice(0,20);
+  if(!matches.length){dropdown.style.display='none';return}
+  dropdown.innerHTML=matches.map(t=>`<div style="padding:5px 8px;cursor:pointer;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" onmousedown="event.preventDefault();selectTagSuggestion('${esc(t).replace(/'/g,"\\'")}')">${esc(t)}</div>`).join('');
+  dropdown.style.display='block';
+}
+function selectTagSuggestion(t){
+  const input=document.getElementById('tagInput');
+  input.value=t;
+  document.getElementById('tagDropdown').style.display='none';
+  tags.push(t);renderTags();autoSaveField('tags',tags);
 }
 function delTag(i){tags.splice(i,1);renderTags();autoSaveField('tags',tags)}
 async function copyTags(){
@@ -2125,6 +2141,7 @@ function addTag(e){
   if(e.key==='Enter'||e.key===','){
     e.preventDefault();const v=e.target.value.trim().replace(/,$/,'');
     if(v){tags.push(v);e.target.value='';renderTags();autoSaveField('tags',tags)}
+    document.getElementById('tagDropdown').style.display='none';
   }
 }
 renderTags();
