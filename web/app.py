@@ -1778,7 +1778,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     <div class="card-section">
       <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between">
         <span>标签</span>
-        <button onclick="copyTags()" style="font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);cursor:pointer;color:var(--text2)" title="复制所有标签">📋 复制</button>
+        <button onclick="copyTags(this)" style="font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);cursor:pointer;color:var(--text2)" title="复制所有标签">📋 复制</button>
       </div>
       <div class="tag-row" id="tagBubbles"></div>
     </div>
@@ -2132,10 +2132,10 @@ function selectTagSuggestion(t){
   tags.push(t);renderTags();autoSaveField('tags',tags);
 }
 function delTag(i){tags.splice(i,1);renderTags();autoSaveField('tags',tags)}
-async function copyTags(){
+async function copyTags(btn){
   const text=tags.map(t=>'#'+t).join(' ');
   await navigator.clipboard.writeText(text);
-  const b=event.target; b.textContent='✅ 已复制'; setTimeout(()=>b.textContent='📋 复制',1500);
+  btn.textContent='✅ 已复制'; setTimeout(()=>btn.textContent='📋 复制',1500);
 }
 function addTag(e){
   if(e.key==='Enter'||e.key===','){
