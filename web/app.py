@@ -2134,7 +2134,13 @@ function selectTagSuggestion(t){
 function delTag(i){tags.splice(i,1);renderTags();autoSaveField('tags',tags)}
 async function copyTags(btn){
   const text=tags.map(t=>'#'+t).join(' ');
-  await navigator.clipboard.writeText(text);
+  try{await navigator.clipboard.writeText(text)}
+  catch{
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+  }
   btn.textContent='✅ 已复制'; setTimeout(()=>btn.textContent='📋 复制',1500);
 }
 function addTag(e){
