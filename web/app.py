@@ -1202,7 +1202,7 @@ async function loadList(){
         <option value="normal" ${pm==='normal'?'selected':''}>默认</option>
         <option value="caption" ${pm==='caption'?'selected':''}>短配文</option>
         <option value="free" ${pm==='free'?'selected':''}>自由</option>
-        <option value="rewritten" ${pm==='rewritten'?'selected':''}>改写文</option>
+        <option value="rewritten" ${pm==='rewritten'?'selected':''}>改写长文</option>
         <option value="longform" ${pm==='longform'?'selected':''}>长文</option>
       </select>`;
     })()}</td>
@@ -1757,7 +1757,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
           <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
           <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
-          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写文</option>
+          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写长文</option>
           <option value="longform" {{'selected' if news.publish_mode == 'longform' else ''}}>长文</option>
         </select>
         <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
