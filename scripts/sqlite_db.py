@@ -233,6 +233,7 @@ def init_db():
             ("story_type", "TEXT DEFAULT ''"),
             ("format", "TEXT DEFAULT 'news'"),
             ("preselected", "INTEGER DEFAULT 0"),
+            ("rewritten_content", "TEXT DEFAULT ''"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -287,9 +288,9 @@ def insert_news(news: dict) -> bool:
                     summary, tags, image_url, original_image_url, gallery_images, publish_images,
                     gallery_video, publish_video, video_path, video_caption, gallery_url, content_ja,
                     pub_time, title_score, content_score, publish_xhs, publish_time, xhs_pub_time, fetch_by,
-                    format, is_long_form, publish_mode, publish_free_text,
+                    format, is_long_form, publish_mode, publish_free_text, rewritten_content,
                     updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                 ON CONFLICT(key) DO UPDATE SET
                     title=excluded.title, title_ja=excluded.title_ja, link=excluded.link,
                     source=excluded.source, category=excluded.category, content=excluded.content,
@@ -306,6 +307,7 @@ def insert_news(news: dict) -> bool:
                     format=excluded.format,
                     is_long_form=excluded.is_long_form,
                     publish_mode=excluded.publish_mode,
+                    rewritten_content=excluded.rewritten_content,
                     publish_free_text=excluded.publish_free_text,
                     updated_at=datetime('now','localtime')
             """, (news.get('key',''), news.get('title',''), news.get('title_ja',''),
@@ -319,7 +321,7 @@ def insert_news(news: dict) -> bool:
                   news.get('pub_time',''), news.get('title_score',0), news.get('content_score',0),
                   news.get('publish_xhs',0), news.get('publish_time',''), news.get('xhs_pub_time',''), news.get('fetch_by',''),
                   fmt, 1 if news.get('is_long_form') else 0,
-                  news.get('publish_mode','normal'), news.get('publish_free_text','')))
+                  news.get('publish_mode','normal'), news.get('publish_free_text',''), news.get('rewritten_content','')))
             return True
         except Exception as e:
             msg = f"SQLite 写入失败 key={news.get('key','?')} fetch_by={news.get('fetch_by','?')}: {e}"
@@ -408,7 +410,7 @@ def update_news(key: str, fields: dict) -> bool:
                'xhs_shares','xhs_fans_gained','xhs_impression','xhs_click_rate','xhs_watch_time','xhs_danmaku',
                'format_suitability','is_long_form','story_type',
                'format','preselected',
-               'publish_mode','publish_free_text',
+               'publish_mode','publish_free_text','rewritten_content',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
