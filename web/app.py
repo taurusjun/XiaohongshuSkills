@@ -1896,6 +1896,12 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h3 style="font-size:13px;font-weight:600;color:var(--text)">✏️ 内容编辑</h3>
       </div>
+      <!-- 内容编辑卡片 -->
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+        <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <span class="ah-title">✏️ 内容编辑</span><span class="ah-arrow">▼</span>
+        </div>
+        <div class="accordion-body open">
       <div class="field-group">
         <div>
           <div class="field-label">标题 <span id="titleCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
@@ -1935,17 +1941,22 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea>
         </div>
       </div>
-    </div>
+        </div><!-- /accordion-body -->
+      </div><!-- /内容编辑 card -->
 
     <!-- 改写卡片 -->
-    <div class="card-section" style="border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--card-bg);margin-bottom:14px">
-      <div class="card-section-title" style="margin-bottom:10px">改写</div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <span class="ah-title">✍️ 改写</span><span class="ah-arrow">▼</span>
+      </div>
+      <div class="accordion-body open" style="padding:14px">
       <div class="field-label">改写标题</div>
       <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)">
       <div class="field-label">改写文</div>
       <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
       <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
-    </div>
+      </div><!-- /accordion-body -->
+    </div><!-- /改写 card -->
 
     <!-- Japanese original (accordion, conditional) -->
     {% if news.title_ja or news.content_ja %}
