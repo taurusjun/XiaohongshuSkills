@@ -103,7 +103,7 @@ def collect_all(dry_run: bool = False) -> dict:
         conn.execute("BEGIN")
         try:
             articles = conn.execute(
-                "SELECT key, title, xhs_title, xhs_note_id FROM news WHERE publish_xhs=1 AND status='active'"
+                "SELECT key, title, xhs_title, xhs_note_id, rewritten_title, publish_mode FROM news WHERE publish_xhs=1 AND status='active'"
             ).fetchall()
 
             # Build Excel title index for fast lookup
@@ -127,6 +127,18 @@ def collect_all(dry_run: bool = False) -> dict:
                         s = SequenceMatcher(None, xhs_t, et).ratio()
                         if s > best and s >= 0.85:
                             best = s; match_row = er
+
+                # 1.5: 改写模式 -> match by rewritten_title
+                if match_row is None and art["publish_mode"] == 'rewritten':
+                    rwt = _normalize(art["rewritten_title"] or "")
+                    if rwt and rwt in excel_titles:
+                        match_row = excel_titles[rwt]
+                    elif rwt:
+                        best = 0
+                        for et, er in excel_titles.items():
+                            s = SequenceMatcher(None, rwt, et).ratio()
+                            if s > best and s >= 0.85:
+                                best = s; match_row = er
 
                 # 2. Fallback: match by DB title
                 if match_row is None:
