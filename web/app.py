@@ -1698,11 +1698,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .trend-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .trend-btn:hover:not(.active){border-color:var(--text3);color:var(--text)}
 /* Editor.js overrides */
-#editorjs .ce-block__content{max-width:none}
-#editorjs .codex-editor__redactor{padding-bottom:20px!important}
-#editorjs h2.ce-header{font-size:16px;font-weight:700;margin:16px 0 6px;color:var(--text)}
-#editorjs h3.ce-header{font-size:14px;font-weight:600;margin:14px 0 4px;color:var(--text)}
-#editorjs .image-tool__image-picture{max-width:100%;border-radius:8px}
+#editorjs .ce-block__content, #editorjs-rewritten .ce-block__content{max-width:none}
+#editorjs .codex-editor__redactor, #editorjs-rewritten .codex-editor__redactor{padding-bottom:20px!important}
+#editorjs h2.ce-header, #editorjs-rewritten h2.ce-header{font-size:16px;font-weight:700;margin:16px 0 6px;color:var(--text)}
+#editorjs h3.ce-header, #editorjs-rewritten h3.ce-header{font-size:14px;font-weight:600;margin:14px 0 4px;color:var(--text)}
+#editorjs .image-tool__image-picture, #editorjs-rewritten .image-tool__image-picture{max-width:100%;border-radius:8px}
 </style>
 </head>
 <body>
@@ -1937,7 +1937,8 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         <hr class="sep-line">
         <div>
           <div class="field-label">改写文</div>
-          <textarea class="inline-textarea auto-resize" name="rewritten_content" style="min-height:120px" oninput="autoSaveField('rewritten_content',this.value)">{{news.rewritten_content or ''}}</textarea>
+          <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
+          <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
         </div>
       </div>
     </div>
@@ -2605,29 +2606,59 @@ class GalleryImageBlock {
   save(){return{paths:this.data.paths,caption:this.data.caption};}
 }
 
+let _ejsRewrittenEditor=null;
 function _initEditorJs(){
+  if(typeof EditorJS==='undefined') return;
+
+  // Init main content editor (story articles only)
   const el=document.getElementById('editorjs');
-  if(!el||typeof EditorJS==='undefined') return;
-  const raw=document.getElementById('contentHidden').value;
-  const initBlocks=_textToEjsBlocks(raw,_allImgs);
-  _ejsEditor=new EditorJS({
-    holder:'editorjs',
-    minHeight:100,
-    placeholder:'输入正文内容... （用 / 插入小标题或图片块）',
-    tools:{
-      header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
-      quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
-      galleryImage:{class:GalleryImageBlock}
-    },
-    data:{blocks:initBlocks},
-    onChange:async()=>{
-      try{
-        const out=await _ejsEditor.save();
-        document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);
-        updateContentCount();
-      }catch(e){}
-    }
-  });
+  if(el){
+    const raw=document.getElementById('contentHidden').value;
+    const initBlocks=_textToEjsBlocks(raw,_allImgs);
+    _ejsEditor=new EditorJS({
+      holder:'editorjs',
+      minHeight:100,
+      placeholder:'输入正文内容... （用 / 插入小标题或图片块）',
+      tools:{
+        header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+        quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
+        galleryImage:{class:GalleryImageBlock}
+      },
+      data:{blocks:initBlocks},
+      onChange:async()=>{
+        try{
+          const out=await _ejsEditor.save();
+          document.getElementById('contentHidden').value=_ejsBlocksToText(out.blocks||[]);
+          updateContentCount();
+        }catch(e){}
+      }
+    });
+  }
+
+  // Init rewritten content Editor.js (always)
+  const rewEl=document.getElementById('editorjs-rewritten');
+  if(rewEl){
+    const rewRaw=document.getElementById('rewrittenHidden').value;
+    const rewBlocks=_textToEjsBlocks(rewRaw,_allImgs);
+    _ejsRewrittenEditor=new EditorJS({
+      holder:'editorjs-rewritten',
+      minHeight:80,
+      placeholder:'改写内容...',
+      tools:{
+        header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+        quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
+        galleryImage:{class:GalleryImageBlock}
+      },
+      data:{blocks:rewBlocks},
+      onChange:async()=>{
+        try{
+          const out=await _ejsRewrittenEditor.save();
+          document.getElementById('rewrittenHidden').value=_ejsBlocksToText(out.blocks||[]);
+          autoSaveField('rewritten_content', document.getElementById('rewrittenHidden').value);
+        }catch(e){}
+      }
+    });
+  }
 }
 
 let _imgPickerCb=null;
@@ -2696,7 +2727,7 @@ async function openStoryPreview(){
 
 // Init on load (load Editor.js from CDN first)
 (function loadEditorJs(){
-  if(!document.getElementById('editorjs')) return;
+  if(!document.getElementById('editorjs') && !document.getElementById('editorjs-rewritten')) return;
   function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
   loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
     loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
