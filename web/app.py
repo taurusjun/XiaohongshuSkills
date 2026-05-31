@@ -1934,13 +1934,17 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <div class="field-label">我的解读</div>
           <textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea>
         </div>
-        <hr class="sep-line">
-        <div>
-          <div class="field-label">改写文</div>
-          <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
-          <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
-        </div>
       </div>
+    </div>
+
+    <!-- 改写卡片 -->
+    <div class="card-section" style="border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--card-bg);margin-bottom:14px">
+      <div class="card-section-title" style="margin-bottom:10px">改写</div>
+      <div class="field-label">改写标题</div>
+      <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)">
+      <div class="field-label">改写文</div>
+      <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
+      <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
     </div>
 
     <!-- Japanese original (accordion, conditional) -->
