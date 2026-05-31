@@ -271,9 +271,12 @@ def export_to_md(news_key: str):
     publish_mode = row.get('publish_mode', 'normal')
     rewritten = row.get('rewritten_content', '') or ''
 
-    # 改写长文模式：用 rewritten_content 作为正文，不加导语结语
+    # 改写长文模式：用 rewritten_content 作为正文，rewritten_title 作为标题
     if publish_mode == 'rewritten' and rewritten.strip():
         content = rewritten
+        rwt = row.get('rewritten_title', '') or ''
+        if rwt.strip():
+            title = rwt
         summary = ''
         comment = ''
     else:
