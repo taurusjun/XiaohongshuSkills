@@ -1196,12 +1196,13 @@ async function loadList(){
     })()}</td>
     <td>${(()=>{
       const pm=n.publish_mode||'normal';
-      const bg=pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':pm==='longform'?'#f3e8ff':'#f0fdf4';
-      const fg=pm==='free'?'#b91c1c':pm==='caption'?'#a16207':pm==='longform'?'#7c3aed':'#15803d';
+      const bg=pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':pm==='rewritten'?'#eff6ff':pm==='longform'?'#f3e8ff':'#f0fdf4';
+      const fg=pm==='free'?'#b91c1c':pm==='caption'?'#a16207':pm==='rewritten'?'#2563eb':pm==='longform'?'#7c3aed':'#15803d';
       return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_mode:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${bg};color:${fg};cursor:pointer">
         <option value="normal" ${pm==='normal'?'selected':''}>默认</option>
         <option value="caption" ${pm==='caption'?'selected':''}>短配文</option>
         <option value="free" ${pm==='free'?'selected':''}>自由</option>
+        <option value="rewritten" ${pm==='rewritten'?'selected':''}>改写文</option>
         <option value="longform" ${pm==='longform'?'selected':''}>长文</option>
       </select>`;
     })()}</td>
@@ -1756,6 +1757,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
           <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
           <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
+          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写文</option>
           <option value="longform" {{'selected' if news.publish_mode == 'longform' else ''}}>长文</option>
         </select>
         <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
@@ -1932,6 +1934,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <div class="field-label">我的解读</div>
           <textarea class="inline-textarea auto-resize" name="comment" style="min-height:100px">{{news.comment or ''}}</textarea>
         </div>
+        <hr class="sep-line">
+        <div>
+          <div class="field-label">改写文</div>
+          <textarea class="inline-textarea auto-resize" name="rewritten_content" style="min-height:120px" oninput="autoSaveField('rewritten_content',this.value)">{{news.rewritten_content or ''}}</textarea>
+        </div>
       </div>
     </div>
 
@@ -2040,9 +2047,9 @@ async function toggleDetailPreselect(key,el){
 }
 async function onModeChange(val){
   await autoSaveField('publish_mode',val);
-  if(val==='free'){location.reload();return}
-  var s=document.getElementById('freeTextSection');
-  if(s)s.remove();
+  if(val==='free'||val==='rewritten'){location.reload();return}
+  var s=document.getElementById('freeTextSection'); if(s)s.remove();
+  s=document.getElementById('rewrittenSection'); if(s)s.remove();
 }
 async function runTask(opts){
   const {title, apiUrl, apiBody, btn, origText, onDone} = opts;
