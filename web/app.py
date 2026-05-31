@@ -1893,9 +1893,6 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- Content editing -->
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <h3 style="font-size:13px;font-weight:600;color:var(--text)">✏️ 内容编辑</h3>
-      </div>
       <!-- 内容编辑卡片 -->
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
         <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
