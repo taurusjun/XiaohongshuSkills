@@ -1731,6 +1731,9 @@ def process_news_item(news: dict, no_translate: bool = False,
         if og_title and len(og_title) > 10:
             og_title_clean = re.sub(r'\s*[-—|]\s*Yahoo!.*$', '', og_title).strip()
             og_title_clean = re.sub(r'\s*（[^）]*Yahoo[^）]*）\s*$', '', og_title_clean).strip()
+            # 清理 og:title 尾部的来源+日期元数据（如 …27オリコンエンタメ総合5/30(土) 12:05）
+            og_title_clean = re.sub(r'…\d{1,2}[^\s]*?総合\d{1,2}/\d{1,2}.*$', '', og_title_clean).strip()
+            og_title_clean = re.sub(r'…?\d{1,2}[^\s]*?\d{1,2}/\d{1,2}[^\s]*?\d{1,2}:\d{2}$', '', og_title_clean).strip()
             if len(og_title_clean) > len(news['title_ja']) * 0.5:
                 news['title_ja'] = og_title_clean
 
