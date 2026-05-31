@@ -263,12 +263,21 @@ def export_to_md(news_key: str):
         return None
 
     title = row.get('title', '')
-    content = row.get('content', '')
     summary = row.get('summary', '')
     comment = row.get('comment', '')
     gallery = row.get('gallery_images', [])
     if isinstance(gallery, str):
         gallery = json.loads(gallery)
+    publish_mode = row.get('publish_mode', 'normal')
+    rewritten = row.get('rewritten_content', '') or ''
+
+    # 改写长文模式：用 rewritten_content 作为正文，不加导语结语
+    if publish_mode == 'rewritten' and rewritten.strip():
+        content = rewritten
+        summary = ''
+        comment = ''
+    else:
+        content = row.get('content', '')
 
     # Build markdown
     md = f"# {title}\n\n"

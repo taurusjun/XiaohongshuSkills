@@ -466,10 +466,10 @@ def get_pending_publish(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 def get_pending_longform() -> list[str]:
-    """返回待发布的 longform 文章 key 列表"""
+    """返回待发布的 longform/改写长文 文章 key 列表"""
     with _connect() as db:
         rows = db.execute(
-            "SELECT key FROM news WHERE publish_mode='longform' AND publish_xhs=1"
+            "SELECT key FROM news WHERE publish_mode IN ('longform','rewritten') AND publish_xhs=1"
             " AND (publish_time IS NULL OR publish_time='') AND status='active'"
             " ORDER BY created_at DESC"
         ).fetchall()
