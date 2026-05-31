@@ -410,6 +410,14 @@ def main():
         try: gallery = json.loads(gallery)
         except: gallery = []
 
+    # 改写长文模式：用 rewritten 字段
+    publish_mode = row.get('publish_mode', 'normal')
+    if publish_mode == 'rewritten':
+        rwt = row.get('rewritten_title', '') or ''
+        rwc = row.get('rewritten_content', '') or ''
+        if rwt.strip(): title = rwt
+        if rwc.strip(): content = rwc; summary = ''; comment = ''
+
     print(f"📄 {title[:60]}")
     print(f"   正文: {len(content or '')} 字")
     print(f"   图集: {len(gallery)} 张")
