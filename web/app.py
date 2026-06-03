@@ -1547,6 +1547,7 @@ async function loadCategories(){
 	S("publishXhs").value=qp.get("publish_xhs")||"";
 	S("fmtFilter").value=qp.get("fmt")||"";
 	S("scoreFilter").value=qp.get("score_min")||"";
+		S("preselectedFilter").value=qp.get("preselected")||"";
 	S("dateFrom").value=qp.has("date_from")?qp.get("date_from"):today;
 	S("dateTo").value=qp.has("date_to")?qp.get("date_to"):today;
 	if(S("pageSizeSelect"))S("pageSizeSelect").value=pageSize;
