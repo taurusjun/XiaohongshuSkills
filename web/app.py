@@ -157,18 +157,18 @@ def api_trigger_publish():
     with _task_counter_lock:
         tid = str(_task_counter); _task_counter += 1
 
-    # Check for longform articles
-    from sqlite_db import get_pending_longform
-    longform_keys = get_pending_longform()
-    if longform_keys:
-        _tasks[tid] = {'status': 'running', 'log': f'长文发布: {len(longform_keys)} 篇\n'}
+    # Check for export articles (publish_method='export')
+    from sqlite_db import get_pending_export
+    export_keys = get_pending_export()
+    if export_keys:
+        _tasks[tid] = {'status': 'running', 'log': f'导出发布: {len(export_keys)} 篇\n'}
         def do_longform_publish():
             global _publish_running
-            log_lines = [f'长文发布: {len(longform_keys)} 篇']
+            log_lines = [f'导出发布: {len(export_keys)} 篇']
             try:
                 import subprocess as _sp
-                for i, key in enumerate(longform_keys):
-                    log_lines.append(f'[{i+1}/{len(longform_keys)}] {key[:16]}...')
+                for i, key in enumerate(export_keys):
+                    log_lines.append(f'[{i+1}/{len(export_keys)}] {key[:16]}...')
                     _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
                     result = _sp.run(
                         [sys.executable, 'xhs_publish_story.py', key, '--export'],
@@ -997,7 +997,8 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th onclick="setSort('title_score')" style="width:64px">评分 ↕</th>
             <th style="width:60px">状态</th>
             <th style="width:50px">发布</th>
-            <th style="width:60px">模式</th>
+            <th style="width:60px">内容</th>
+            <th style="width:50px">发布</th>
             <th style="width:140px">预发布</th>
             <th onclick="setSort('publish_time')" style="width:88px">XHS发布 ↕</th>
             <th onclick="setSort('created_at')" style="width:88px">入库 ↕</th>
@@ -1196,14 +1197,21 @@ async function loadList(){
     })()}</td>
     <td>${(()=>{
       const pm=n.publish_mode||'normal';
-      const bg=pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':pm==='rewritten'?'#eff6ff':pm==='longform'?'#f3e8ff':'#f0fdf4';
-      const fg=pm==='free'?'#b91c1c':pm==='caption'?'#a16207':pm==='rewritten'?'#2563eb':pm==='longform'?'#7c3aed':'#15803d';
+      const bg=pm==='free'?'#fef2f2':pm==='caption'?'#fefce8':pm==='rewritten'?'#eff6ff':'#f0fdf4';
+      const fg=pm==='free'?'#b91c1c':pm==='caption'?'#a16207':pm==='rewritten'?'#2563eb':'#15803d';
+      const method=n.publish_method||'post';
       return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_mode:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${bg};color:${fg};cursor:pointer">
         <option value="normal" ${pm==='normal'?'selected':''}>默认</option>
         <option value="caption" ${pm==='caption'?'selected':''}>短配文</option>
         <option value="free" ${pm==='free'?'selected':''}>自由</option>
-        <option value="rewritten" ${pm==='rewritten'?'selected':''}>改写长文</option>
-        <option value="longform" ${pm==='longform'?'selected':''}>长文</option>
+        <option value="rewritten" ${pm==='rewritten'?'selected':''}>改写文</option>
+      </select>`;
+    })()}</td>
+    <td>${(()=>{
+      const method=n.publish_method||'post';
+      return`<select onchange="event.stopPropagation();fetch('/api/news/${n.key}',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({publish_method:this.value})})" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:4px;background:${method==='export'?'#f3e8ff':'#f0fdf4'};color:${method==='export'?'#7c3aed':'#15803d'};cursor:pointer">
+        <option value="post" ${method==='post'?'selected':''}>发帖</option>
+        <option value="export" ${method==='export'?'selected':''}>导出</option>
       </select>`;
     })()}</td>
     <td>${(()=>{
@@ -1770,8 +1778,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
           <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
           <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
           <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
-          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写长文</option>
-          <option value="longform" {{'selected' if news.publish_mode == 'longform' else ''}}>长文</option>
+          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写文</option>
+        </select>
+        <select name="publish_method" onchange="autoSaveField('publish_method',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
+          <option value="post" {{'selected' if news.publish_method == 'post' or not news.publish_method else ''}}>发帖</option>
+          <option value="export" {{'selected' if news.publish_method == 'export' else ''}}>导出</option>
         </select>
         <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
           <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>

@@ -236,6 +236,7 @@ def init_db():
             ("rewritten_content", "TEXT DEFAULT ''"),
             ("rewritten_title", "TEXT DEFAULT ''"),
             ("related_keys", "TEXT DEFAULT ''"),
+            ("publish_method", "TEXT DEFAULT 'post'"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -413,7 +414,7 @@ def update_news(key: str, fields: dict) -> bool:
                'format_suitability','is_long_form','story_type',
                'format','preselected',
                'publish_mode','publish_free_text','rewritten_content','rewritten_title',
-               'related_keys',
+               'related_keys','publish_method',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
@@ -465,14 +466,14 @@ def mark_published(key: str, publish_time: str = "", xhs_pub_time: str = "") -> 
 
 def get_pending_publish(limit: int = 20) -> list[dict]:
     with _connect() as db:
-        rows = db.execute("SELECT * FROM news WHERE publish_xhs=1 AND (publish_time IS NULL OR publish_time='') AND status='active' ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        rows = db.execute("SELECT * FROM news WHERE publish_xhs=1 AND (publish_time IS NULL OR publish_time='') AND status='active' AND (publish_method IS NULL OR publish_method='post') ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
 
-def get_pending_longform() -> list[str]:
-    """返回待发布的 longform/改写长文 文章 key 列表"""
+def get_pending_export() -> list[str]:
+    """返回 publish_method='export' 的待发布文章 key 列表"""
     with _connect() as db:
         rows = db.execute(
-            "SELECT key FROM news WHERE publish_mode IN ('longform','rewritten') AND publish_xhs=1"
+            "SELECT key FROM news WHERE publish_method='export' AND publish_xhs=1"
             " AND (publish_time IS NULL OR publish_time='') AND status='active'"
             " ORDER BY created_at DESC"
         ).fetchall()
