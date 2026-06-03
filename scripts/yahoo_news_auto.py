@@ -79,9 +79,9 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
             if not ws_url:
                 return []
 
-            ws = _ws_module.create_connection(ws_url, timeout=30)
+            ws = _ws_module.create_connection(ws_url, timeout=15)
             try:
-                ws.settimeout(10)
+                ws.settimeout(15)
                 ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
                 ws.recv()
 
@@ -89,21 +89,12 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                 ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
 
                 print("等待页面加载...")
-                load_fired = False
                 start = time.time()
-                while time.time() - start < 15:
-                    try:
-                        ws.settimeout(3)
-                        msg = json.loads(ws.recv())
-                        if msg.get("method") == "Page.loadEventFired":
-                            load_fired = True
-                            break
-                    except Exception:
-                        pass  # timeout on recv, page may still be loading
-                ws.settimeout(15)
-
-                # Wait a few more seconds for dynamic content
-                time.sleep(4 if load_fired else 6)
+                while time.time() - start < 20:
+                    msg = json.loads(ws.recv())
+                    if msg.get("method") == "Page.loadEventFired":
+                        break
+                time.sleep(3)
 
                 ws.send(json.dumps({
                     "id": 3,
@@ -111,15 +102,11 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     "params": {"expression": "document.documentElement.outerHTML"},
                 }))
                 html = ""
-                start = time.time()
-                while time.time() - start < 10:
-                    try:
-                        msg = json.loads(ws.recv())
-                        if msg.get("id") == 3:
-                            html = msg.get("result", {}).get("result", {}).get("value", "")
-                            break
-                    except Exception:
-                        pass
+                while True:
+                    msg = json.loads(ws.recv())
+                    if msg.get("id") == 3:
+                        html = msg.get("result", {}).get("result", {}).get("value", "")
+                        break
             finally:
                 try:
                     ws.close()
