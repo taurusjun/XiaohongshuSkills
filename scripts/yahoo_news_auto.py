@@ -68,14 +68,16 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
             print(f"  🔄 重试 ({attempt}/{max_retries})...")
             time.sleep(3)
         try:
-            resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=10)
+            # 每次搜索创建新 tab，避免重连同一个 DevTools endpoint 导致 recv 超时
+            resp = requests.put(
+                f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10
+            )
             if resp.status_code != 200:
-                print("❌ 无法连接 Chrome")
+                print("❌ 无法创建新 tab")
                 return []
-            tabs = resp.json()
-            if not tabs:
-                return []
-            ws_url = tabs[0].get("webSocketDebuggerUrl", "")
+            new_tab = resp.json()
+            tab_id = new_tab.get("id", "")
+            ws_url = new_tab.get("webSocketDebuggerUrl", "")
             if not ws_url:
                 return []
 
@@ -117,6 +119,14 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     ws.close()
                 except Exception:
                     pass
+                if tab_id:
+                    try:
+                        requests.get(
+                            f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}",
+                            timeout=3
+                        )
+                    except Exception:
+                        pass
 
             if not html:
                 continue
