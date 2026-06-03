@@ -2337,6 +2337,10 @@ def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
         return []
 
 
+def _scrape_egolf(gallery_url: str) -> list[str]:
+    from scrapers.egolf_dl import scrape
+    return scrape(gallery_url)
+
 def _scrape_pinzuba(gallery_url: str) -> list[str]:
     """pinzuba.news /articles/-/ID?page=N 图集：ismcdn 大图（640wm/660w），多页翻页。"""
     import re
@@ -2741,6 +2745,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "qjweb.jp" in domain:
         images = _scrape_qjweb(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "egolf.jp" in domain:
+        images = _scrape_egolf(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "pinzuba.news" in domain:
