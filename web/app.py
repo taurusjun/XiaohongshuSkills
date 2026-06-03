@@ -1962,7 +1962,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div class="accordion-body open" style="padding:14px">
       <div class="field-label">改写标题</div>
       <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)">
-      <div class="field-label">改写文</div>
+      <div class="field-label">改写文 <span id="rewrittenCount" style="float:right;font-size:11px;color:var(--text3);font-weight:400"></span></div>
       <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
       <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
       </div><!-- /accordion-body -->
@@ -2209,6 +2209,13 @@ function updateTitleCount(){
 }
 function updateContentCount(){
   var ta=document.getElementById('contentHidden'),c=document.getElementById('contentCount');
+  if(!ta||!c)return;
+  var n=xhsCharCount(ta.value);
+  c.textContent=n+'/1000';
+  c.style.color=n>1000?'var(--red)':'var(--text3)';
+}
+function updateRewrittenCount(){
+  var ta=document.getElementById('rewrittenHidden'),c=document.getElementById('rewrittenCount');
   if(!ta||!c)return;
   var n=xhsCharCount(ta.value);
   c.textContent=n+'/1000';
@@ -2684,9 +2691,11 @@ function _initEditorJs(){
           const out=await _ejsRewrittenEditor.save();
           document.getElementById('rewrittenHidden').value=_ejsBlocksToText(out.blocks||[]);
           autoSaveField('rewritten_content', document.getElementById('rewrittenHidden').value);
+          updateRewrittenCount();
         }catch(e){}
       }
     });
+    updateRewrittenCount();
   }
 }
 
