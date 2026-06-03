@@ -629,38 +629,186 @@ def download_instagram(url: str, output_dir: Path, *,
 # Twitter / X
 # ================================================================
 
+def _download_via_cdp(img_urls: list[str], output_dir: Path) -> list[str]:
+    """通过 CDP 浏览器 fetch() 下载图片，绕过代理。"""
+    import requests as _req, base64 as _b64, websocket as _ws, json as _j, time as _t
+    CDP = "http://127.0.0.1:9222"
+    saved = []
+
+    # Create tab
+    try:
+        resp = _req.put(f"{CDP}/json/new?url=about:blank", timeout=5)
+        tab = resp.json()
+        tab_id = tab["id"]
+        ws = _ws.create_connection(tab["webSocketDebuggerUrl"], timeout=10)
+        ws.send(_j.dumps({"id": 1, "method": "Runtime.enable"}))
+        _t.sleep(0.3)
+    except Exception as e:
+        print(f"  ❌ CDP 连接失败: {e}")
+        return saved
+
+    try:
+        for i, url in enumerate(img_urls):
+            ext = url.rsplit(".", 1)[-1].split("?")[0] or "jpg"
+            if ext not in ("jpg", "jpeg", "png", "webp"):
+                ext = "jpg"
+            dst = output_dir / f"{i+1:03d}.{ext}"
+
+            script = f"""
+(async () => {{
+    const resp = await fetch('{url}');
+    if (!resp.ok) return 'HTTP ' + resp.status;
+    const blob = await resp.blob();
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let j = 0; j < bytes.length; j += 8192) {{
+        binary += String.fromCharCode.apply(null, bytes.slice(j, j + 8192));
+    }}
+    return 'OK:' + btoa(binary);
+}})()
+"""
+            ws.send(_j.dumps({"id": 10+i, "method": "Runtime.evaluate",
+                "params": {"expression": script, "returnByValue": True, "awaitPromise": True}}))
+            _t.sleep(3)
+
+            deadline = _t.time() + 20
+            while _t.time() < deadline:
+                try:
+                    ws.settimeout(2)
+                    msg = _j.loads(ws.recv())
+                    if msg.get("id") == 10+i:
+                        val = msg["result"]["result"]["value"]
+                        if val and val.startswith("OK:"):
+                            b64 = val[3:]
+                            dst.write_bytes(_b64.b64decode(b64))
+                            saved.append(dst.name)
+                            print(f"    ✓ {dst.name} ({dst.stat().st_size//1024}KB) CDP")
+                        else:
+                            print(f"    ❌ {dst.name}: {str(val)[:100]}")
+                        break
+                except Exception:
+                    pass
+    finally:
+        try:
+            ws.close()
+            _req.get(f"{CDP}/json/close/{tab_id}", timeout=3)
+        except Exception:
+            pass
+    return saved
+
+
 def _download_twitter_images_fx(url: str, output_dir: Path, tweet_id: str) -> list[str]:
-    """通过 fxTwitter API 下载推文图片。"""
-    import requests as _req
+    """通过 CDP 浏览器完成整个 Twitter 下载链：fxTwitter API + 图片下载。
+    代理（HTTP/SOCKS）到 Twitter 基础设施都不稳定，CDP Chrome 走系统代理可以。"""
+    import requests as _req, json as _j, time as _t, base64 as _b64, websocket as _ws
     import re as _re
+    CDP = "http://127.0.0.1:9222"
     m = _re.search(r'(?:x\.com|twitter\.com)/(\w+)/status/(\d+)', url)
     if not m:
         return []
     fx_url = f"https://api.fxtwitter.com/{m.group(1)}/status/{m.group(2)}"
+
+    # Create CDP tab
     try:
-        resp = _req.get(fx_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        data = resp.json()
-        media = (data.get("tweet", {}) or {}).get("media", {}) or {}
-        photos = media.get("photos", [])
+        resp = _req.put(f"{CDP}/json/new?url=about:blank", timeout=5)
+        tab = resp.json()
+        tab_id = tab["id"]
+        ws = _ws.create_connection(tab["webSocketDebuggerUrl"], timeout=10)
+        ws.send(_j.dumps({"id": 1, "method": "Runtime.enable"}))
+        _t.sleep(0.3)
+    except Exception as e:
+        print(f"  ❌ CDP 连接失败: {e}")
+        return []
+
+    saved = []
+    try:
+        # Step 1: Call fxTwitter API via CDP fetch
+        script = f"""
+(async () => {{
+    const resp = await fetch('{fx_url}');
+    if (!resp.ok) return 'HTTP ' + resp.status;
+    return 'OK:' + await resp.text();
+}})()
+"""
+        ws.send(_j.dumps({"id": 2, "method": "Runtime.evaluate",
+            "params": {"expression": script, "returnByValue": True, "awaitPromise": True}}))
+        _t.sleep(5)
+
+        fx_data = None
+        deadline = _t.time() + 15
+        while _t.time() < deadline:
+            try:
+                ws.settimeout(2)
+                msg = _j.loads(ws.recv())
+                if msg.get("id") == 2:
+                    val = msg["result"]["result"]["value"]
+                    if val and val.startswith("OK:"):
+                        fx_data = val[3:]
+                    else:
+                        print(f"  ❌ fxTwitter API: {str(val)[:100]}")
+                    break
+            except Exception:
+                pass
+
+        if not fx_data:
+            return saved
+
+        tweet_data = _j.loads(fx_data)
+        photos = (tweet_data.get("tweet", {}) or {}).get("media", {}).get("photos", [])
         if not photos:
             print("  ❌ 推文无图片")
-            return []
-        saved = []
-        for i, p in enumerate(photos, 1):
-            img_url = p.get("url", "")
-            if not img_url:
-                continue
-            img_url = img_url.split("?")[0] + "?name=orig"
-            dst = output_dir / f"{i:03d}.jpg"
-            img_data = _req.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-            dst.write_bytes(img_data.content)
-            size = dst.stat().st_size // 1024
-            print(f"    ✓ {dst.name}  ({size} KB)  fxTwitter")
-            saved.append(dst.name)
-        return saved
-    except Exception as e:
-        print(f"  ❌ fxTwitter 失败: {e}")
-        return []
+            return saved
+
+        img_urls = [p.get("url", "").split("?")[0] + "?name=orig" for p in photos if p.get("url")]
+        # Step 2: Download each image via CDP fetch
+        for i, img_url in enumerate(img_urls):
+            ext = img_url.rsplit(".", 1)[-1].split("?")[0] or "jpg"
+            if ext not in ("jpg", "jpeg", "png", "webp"):
+                ext = "jpg"
+            dst = output_dir / f"{i+1:03d}.{ext}"
+
+            script2 = f"""
+(async () => {{
+    const resp = await fetch('{img_url}');
+    if (!resp.ok) return 'HTTP ' + resp.status;
+    const blob = await resp.blob();
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let j = 0; j < bytes.length; j += 8192) {{
+        binary += String.fromCharCode.apply(null, bytes.slice(j, j + 8192));
+    }}
+    return 'OK:' + btoa(binary);
+}})()
+"""
+            ws.send(_j.dumps({"id": 10+i, "method": "Runtime.evaluate",
+                "params": {"expression": script2, "returnByValue": True, "awaitPromise": True}}))
+            _t.sleep(3)
+
+            deadline = _t.time() + 20
+            while _t.time() < deadline:
+                try:
+                    ws.settimeout(2)
+                    msg = _j.loads(ws.recv())
+                    if msg.get("id") == 10+i:
+                        val = msg["result"]["result"]["value"]
+                        if val and val.startswith("OK:"):
+                            dst.write_bytes(_b64.b64decode(val[3:]))
+                            saved.append(dst.name)
+                            print(f"    ✓ {dst.name} ({dst.stat().st_size//1024}KB) CDP")
+                        else:
+                            print(f"    ❌ {dst.name}: {str(val)[:100]}")
+                        break
+                except Exception:
+                    pass
+    finally:
+        try:
+            ws.close()
+            _req.get(f"{CDP}/json/close/{tab_id}", timeout=3)
+        except Exception:
+            pass
+    return saved
 
 
 def download_twitter(url: str, output_dir: Path, *,
@@ -670,9 +818,8 @@ def download_twitter(url: str, output_dir: Path, *,
     tweet_id = extract_tweet_id(url)
     out_tmpl = str(output_dir / f"{tweet_id}.%(ext)s" if tweet_id
                    else str(output_dir / "%(id)s.%(ext)s"))
-    if not os.path.exists(YTDLP_BIN):
-        print(f"  ⚠️ yt-dlp 未安装，直接用 fxTwitter API")
-        return _download_twitter_images_fx(url, output_dir, tweet_id)
+    # Twitter 代理不稳定，直接走 CDP/fxTwitter，不用 yt-dlp
+    return _download_twitter_images_fx(url, output_dir, tweet_id)
 
     cmd = [
         YTDLP_BIN, url,
