@@ -59,7 +59,6 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
 
 def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        china_filter: bool = True,
-                       existing_keys: set | None = None,
                        max_retries: int = 2) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
@@ -138,8 +137,6 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     continue
 
                 full_link = href if href.startswith("http") else YAHOO_BASE_URL + href
-                if existing_keys and extract_key_from_url(full_link) in existing_keys:
-                    continue
 
                 source = "Yahoo Japan"
                 li = link.find_parent("li")
@@ -173,7 +170,7 @@ def process_keyword(keyword: str, max_results: int, china_filter: bool,
     print(f"🔍 关键词: 【{keyword}】| {filter_desc} | 最多 {max_results} 条")
     print(f"{'━' * 60}")
 
-    news_list = fetch_news_via_cdp(keyword, max_results, china_filter, existing_keys)
+    news_list = fetch_news_via_cdp(keyword, max_results, china_filter)
     if not news_list:
         print("  ❌ 未找到相关新闻")
         return []
@@ -242,7 +239,7 @@ def main():
         all_candidates: list[dict] = []
         for keyword, max_results, china_filter in tasks:
             print(f"\n🔍 关键词: 【{keyword}】")
-            candidates = fetch_news_via_cdp(keyword, max_results, china_filter, existing_keys)
+            candidates = fetch_news_via_cdp(keyword, max_results, china_filter)
             for news in candidates:
                 news['keyword'] = keyword
                 print(f"    翻译: {news['title_ja'][:40]}...")
