@@ -1296,9 +1296,22 @@ def generate_title_only(title_ja: str, content_ja: str,
 
 
 def _build_final_tags(raw_tags: list[str]) -> list[str]:
-    """生成最终标签：展开 keyword_tag_map + 必选标签 + 分类补足 + 去重。"""
-    import random
+    """生成最终标签：预处理 → 展开 keyword_tag_map → 必选标签 → 分类补足 → 去重。"""
+    import random, re as _re
     from sqlite_db import get_config
+
+    def _clean_tag(t: str) -> str:
+        """清理标签：去空格、引号、特殊字符"""
+        t = t.strip()
+        t = _re.sub(r'[\s　]+', '', t)          # 空格/全角空格
+        t = _re.sub(r'[\"\'""「」『』【】]', '', t)   # 引号
+        t = _re.sub(r'^#+', '', t)                   # 开头的 #
+        return t
+
+    # 预处理所有标签
+    raw_tags = [_clean_tag(t) for t in raw_tags]
+    raw_tags = [t for t in raw_tags if t]  # 去掉空标签
+
     tc = get_config("tag_config", default={})
     km = tc.get("keyword_tag_map", {})
     must = tc.get("must_tags", ["日本娱乐", "日本文化", "日本新闻"])
