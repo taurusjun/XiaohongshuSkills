@@ -692,17 +692,10 @@ def main():
             if row and row.get("xhs_pub_time"):
                 article_post_time = row["xhs_pub_time"]
         post_time = article_post_time or args.post_time
-        # 发布前两次常失败，加重试
-        for pub_attempt in range(3):
-            if pub_attempt > 0:
-                print(f"  🔄 发布重试 ({pub_attempt}/3)...")
-                time.sleep(3)
-            ok, note_id = publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
-                              preview=args.preview, headless=not args.no_headless,
-                              post_time=post_time, timing_jitter=args.timing_jitter,
-                              reuse_existing_tab=args.reuse_existing_tab)
-            if ok:
-                break
+        ok, note_id = publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
+                          preview=args.preview, headless=not args.no_headless,
+                          post_time=post_time, timing_jitter=args.timing_jitter,
+                          reuse_existing_tab=args.reuse_existing_tab)
         if ok:
             if note_id and sqlite_key:
                 try:
