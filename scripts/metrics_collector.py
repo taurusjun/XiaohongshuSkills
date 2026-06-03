@@ -26,10 +26,13 @@ def collect_all(dry_run: bool = False) -> dict:
         try: os.remove(f)
         except: pass
 
+    # 每次创建新 tab，用完关闭
+    tab_id = ""
     try:
-        resp = _requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
-        tabs = resp.json()
-        ws_url = tabs[0].get("webSocketDebuggerUrl", "")
+        resp = _requests.put(f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=5)
+        new_tab = resp.json()
+        tab_id = new_tab.get("id", "")
+        ws_url = new_tab.get("webSocketDebuggerUrl", "")
     except Exception as e:
         return {"error": str(e)}
 
@@ -189,6 +192,9 @@ def collect_all(dry_run: bool = False) -> dict:
             conn.close()
     finally:
         ws.close()
+        if tab_id:
+            try: _requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}", timeout=3)
+            except: pass
 
     return {"collected": collected, "time": now_str}
 
