@@ -4123,18 +4123,38 @@ class XiaohongshuPublisher:
         """Wait until image preview count reaches the expected value."""
         deadline = time.time() + max(5.0, float(timeout_seconds))
         last_count = -1
+        ticks = 0
         while time.time() < deadline:
             current_count = self._count_uploaded_images()
+            ticks += 1
             if current_count != last_count:
                 print(
                     "[cdp_publish] Waiting for uploaded image previews: "
                     f"{current_count}/{expected_count}"
                 )
                 last_count = current_count
+            elif ticks % 10 == 0:
+                # Every 5s, report to show we're still waiting
+                print(
+                    "[cdp_publish] Still waiting for image previews: "
+                    f"{current_count}/{expected_count} (elapsed {ticks*0.5:.0f}s)"
+                )
             if current_count >= expected_count:
                 return
             self._sleep(0.5, minimum_seconds=0.15)
 
+        # Timeout — dump diagnostic info
+        final_count = self._count_uploaded_images()
+        page_state = self._evaluate("""
+            JSON.stringify({
+                title: document.title,
+                url: location.href,
+                previewAreaHTML: document.querySelector('.img-preview-area')?.innerHTML?.substring(0, 300) || 'not found',
+                allPreviews: document.querySelectorAll('[class*=\"preview\"], [class*=\"img\"], .pr').length,
+                fileInputs: document.querySelectorAll('input[type=\"file\"]').length
+            })
+        """)
+        print(f"[cdp_publish] Timeout diagnostic: final_count={final_count}, state={page_state}")
         raise CDPError(
             f"Timed out waiting for image upload preview {expected_count}. "
             "The creator page structure may have changed."
