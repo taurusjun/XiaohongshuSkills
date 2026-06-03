@@ -102,11 +102,16 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     "params": {"expression": "document.documentElement.outerHTML"},
                 }))
                 html = ""
-                while True:
-                    msg = json.loads(ws.recv())
-                    if msg.get("id") == 3:
-                        html = msg.get("result", {}).get("result", {}).get("value", "")
-                        break
+                start = time.time()
+                while time.time() - start < 10:
+                    try:
+                        ws.settimeout(3)
+                        msg = json.loads(ws.recv())
+                        if msg.get("id") == 3:
+                            html = msg.get("result", {}).get("result", {}).get("value", "")
+                            break
+                    except Exception:
+                        pass
             finally:
                 try:
                     ws.close()
