@@ -1743,6 +1743,18 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div style="margin-top:8px">
         <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{news.link or ''}}">🔗 查看原文</a>
       </div>
+      {% set related = (news.related_keys or '').split(',') %}
+      <div class="meta-item" style="margin-top:6px">
+        关联文章
+        {% if related and related[0] %}
+          {% for rk in related %}{% set rk = rk.strip() %}{% if rk %}
+          <a href="/detail/{{rk}}" target="_blank" style="font-size:10px;color:var(--blue);text-decoration:none;margin-right:6px;background:#eff6ff;padding:1px 5px;border-radius:3px" title="{{rk}}">{{rk[:12]}}...</a>
+          {% endif %}{% endfor %}
+        {% else %}
+          <span style="color:var(--text3);font-size:10px">无</span>
+        {% endif %}
+        <button onclick="editRelatedKeys()" style="font-size:9px;padding:0 4px;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer;color:var(--text3);margin-left:4px">✏️</button>
+      </div>
     </div>
 
     <!-- Settings -->
@@ -2152,6 +2164,10 @@ function selectTagSuggestion(t){
   tags.push(t);renderTags();autoSaveField('tags',tags);
 }
 function delTag(i){tags.splice(i,1);renderTags();autoSaveField('tags',tags)}
+function editRelatedKeys(){
+  const val=prompt('输入关联文章 key（逗号分隔）:', '{{news.related_keys or ''}}');
+  if(val!==null) autoSaveField('related_keys',val).then(()=>location.reload());
+}
 async function copyTags(btn){
   const text=tags.map(t=>'#'+t).join(' ');
   try{await navigator.clipboard.writeText(text)}
