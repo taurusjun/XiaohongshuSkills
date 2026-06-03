@@ -466,26 +466,6 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     Returns:
         (seo_title, summary, content, comment, vocab, topic_tags)
     """
-    # 傲娇模式：约 1/3 概率启用
-    tsundere_mode = random.random() < 0.33
-    tsundere_instruction = ""
-    if tsundere_mode:
-        tsundere_instruction = """
-本篇文章启用「傲娇语气」。在【我的解读】中融入 1 处傲娇表达（仅 1 处，不要多）。
-
-傲娇核心话术：「否认 + 强硬理由 + 心口不一」
-▸ 关心的傲娇：「真拿你没办法，就帮你一次……别得寸进尺！」「受伤了？笨蛋，下次注意啊！」
-▸ 羞涩的傲娇：「才、才没有一直盯着看呢！」「如果是你的话，也不是不可以啦……」
-▸ 嘴硬心虚：「哼，我又不是特意看的」「我只是顺手点进去了而已」「才不是为了你才发的」
-▸ 委婉认可：「找我帮忙？早了一百年呢……（但也不是不行）」
-
-禁止：不要用动漫腔（笨蛋/八嘎/无路赛），不要整段傲娇，1 处就够了。
-"""
-    else:
-        tsundere_instruction = """
-本篇文章使用正常语气，不要使用傲娇句式。
-"""
-
     # 构建上下文：优先用正文，不够再用摘要
     context = ""
     if body_text:
@@ -497,7 +477,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
     prompt = f"""你是小红书日语学习博主。请根据以下新闻内容，严格按照下方格式输出全部6个字段。
 
 新闻标题：{title_zh}
-日文原文：{title_ja}{context}{tsundere_instruction}
+日文原文：{title_ja}{context}
 {f"【内容角度】今日重点关注：{angle}" if angle else ""}{chr(10) if angle else ""}{f"【修正要求】{hint}" if hint else ""}
 输出格式（必须包含全部6个字段）：
 
