@@ -2193,7 +2193,9 @@ async function copyTags(btn){
 }
 function addTag(e){
   if(e.key==='Enter'||e.key===','){
-    e.preventDefault();const v=e.target.value.trim().replace(/,$/,'');
+    e.preventDefault();
+    var v=e.target.value.trim().replace(/,$/,'');
+    v=v.replace(/[\s　]+/g,'').replace(/[\"'""「」『』【】]/g,'').replace(/^#+/,'');
     if(v){tags.push(v);e.target.value='';renderTags();autoSaveField('tags',tags)}
     document.getElementById('tagDropdown').style.display='none';
   }
