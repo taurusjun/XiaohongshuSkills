@@ -4491,7 +4491,24 @@ class XiaohongshuPublisher:
                 "nodeId": node_id,
                 "files": [file_path],
             })
-            print(f"[cdp_publish] Image {index}/{len(prepared_paths)} submitted: {file_path}")
+            # Verify files were set
+            self._sleep(0.3, minimum_seconds=0.1)
+            file_count = self._evaluate(f"""
+                (() => {{
+                    const el = document.querySelector({json.dumps(selectors[0])});
+                    return el && el.files ? el.files.length : -1;
+                }})()
+            """)
+            print(f"[cdp_publish] Image {index}/{len(prepared_paths)} submitted: {file_path} (files on input: {file_count})")
+            if file_count == 0:
+                alt_node_id = self._query_node_id(selectors[1] if selectors[1] != selectors[0] else 'input[type="file"]')
+                if alt_node_id and alt_node_id != node_id:
+                    print(f"[cdp_publish] Retrying with alt selector, nodeId={alt_node_id}")
+                    self._send("DOM.setFileInputFiles", {
+                        "nodeId": alt_node_id,
+                        "files": [file_path],
+                    })
+                    self._sleep(0.3, minimum_seconds=0.1)
             self._wait_for_uploaded_images(index)
             self._sleep(0.9, minimum_seconds=0.25)
 
