@@ -36,15 +36,34 @@ from yahoo_news_auto import (
     fetch_news_via_cdp, KEYWORD_TAG_MAP
 )
 from yahoo_common import (
-    process_news_item, push_with_gallery, load_today_keys,
+    process_news_item, push_with_gallery,
     extract_key_from_url, check_chrome_cdp, check_proxy,
     _disable_proxy, LITELLM_API_KEY, LITELLM_MODEL,
 )
 
 
-def fetch_all_articles(keywords, existing_keys, max_workers):
-    """串行收集所有 keyword 的文章（CDP 共享一个 tab，不能并行搜索）"""
+def batch_get_existing_keys(keys: set) -> set:
+    """批量查询 DB 中已存在的 key"""
+    if not keys:
+        return set()
+    from sqlite_db import _connect
+    existing = set()
+    key_list = list(keys)
+    with _connect() as db:
+        for i in range(0, len(key_list), 500):
+            batch = key_list[i:i+500]
+            placeholders = ','.join('?' * len(batch))
+            rows = db.execute(f"SELECT key FROM news WHERE key IN ({placeholders})", batch).fetchall()
+            for r in rows:
+                existing.add(r['key'])
+    return existing
+
+
+def fetch_all_articles(keywords, max_workers):
+    """串行收集所有 keyword 的文章（CDP 共享一个 tab，不能并行搜索）。
+    返回 (tasks, all_collected_keys)"""
     tasks = []
+    all_keys = set()
     seen_keys = set()
 
     retry_queue = []
@@ -55,7 +74,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         print(f"🔍 关键词: 【{k}】| 最多 {mx} 条" + (f" | 角度: {angle[:30]}" if angle else ""))
         print(f"{'━' * 60}")
         _log_ctx.prefix = f"[{k}] "
-        articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
+        articles = fetch_news_via_cdp(k, mx, cf)
         _log_ctx.prefix = ""
         print(f"  ✅ [{k}] 找到 {len(articles)} 条\n")
         if len(articles) == 0:
@@ -64,6 +83,7 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         tags = [k] + (KEYWORD_TAG_MAP.get(k, []) or [])
         for a in articles:
             key = extract_key_from_url(a['link'])
+            all_keys.add(key)
             if key not in seen_keys:
                 seen_keys.add(key)
                 a['_angle'] = angle
@@ -77,18 +97,19 @@ def fetch_all_articles(keywords, existing_keys, max_workers):
         print(f"🔁 重试: 【{k}】| 最多 {mx} 条" + (f" | 角度: {angle[:30]}" if angle else ""))
         print(f"{'━' * 60}")
         _log_ctx.prefix = f"[{k}] "
-        articles = fetch_news_via_cdp(k, mx, cf, existing_keys)
+        articles = fetch_news_via_cdp(k, mx, cf)
         _log_ctx.prefix = ""
         print(f"  {'✅' if articles else '❌'} [{k}] 找到 {len(articles)} 条\n")
         tags = [k] + (KEYWORD_TAG_MAP.get(k, []) or [])
         for a in articles:
             key = extract_key_from_url(a['link'])
+            all_keys.add(key)
             if key not in seen_keys:
                 seen_keys.add(key)
                 a['_angle'] = angle
                 tasks.append({'news': a, 'keyword': k, 'extra_tags': tags})
 
-    return tasks
+    return tasks, all_keys
 
 
 def process_article(task):
@@ -100,12 +121,6 @@ def process_article(task):
 
     _log_ctx.prefix = f"[{keyword}/{key[:8]}] "
     try:
-        # 处理前二次检查：防止并行重复或窗口外漏网
-        from sqlite_db import get_by_key
-        if get_by_key(key):
-            print(f"    ⏭️ 已存在，跳过")
-            return key, news
-
         process_news_item(news, no_translate=False, extra_tags=extra_tags, keyword=keyword)
         if not news.get('_skip'):
             push_with_gallery(news)
@@ -120,14 +135,22 @@ def run_parallel(keywords, max_workers=3):
     print(f"\n🚀 SQLite 并行抓取 | keywords={len(keywords)} | workers={max_workers}")
     print(f"   模型={LITELLM_MODEL} | 后端={STORAGE_BACKEND}")
 
-    print("📋 加载去重 key...")
-    existing_keys = load_today_keys()
-
-    tasks = fetch_all_articles(keywords, existing_keys, max_workers)
+    tasks, all_keys = fetch_all_articles(keywords, max_workers)
     if not tasks:
         print("❌ 所有关键词均未找到新闻")
         return []
-    print(f"\n📊 共收集 {len(tasks)} 篇文章，开始并行处理...\n")
+
+    # 批量查 DB 去重
+    print(f"📋 批量去重: 收集 {len(all_keys)} 个 key...")
+    existing_keys = batch_get_existing_keys(all_keys)
+    print(f"   已存在: {len(existing_keys)} 篇，新文章: {len(all_keys) - len(existing_keys)} 篇")
+
+    # Filter out existing
+    new_tasks = [t for t in tasks if extract_key_from_url(t['news']['link']) not in existing_keys]
+    if not new_tasks:
+        print("✅ 所有文章均已存在，无需处理")
+        return []
+    print(f"\n📊 共收集 {len(new_tasks)} 篇新文章，开始并行处理...\n")
 
     results = []
     lock = threading.Lock()
@@ -140,11 +163,11 @@ def run_parallel(keywords, max_workers=3):
             done[0] += 1
             s = '✅' if not news.get('_skip') else '⏭️'
             t = news.get('title_zh', task['news'].get('title_ja',''))[:40]
-            print(f"[{done[0]}/{len(tasks)}] [{kw}/{key[:8]}] {s} {t}")
+            print(f"[{done[0]}/{len(new_tasks)}] [{kw}/{key[:8]}] {s} {t}")
         return key, news
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process, t): t for t in tasks}
+        futures = {executor.submit(_process, t): t for t in new_tasks}
         for f in as_completed(futures):
             try:
                 key, news = f.result()
@@ -152,7 +175,7 @@ def run_parallel(keywords, max_workers=3):
             except Exception as e:
                 print(f"  ❌ 任务异常: {e}")
 
-    print(f"\n📊 共处理 {len(tasks)} 条新闻，成功 {len(results)} 条")
+    print(f"\n📊 共处理 {len(new_tasks)} 条新闻，成功 {len(results)} 条")
     return results
 
 
