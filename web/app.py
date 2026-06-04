@@ -1752,13 +1752,12 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       <div style="margin-top:8px">
         <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{news.link or ''}}">🔗 查看原文</a>
       </div>
-      {% set related = (news.related_keys or '').split(',') %}
       <div class="meta-item" style="margin-top:6px">
         关联文章
-        {% if related and related[0] %}
-          {% for rk in related %}{% set rk = rk.strip() %}{% if rk %}
-          <a href="/detail/{{rk}}" target="_blank" style="font-size:10px;color:var(--blue);text-decoration:none;margin-right:6px;background:#eff6ff;padding:1px 5px;border-radius:3px" title="{{rk}}">{{rk[:12]}}...</a>
-          {% endif %}{% endfor %}
+        {% if related_articles %}
+          {% for r in related_articles %}
+          <a href="/detail/{{r.key}}" target="_blank" style="display:inline-block;font-size:10px;color:var(--blue);text-decoration:none;margin:2px 4px 2px 0;background:#eff6ff;padding:2px 6px;border-radius:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{r.title}}">{{r.title or r.key[:12]}}</a>
+          {% endfor %}
         {% else %}
           <span style="color:var(--text3);font-size:10px">无</span>
         {% endif %}
@@ -2873,8 +2872,18 @@ def detail(key):
     # 已使用的行内图片路径列表，供 JS 初始化块编辑器
     story_tweet_imgs = [p['v'] for p in story_parts if p['t'] == 'img' and p.get('v')]
 
+    # 关联文章标题
+    related_articles = []
+    rk_raw = news.get('related_keys', '') or ''
+    for rk in rk_raw.split(','):
+        rk = rk.strip()
+        if rk:
+            rr = get_by_key(rk)
+            related_articles.append({'key': rk, 'title': (rr.get('title','') or rk)[:40] if rr else rk[:16]})
+
     return rts(DETAIL_HTML, news=news, scores=scores,
-               story_parts=story_parts, story_tweet_imgs=story_tweet_imgs)
+               story_parts=story_parts, story_tweet_imgs=story_tweet_imgs,
+               related_articles=related_articles)
 
 @app.route('/api/news')
 def api_list():
