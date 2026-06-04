@@ -1627,11 +1627,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .sett-grid .field-label{margin-bottom:3px}
 .sett-grid .meta-select{width:100%;font-size:11px;padding:3px 5px}
 /* stat cards */
-.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:5px}
-.stat-card{display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--bg);border-radius:7px}
-.stat-card .si{font-size:15px;line-height:1;flex-shrink:0}
-.stat-card .sn{font-size:14px;font-weight:700;color:var(--text);line-height:1.2}
-.stat-card .sl{font-size:10px;color:var(--text3);margin-top:1px}
+.stat-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.stat-card{display:flex;align-items:center;gap:4px;padding:4px 6px;background:var(--bg);border-radius:6px}
+.stat-card .si{font-size:13px;line-height:1;flex-shrink:0}
+.stat-card .sn{font-size:12px;font-weight:700;color:var(--text);line-height:1.2}
+.stat-card .sl{font-size:9.5px;color:var(--text3)}
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border:1px solid transparent;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;font-family:var(--font)}
 .btn:hover{opacity:.88}
