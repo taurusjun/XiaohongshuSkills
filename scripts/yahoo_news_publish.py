@@ -79,6 +79,8 @@ def _get_pending_sqlite() -> list:
                 "发布XHS时间": {"date": {"start": r.get('publish_time','')} if r.get('publish_time') else None},
                 "发布模式": {"select": {"name": r.get('publish_mode','normal')}},
                 "自由发布内容": {"rich_text": [{"plain_text": r.get('publish_free_text','')}]},
+                "改写文": {"rich_text": [{"plain_text": r.get('rewritten_content','')}]},
+                "改写标题": {"rich_text": [{"plain_text": r.get('rewritten_title','')}]},
             },
         })
     return result
@@ -357,6 +359,8 @@ def parse_page(page: dict) -> dict:
         "tags": [t.get("name", "") for t in props.get("标签", {}).get("multi_select", [])],
         "publish_mode": props.get("发布模式", {}).get("select", {}).get("name", "normal"),
         "publish_free_text": get_text("自由发布内容"),
+        "rewritten_content": get_text("改写文"),
+        "rewritten_title": get_text("改写标题"),
     }
 
 
