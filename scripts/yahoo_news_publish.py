@@ -556,17 +556,20 @@ def main():
         info = parse_page(page)
         is_sqlite = page.get("_sqlite", False)
         print(f"━━━ [{i}/{len(pages)}] ━━━")
-        print(f"标题: {info['title'][:40]}...")
-        print(f"来源: {info['source']} | 分类: {info['category']}")
-
         # 获取正文和词汇
         content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"], is_sqlite)
         if not content:
             print("⚠️ 正文为空，跳过\n")
             continue
 
-        # 拼装发布内容
-        full_title = info['title']
+        # 拼装发布内容 — 改写模式用改写标题
+        if info.get('publish_mode') == 'rewritten' and (info.get('rewritten_title') or '').strip():
+            full_title = info['rewritten_title']
+        else:
+            full_title = info['title']
+
+        print(f"标题: {full_title[:40]}...")
+        print(f"来源: {info['source']} | 分类: {info['category']}")
 
         # 发布模式
         publish_mode = info.get('publish_mode', 'normal') or 'normal'
