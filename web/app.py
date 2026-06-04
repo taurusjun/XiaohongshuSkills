@@ -1617,7 +1617,21 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px 18px}
 .card-section{padding:14px 18px;border-bottom:1px solid var(--border)}
 .card-section:last-child{border-bottom:none}
-.card-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+.card-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px}
+/* meta key-value rows */
+.meta-kv{display:flex;align-items:flex-start;gap:6px;margin-bottom:5px;font-size:11.5px;line-height:1.4}
+.meta-kv .mk{color:var(--text3);width:50px;flex-shrink:0;font-size:10.5px;padding-top:1px}
+.meta-kv .mv{color:var(--text);font-weight:500;flex:1;word-break:break-all}
+/* settings 2x2 grid */
+.sett-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px}
+.sett-grid .field-label{margin-bottom:3px}
+.sett-grid .meta-select{width:100%;font-size:11px;padding:3px 5px}
+/* stat cards */
+.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.stat-card{display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--bg);border-radius:7px}
+.stat-card .si{font-size:15px;line-height:1;flex-shrink:0}
+.stat-card .sn{font-size:14px;font-weight:700;color:var(--text);line-height:1.2}
+.stat-card .sl{font-size:10px;color:var(--text3);margin-top:1px}
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border:1px solid transparent;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;font-family:var(--font)}
 .btn:hover{opacity:.88}
@@ -1745,50 +1759,71 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     <!-- Meta info -->
     <div class="card-section">
       <div class="card-section-title">基本信息</div>
-      <div class="meta-item">来源 <b>{{news.source or '-'}}</b></div>
-      <div class="meta-item">新闻时间 <b>{{news.pub_time or '-'}}</b></div>
-      <div class="meta-item">入库时间 <b>{{news.created_at[:16] if news.created_at else '-'}}</b></div>
-      <div class="meta-item">XHS发布时间 <input type="datetime-local" name="publish_time" value="{{news.publish_time or ''}}" onchange="autoSaveField('publish_time',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:{% if news.publish_time %}var(--green){% else %}var(--text2){% endif %};width:175px" title="手动设置XHS发布时间"></div>
-      <div style="margin-top:8px">
-        <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{news.link or ''}}">🔗 查看原文</a>
+      <div class="meta-kv"><span class="mk">来源</span><span class="mv">{{news.source or '-'}}</span></div>
+      <div class="meta-kv"><span class="mk">发布时间</span><span class="mv">{{news.pub_time or '-'}}</span></div>
+      <div class="meta-kv"><span class="mk">入库时间</span><span class="mv">{{news.created_at[:16] if news.created_at else '-'}}</span></div>
+      <div class="meta-kv">
+        <span class="mk">XHS时间</span>
+        <input type="datetime-local" name="publish_time" value="{{news.publish_time or ''}}" onchange="autoSaveField('publish_time',this.value)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:{% if news.publish_time %}var(--green){% else %}var(--text2){% endif %}" title="手动设置XHS发布时间">
       </div>
-      <div class="meta-item" style="margin-top:6px">
-        关联文章
+      <div style="margin-top:8px">
+        <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:4px" title="{{news.link or ''}}">
+          <span>🔗</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">查看原文</span>
+        </a>
+      </div>
+      <div style="margin-top:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:10.5px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">关联文章</span>
+          <button onclick="editRelatedKeys()" style="font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;color:var(--text3)">✏️</button>
+        </div>
         {% if related_articles %}
           {% for r in related_articles %}
-          <a href="/detail/{{r.key}}" target="_blank" style="display:block;font-size:11px;color:var(--blue);text-decoration:none;margin:3px 0;padding:4px 8px;border-radius:4px;background:#f5f7fa;line-height:1.5;white-space:normal" title="{{r.title}}">{{r.title or r.key[:12]}}</a>
+          <a href="/detail/{{r.key}}" target="_blank" style="display:block;font-size:11px;color:var(--blue);text-decoration:none;margin-bottom:3px;padding:4px 8px;border-radius:4px;background:#f5f7fa;line-height:1.5" title="{{r.title}}">{{r.title or r.key[:12]}}</a>
           {% endfor %}
         {% else %}
-          <span style="color:var(--text3);font-size:10px">无</span>
+          <span style="color:var(--text3);font-size:11px">无</span>
         {% endif %}
-        <button onclick="editRelatedKeys()" style="font-size:9px;padding:0 4px;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer;color:var(--text3);margin-left:4px">✏️</button>
       </div>
     </div>
 
     <!-- Settings -->
     <div class="card-section">
-      <div class="card-section-title">状态</div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px">
-        <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
-          <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
-        </select>
-        <select name="publish_mode" onchange="onModeChange(this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
-          <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
-          <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
-          <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写文</option>
-        </select>
-        <select name="publish_method" onchange="autoSaveField('publish_method',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="post" {{'selected' if news.publish_method == 'post' or not news.publish_method else ''}}>发帖</option>
-          <option value="export" {{'selected' if news.publish_method == 'export' else ''}}>导出</option>
-        </select>
-        <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select" style="font-size:11px;padding:2px 5px">
-          <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
-          <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>丢弃</option>
-          <option value="archived" {{'selected' if news.status=='archived' else ''}}>归档</option>
-        </select>
-        <span style="cursor:pointer;font-size:18px;user-select:none;line-height:1" id="preselectStar" title="{{'取消预选' if news.preselected else '预选标记'}}" onclick="toggleDetailPreselect('{{news.key}}',this)">{{'★' if news.preselected else '☆'}}</span>
+      <div class="card-section-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span>发布设置</span>
+        <span style="cursor:pointer;font-size:20px;user-select:none;line-height:1;color:{% if news.preselected %}#f59e0b{% else %}var(--text3){% endif %}" id="preselectStar" title="{{'取消预选' if news.preselected else '预选标记'}}" onclick="toggleDetailPreselect('{{news.key}}',this)">{{'★' if news.preselected else '☆'}}</span>
+      </div>
+      <div class="sett-grid">
+        <div>
+          <div class="field-label">发布</div>
+          <select name="publish_xhs" onchange="autoSaveField('publish_xhs',this.value)" class="meta-select">
+            <option value="0" {{'selected' if not news.publish_xhs else ''}}>不发布</option>
+            <option value="1" {{'selected' if news.publish_xhs else ''}}>发布XHS</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">模式</div>
+          <select name="publish_mode" onchange="onModeChange(this.value)" class="meta-select">
+            <option value="normal" {{'selected' if news.publish_mode == 'normal' or not news.publish_mode else ''}}>默认</option>
+            <option value="caption" {{'selected' if news.publish_mode == 'caption' else ''}}>短配文</option>
+            <option value="free" {{'selected' if news.publish_mode == 'free' else ''}}>自由</option>
+            <option value="rewritten" {{'selected' if news.publish_mode == 'rewritten' else ''}}>改写文</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">发布方式</div>
+          <select name="publish_method" onchange="autoSaveField('publish_method',this.value)" class="meta-select">
+            <option value="post" {{'selected' if news.publish_method == 'post' or not news.publish_method else ''}}>发帖</option>
+            <option value="export" {{'selected' if news.publish_method == 'export' else ''}}>导出</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">状态</div>
+          <select name="status" onchange="autoSaveField('status',this.value)" class="meta-select">
+            <option value="active" {{'selected' if news.status=='active' else ''}}>活跃</option>
+            <option value="discarded" {{'selected' if news.status=='discarded' else ''}}>丢弃</option>
+            <option value="archived" {{'selected' if news.status=='archived' else ''}}>归档</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -1830,25 +1865,35 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
     {% if news.publish_xhs %}
     <div class="card-section">
       <div class="card-section-title">XHS 实发数据</div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px 0">
-        {% set stats = [
-          ('👁', '浏览', news.xhs_views or 0, ''),
-          ('❤', '点赞', news.xhs_likes or 0, ''),
-          ('⭐', '收藏', news.xhs_saves or 0, ''),
-          ('💬', '评论', news.xhs_comments or 0, ''),
-          ('🔄', '分享', news.xhs_shares or 0, ''),
-          ('➕', '涨粉', news.xhs_fans_gained or 0, ''),
-          ('👀', '曝光', news.xhs_impression or 0, ''),
-          ('🎯', '点击率', ((news.xhs_click_rate or 0)*100)|round(1), '%'),
-        ] %}
-        {% if news.xhs_saves and news.xhs_views %}{% set _ = stats.append(('📊', '收藏率', (news.xhs_saves / news.xhs_views * 100)|round(1), '%')) %}{% endif %}
+      {% set stats = [
+        ('👁', '浏览', news.xhs_views or 0, ''),
+        ('❤️', '点赞', news.xhs_likes or 0, ''),
+        ('⭐', '收藏', news.xhs_saves or 0, ''),
+        ('💬', '评论', news.xhs_comments or 0, ''),
+        ('🔄', '分享', news.xhs_shares or 0, ''),
+        ('➕', '涨粉', news.xhs_fans_gained or 0, ''),
+        ('👀', '曝光', news.xhs_impression or 0, ''),
+        ('🎯', '点击率', ((news.xhs_click_rate or 0)*100)|round(1), '%'),
+      ] %}
+      <div class="stat-cards">
         {% for icon, label, val, unit in stats %}
-        <div style="width:50%;display:flex;align-items:baseline;gap:4px;padding:2px 0;font-size:11.5px">
-          <span style="color:var(--text3);width:14px">{{icon}}</span>
-          <span style="color:var(--text2);min-width:30px">{{label}}</span>
-          <b style="color:var(--text)">{{val}}{{unit}}</b>
+        <div class="stat-card">
+          <span class="si">{{icon}}</span>
+          <div>
+            <div class="sn">{{val}}{{unit}}</div>
+            <div class="sl">{{label}}</div>
+          </div>
         </div>
         {% endfor %}
+        {% if news.xhs_saves and news.xhs_views %}
+        <div class="stat-card">
+          <span class="si">📊</span>
+          <div>
+            <div class="sn">{{(news.xhs_saves / news.xhs_views * 100)|round(1)}}%</div>
+            <div class="sl">收藏率</div>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
 
@@ -1876,8 +1921,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   <div class="detail-right">
 
     <!-- URLs + Gallery (editing → right panel) -->
-    <div class="card" style="padding:16px 18px">
-      <h3 style="font-size:13px;font-weight:600;margin-bottom:12px">📸 图集 / 封面</h3>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <span class="ah-title">📸 图集 / 封面</span><span class="ah-arrow">▼</span>
+      </div>
+      <div class="accordion-body open" style="padding:14px 18px">
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
         <div><div class="field-label">封面图路径</div><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div>
         {% if news.original_image_url and news.original_image_url != news.image_url %}
@@ -1912,12 +1960,11 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         {% endif %}
       </div>
       {% endif %}
-    </div>
+      </div><!-- /accordion-body -->
+    </div><!-- /gallery card -->
 
-    <!-- Content editing -->
-    <div class="card">
-      <!-- 内容编辑卡片 -->
-      <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+    <!-- 内容编辑卡片 -->
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
         <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
           <span class="ah-title">✏️ 内容编辑</span><span class="ah-arrow">▼</span>
         </div>
