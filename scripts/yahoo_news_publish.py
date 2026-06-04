@@ -590,6 +590,7 @@ def main():
             print(f"  🎬 短配文模式：{len(xhs_content)} 字")
         elif publish_mode == 'rewritten':
             xhs_content = info.get('rewritten_content', '') or ''
+            xhs_content = _strip_markdown(xhs_content)
             if not xhs_content.strip():
                 print("⚠️ 改写文模式但内容为空，仍继续发布\n")
             else:
