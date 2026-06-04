@@ -1756,7 +1756,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         关联文章
         {% if related_articles %}
           {% for r in related_articles %}
-          <a href="/detail/{{r.key}}" target="_blank" style="display:block;font-size:11px;color:var(--blue);text-decoration:none;margin:3px 0;padding:4px 8px;border-radius:4px;background:#f5f7fa;line-height:1.5;word-break:break-all" title="{{r.title}}">{{r.title or r.key[:12]}}</a>
+          <a href="/detail/{{r.key}}" target="_blank" style="display:block;font-size:11px;color:var(--blue);text-decoration:none;margin:3px 0;padding:4px 8px;border-radius:4px;background:#f5f7fa;line-height:1.5;white-space:normal" title="{{r.title}}">{{r.title or r.key[:12]}}</a>
           {% endfor %}
         {% else %}
           <span style="color:var(--text3);font-size:10px">无</span>
