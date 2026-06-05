@@ -199,3 +199,37 @@ bash query.sh --preselected 1 --limit 50
    - Telegram 联系项目负责人
    - 飞书私信联系项目负责人
 4. **不要绕过 API 自行实现数据库操作**，即使技术上可行。
+
+### update.sh — 更新文章字段
+
+```
+bash update.sh <key> <field>=<value> [<field>=<value> ...]
+```
+
+支持同时更新多个字段，数值类型字段（`preselected`、`publish_xhs`、`title_score`、`content_score`）自动不加引号。
+
+| 字段 | 示例值 |
+|------|--------|
+| `preselected` | `1` / `0` |
+| `publish_xhs` | `1` |
+| `publish_mode` | `normal` / `rewritten` / `free` / `caption` |
+| `xhs_pub_time` | `"2026-06-05 14:00"` |
+| `ref_keys` | `key1,key2` |
+| `rewritten_title` | `"新标题"` |
+| `rewritten_content` | `"新正文"` |
+| `title_score` | `88` |
+| `content_score` | `90` |
+| `status` | `archived` / `skipped` |
+
+**示例：**
+
+```bash
+# 预选并设定发布时间
+bash update.sh abc123 preselected=1 xhs_pub_time="2026-06-05 14:00"
+
+# 写入改写内容并设定发布模式
+bash update.sh abc123 publish_mode=rewritten rewritten_title="新标题" rewritten_content="新正文"
+
+# 标记发布（pipeline 会读 publish_mode 走对应路径）
+bash update.sh abc123 publish_xhs=1
+```
