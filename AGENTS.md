@@ -54,7 +54,7 @@ GET /api/news
       "publish_xhs": 0,
       "preselected": 0,
       "xhs_pub_time": "",
-      "ref_keys": "",
+      "related_keys": "",
       "format": "news",
       "fetch_by": "yahoo",
       "created_at": "2026-06-05 10:00:00"
@@ -96,7 +96,7 @@ GET /api/news/<key>
   "publish_mode": "normal",
   "preselected": 0,
   "xhs_pub_time": "",
-  "ref_keys": "",
+  "related_keys": "",
   "rewritten_title": "",
   "rewritten_content": "",
   "format": "news",
@@ -123,7 +123,7 @@ Content-Type: application/json
 |------|------|------|
 | `preselected` | int (0/1) | 是否预选发布 |
 | `xhs_pub_time` | string | 计划发布时间，如 `2026-06-05 14:00` |
-| `ref_keys` | string | 关联文章 key，逗号分隔 |
+| `related_keys` | string | 关联文章 key，逗号分隔 |
 | `publish_mode` | string | 发布模式：`normal`（默认）/ `rewritten`（用改写内容）/ `free`（自由文本）/ `caption`（图说模式） |
 | `rewritten_title` | string | 改写后标题（`publish_mode=rewritten` 时生效） |
 | `rewritten_content` | string | 改写后正文（`publish_mode=rewritten` 时生效） |
@@ -214,7 +214,7 @@ bash update.sh <key> <field>=<value> [<field>=<value> ...]
 | `publish_xhs` | `1` |
 | `publish_mode` | `normal` / `rewritten` / `free` / `caption` |
 | `xhs_pub_time` | `"2026-06-05 14:00"` |
-| `ref_keys` | `key1,key2` |
+| `related_keys` | `key1,key2` |
 | `rewritten_title` | `"新标题"` |
 | `rewritten_content` | `"新正文"` |
 | `title_score` | `88` |
