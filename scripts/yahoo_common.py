@@ -1284,7 +1284,7 @@ def _build_final_tags(raw_tags: list[str]) -> list[str]:
         """清理标签：去空格、引号、特殊字符"""
         t = t.strip()
         t = _re.sub(r'[\s　]+', '', t)          # 空格/全角空格
-        t = _re.sub(r'[\"\'""「」『』【】]', '', t)   # 引号
+        t = _re.sub(r'[\"\'""「」『』【】&]', '', t)   # 引号 + &
         t = _re.sub(r'^#+', '', t)                   # 开头的 #
         return t
 
