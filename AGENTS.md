@@ -132,7 +132,7 @@ Content-Type: application/json
 3. **如果上述 API 不满足需求**，请通过以下渠道提交需求，等待功能扩展后再使用：
    - GitHub Issue（本仓库）
    - Telegram 联系项目负责人
-   - 飞书联系 jeremy.ww
+   - 飞书私信联系项目负责人
 4. **不要绕过 API 自行实现数据库操作**，即使技术上可行。
 
 ---
