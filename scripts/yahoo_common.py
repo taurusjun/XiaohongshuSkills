@@ -1753,7 +1753,8 @@ def process_news_item(news: dict, no_translate: bool = False,
         body_len = len(news.get('body_text', '') or news.get('content_ja', ''))
         if not news.get('is_long_form') and body_len >= 950:
             news['is_long_form'] = True
-            print(f"    📄 检测为长文（正文{body_len}字）")
+            news['format'] = 'story'
+            print(f"    📄 检测为长文（正文{body_len}字），体裁升级为 story")
 
         # LLM 已给出唯一体裁
         selected_format = news['format']
