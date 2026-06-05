@@ -72,3 +72,5 @@ data/news_dev_backup_*.db-wal
 data/multi_source.db
 data/multi_source.db-shm
 data/multi_source.db-wal
+
+data/custom_keywords.json

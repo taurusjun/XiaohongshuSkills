@@ -238,17 +238,14 @@ def api_task_logs():
             return jsonify({"logs": f.read()[-20000:]})
     return jsonify({"logs": ""})
 
-# Custom keywords persistence
-CUSTOM_KW_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'custom_keywords.json')
+# Custom keywords persistence — stored in agent_config DB
 def _load_custom_keywords():
-    if os.path.exists(CUSTOM_KW_FILE):
-        with open(CUSTOM_KW_FILE) as f:
-            return json.load(f)
-    return []
+    from sqlite_db import get_config
+    return get_config("custom_keywords", default=[])
+
 def _save_custom_keywords(kws):
-    os.makedirs(os.path.dirname(CUSTOM_KW_FILE), exist_ok=True)
-    with open(CUSTOM_KW_FILE, 'w') as f:
-        json.dump(kws, f)
+    from sqlite_db import set_config
+    set_config("custom_keywords", kws)
 
 @app.route('/api/custom-keywords', methods=['GET'])
 def api_custom_keywords():
