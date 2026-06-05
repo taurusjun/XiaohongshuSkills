@@ -9,4 +9,5 @@
 5. **结论必须有证据支撑** — 对任何问题给出根因结论前，必须自查：(a)这个结论有代码/日志/测试结果直接支持吗？(b)能不能用一句话解释因果链路？如果答不上来，先做实验拿证据，不要猜。禁止用"可能是""应该是"等模糊措辞回避验证。
 6. **print 错误必须同步写 error log** — 任何 `print(f"⚠️` 或 `print(f"❌` 的异常/错误信息，必须同时调用 `_log_db_error()` 写入 `data/logs/error-YYYY-MM-DD.log`。只打 print 不写 log 会导致 web UI 任务日志和 error log 都看不到失败原因。
 7. **先复现再修 bug** — 对于任何 bug，禁止只根据错误描述就直接改代码。必须先写脚本复现问题，定位到确切根因后，再动手修。禁止"可能""应该是"式猜测后直接提交改动。
-8. **禁止对 SQLite 二进制文件执行文本操作** — `data/*.db` 是二进制文件，严禁用 `patch`、`sed`、`awk`、`dd`、`cp --no-preserve` 等文本/字节替换命令直接操作。修改 DB 内容必须通过 `sqlite3` CLI 或 Python `sqlite3` 模块执行 SQL。违反此规则会破坏 B-tree 页结构，导致数据库不可恢复。
+8. **所有代码修改必须在远程服务器上操作** — 包括改文件、新增文件、删除文件，一律通过 SSH 在 `user@192.168.0.70`（项目路径 `/Users/user/PG/XiaohongshuSkills`）上直接操作。禁止在本地修改后 scp/rsync 上传，或在本地提交再 push。提交和 push 也在远程执行。
+9. **禁止对 SQLite 二进制文件执行文本操作** — `data/*.db` 是二进制文件，严禁用 `patch`、`sed`、`awk`、`dd`、`cp --no-preserve` 等文本/字节替换命令直接操作。修改 DB 内容必须通过 `sqlite3` CLI 或 Python `sqlite3` 模块执行 SQL。违反此规则会破坏 B-tree 页结构，导致数据库不可恢复。
