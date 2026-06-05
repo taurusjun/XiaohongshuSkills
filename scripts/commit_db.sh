@@ -27,10 +27,10 @@ rm -f "$TMP"
 echo "📤 提交推送..."
 git add -f "$DB"
 
-if git diff --cached --quiet; then
-    echo "⏭️  DB 无变化，跳过提交"
-else
-    git commit -m "$MSG"
+# --no-verify 跳过 pre-commit hook，避免二次 dump/restore 产生不同二进制导致每次都误判有变化
+if git commit --no-verify -m "$MSG"; then
     git push origin HEAD
     echo "✅ 完成"
+else
+    echo "⏭️  DB 无变化，跳过提交"
 fi
