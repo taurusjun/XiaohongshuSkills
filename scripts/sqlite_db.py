@@ -239,6 +239,8 @@ def init_db():
             ("rewritten_title", "TEXT DEFAULT ''"),
             ("related_keys", "TEXT DEFAULT ''"),
             ("publish_method", "TEXT DEFAULT 'post'"),
+            ("xhs_public_time", "TEXT DEFAULT ''"),
+            ("ref_keys", "TEXT DEFAULT ''"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -417,6 +419,7 @@ def update_news(key: str, fields: dict) -> bool:
                'format','preselected',
                'publish_mode','publish_free_text','rewritten_content','rewritten_title',
                'related_keys','publish_method',
+               'xhs_public_time','ref_keys',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
