@@ -1,0 +1,27 @@
+{
+  "_comment": "多源抓取器配置 — 独立数据库，不与主系统数据混杂",
+  "db_path": "data/multi_source.db",
+  "sources": {
+    "Natalie 音乐": {
+      "enabled": true,
+      "type": "natalie",
+      "list_url": "https://natalie.mu/music/news",
+      "daily_quota": 5,
+      "max_per_fetch": 10,
+      "extra_tags": ["音乐", "日本音乐"]
+    },
+    "Oricon 娱乐": {
+      "enabled": false,
+      "type": "oricon",
+      "list_url": "https://www.oricon.co.jp/entertainment/",
+      "daily_quota": 5,
+      "max_per_fetch": 10,
+      "extra_tags": ["娱乐", "日本娱乐"],
+      "needs_proxy": true,
+      "needs_cdp": true
+    }
+  },
+  "global": {
+    "parallel_fetch": 3
+  }
+}

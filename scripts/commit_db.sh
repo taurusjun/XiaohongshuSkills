@@ -12,24 +12,25 @@ echo "📦 dump/restore 中..."
 sqlite3 "$DB" ".dump" | sqlite3 "$TMP"
 
 echo "🔍 验证..."
-python3 - <<EOF
-import sqlite3, os
-db = sqlite3.connect("$TMP")
-news = db.execute("SELECT COUNT(*) FROM news").fetchone()[0]
-dims = db.execute("SELECT COUNT(*) FROM score_dims").fetchone()[0]
-ok = db.execute("PRAGMA integrity_check").fetchone()[0]
-print(f"  news={news} score_dims={dims} 完整性={ok}")
-assert ok == "ok", "完整性检查失败！"
-assert news > 0, "news 表为空！"
-db.close()
-EOF
+ROWS=$(sqlite3 "$TMP" "SELECT COUNT(*) FROM news;")
+OK=$(sqlite3 "$TMP" "PRAGMA integrity_check;")
+echo "  news=$ROWS 完整性=$OK"
+if [ "$OK" != "ok" ] || [ "$ROWS" -eq 0 ]; then
+    echo "❌ 验证失败，取消备份"
+    rm -f "$TMP"
+    exit 1
+fi
 
 cp "$TMP" "$DB"
 rm -f "$TMP"
 
 echo "📤 提交推送..."
-git add "$DB"
-git commit -m "$MSG"
-git push origin xhs-smart-agent
+git add -f "$DB"
 
-echo "✅ 完成"
+if git diff --cached --quiet; then
+    echo "⏭️  DB 无变化，跳过提交"
+else
+    git commit -m "$MSG"
+    git push origin feat/multi-source-fetcher-v2
+    echo "✅ 完成"
+fi
