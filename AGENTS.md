@@ -42,7 +42,7 @@ GET /api/news
       "created_at": "2026-06-05T10:00:00",
       "publish_xhs": 1,
       "preselected": 0,
-      "xhs_public_time": "",
+      "xhs_pub_time": "",
       "ref_keys": ""
     }
   ],
@@ -77,7 +77,7 @@ GET /api/news/<key>
   "content_score": 90,
   "publish_xhs": 1,
   "preselected": 0,
-  "xhs_public_time": "",
+  "xhs_pub_time": "",
   "ref_keys": "",
   "created_at": "2026-06-05T10:00:00"
 }
@@ -97,7 +97,7 @@ Content-Type: application/json
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `preselected` | int (0/1) | 是否预选发布 |
-| `xhs_public_time` | string | 计划发布时间（ISO 格式，如 `2026-06-05 10:00`） |
+| `xhs_pub_time` | string | 计划发布时间（ISO 格式，如 `2026-06-05 10:00`） |
 | `ref_keys` | string | 关联文章 key，逗号分隔 |
 | `rewritten_title` | string | 改写后标题 |
 | `rewritten_content` | string | 改写后正文 |
@@ -111,7 +111,7 @@ Content-Type: application/json
 ```json
 {
   "preselected": 1,
-  "xhs_public_time": "2026-06-05 14:00",
+  "xhs_pub_time": "2026-06-05 14:00",
   "rewritten_title": "新标题",
   "rewritten_content": "改写后的内容..."
 }
@@ -145,7 +145,7 @@ Content-Type: application/json
 # 将 key=abc123 的文章标记为预选
 curl -X PUT http://localhost:5000/api/news/abc123 \
   -H 'Content-Type: application/json' \
-  -d '{"preselected": 1, "xhs_public_time": "2026-06-05 10:00"}'
+  -d '{"preselected": 1, "xhs_pub_time": "2026-06-05 10:00"}'
 ```
 
 ### 查询今日生成的文章
