@@ -232,6 +232,8 @@ def init_db():
             ("xhs_danmaku", "INTEGER DEFAULT 0"),
             ("story_type", "TEXT DEFAULT ''"),
             ("format", "TEXT DEFAULT 'news'"),
+            ("publish_mode", "TEXT DEFAULT 'normal'"),
+            ("publish_free_text", "TEXT DEFAULT ''"),
             ("preselected", "INTEGER DEFAULT 0"),
             ("rewritten_content", "TEXT DEFAULT ''"),
             ("rewritten_title", "TEXT DEFAULT ''"),
