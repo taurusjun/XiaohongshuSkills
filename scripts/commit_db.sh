@@ -31,6 +31,6 @@ if git diff --cached --quiet; then
     echo "⏭️  DB 无变化，跳过提交"
 else
     git commit -m "$MSG"
-    git push origin feat/multi-source-fetcher-v2
+    git push origin HEAD
     echo "✅ 完成"
 fi
