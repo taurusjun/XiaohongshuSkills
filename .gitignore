@@ -64,3 +64,11 @@ data/news_dev.db-wal
 data/news_dev.db
 data/logs/
 config/wechat_conf.json
+
+# Backup/temp DB files
+data/news_dev_backup_*.db
+data/news_dev_backup_*.db-shm
+data/news_dev_backup_*.db-wal
+data/multi_source.db
+data/multi_source.db-shm
+data/multi_source.db-wal
