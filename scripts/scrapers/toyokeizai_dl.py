@@ -14,6 +14,9 @@ HEADERS = {
 PROXIES = {"http": "socks5h://127.0.0.1:10090", "https": "socks5h://127.0.0.1:10090"}
 
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 def _fetch(url: str) -> requests.Response | None:
     for _ in range(3):
         try:
