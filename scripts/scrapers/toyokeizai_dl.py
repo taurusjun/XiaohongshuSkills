@@ -28,15 +28,20 @@ def scrape(gallery_url: str) -> list[str]:
     soup = BeautifulSoup(resp.text, "html.parser")
 
     for block in soup.select(".article-photo"):
+        # Prefer full-size from <a class="figure-expand" href>
+        for a in block.select("a.figure-expand"):
+            href = a.get("href", "")
+            if href and "ismcdn" in href and "/-/" in href:
+                full = href.split("?")[0]
+                if full not in seen:
+                    seen.add(full)
+                    images.append(full)
+        # Fallback: large preview images (870m)
         for img in block.find_all("img"):
             src = img.get("src", "")
-            if not src:
+            if not src or "870m/" not in src:
                 continue
-            # Only keep large images (870m), skip thumbnails (160m, 80m etc)
-            if "870m/" not in src and "-/img" not in src:
-                continue
-            # Convert to full-size: replace 870m/ -> -/
-            full = re.sub(r'/\d+m/', '/-/', src) if '870m/' in src else src
+            full = re.sub(r'/\d+m/', '/-/', src)
             full = full.split("?")[0]
             if full not in seen:
                 seen.add(full)
