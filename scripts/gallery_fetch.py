@@ -2337,6 +2337,10 @@ def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
         return []
 
 
+def _scrape_toyokeizai(gallery_url: str) -> list[str]:
+    from scrapers.toyokeizai_dl import scrape
+    return scrape(gallery_url)
+
 def _scrape_egolf(gallery_url: str) -> list[str]:
     from scrapers.egolf_dl import scrape
     return scrape(gallery_url)
@@ -2745,6 +2749,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "qjweb.jp" in domain:
         images = _scrape_qjweb(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "toyokeizai.net" in domain:
+        images = _scrape_toyokeizai(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "egolf.jp" in domain:
