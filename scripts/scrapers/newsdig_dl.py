@@ -43,8 +43,10 @@ def scrape(gallery_url: str) -> list[str]:
         soup = BeautifulSoup(resp.text, "html.parser")
         found = 0
 
-        # Only images inside <figure> — gallery photos, not sidebar thumbs
-        for fig in soup.find_all("figure"):
+        # Only images inside article-body — exclude m-article-figure-wrap (related articles)
+        article_body = soup.find(class_="article-body")
+        scope = article_body if article_body else soup
+        for fig in scope.find_all("figure"):
             for img in fig.find_all("img"):
                 src = img.get("data-src") or img.get("src") or ""
                 if "newsdig.ismcdn.jp/mwimgs/" not in src:
