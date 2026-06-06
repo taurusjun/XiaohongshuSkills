@@ -22,7 +22,7 @@ HEADERS = {
 def scrape(gallery_url: str) -> list[str]:
     """从 newsdig 图集页分页抓取所有大图 URL。"""
     # Base URL without display param
-    base = re.sub(r'\?display=\d+', '', gallery_url).replace('/gallery/', '/-/')
+    base = re.sub(r'\?.*', '', gallery_url).replace('/gallery/', '/-/')
     if '/articles/-/' not in base:
         # Extract article ID
         m = re.search(r'/articles/gallery/(\d+)', gallery_url)
