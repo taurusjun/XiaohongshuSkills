@@ -444,37 +444,67 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
 
 
 def _scrape_smart_flash(gallery_url: str) -> list[str]:
-    """smart-flash.jp 图集：限定 .newsBlock，分页是 JS 驱动，所有图已在 HTML 中"""
-    import re
-    from urllib.parse import urljoin
+    """smart-flash.jp 图集：仅抓本文章图片，不混入话题关联图。
 
-    headers = {**HEADERS, "Referer": "https://smart-flash.jp/"}
+    imageSlider 的前 M 项属于本文章（M = 文章主页上 /image/N/ 链接数），
+    后续项为话题关联图。通过先抓文章主页数出 M，再取 slider 前 M 项。
+    """
+    import re as _re
+    BASE_SF = "https://smart-flash.jp"
+    headers = {**HEADERS, "Referer": BASE_SF + "/"}
     images: list[str] = []
     seen: set[str] = set()
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url.split("?")[0], headers=headers, timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
-        body = s.select_one(".newsBlock") or s
 
-        for img in body.select("img"):
-            src = img.get("data-src") or img.get("src", "")
-            if not src or "data.smart-flash.jp" not in src:
-                continue
-            if src.startswith("/"):
-                src = urljoin("https://smart-flash.jp", src)
-            # 去缩略图尺寸后缀
-            src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
-            if src not in seen:
-                seen.add(src)
-                images.append(src)
-            if len(images) >= MAX_IMAGES:
-                break
+        # Step 1: 获取文章主页 URL（naviGroup "记事に戻る" 链接）
+        back = s.select_one(".naviGroup a[href*='/entertainment']") or                s.select_one(".naviGroup a[href]")
+        if back:
+            art_url = back["href"]
+            if not art_url.startswith("http"):
+                art_url = BASE_SF + art_url
+        else:
+            art_url = _re.sub(r"/image/\d+/?$", "/", gallery_url.split("?")[0].rstrip("/") + "/")
+
+        # Step 2: 抓文章主页，数本文章有几张图
+        art_id_m = _re.search(r"/news/(\d+)", art_url)
+        art_id = art_id_m.group(1) if art_id_m else ""
+        img_count = 1  # 默认至少 1 张
+        if art_id:
+            try:
+                r_art = requests.get(art_url, headers=headers, timeout=15)
+                s_art = BeautifulSoup(r_art.text, "html.parser")
+                indices = set()
+                for a in s_art.find_all("a", href=True):
+                    m = _re.search(rf"/{art_id}/image/(\d+)/", a["href"])
+                    if m:
+                        indices.add(int(m.group(1)))
+                if indices:
+                    img_count = max(indices)
+            except Exception:
+                pass
+
+        # Step 3: 取 imageSlider 前 img_count 项的全尺寸 URL
+        slider = s.select_one(".imageSlider")
+        if slider:
+            items = slider.select("div.item")
+            for item in items[:img_count]:
+                a = item.select_one("a.venoboxImageDetail[href]")
+                if a and "data.smart-flash.jp" in a["href"] and a["href"] not in seen:
+                    seen.add(a["href"])
+                    images.append(a["href"])
+
+        # Fallback: 抓整个 imageSlider 的第一张
+        if not images and slider:
+            a = slider.select_one("a.venoboxImageDetail[href]")
+            if a and "data.smart-flash.jp" in a["href"]:
+                images.append(a["href"])
     except Exception as e:
         print(f"  ⚠️ smart-flash 抓取失败: {e}")
 
     return images
-
 
 def _mantan_to_jpeg(src: str) -> str:
     """将 mantan CDN URL 的参数替换为 w=1200,f=jpg，获取高质量 JPEG 大图。
