@@ -2509,6 +2509,12 @@ def _scrape_newsdig(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_sponichi(gallery_url: str) -> list[str]:
+    """sponichi.co.jp 图集（独立脚本 scripts/scrapers/sponichi_dl.py）"""
+    from scrapers.sponichi_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2821,6 +2827,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "asahi.com" in domain:
         images = _scrape_asahi(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "sponichi.co.jp" in domain:
+        images = _scrape_sponichi(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
