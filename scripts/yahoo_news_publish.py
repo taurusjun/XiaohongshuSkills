@@ -568,7 +568,10 @@ def main():
         else:
             full_title = info['title']
 
-        print(f"标题: {full_title[:40]}...")
+        if info.get('publish_mode') == 'rewritten':
+            print(f"改写标题: {full_title[:40]}...")
+        else:
+            print(f"标题: {full_title[:40]}...")
         print(f"来源: {info['source']} | 分类: {info['category']}")
 
         # 发布模式
@@ -618,7 +621,10 @@ def main():
         tags_str = " ".join(f"#{t}" for t in info.get("tags", [])[:10])
         xhs_content = f"{xhs_content}\n{tags_str}"
 
-        print(f"正文预览: {content[:80]}...")
+        if publish_mode == 'rewritten':
+            print(f"正文预览: {xhs_content[:80]}...")
+        else:
+            print(f"正文预览: {content[:80]}...")
         print()
 
         # 确认发布
