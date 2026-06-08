@@ -1821,6 +1821,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
             <option value="archived" {{'selected' if news.status=='archived' else ''}}>归档</option>
           </select>
         </div>
+        <div>
+          <div class="field-label">预发布时间</div>
+          <input type="datetime-local" name="xhs_pub_time" value="{{news.xhs_pub_time or ''}}" onchange="autoSaveField('xhs_pub_time',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);width:175px">
+        </div>
       </div>
     </div>
 
