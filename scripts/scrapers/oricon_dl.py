@@ -79,7 +79,9 @@ def scrape(gallery_url: str) -> list[str]:
             if page_soup is None:
                 continue
 
-        img = page_soup.find("img", class_=re.compile(r"main_photo_image"))
+        # div.main_photo_image contains the full-size img (not an img with that class)
+        div_mp = page_soup.find("div", class_="main_photo_image")
+        img = div_mp.find("img") if div_mp else None
         if not img:
             img = page_soup.find("img", src=re.compile(r"_p_[ol]_"))
         src = img.get("src", "") if img else ""
