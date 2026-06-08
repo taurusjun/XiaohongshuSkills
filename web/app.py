@@ -2014,8 +2014,8 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         <span class="ah-title">✍️ 改写</span><span class="ah-arrow">▼</span>
       </div>
       <div class="accordion-body open" style="padding:14px">
-      <div class="field-label">改写标题</div>
-      <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)">
+      <div class="field-label">改写标题 <span id="rewrittenTitleCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
+      <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)" oninput="updateRewrittenTitleCount()">
       <div class="field-label">改写文 <span id="rewrittenCount" style="float:right;font-size:11px;color:var(--text3);font-weight:400"></span></div>
       <textarea name="rewritten_content" id="rewrittenHidden" style="display:none">{{news.rewritten_content or ''}}</textarea>
       <div id="editorjs-rewritten" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:120px"></div>
@@ -2263,6 +2263,13 @@ function updateTitleCount(){
   c.textContent=n+'/20';
   c.style.color=n>20?'var(--red)':'var(--text3)';
 }
+function updateRewrittenTitleCount(){
+  var el=document.querySelector('[name=rewritten_title]'),c=document.getElementById('rewrittenTitleCount');
+  if(!el||!c)return;
+  var n=xhsCharCount(el.value);
+  c.textContent=n+'/20';
+  c.style.color=n>20?'var(--red)':'var(--text3)';
+}
 function updateContentCount(){
   var ta=document.getElementById('contentHidden'),c=document.getElementById('contentCount');
   if(!ta||!c)return;
@@ -2278,6 +2285,7 @@ function updateRewrittenCount(){
   c.style.color=n>1000?'var(--red)':'var(--text3)';
 }
 updateTitleCount();
+updateRewrittenTitleCount();
 updateContentCount();
 
 // ── Metrics trend chart ──────────────────────────────────────────────
