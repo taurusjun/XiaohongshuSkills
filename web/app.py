@@ -2526,7 +2526,7 @@ async function saveAndUpload(){
 }
 async function clearGalleryVideo(){await fetch('/api/news/'+key,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_video:''})});location.reload()}
 function closeGalleryModal(){document.getElementById('galleryModal').classList.remove('active')}
-function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4';savePublishImages()}
+async function togglePublishImg(el){var cb=el.querySelector('input[type=checkbox]');cb.checked=!cb.checked;el.style.opacity=cb.checked?'1':'0.4';await savePublishImages()}
 async function savePublishImages(){
   var paths=[];var vidPath='';document.querySelectorAll('#publishImgStrip input[type=checkbox][data-path]').forEach(function(cb){
     if(cb.checked){
