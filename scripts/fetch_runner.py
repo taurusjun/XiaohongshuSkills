@@ -6,6 +6,7 @@ import json
 import time
 import logging
 import requests
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,17 +18,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fetch_runner")
 
-WEBAPP_URL = "http://127.0.0.1:5000"
-POLL_INTERVAL = 10   # seconds between status polls
-POLL_TIMEOUT  = 1800 # give up after 30 minutes
+WEBAPP_URL    = "http://127.0.0.1:5000"
+POLL_INTERVAL = 300    # seconds between status polls
+POLL_TIMEOUT  = 1800  # give up after 30 minutes
 
 
 def get_keywords() -> list[dict]:
     """从 webapp 读取预置词 + 自定义词，合并返回。"""
-    preset  = requests.get(f"{WEBAPP_URL}/api/keywords",        timeout=10).json().get("keywords", [])
-    custom  = requests.get(f"{WEBAPP_URL}/api/custom-keywords", timeout=10).json().get("keywords", [])
-    # preset 含 topic 字段，只保留 keyword/max
-    merged = [{"keyword": k["keyword"], "max": k["max"]} for k in preset]
+    preset = requests.get(f"{WEBAPP_URL}/api/keywords",        timeout=10).json().get("keywords", [])
+    custom = requests.get(f"{WEBAPP_URL}/api/custom-keywords", timeout=10).json().get("keywords", [])
+    merged  = [{"keyword": k["keyword"], "max": k["max"]} for k in preset]
     merged += [{"keyword": k["keyword"], "max": k["max"]} for k in custom]
     return merged
 
@@ -44,9 +44,10 @@ def trigger_fetch(keywords: list[dict]) -> str:
     return resp["task_id"]
 
 
-def wait_for_task(task_id: str) -> bool:
-    """轮询任务状态直到完成，返回是否成功。"""
+def wait_for_task(task_id: str) -> tuple[bool, str]:
+    """轮询任务状态直到完成。返回 (成功?, 最后日志片段)。"""
     deadline = time.time() + POLL_TIMEOUT
+    last_log = ""
     while time.time() < deadline:
         time.sleep(POLL_INTERVAL)
         try:
@@ -55,14 +56,47 @@ def wait_for_task(task_id: str) -> bool:
             logger.warning(f"  轮询失败: {e}")
             continue
         s = status.get("status", "")
+        last_log = status.get("log", "")
         logger.info(f"  task {task_id} status={s}")
         if s == "done":
-            return True
+            return True, last_log
         if s.startswith("error"):
-            logger.error(f"  任务失败: {s}\n{status.get('log','')[-500:]}")
-            return False
-    logger.error(f"  任务超时（>{POLL_TIMEOUT}s）")
-    return False
+            logger.error(f"  任务失败: {s}\n{last_log[-500:]}")
+            return False, f"{s}\n{last_log[-300:]}"
+    msg = f"任务超时（>{POLL_TIMEOUT}s）"
+    logger.error(msg)
+    return False, msg
+
+
+def notify(ok: bool, keywords: list[dict], last_log: str, today_before: int) -> None:
+    """完成后发飞书通知。"""
+    try:
+        from sqlite_db import stats
+        s = stats()
+        today_new = max(0, s["today"] - today_before)
+        kw_str = "、".join(k["keyword"] for k in keywords)
+        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        if ok:
+            text = (
+                f"✅ 抓取完成 [{date_str}]\n"
+                f"关键词：{kw_str}\n"
+                f"今日新增：{today_new} 篇（今日合计 {s['today']}）\n"
+                f"待发布：{s['pending']} 篇"
+            )
+        else:
+            text = (
+                f"❌ 抓取失败 [{date_str}]\n"
+                f"关键词：{kw_str}\n"
+                f"错误：{last_log[:200]}"
+            )
+        from feishu_bot import send_alert
+        sent = send_alert(text)
+        if sent:
+            logger.info("飞书通知已发送")
+        else:
+            logger.warning("飞书通知发送失败（无凭证或接口异常）")
+    except Exception as e:
+        logger.warning(f"飞书通知异常: {e}")
 
 
 def main():
@@ -81,6 +115,14 @@ def main():
 
     logger.info(f"关键词: {json.dumps(keywords, ensure_ascii=False)}")
 
+    # 记录抓取前的今日文章数，用于计算新增
+    today_before = 0
+    try:
+        from sqlite_db import stats
+        today_before = stats()["today"]
+    except Exception:
+        pass
+
     # 2. 触发抓取
     try:
         task_id = trigger_fetch(keywords)
@@ -94,7 +136,11 @@ def main():
     logger.info(f"任务已启动 task_id={task_id}")
 
     # 3. 等待完成
-    ok = wait_for_task(task_id)
+    ok, last_log = wait_for_task(task_id)
+
+    # 4. 飞书通知
+    notify(ok, keywords, last_log, today_before)
+
     if ok:
         logger.info("=== 抓取完成 ===")
     else:
