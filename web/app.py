@@ -57,6 +57,16 @@ _task_counter = 0
 _task_counter_lock = threading.Lock()   # C-2: protect counter
 _publish_lock = threading.Lock()
 _publish_running = False
+
+# Quick endpoint to reset stuck publish lock
+@app.route('/api/admin/reset-publish-lock', methods=['POST'])
+def api_reset_publish_lock():
+    global _publish_running
+    with _publish_lock:
+        if _publish_running:
+            _publish_running = False
+            return jsonify({"ok": True, "msg": "Publish lock reset"})
+        return jsonify({"ok": False, "msg": "No lock to reset"})
 _fetch_lock = threading.Lock()
 _fetch_running = False
 _regen_lock = threading.Lock()
@@ -294,6 +304,18 @@ def api_keywords():
     except Exception:
         kws = [{"topic": "AKB48", "keyword": "AKB", "max": 10}]
     return jsonify({"keywords": kws})
+
+@app.route('/api/task-status/<tid>')
+def api_task_status(tid):
+    """返回单个任务的当前状态"""
+    t = _tasks.get(tid)
+    if t is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({
+        "task_id": tid,
+        "status": t.get('status', 'unknown'),
+        "log": t.get('log', '')
+    })
 
 @app.route('/api/active-tasks')
 def api_active_tasks():
