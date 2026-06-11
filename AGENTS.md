@@ -147,6 +147,30 @@ PUT {"publish_xhs": 1}   ← pipeline 会自动读 publish_mode 并使用改写�
 
 ---
 
+### 4. 查询任务状态
+
+```
+GET /api/task-status/<task_id>
+```
+
+返回后台任务（抓取、发布等）的当前状态。
+
+**响应结构：**
+
+```json
+{
+  "task_id": "7",
+  "status": "running",
+  "log": "2026-06-10 10:01:23 正在抓取 AKB..."
+}
+```
+
+`status` 可能值：`running` / `done` / `error: <错误消息>`
+
+如果 task_id 不存在（任务已完成且从内存清理），返回 404。
+
+---
+
 ## 辅助脚本
 
 工作目录 `~/.hermes/workspace/` 下提供以下脚本，**优先用脚本代替手写 curl**：
