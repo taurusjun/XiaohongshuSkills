@@ -4454,11 +4454,31 @@ class XiaohongshuPublisher:
         """Click the '上传视频' tab to switch to video publish mode."""
         self._click_tab(SELECTORS["video_tab"], SELECTORS["video_tab_text"])
 
+    def _activate_current_tab(self):
+        """Bring the current CDP tab to the foreground so JS events fire correctly."""
+        if not self._tab_ws_url:
+            return
+        import re as _re
+        m = _re.search(r'/devtools/page/([^/]+)$', self._tab_ws_url)
+        if not m:
+            return
+        target_id = m.group(1)
+        try:
+            self._send("Target.activateTarget", {"targetId": target_id})
+            print(f"[cdp_publish] Tab activated (targetId={target_id})")
+        except Exception as e:
+            print(f"[cdp_publish] Tab activate failed (non-fatal): {e}")
+
     def _upload_images(self, image_paths: list[str]):
         """Upload images via the file input element."""
         if not image_paths:
             print("[cdp_publish] No images to upload, skipping.")
             return
+
+        # XHS relies on the change event to show the upload preview.
+        # This event is throttled on background tabs, so activate the tab first.
+        self._activate_current_tab()
+        self._sleep(0.5, minimum_seconds=0.3)
 
         preserve_flags = [self._should_preserve_upload_path(path) for path in image_paths]
         prepared_paths = [self._prepare_upload_file_path(path) for path in image_paths]
