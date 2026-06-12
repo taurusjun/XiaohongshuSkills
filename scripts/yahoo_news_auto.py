@@ -39,7 +39,11 @@ DEFAULT_KEYWORDS = [
     ("乃木坂",  10, False),
     ("日向坂",  5, False),
     ("欅坂",    5, False),
-    ("アイドル",    10, False),    
+    ("アイドル",    10, False),
+    ("King & Prince", 10, False),
+    ("ももクロ",    5, False),
+    ("嵐",         5, False),
+    ("STARTO",     5, False),
     # ("コスプレ", 3, False),
     # ("原神",    3, False),
     # ("鳴潮",    3, False),
@@ -52,6 +56,10 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
     "日向坂":  ["日向坂", "日向坂46"],
     "欅坂":    ["欅坂", "欅坂46", "樱坂", "樱坂46"],
     "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
+    "King & Prince": ["King & Prince", "キンプリ"],
+    "ももクロ": ["ももクロ", "ももいろクローバー"],
+    "嵐": ["嵐", "ARASHI"],
+    "STARTO": ["STARTO", "スタート"],
 }
 
 
