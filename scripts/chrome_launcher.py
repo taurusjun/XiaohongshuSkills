@@ -155,6 +155,8 @@ def launch_chrome(
     from config.yahoo_conf import USE_PROXY, PROXY_URL
     if USE_PROXY and PROXY_URL:
         cmd.append(f"--proxy-server={PROXY_URL}")
+    else:
+        cmd.append("--no-proxy-server")  # 绕过 macOS 系统代理（Clash），使用直连
 
     mode_label = "headless" if headless else "headed"
     account_label = account or "default"
