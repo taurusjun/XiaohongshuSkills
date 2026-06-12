@@ -1019,12 +1019,14 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
 def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
     """从Twitter embed获取图片URL（优先 fxtwitter API，回退 syndication）"""
     images: list[str] = []
+    from config.yahoo_conf import PROXY_URL
+    _tw_proxies = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else None
 
     # 方法1：fxtwitter API（无需认证，返回完整 media 信息）
     try:
         r = requests.get(
             f"https://api.fxtwitter.com/twitter/status/{tweet_id}",
-            headers=headers, timeout=10,
+            headers=headers, timeout=10, proxies=_tw_proxies,
         )
         if r.status_code == 200:
             data = r.json()
@@ -1049,7 +1051,7 @@ def _get_twitter_images_from_embed(tweet_id: str, headers: dict) -> list[str]:
     # 方法2：syndication API（部分推文可能不可用）
     try:
         api_url = f"https://cdn.syndication.twimg.com/widgets/tweet?url=https%3A%2F%2Ftwitter.com%2Fuser%2Fstatus%2F{tweet_id}"
-        r = requests.get(api_url, headers=headers, timeout=10)
+        r = requests.get(api_url, headers=headers, timeout=10, proxies=_tw_proxies)
         if r.status_code == 200:
             data = r.json()
             if "extended_entities" in data and "media" in data["extended_entities"]:
@@ -3058,9 +3060,13 @@ def download_images(image_urls: list[str], article_dir: Path,
             referer = _referer_for(url, gallery_url)
             is_video = url.endswith(".mp4") or ".mp4?" in url
             timeout = 120 if is_video else 15
-            # 代理失败时回退直连重试
+            # pbs.twimg.com 需要代理；其余直连，ConnectionError 时回退直连
+            from config.yahoo_conf import PROXY_URL
+            _use_proxy = "twimg.com" in url and PROXY_URL
+            _proxies = {"http": PROXY_URL, "https": PROXY_URL} if _use_proxy else None
             try:
-                resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout)
+                resp = requests.get(url, headers={**HEADERS, "Referer": referer},
+                                    timeout=timeout, proxies=_proxies)
             except requests.ConnectionError:
                 resp = requests.get(url, headers={**HEADERS, "Referer": referer}, timeout=timeout,
                                      proxies={"http": None, "https": None})
