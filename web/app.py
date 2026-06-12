@@ -2427,10 +2427,17 @@ function bindAutoResize(){
   });
 }
 bindAutoResize();
-// 每次accordion展开时重新绑定
+// 每次accordion展开时重新绑定，并强制对已绑定元素重跑 autoGrow
 document.querySelectorAll('.accordion-hdr').forEach(function(hdr){
   hdr.addEventListener('click',function(){
-    setTimeout(bindAutoResize,50);
+    var section=this.closest('.accordion-section')||this.parentElement;
+    setTimeout(function(){
+      bindAutoResize();
+      // 已绑定的元素在隐藏时 autoGrow 算出 0，展开后需要强制重算
+      (section||document).querySelectorAll('.auto-resize').forEach(function(ta){
+        autoGrow(ta);
+      });
+    },60);
   });
 });
 
