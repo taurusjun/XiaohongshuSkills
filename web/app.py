@@ -2048,6 +2048,25 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
       </div><!-- /accordion-body -->
     </div><!-- /改写 card -->
 
+    <!-- English version card -->
+    {% if news.en_title or news.en_content %}
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <span class="ah-title">🇬🇧 English</span>
+        <span class="ah-arrow">▼</span>
+      </div>
+      <div class="accordion-body" style="padding:14px">
+        <div class="field-label">English Title</div>
+        <input class="inline-input" name="en_title" value="{{news.en_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('en_title',this.value)">
+        <div class="field-label">English Content <span style="float:right;font-size:11px;color:var(--text3)">{{(news.en_content or '')|length}} chars</span></div>
+        <textarea class="auto-resize" name="en_content" style="width:100%;min-height:120px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;line-height:1.6;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box" oninput="autoSaveField('en_content',this.value)">{{news.en_content or ''}}</textarea>
+        <div class="field-label" style="margin-top:10px">Tweet (≤280 chars) <span id="enTweetCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
+        <textarea class="auto-resize" name="en_tweet" style="width:100%;min-height:48px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;line-height:1.5;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box" oninput="document.getElementById('enTweetCount').textContent=this.value.length+' chars';autoSaveField('en_tweet',this.value)">{{news.en_tweet or ''}}</textarea>
+        <div style="margin-top:8px;font-size:11px;color:var(--text3)">📋 复制英文内容到 Twitter 手动发布 @JapanEntRept</div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Japanese original (accordion, conditional) -->
     {% if news.title_ja or news.content_ja %}
     <div class="card" style="padding:0;overflow:hidden">
@@ -2400,9 +2419,19 @@ updateContentCount();
 {% endif %}
 
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
-document.querySelectorAll('.auto-resize').forEach(function(ta){
-  ta.addEventListener('input',function(){autoGrow(this)});
-  autoGrow(ta);
+function bindAutoResize(){
+  document.querySelectorAll('.auto-resize:not([data-bound])').forEach(function(ta){
+    ta.setAttribute('data-bound','1');
+    ta.addEventListener('input',function(){autoGrow(this)});
+    autoGrow(ta);
+  });
+}
+bindAutoResize();
+// 每次accordion展开时重新绑定
+document.querySelectorAll('.accordion-hdr').forEach(function(hdr){
+  hdr.addEventListener('click',function(){
+    setTimeout(bindAutoResize,50);
+  });
 });
 
 document.getElementById('saveBtn').addEventListener('click',async()=>{
