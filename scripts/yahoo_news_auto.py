@@ -131,6 +131,11 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
             if not html:
                 continue
 
+            # 校验页面是否真的是 Yahoo 搜索结果页（防止 Clash 抖动返回错误页）
+            if "news.yahoo.co.jp" not in html and "Yahoo" not in html[:2000]:
+                print(f"  ⚠️ 拿到非 Yahoo 页面，跳过重试")
+                continue
+
             soup = BeautifulSoup(html, "html.parser")
             news_list: list[dict] = []
             seen: set[str] = set()
