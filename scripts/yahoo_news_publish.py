@@ -481,6 +481,11 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
     if result.returncode == 0:
+        # 打印 cdp_publish 的关键进度行，便于追溯
+        for line in (result.stdout or "").split("\n"):
+            if any(kw in line for kw in ["[cdp_publish]", "Navigating", "Tab", "Uploading",
+                                          "Image", "Preview", "preview", "Waiting", "ready"]):
+                print(f"  {line}")
         # 提取 note_id 从输出
         import re as _re
         note_id = ""
@@ -506,6 +511,9 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             if result.returncode == 0:
                 return (True, "")
 
+    # stdout 含 [cdp_publish] 的等待/诊断日志，失败时一并输出便于定位
+    if result.stdout:
+        print(f"  [cdp stdout]\n{result.stdout[-1000:]}")
     print(f"  发布失败:\n{result.stderr[-500:]}")
     return (False, "")
 
