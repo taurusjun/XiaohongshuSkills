@@ -418,7 +418,8 @@ def update_news(key: str, fields: dict) -> bool:
                'publish_mode','publish_free_text','rewritten_content','rewritten_title',
                'related_keys','publish_method',
                'xhs_note_id','xhs_title',
-               'topic_perf_updated_at'}
+               'topic_perf_updated_at',
+               'en_title','en_content','en_publish_twitter','en_pub_time'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
