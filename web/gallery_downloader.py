@@ -130,9 +130,14 @@ def _download(key: str, gallery_url: str = ""):
             # Download images
             dl_headers = dict(HEADERS)
             dl_headers['Referer'] = gallery_url
+            try:
+                from config.yahoo_conf import PROXY_URL as _PROXY_URL
+            except Exception:
+                _PROXY_URL = "http://127.0.0.1:10090"
             for i, url in enumerate(image_urls):
                 try:
-                    resp = __import__('requests').get(url, headers=dl_headers, timeout=30)
+                    _proxies = {"http": _PROXY_URL, "https": _PROXY_URL} if ("twimg.com" in url and _PROXY_URL) else None
+                    resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
                     ext = url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
                     if ext not in ('jpg','jpeg','png','webp','gif','mp4'):
                         ext = 'jpg'
