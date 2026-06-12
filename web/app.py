@@ -1945,10 +1945,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- URLs + Gallery (editing → right panel) -->
     <div class="card" style="padding:0;overflow:hidden">
-      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+      <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
         <span class="ah-title">📸 图集 / 封面</span><span class="ah-arrow">▼</span>
       </div>
-      <div class="accordion-body open" style="padding:14px 18px">
+      <div class="accordion-body" style="padding:14px 18px">
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
         <div><div class="field-label">封面图路径</div><input class="url-input" name="image_url" value="{{news.image_url or ''}}" onclick="this.select()"></div>
         {% if news.original_image_url and news.original_image_url != news.image_url %}
@@ -1988,10 +1988,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- 内容编辑卡片 -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
-        <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+        <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
           <span class="ah-title">✏️ 内容编辑</span><span class="ah-arrow">▼</span>
         </div>
-        <div class="accordion-body open">
+        <div class="accordion-body">
       <div class="field-group">
         <div>
           <div class="field-label">标题 <span id="titleCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
@@ -2036,10 +2036,10 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 
     <!-- 改写卡片 -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
-      <div class="accordion-hdr open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+      <div class="accordion-hdr" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
         <span class="ah-title">✍️ 改写</span><span class="ah-arrow">▼</span>
       </div>
-      <div class="accordion-body open" style="padding:14px">
+      <div class="accordion-body" style="padding:14px">
       <div class="field-label">改写标题 <span id="rewrittenTitleCount" style="float:right;font-size:11px;color:var(--text3)"></span></div>
       <input class="inline-input" name="rewritten_title" value="{{news.rewritten_title or ''}}" style="margin-bottom:10px" onchange="autoSaveField('rewritten_title',this.value)" oninput="updateRewrittenTitleCount()">
       <div class="field-label">改写文 <span id="rewrittenCount" style="float:right;font-size:11px;color:var(--text3);font-weight:400"></span></div>
