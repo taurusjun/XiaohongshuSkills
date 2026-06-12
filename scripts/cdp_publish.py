@@ -4976,25 +4976,14 @@ class XiaohongshuPublisher:
             pass
         current_url = self._evaluate("location.href") or ""
         if "creator.xiaohongshu.com" in current_url:
-            # 已在 creator 页，强制 reload 清除残留表单状态
-            print("[cdp_publish] Already on creator page, reloading to reset state...")
-            self._send("Page.enable")
-            self._send("Page.reload", {"ignoreCache": True})
-            # 等 loadEventFired 而不是固定秒数，确保 JS 初始化完成
-            _reload_deadline = time.time() + 15
-            while time.time() < _reload_deadline:
-                try:
-                    _msg = self.ws.recv()
-                    if '"Page.loadEventFired"' in _msg:
-                        print("[cdp_publish] Page reload complete (loadEventFired).")
-                        break
-                except Exception:
-                    break
-            self._sleep(2, minimum_seconds=1.5)  # JS 框架初始化缓冲
+            # 已在 creator 域 — navigate 到干净 URL（不做 reload，
+            # 避免 ?published=true 等残留参数重载到非表单页）
+            print("[cdp_publish] Already on creator page, navigating to clean URL...")
             try:
                 self._send("Page.handleJavaScriptDialog", {"accept": True})
             except Exception:
                 pass
+            self._navigate(XHS_CREATOR_URL)
         else:
             self._navigate(XHS_CREATOR_URL)
         self._sleep(2, minimum_seconds=1.0)
