@@ -4417,8 +4417,30 @@ class XiaohongshuPublisher:
 
         coords = json.loads(pos)
         x, y = coords["x"], coords["y"]
-        print(f"[cdp_publish] Found visible tab at ({x}, {y}), dispatching mouse click...")
+        print(f"[cdp_publish] Found visible tab at ({x}, {y}), clicking via JS + mouse event...")
 
+        # JS click 优先（Vue SPA 导航后 hydration 期间 mouse event 可能不触发）
+        self._evaluate(f"""
+            (function() {{
+                var candidates = document.querySelectorAll(
+                    'div.creator-tab, .creator-tab, [class*="creator-tab"], [role="tab"]'
+                );
+                for (var i = 0; i < candidates.length; i++) {{
+                    var t = (candidates[i].textContent || '').trim();
+                    if (t.indexOf({tab_text_literal}) !== -1 || t.indexOf('图文') !== -1) {{
+                        var r = candidates[i].getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {{
+                            candidates[i].click();
+                            return 'clicked:' + t;
+                        }}
+                    }}
+                }}
+                return 'not_found';
+            }})()
+        """)
+        self._sleep(0.3, minimum_seconds=0.2)
+
+        # 再补发 mouse event 双保险
         self._send("Input.dispatchMouseEvent", {
             "type": "mousePressed", "x": x, "y": y,
             "button": "left", "clickCount": 1
@@ -4438,7 +4460,25 @@ class XiaohongshuPublisher:
         使用 Input.dispatchMouseEvent 发送真实鼠标事件以触发 Vue 组件切换。"""
         self._click_tab(SELECTORS["image_text_tab"], SELECTORS["image_text_tab_text"])
 
-        # 验证切换是否成功
+        # 验证：确认已切到图文模式（视频上传区消失，或出现图文 input）
+        # 不能只查 input[type=file]，视频模式也有 file input
+        in_image_mode = self._evaluate("""
+            (function() {
+                // 图文模式标志：没有"上传视频"按钮，或者有 .img-preview-area
+                var hasVideoBtn = !!document.querySelector('.upload-video-btn, [class*="upload-video"]');
+                var hasImgArea = !!document.querySelector('.img-preview-area, .upload-img-input, .upload-input');
+                // 检查当前激活 tab 文字
+                var activeTab = '';
+                var tabs = document.querySelectorAll('div.creator-tab, .creator-tab');
+                for (var i = 0; i < tabs.length; i++) {
+                    if (tabs[i].classList.contains('active') || tabs[i].getAttribute('aria-selected') === 'true') {
+                        activeTab = tabs[i].textContent.trim();
+                    }
+                }
+                return JSON.stringify({hasVideoBtn: hasVideoBtn, hasImgArea: hasImgArea, activeTab: activeTab});
+            })()
+        """)
+        print(f"[cdp_publish] Tab mode check: {in_image_mode}")
         upload_ready = self._evaluate(
             f"!!document.querySelector('{SELECTORS['upload_input']}') || "
             f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
