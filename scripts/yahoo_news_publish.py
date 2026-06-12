@@ -513,7 +513,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
 
     # stdout 含 [cdp_publish] 的等待/诊断日志，失败时一并输出便于定位
     if result.stdout:
-        print(f"  [cdp stdout]\n{result.stdout[-1000:]}")
+        print(f"  [cdp stdout]\n{result.stdout[-3000:]}")
     print(f"  发布失败:\n{result.stderr[-500:]}")
     return (False, "")
 
