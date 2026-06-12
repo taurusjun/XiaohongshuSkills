@@ -4949,7 +4949,23 @@ class XiaohongshuPublisher:
             )
 
         # Step 1: Navigate to publish page
-        self._navigate(XHS_CREATOR_URL)
+        # 先 dismiss 任何 beforeunload 弹窗（上次发布失败后可能残留），再强制 reload
+        try:
+            self._send("Page.handleJavaScriptDialog", {"accept": True})
+        except Exception:
+            pass
+        current_url = self._evaluate("location.href") or ""
+        if "creator.xiaohongshu.com" in current_url:
+            # 已在 creator 页，强制 reload 清除残留表单状态
+            print("[cdp_publish] Already on creator page, reloading to reset state...")
+            self._send("Page.reload", {"ignoreCache": True})
+            self._sleep(3, minimum_seconds=2.0)
+            try:
+                self._send("Page.handleJavaScriptDialog", {"accept": True})
+            except Exception:
+                pass
+        else:
+            self._navigate(XHS_CREATOR_URL)
         self._sleep(2, minimum_seconds=1.0)
 
         # Step 2: Click '上传图文' tab
