@@ -1370,11 +1370,11 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     news['comment']  = outro
     news['summary']  = intro[:100]
     news['category'] = '新闻'
-    news['is_long_form'] = True
+    news['is_long_form'] = len(news['content']) >= 600
     news['format'] = 'story'
     if story_type:
         news['story_type'] = story_type
-    print(f"    故事体生成完成 [{story_type or '?'}]: {len(news['content'])} 字")
+    print(f"    故事体生成完成 [{story_type or '?'}]: {len(news['content'])} 字 {'(长文)' if news['is_long_form'] else '(短story)'}")
 
     # 评分
     quality = evaluate_quality(news['title_zh'], news['content'], news['comment'])
