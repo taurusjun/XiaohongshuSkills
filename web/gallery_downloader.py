@@ -79,11 +79,18 @@ def _download(key: str, gallery_url: str = ""):
             image_urls = []
         else:
             # 检测目标页面是否包含 Instagram embed（iframe）
+            # 纯图集站不做检测，避免误识别侧栏 IG widget
+            _SKIP_IG_DETECT = {
+                "chunichi.co.jp", "nikkansports.com", "sponichi.co.jp",
+                "hochi.news", "oricon.co.jp", "natalie.mu", "mantan-web.jp",
+                "smart-flash.jp", "encount.press", "daily.co.jp",
+            }
+            _skip_ig = any(d in gallery_url for d in _SKIP_IG_DETECT)
             try:
                 from gallery_fetch import _extract_instagram_shortcode
                 import requests as _rq
-                r2 = _rq.get(gallery_url, headers=HEADERS, timeout=15)
-                sc = _extract_instagram_shortcode(r2.text)
+                r2 = _rq.get(gallery_url, headers=HEADERS, timeout=15) if not _skip_ig else None
+                sc = _extract_instagram_shortcode(r2.text) if r2 else None
                 if sc:
                     log.append(f'📸 检测到 Instagram embed: instagram.com/p/{sc}/')
                     gallery_url = f'https://www.instagram.com/p/{sc}/'
