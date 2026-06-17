@@ -886,13 +886,13 @@ class XiaohongshuPublisher:
             capture_mode="network_capture",
         )
 
-    def _evaluate(self, expression: str) -> Any:
+    def _evaluate(self, expression: str, timeout_seconds: float | None = None) -> Any:
         """Execute JavaScript in the page and return the result value."""
         result = self._send("Runtime.evaluate", {
             "expression": expression,
             "returnByValue": True,
             "awaitPromise": True,
-        })
+        }, timeout_seconds=timeout_seconds)
         remote_obj = result.get("result", {})
         if remote_obj.get("subtype") == "error":
             raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")

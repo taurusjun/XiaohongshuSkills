@@ -292,7 +292,7 @@ def _select_topics(
                 insertTextAtCaret({space_literal});
                 return {{ ok: true, selected: true }};
             }})()
-        """)
+        """, timeout_seconds=30)
 
         if not (isinstance(result, dict) and result.get("ok")):
             failed_tags.append(tag)
