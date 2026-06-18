@@ -226,8 +226,9 @@ def _select_topics(
         if not normalized_tag:
             continue
 
-        # New line before the first tag to separate from article body
+        # Two newlines before first tag: one empty line + one for the tag line
         if index == 0:
+            _type_char("\n")
             _type_char("\n")
             time.sleep(0.2)
 
