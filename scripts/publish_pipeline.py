@@ -187,13 +187,12 @@ def _select_topics(
     tags: list[str],
     timing_jitter: float = 0.25,
 ):
-    """Type each tag followed by a space to confirm it as an XHS topic tag.
+    """Select XHS topic tags by simulating real keyboard input.
 
-    XHS ProseMirror editor: typing #tag<space> immediately activates the tag
-    (turns it blue).  No need to wait for the suggestion dropdown or press
-    Enter — Space is sufficient.  This removes the 3s suggest_wait entirely
-    and avoids the CDP Runtime.evaluate 30s timeout caused by XHS Vue updates
-    blocking V8 during the previous await-sleep approach.
+    Uses Input.dispatchKeyEvent (keyDown+text per char) so XHS Vue/ProseMirror
+    processes the input natively and converts #tag<space> into a proper tiptap-topic
+    chip with a real XHS topic ID.  execCommand/insertText bypasses XHS event
+    handlers and never creates topic chips.
     """
     if not tags:
         return
@@ -201,50 +200,58 @@ def _select_topics(
     print(f"[pipeline] Step 4.1: Selecting {len(tags)} topic tag(s)...")
     failed_tags = []
 
+    def _type_char(ch: str):
+        """Send a single character via keyDown+keyUp (keyDown carries the text)."""
+        publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+        publisher._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch})
+        time.sleep(0.06)
+
+    def _focus_editor_end():
+        publisher._evaluate("""
+            (function(){
+                var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+                if(!e)return;
+                e.focus();
+                var s=window.getSelection(),r=document.createRange();
+                r.selectNodeContents(e);r.collapse(false);
+                s.removeAllRanges();s.addRange(r);
+            })()
+        """)
+
+    _focus_editor_end()
+    time.sleep(0.2)
+
     for index, tag in enumerate(tags):
         normalized_tag = tag.lstrip("#").strip()
         if not normalized_tag:
             continue
 
-        # First tag: prepend newline to put tags on their own line
-        prefix = "\n" if index == 0 else ""
-        to_insert = json.dumps(prefix + "#" + normalized_tag + " ")
+        # New line before the first tag to separate from article body
+        if index == 0:
+            _type_char("\n")
+            time.sleep(0.2)
 
-        result = publisher._evaluate(f"""
-            (function() {{
-                var editor = document.querySelector(
-                    'div.tiptap.ProseMirror, div.ProseMirror[contenteditable="true"]'
-                );
-                if (!editor) return {{ok: false, reason: 'editor_not_found'}};
-                editor.focus();
-                var sel = window.getSelection();
-                var r = document.createRange();
-                r.selectNodeContents(editor);
-                r.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(r);
-                var ok = false;
-                try {{ ok = document.execCommand('insertText', false, {to_insert}); }} catch(e) {{}}
-                editor.dispatchEvent(new Event('input', {{bubbles: true}}));
-                return {{ok: true, inserted: ok}};
-            }})()
-        """)
+        # Type # + each character of the tag name
+        _type_char("#")
+        time.sleep(0.1)
+        for ch in normalized_tag:
+            _type_char(ch)
 
-        if not (isinstance(result, dict) and result.get("ok")):
-            failed_tags.append(tag)
-            reason = result.get("reason") if isinstance(result, dict) else str(result)
-            print(f"[pipeline] Warning: Failed to insert tag {tag} ({reason}).")
-        else:
-            print(f"[pipeline] Topic selected: {tag}")
+        # Wait for XHS to show the topic suggestion dropdown
+        suggest_wait = _jitter_seconds(1.5, timing_jitter, minimum_seconds=1.0)
+        time.sleep(suggest_wait)
 
-        # Brief pause between tags so XHS Vue can process the input event
+        # Confirm with Space — XHS converts #tag<space> to a tiptap-topic chip
+        _type_char(" ")
         time.sleep(_jitter_seconds(0.4, timing_jitter, minimum_seconds=0.2))
 
+        print(f"[pipeline] Topic selected: {tag}")
+
+        if index < len(tags) - 1:
+            time.sleep(_jitter_seconds(0.3, timing_jitter, minimum_seconds=0.15))
+
     if failed_tags:
-        print(
-            "[pipeline] Warning: Some topic tags were not selected: "
-            + ", ".join(failed_tags)
-        )
+        print("[pipeline] Warning: Some topic tags were not selected: " + ", ".join(failed_tags))
 
 
 def main():
