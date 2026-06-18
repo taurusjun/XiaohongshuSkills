@@ -19,8 +19,8 @@ logging.basicConfig(
 logger = logging.getLogger("fetch_runner")
 
 WEBAPP_URL    = "http://127.0.0.1:5000"
-POLL_INTERVAL = 300    # seconds between status polls
-POLL_TIMEOUT  = 1800  # give up after 30 minutes
+POLL_INTERVAL = 60     # seconds between status polls
+POLL_TIMEOUT  = 7200  # give up after 2 hours (90 articles × ~1min each)
 
 
 def get_keywords() -> list[dict]:

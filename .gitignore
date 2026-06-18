@@ -45,6 +45,9 @@ content.txt
 # Config with sensitive data
 config/accounts.json
 
+# Environment variables (API keys, secrets)
+.env
+
 # Images
 images/publish_temp/*
 !images/publish_temp/.gitkeep
@@ -74,3 +77,4 @@ data/multi_source.db-shm
 data/multi_source.db-wal
 
 data/custom_keywords.json
+xhs-visual-director-skill.bak/

@@ -171,6 +171,16 @@ GET /api/task-status/<task_id>
 
 ---
 
+## ⚠️ 重要操作安全规范
+
+1. **禁止使用 pkill** 终止任何进程。如需重启服务，使用 `kill <PID>`（先确认PID）。
+2. **webapp 使用 debug=True 运行**，代码修改后自动重载，无需杀进程重启。修改 `web/app.py` 后等待 2-3 秒即可生效。
+3. **禁止直接操作 SQLite 文件**（`data/news_dev.db`），只通过 API 或辅助脚本读写。
+4. **禁止任何破坏性操作**（DROP TABLE、DELETE 等）。
+5. 如果 API 不满足需求，请提需求等待扩展，不要自行实现绕过。
+
+---
+
 ## 辅助脚本
 
 工作目录 `~/.hermes/workspace/` 下提供以下脚本，**优先用脚本代替手写 curl**：

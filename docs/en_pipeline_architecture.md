@@ -52,18 +52,34 @@ Cron B ──→ 每30分钟扫DB
               │
               ▼
           LLM英文评审（子agent，用 DeepSeek Pro V4）
-              ├── 语法检查 → 修正明显错误
+               ├── 语法检查 → 修正明显错误
               ├── 成员名核对 → 确保罗马音正确
               ├── 术语保护 → senbatsu等不意译
               └── 流畅度润色
               │
               ▼
+          ★ 双层评审
+              │
+              ├── 【Layer 1: 长文评审 (en_content)】
+              │   ├── 语法 + 术语 + 成员名（同原有）
+              │   ├── 叙事完整性：起承转合有没有
+              │   └── 信息量：比原文多了什么新角度
+              │
+              └── 【Layer 2: 推文评审 (en_tweet)】
+                  ├── ≤280 chars（硬限制，超则截断或重写）
+                  ├── 读者测试：读完这条推文我知道了一件什么事？
+                  ├── 必须包含：结果/名场面 + 钩子
+                  │   ❌ "A和B进行了逆再生舞蹈对决" → 没信息
+                  │   ✅ "A赢了B的逆再生舞蹈对决，因为XXX" → 有信息
+                  └── 建议附链接（如果有英文站URL）
+              │
+              ▼
           输出终版英文
               │
-              ├──→ 发Twitter（xurl CLI / Twitter API）
-              │       │
-              │       └── 回写 en_publish_twitter=1, en_pub_time
-              │
+              ├── en_title + en_content（长文，进入静态站管线）
+              ├── en_tweet（推文版，供手动发布）
+              ├── en_publish_twitter（由你手动或Cron B更新）
+              └──
               └──→ 生成静态站 Markdown 页面
                       │
                       ▼
@@ -84,7 +100,8 @@ Cron B ──→ 每30分钟扫DB
 |------|------|--------|------|
 | `en_title` | TEXT | **Hermes酱**（写稿时同步输出） | 英文标题初稿 |
 | `en_content` | TEXT | **Hermes酱**（写稿时同步输出） | 英文正文初稿 |
-| `en_publish_twitter` | INTEGER | **Cron B**回写 | 0=未发，1=已发 |
+| `en_tweet` | TEXT | **Cron B**评审后输出 | 推文版（≤280 chars） |
+| `en_publish_twitter` | INTEGER | **你**手动或**Cron B**回写 | 0=未发，1=已发 |
 | `en_pub_time` | TEXT | **Cron B**回写 | 实际发布时间（YYYY-MM-DD HH:MM） |
 
 ---
@@ -132,13 +149,19 @@ LLM子agent在评审英文版时，必须遵守以下约束：
 | kouhai / senpai | kouhai / senpai | "junior" / "senior" |
 | ○期生 | ○th generation | OK to translate number |
 | ○○グループ | ○○-group | OK |
+### 4. 评审流程（双层）
 
-### 4. 评审流程
 1. 先读 `content_ja`（日文原文）理解原文语境
 2. 再读 `en_title` + `en_content`（初稿）
-3. 逐条检查语法/名称/术语
-4. 只修正问题，不做无谓的风格重写
-5. 输出终版英文
+3. **Layer 1 — 长文评审**：逐条检查语法/名称/术语 + 叙事完整性 + 信息增量
+4. **Layer 2 — 推文评审**：
+   - 生成一条 ≤280 chars 的推文（en_tweet）
+   - 读者测试：读完这条推文我知道了一件什么事？
+   - 必须包含结果/名场面 + 钩子。❌ 只描述事件过程的不合格
+5. 输出：
+   - `en_title_final` / `en_content_final`（终版长文）
+   - `en_tweet_final`（终版推文）
+   - `reader_test_passed: true|false`——false 则标记需人工复审
 
 ---
 
@@ -146,13 +169,15 @@ LLM子agent在评审英文版时，必须遵守以下约束：
 
 | 组件 | 状态 | 备注 |
 |------|------|------|
-| DB加字段 | 待开发 | ALTER TABLE news ADD COLUMN |
-| Hermes酱写prompt改双输出 | 待开发 | 写稿时多输出 en_title + en_content |
-| Twitter API key | **待申请** | 用户正在申请Twitter Developer账号 |
-| cron job (Cron B) | 待开发 | 每30分钟，用 DeepSeek Pro V4 |
-| 静态站生成+部署 (Cron C) | 待开发 | Astro/Hugo + Cloudflare Pages |
-| update.sh 增加 en 字段支持 | 待开发 | 用于cron job回写状态 |
-| webapp API 增加 en 字段 | 可选的 | 用于你review时查看英文版 |
+| DB加字段 | ✅ 完成 | en_title / en_content / en_tweet / en_publish_twitter / en_pub_time |
+| Web UI详情页 | ✅ 完成 | English卡片（含Title/Content/Tweet编辑框，auto-resize） |
+| sqlite_db.py allowed | ✅ 完成 | 全部en_*字段加入白名单 |
+| update.sh 增加 en 字段 | ✅ 完成 | en_publish_twitter 加入INT_FIELDS |
+| Hermes酱写稿双输出 | ✅ 功能完成 | 写稿时同时输出中文+英文初稿 |
+| 英文评审规则（双层） | 📄 已定义 | 见上方英文评审规则章节 |
+| cron job (Cron B) | 🔲 待创建 | 每30分钟，用 DeepSeek Pro V4，双层评审→写DB |
+| Twitter API | ❌ 无API额度 | @JapanEntRept 认证通过，但New Free tier无发推额度(402)。当前：手动发推 |
+| 静态站生成+部署 (Cron C) | 🔲 下一阶段 | Astro/Hugo + Cloudflare Pages |
 
 ---
 
