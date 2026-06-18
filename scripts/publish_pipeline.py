@@ -202,8 +202,19 @@ def _select_topics(
 
     def _type_char(ch: str):
         """Send a single character via keyDown+keyUp (keyDown carries the text)."""
-        publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
-        publisher._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch})
+        if ch in ("\n", "\r"):
+            # ProseMirror needs a real Enter key event to create a new paragraph
+            publisher._send("Input.dispatchKeyEvent", {
+                "type": "keyDown", "key": "Enter", "code": "Enter",
+                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
+            })
+            publisher._send("Input.dispatchKeyEvent", {
+                "type": "keyUp", "key": "Enter", "code": "Enter",
+                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
+            })
+        else:
+            publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+            publisher._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch})
         time.sleep(0.06)
 
     def _focus_editor_end():
