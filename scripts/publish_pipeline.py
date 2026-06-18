@@ -245,7 +245,7 @@ def _select_topics(
                 {_JS_HELPERS}
                 if (!editor) return {{ok: false, reason: 'editor_not_found'}};
                 moveCaretToEditorEnd(editor);
-                if ({index} === 0) insertTextAtCaret("\\n");
+                if ({index} === 0) insertTextAtCaret("\n");
                 insertTextAtCaret("#");
                 var tagText = {escaped_tag};
                 for (var i = 0; i < tagText.length; i++) {{
