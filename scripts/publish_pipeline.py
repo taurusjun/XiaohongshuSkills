@@ -187,7 +187,14 @@ def _select_topics(
     tags: list[str],
     timing_jitter: float = 0.25,
 ):
-    """Type each tag, wait for suggestions, then confirm with Enter."""
+    """Type each tag followed by a space to confirm it as an XHS topic tag.
+
+    XHS ProseMirror editor: typing #tag<space> immediately activates the tag
+    (turns it blue).  No need to wait for the suggestion dropdown or press
+    Enter — Space is sufficient.  This removes the 3s suggest_wait entirely
+    and avoids the CDP Runtime.evaluate 30s timeout caused by XHS Vue updates
+    blocking V8 during the previous await-sleep approach.
+    """
     if not tags:
         return
 
@@ -199,115 +206,44 @@ def _select_topics(
         if not normalized_tag:
             continue
 
-        hash_pause_ms = _jitter_ms(180, timing_jitter, minimum_ms=90)
-        char_delay_min_ms = _jitter_ms(45, timing_jitter, minimum_ms=25)
-        char_delay_max_ms = _jitter_ms(95, timing_jitter, minimum_ms=char_delay_min_ms)
-        suggest_wait_ms = _jitter_ms(3000, timing_jitter, minimum_ms=1600)
-        after_enter_ms = _jitter_ms(260, timing_jitter, minimum_ms=120)
+        # First tag: prepend newline to put tags on their own line
+        prefix = "\n" if index == 0 else ""
+        to_insert = json.dumps(prefix + "#" + normalized_tag + " ")
 
-        escaped_tag = json.dumps(normalized_tag)
-        newline_literal = json.dumps("\n")
-        hash_literal = json.dumps("#")
-        space_literal = json.dumps(" ")
         result = publisher._evaluate(f"""
-            (async function() {{
+            (function() {{
                 var editor = document.querySelector(
                     'div.tiptap.ProseMirror, div.ProseMirror[contenteditable="true"]'
                 );
-                if (!editor) {{
-                    return {{ ok: false, reason: 'editor_not_found' }};
-                }}
-
-                function sleep(ms) {{
-                    return new Promise(function(resolve) {{ setTimeout(resolve, ms); }});
-                }}
-
-                function moveCaretToEditorEnd(el) {{
-                    el.focus();
-                    var selection = window.getSelection();
-                    if (!selection) return;
-                    var range = document.createRange();
-                    range.selectNodeContents(el);
-                    range.collapse(false);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                }}
-
-                function insertTextAtCaret(text) {{
-                    var inserted = false;
-                    try {{
-                        inserted = document.execCommand('insertText', false, text);
-                    }} catch (e) {{}}
-
-                    if (!inserted) {{
-                        var selection = window.getSelection();
-                        if (selection && selection.rangeCount > 0) {{
-                            var range = selection.getRangeAt(0);
-                            var node = document.createTextNode(text);
-                            range.insertNode(node);
-                            range.setStartAfter(node);
-                            range.collapse(true);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                        }} else {{
-                            editor.appendChild(document.createTextNode(text));
-                        }}
-                    }}
-                    editor.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                }}
-
-                function pressEnter(el) {{
-                    var evt = {{
-                        key: 'Enter',
-                        code: 'Enter',
-                        keyCode: 13,
-                        which: 13,
-                        bubbles: true,
-                        cancelable: true,
-                    }};
-                    el.dispatchEvent(new KeyboardEvent('keydown', evt));
-                    el.dispatchEvent(new KeyboardEvent('keypress', evt));
-                    el.dispatchEvent(new KeyboardEvent('keyup', evt));
-                }}
-
-                moveCaretToEditorEnd(editor);
-                if ({index} === 0) {{
-                    insertTextAtCaret({newline_literal});
-                }}
-                insertTextAtCaret({hash_literal});
-                await sleep({hash_pause_ms});
-
-                var tagText = {escaped_tag};
-                var charDelayMin = {char_delay_min_ms};
-                var charDelayMax = {char_delay_max_ms};
-                for (var i = 0; i < tagText.length; i++) {{
-                    insertTextAtCaret(tagText[i]);
-                    var charDelay = Math.floor(Math.random() * (charDelayMax - charDelayMin + 1)) + charDelayMin;
-                    await sleep(charDelay);
-                }}
-
-                await sleep({suggest_wait_ms});
-                pressEnter(editor);
-                await sleep({after_enter_ms});
-                insertTextAtCaret({space_literal});
-                return {{ ok: true, selected: true }};
+                if (!editor) return {{ok: false, reason: 'editor_not_found'}};
+                editor.focus();
+                var sel = window.getSelection();
+                var r = document.createRange();
+                r.selectNodeContents(editor);
+                r.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(r);
+                var ok = false;
+                try {{ ok = document.execCommand('insertText', false, {to_insert}); }} catch(e) {{}}
+                editor.dispatchEvent(new Event('input', {{bubbles: true}}));
+                return {{ok: true, inserted: ok}};
             }})()
-        """, timeout_seconds=30)
+        """)
 
         if not (isinstance(result, dict) and result.get("ok")):
             failed_tags.append(tag)
-            reason = result.get("reason") if isinstance(result, dict) else "unknown"
-            print(f"[pipeline] Warning: Failed to select topic {tag} ({reason}).")
+            reason = result.get("reason") if isinstance(result, dict) else str(result)
+            print(f"[pipeline] Warning: Failed to insert tag {tag} ({reason}).")
         else:
             print(f"[pipeline] Topic selected: {tag}")
 
-        if index < len(tags) - 1:
-            time.sleep(_jitter_seconds(0.45, timing_jitter, minimum_seconds=0.2))
+        # Brief pause between tags so XHS Vue can process the input event
+        time.sleep(_jitter_seconds(0.4, timing_jitter, minimum_seconds=0.2))
 
     if failed_tags:
         print(
             "[pipeline] Warning: Some topic tags were not selected: "
-            f"{', '.join(failed_tags)}"
+            + ", ".join(failed_tags)
         )
 
 
