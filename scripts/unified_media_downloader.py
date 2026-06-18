@@ -393,44 +393,60 @@ def download_youtube(url_or_id: str, output_dir: Path, *,
 
 INSTAGRAM_JS = r"""
 (function(){
-    var code = '__SHORTCODE__';
+    // Strategy 1: grab rendered <img> and <video> tags (works with new Polaris API)
     var seen = {};
     var results = [];
 
-    function bestImg(obj) {
-        if (!obj.image_versions2) return '';
-        var cands = obj.image_versions2.candidates || [];
-        var best = cands.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, cands[0]||{});
-        return best.url || '';
-    }
-    function bestVid(obj) {
-        if (obj.video_url) return obj.video_url;
-        var vers = obj.video_versions || [];
-        return vers.length ? vers[0].url : '';
-    }
-    function addMedia(obj) {
-        var url = bestVid(obj) || bestImg(obj);
+    function addUrl(url, type) {
         if (!url || seen[url]) return;
-        var idMatch = url.match(/\/(\d{5,})_/);
-        var deduKey = idMatch ? idMatch[1] : url;
-        if (seen[deduKey]) return;
-        seen[deduKey] = 1;
-        results.push({url: url, type: bestVid(obj) ? 'video' : 'img'});
+        // Deduplicate by numeric ID in URL
+        var m = url.match(/\/([0-9]{10,})[_x]/);
+        var key = m ? m[1] : url;
+        if (seen[key]) return;
+        seen[url] = seen[key] = 1;
+        results.push({url: url, type: type});
     }
-    function walk(obj, depth) {
-        if (!obj || typeof obj !== 'object' || depth > 20) return;
-        if (obj.code === code) {
-            addMedia(obj);
-            (obj.carousel_media || []).forEach(addMedia);
-            return;
+
+    // Post images: t51.82787-15 (not -19 which is profile pic)
+    document.querySelectorAll('img').forEach(function(el) {
+        var src = el.src || '';
+        if ((src.includes('cdninstagram') || src.includes('fbcdn')) && src.includes('t51.') && !src.includes('-19/')) {
+            addUrl(src, 'img');
         }
-        if (Array.isArray(obj)) { obj.forEach(function(i){ walk(i, depth+1); }); }
-        else { Object.values(obj).forEach(function(v){ walk(v, depth+1); }); }
-    }
-    document.querySelectorAll('script[type="application/json"]').forEach(function(s){
-        if (s.textContent.indexOf(code) === -1) return;
-        try { walk(JSON.parse(s.textContent), 0); } catch(e){}
     });
+
+    // Videos
+    document.querySelectorAll('video').forEach(function(el) {
+        var src = el.src || el.currentSrc || '';
+        if (src) addUrl(src, 'video');
+    });
+
+    // Strategy 2: fallback JSON walk (old API format)
+    if (results.length === 0) {
+        var code = '__SHORTCODE__';
+        function bestImg(o) {
+            if (!o.image_versions2) return '';
+            var c = o.image_versions2.candidates || [];
+            var b = c.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, c[0]||{});
+            return b.url || '';
+        }
+        function bestVid(o) { return o.video_url || (o.video_versions||[])[0]?.url || ''; }
+        function addMedia(o) {
+            var u = bestVid(o) || bestImg(o);
+            if (u) addUrl(u, bestVid(o) ? 'video' : 'img');
+        }
+        function walk(o, d) {
+            if (!o || typeof o !== 'object' || d > 20) return;
+            if (o.code === code) { addMedia(o); (o.carousel_media||[]).forEach(addMedia); return; }
+            if (Array.isArray(o)) o.forEach(function(i){ walk(i,d+1); });
+            else Object.values(o).forEach(function(v){ walk(v,d+1); });
+        }
+        document.querySelectorAll('script[type="application/json"]').forEach(function(s){
+            if (s.textContent.indexOf(code) === -1) return;
+            try { walk(JSON.parse(s.textContent), 0); } catch(e){}
+        });
+    }
+
     return JSON.stringify(results);
 })()
 """
@@ -464,12 +480,20 @@ def _extract_instagram_media_cdp(gallery_url: str,
         print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
         return []
 
-    page_tab = _get_ig_tab(tabs)
+    # Phase 1: 创建新 tab（避免复用 extension 后台 tab）
+    try:
+        new_tab_resp = requests.put(f"http://{cdp_host}:{cdp_port}/json/new", timeout=5)
+        page_tab = new_tab_resp.json()
+    except Exception as e:
+        print(f"  ⚠️ 无法创建新 tab: {e}")
+        page_tab = _get_ig_tab(tabs)
+
     if not page_tab:
         print("  ⚠️ 找不到可用的 Chrome tab")
         return []
 
-    # Phase 1: 导航
+    _new_tab_id = page_tab.get("id", "")
+
     try:
         ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=15)
         ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
@@ -491,6 +515,9 @@ def _extract_instagram_media_cdp(gallery_url: str,
             pass
     except Exception as e:
         print(f"  ⚠️ CDP 导航失败: {e}")
+        if _new_tab_id:
+            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
+            except: pass
         return []
 
     # Phase 2: 重连 + 提取
@@ -516,6 +543,10 @@ def _extract_instagram_media_cdp(gallery_url: str,
     except Exception as e:
         print(f"  ⚠️ CDP 提取失败: {e}")
         return []
+    finally:
+        if _new_tab_id:
+            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
+            except: pass
 
     return media_items
 
@@ -531,6 +562,11 @@ def _download_instagram_ytdlp(gallery_url: str, output_dir: Path,
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(output_dir / "%(id)s.%(ext)s")
+    try:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY
+    except Exception:
+        _IG_PROXY = "http://127.0.0.1:10090"
+
     cmd = [
         YTDLP_BIN, gallery_url,
         "-o", out_tmpl,
@@ -540,10 +576,12 @@ def _download_instagram_ytdlp(gallery_url: str, output_dir: Path,
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
     ]
+    if _IG_PROXY:
+        cmd += ["--proxy", _IG_PROXY]
     if cookie_file and cookie_file.stat().st_size > 30:
         cmd += ["--cookies", str(cookie_file)]
 
-    print(f"  ▶ yt-dlp 备用下载 Instagram...")
+    print(f"  ▶ yt-dlp 备用下载 Instagram (proxy={_IG_PROXY or 'none'})...")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -582,7 +620,13 @@ def download_instagram(url: str, output_dir: Path, *,
                        use_ytdlp_fallback: bool = True,
                        timeout: int = 300) -> list[str]:
     """下载 Instagram 帖子。返回 ['001.jpg', '002_video.mp4', ...] 或 []。"""
-    # 主方案：CDP
+    # 主方案：代理 Chrome CDP（port 9223）— Instagram 需要代理访问
+    try:
+        from chrome_launcher import ensure_proxy_chrome, CDP_PORT_PROXY
+        if ensure_proxy_chrome():
+            cdp_port = CDP_PORT_PROXY
+    except Exception:
+        pass
     media_items = _extract_instagram_media_cdp(url, cdp_host, cdp_port)
 
     if not media_items:
@@ -604,13 +648,18 @@ def download_instagram(url: str, output_dir: Path, *,
         "Cookie": "; ".join(f"{k}={v}" for k, v in ig_cookies.items()),
         "Referer": "https://www.instagram.com/",
     }
+    try:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY2
+    except Exception:
+        _IG_PROXY2 = "http://127.0.0.1:10090"
+    _ig_proxies = {"http": _IG_PROXY2, "https": _IG_PROXY2} if _IG_PROXY2 else None
 
     saved = []
     img_idx = 1
     for item in media_items:
         murl, mtype = item["url"], item["type"]
         try:
-            resp = requests.get(murl, headers=dl_headers, timeout=30)
+            resp = requests.get(murl, headers=dl_headers, proxies=_ig_proxies, timeout=30)
             resp.raise_for_status()
             fname = (f"{img_idx:03d}_video.mp4" if mtype == "video"
                      else f"{img_idx:03d}.jpg")

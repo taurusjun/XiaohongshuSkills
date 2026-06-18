@@ -23,6 +23,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 CDP_PORT = 9222
+CDP_PORT_PROXY = 9223  # 代理 Chrome，用于 Instagram/Twitter
 PROFILE_DIR_NAME = "XiaohongshuProfile"
 STARTUP_TIMEOUT = 15  # seconds to wait for Chrome to start
 
@@ -117,6 +118,7 @@ def launch_chrome(
     port: int = CDP_PORT,
     headless: bool = False,
     account: Optional[str] = None,
+    proxy: Optional[str] = None,
 ) -> subprocess.Popen | None:
     """
     Launch Chrome with remote debugging enabled.
@@ -151,10 +153,13 @@ def launch_chrome(
     if headless:
         cmd.append("--headless=new")
 
-    # 代理配置（从 yahoo_conf 读取）
+    # 代理配置：proxy 参数优先，其次读 yahoo_conf
     from config.yahoo_conf import USE_PROXY, PROXY_URL
-    if USE_PROXY and PROXY_URL:
-        cmd.append(f"--proxy-server={PROXY_URL}")
+    effective_proxy = proxy  # explicit override
+    if effective_proxy is None:
+        effective_proxy = PROXY_URL if (USE_PROXY and PROXY_URL) else None
+    if effective_proxy:
+        cmd.append(f"--proxy-server={effective_proxy}")
     else:
         cmd.append("--no-proxy-server")  # 绕过 macOS 系统代理（Clash），使用直连
 
@@ -320,6 +325,47 @@ def ensure_chrome(
 def get_current_account() -> Optional[str]:
     """Get the name of the currently active account."""
     return _current_account
+
+
+def ensure_proxy_chrome(proxy_url: Optional[str] = None) -> bool:
+    """确保代理 Chrome 实例在 CDP_PORT_PROXY 上运行。
+    
+    用于需要代理访问的场景（Instagram、Twitter CDN 等）。
+    使用独立的 profile 目录，与主 Chrome (9222) 互不干扰。
+    """
+    if is_port_open(CDP_PORT_PROXY):
+        return True
+    from config.yahoo_conf import PROXY_URL
+    effective_proxy = proxy_url or PROXY_URL or "http://127.0.0.1:10090"
+    profile_dir = os.path.join(
+        os.path.expanduser("~"), "Google", "Chrome", "XiaohongshuProfiles", "proxy"
+    )
+    try:
+        chrome_path = get_chrome_path()
+        cmd = [
+            chrome_path,
+            f"--remote-debugging-port={CDP_PORT_PROXY}",
+            f"--user-data-dir={profile_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--remote-allow-origins=*",
+            f"--proxy-server={effective_proxy}",
+            "--headless=new",
+        ]
+        print(f"[chrome_launcher] Launching proxy Chrome on port {CDP_PORT_PROXY} "
+              f"(proxy={effective_proxy})...")
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import time as _t
+        deadline = _t.time() + STARTUP_TIMEOUT
+        while _t.time() < deadline:
+            if is_port_open(CDP_PORT_PROXY):
+                print(f"[chrome_launcher] Proxy Chrome ready on port {CDP_PORT_PROXY}.")
+                return True
+            _t.sleep(0.5)
+        return False
+    except Exception as e:
+        print(f"[chrome_launcher] Failed to start proxy Chrome: {e}", file=__import__('sys').stderr)
+        return False
 
 
 if __name__ == "__main__":
