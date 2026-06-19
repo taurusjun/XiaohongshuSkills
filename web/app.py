@@ -1774,7 +1774,7 @@ function renderWechatItems(items){
     var sub=esc(n.title||'');
     var date=(n.updated_at||n.created_at||'').slice(0,10);
     var imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
-    var thumb=imgSrc?('<img class="wx-thumb" src="'+imgSrc+'" onerror="this.outerHTML='<div class=wx-thumb-empty>📰</div>'">'):'<div class="wx-thumb-empty">📰</div>';
+    var thumb=imgSrc?('<img class="wx-thumb" src="'+imgSrc+'" onerror="this.className=\'wx-thumb-empty\';this.removeAttribute(\'src\')">'):('<div class="wx-thumb-empty">\uD83D\uDCF0</div>');
     var badgeCls='wx-b-gray', stLabel='未配置';
     if(n.wechat_pub_time){badgeCls='wx-b-green';stLabel='已发布';}
     else if(n.wechat_draft_id){badgeCls='wx-b-yellow';stLabel='草稿';}
