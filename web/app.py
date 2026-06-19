@@ -1043,74 +1043,70 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 </div><!-- /newsView -->
 
 <!-- WeChat view -->
-<div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
 <style>
-.wd-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
-.wd-topbar2{display:flex;align-items:center;gap:12px;padding:14px 20px 8px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--card-bg)}
-.wd-topbar2 h2{font-size:14px;font-weight:700;color:var(--text)}
-.wd-search2{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 11px;margin-left:auto;width:200px}
-.wd-search2 input{border:none;background:none;font-size:12px;color:var(--text);outline:none;width:100%}
-.wd-stats2{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px 20px 4px;flex-shrink:0}
-.wd-stat2{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
-.wd-stat2-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
-.wd-stat2-num{font-size:20px;font-weight:700;line-height:1;color:var(--text)}
-.wd-stat2-lbl{font-size:11px;color:var(--text2);margin-top:2px}
-.wd-table-wrap2{flex:1;overflow:hidden;padding:10px 20px 16px;display:flex;flex-direction:column}
-.wd-table-card2{flex:1;background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-.wd-table-hdr2{padding:9px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:#fafafa}
-.wd-table-hdr2 th{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em}
-.wd-scroll2{flex:1;overflow-y:auto}
-.wd-tbl{width:100%;border-collapse:collapse}
-.wd-tbl thead th{position:sticky;top:0;z-index:1;background:#fafafa;border-bottom:1px solid var(--border);padding:8px 14px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
-.wd-tbl tbody tr{border-bottom:1px solid #f3f4f6;transition:background .08s}
-.wd-tbl tbody tr:last-child{border-bottom:none}
-.wd-tbl tbody tr:hover{background:#f9fafb}
-.wd-tbl td{padding:9px 14px;vertical-align:middle}
-.wd-title-main2{font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:380px;display:block;text-decoration:none;cursor:pointer}
-.wd-title-main2:hover{color:var(--blue)}
-.wd-title-sub2{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px;display:block;margin-top:1px}
-.wd-badge2{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap}
-.wd-b-green{background:#f0fdf4;color:#15803d}
-.wd-b-yellow{background:#fffbeb;color:#92400e}
-.wd-b-blue{background:#eff6ff;color:#2563eb}
-.wd-b-gray{background:#f3f4f6;color:#6b7280}
-.wd-edit2{height:24px;padding:0 10px;border:1px solid var(--border);border-radius:5px;background:var(--card-bg);cursor:pointer;font-size:11px;color:var(--text2);font-family:var(--font);transition:all .12s;text-decoration:none;display:inline-flex;align-items:center}
-.wd-edit2:hover{border-color:var(--blue);color:var(--blue)}
-.wd-empty2{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 0;color:var(--text3);gap:8px;font-size:12px}
+#wechatView{display:flex;flex-direction:column;height:100%;overflow:hidden;font-family:"Inter",-apple-system,"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+#wechatView *{box-sizing:border-box;margin:0;padding:0}
+#wechatView{
+  --wdb:#0f0f10;--wdb2:#16161a;--wdb3:#1c1c20;
+  --wdhv:rgba(255,255,255,.04);--wdbr:rgba(255,255,255,.06);--wdbr2:rgba(255,255,255,.10);
+  --wdt:#e8e8e8;--wdt2:#8a8a8a;--wdt3:#525252;
+  --wdac:#07c160;--wdbl:#5e6ad2;--wdrd:#e5484d;--wdyw:#ffc53d;
+  --wdrad:6px;
+}
+.wd-topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0;color:var(--wdt)}
+.wd-topbar-title{font-size:13px;font-weight:600;color:var(--wdt);letter-spacing:-.01em}
+.wd-search{display:flex;align-items:center;gap:6px;background:var(--wdb3);border:1px solid var(--wdbr);border-radius:var(--wdrad);padding:0 10px;height:30px;width:200px;transition:border-color .15s}
+.wd-search:focus-within{border-color:var(--wdbr2)}
+.wd-search input{border:none;background:transparent;color:var(--wdt);font-size:12px;font-family:inherit;outline:none;width:100%}
+.wd-search input::placeholder{color:var(--wdt3)}
+.wd-stats{display:flex;align-items:center;gap:0;padding:0 20px;height:40px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0}
+.wd-stat{display:flex;align-items:baseline;gap:5px;padding-right:16px;margin-right:16px;border-right:1px solid var(--wdbr)}
+.wd-stat:last-child{border-right:none}
+.wd-stat-num{font-size:18px;font-weight:700;color:var(--wdt);line-height:1;font-variant-numeric:tabular-nums}
+.wd-stat-lbl{font-size:11px;color:var(--wdt2)}
+.wd-colhdr{display:flex;align-items:center;gap:12px;padding:0 20px;height:32px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0}
+.wd-ch{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--wdt3)}
+.wd-list{flex:1;overflow-y:auto;background:var(--wdb)}
+.wd-list::-webkit-scrollbar{width:4px}
+.wd-list::-webkit-scrollbar-thumb{background:var(--wdbr2);border-radius:2px}
+.wd-row{display:flex;align-items:center;gap:12px;padding:0 20px;height:44px;border-bottom:1px solid var(--wdbr);cursor:pointer;text-decoration:none;color:inherit;position:relative}
+.wd-row:hover{background:var(--wdhv)}
+.wd-row:hover .wd-row-act{opacity:1}
+.wd-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.wd-dg{background:var(--wdac)}.wd-dy{background:var(--wdyw)}.wd-db{background:var(--wdbl)}.wd-dm{background:var(--wdt3)}
+.wd-row-title{flex:1;min-width:0;font-size:13px;color:var(--wdt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wd-row-st{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--wdt2);width:72px;flex-shrink:0}
+.wd-row-dt{font-size:11px;color:var(--wdt3);width:80px;text-align:right;flex-shrink:0}
+.wd-row-act{opacity:0;flex-shrink:0;transition:opacity .1s}
+.wd-ibtn{width:26px;height:26px;border-radius:var(--wdrad);border:1px solid var(--wdbr2);background:var(--wdb3);color:var(--wdt2);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.wd-ibtn:hover{color:var(--wdt)}
+.wd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 20px;color:var(--wdt3);font-size:13px}
 </style>
-<div class="wd-wrap">
-  <div class="wd-topbar2">
-    <h2>公众号</h2>
-    <div class="wd-search2">
-      <span style="color:var(--text3);font-size:12px">🔍</span>
-      <input id="wdSearch" placeholder="搜索标题…" oninput="filterWechatItems(this.value)">
+<div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column;background:#0f0f10">
+  <div class="wd-topbar">
+    <span class="wd-topbar-title">公众号</span>
+    <span style="flex:1"></span>
+    <div class="wd-search">
+      <span style="font-size:11px;color:var(--wdt3)">⌕</span>
+      <input id="wdSearch" placeholder="搜索标题..." oninput="filterWechatItems(this.value)">
     </div>
   </div>
-  <div class="wd-stats2">
-    <div class="wd-stat2"><div class="wd-stat2-icon" style="background:#eff6ff">📄</div><div><div class="wd-stat2-num" id="wdTotal">—</div><div class="wd-stat2-lbl">总文章</div></div></div>
-    <div class="wd-stat2"><div class="wd-stat2-icon" style="background:#f3f4f6">📝</div><div><div class="wd-stat2-num" id="wdDraft">—</div><div class="wd-stat2-lbl">草稿箱</div></div></div>
-    <div class="wd-stat2"><div class="wd-stat2-icon" style="background:#fffbeb">⏳</div><div><div class="wd-stat2-num" id="wdPending">—</div><div class="wd-stat2-lbl">待发布</div></div></div>
-    <div class="wd-stat2"><div class="wd-stat2-icon" style="background:#f0fdf4">✅</div><div><div class="wd-stat2-num" id="wdPublished">—</div><div class="wd-stat2-lbl">已发布</div></div></div>
+  <div class="wd-stats">
+    <div class="wd-stat"><span class="wd-stat-num" id="wdTotal">—</span><span class="wd-stat-lbl">总数</span></div>
+    <div class="wd-stat"><span class="wd-stat-num" id="wdDraft">—</span><span class="wd-stat-lbl">草稿箱</span></div>
+    <div class="wd-stat"><span class="wd-stat-num" id="wdPending">—</span><span class="wd-stat-lbl">待发布</span></div>
+    <div class="wd-stat"><span class="wd-stat-num" id="wdPublished">—</span><span class="wd-stat-lbl">已发布</span></div>
   </div>
-  <div class="wd-table-wrap2">
-    <div class="wd-table-card2">
-      <div class="wd-scroll2">
-        <table class="wd-tbl">
-          <thead><tr>
-            <th style="width:45%">标题</th>
-            <th style="width:11%">状态</th>
-            <th style="width:13%">草稿 ID</th>
-            <th style="width:14%">更新时间</th>
-            <th style="width:10%">操作</th>
-          </tr></thead>
-          <tbody id="wdBody">
-            <tr><td colspan="5"><div class="wd-empty2">加载中…</div></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+  <div class="wd-colhdr">
+    <div style="width:8px"></div>
+    <div class="wd-ch" style="flex:1">标题</div>
+    <div class="wd-ch" style="width:72px">状态</div>
+    <div class="wd-ch" style="width:80px;text-align:right">日期</div>
+    <div style="width:26px"></div>
   </div>
-</div>
+  <div class="wd-list" id="wdBody">
+    <div class="wd-empty"><span style="font-size:24px">⏳</span>加载中...</div>
+  </div>
 </div>
 
 </div><!-- /main -->
@@ -1729,61 +1725,56 @@ function closeWechatPanel(){
 }
 let _wdAllItems=[];
 function loadWechatList(){
+  var body=document.getElementById('wdBody');
+  body.innerHTML='<div class="wd-empty"><span style="font-size:24px">⏳</span>加载中...</div>';
   fetch('/api/wechat-list').then(function(r){return r.json();}).then(function(d){
-    var items = d.items || [];
-    var total=items.length, draft=0, pending=0, published=0;
-    for(var i=0;i<items.length;i++){
-      var it=items[i];
-      if(it.wechat_pub_time) published++;
-      else if(it.wechat_draft_id) draft++;
-      else if(it.wechat_publish) pending++;
-    }
+    window._wdAllItems=d.items||[];
+    var total=window._wdAllItems.length, draft=0, pending=0, published=0;
+    window._wdAllItems.forEach(function(n){
+      if(n.wechat_pub_time) published++;
+      else if(n.wechat_draft_id) draft++;
+      else if(n.wechat_publish) pending++;
+    });
     function setEl(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
-    setEl('wdTotal',total); setEl('wdDraft',draft); setEl('wdPending',pending); setEl('wdPublished',published);
+    setEl('wdTotal',total);setEl('wdDraft',draft);setEl('wdPending',pending);setEl('wdPublished',published);
     var badge=document.getElementById('wechatBadge');
     if(badge&&total){badge.textContent=total;badge.style.display='';}
-    window._wdAllItems = items;
-    renderWechatItems(items);
+    renderWechatItems(window._wdAllItems);
   }).catch(function(){
-    document.getElementById('wdBody').innerHTML='<tr><td colspan="5"><div class="wd-empty2">加载失败</div></td></tr>';
+    document.getElementById('wdBody').innerHTML='<div class="wd-empty">加载失败</div>';
   });
 }
 function filterWechatItems(q){
   var items=window._wdAllItems||[];
-  if(!q){renderWechatItems(items);return;}
-  q=q.toLowerCase();
-  renderWechatItems(items.filter(function(i){
-    return (i.wechat_title||'').toLowerCase().indexOf(q)>=0 || (i.title||'').toLowerCase().indexOf(q)>=0;
+  if(!q||!q.trim()){renderWechatItems(items);return;}
+  var kw=q.trim().toLowerCase();
+  renderWechatItems(items.filter(function(n){
+    return ((n.wechat_title||'')+(n.title||'')).toLowerCase().indexOf(kw)>=0;
   }));
 }
 function renderWechatItems(items){
-  var tbody=document.getElementById('wdBody');
+  var body=document.getElementById('wdBody');
   if(!items||!items.length){
-    tbody.innerHTML='<tr><td colspan="5"><div class="wd-empty2"><span style="font-size:28px;margin-bottom:6px">📭</span><span>暂无公众号文章</span></div></td></tr>';
-    return;
+    body.innerHTML='<div class="wd-empty"><span style="font-size:24px">📭</span>暂无公众号文章</div>';return;
   }
   var html='';
-  for(var i=0;i<items.length;i++){
-    var it=items[i];
-    var title=esc(it.wechat_title||it.title||it.key.slice(0,16));
-    var sub=it.title&&it.wechat_title&&it.title!==it.wechat_title?esc(it.title):'';
-    var date=(it.updated_at||it.created_at||'').slice(0,10);
-    var draftId=it.wechat_draft_id?it.wechat_draft_id.slice(0,12)+'...':'—';
-    var st='<span class="wd-badge2 wd-b-gray">未配置</span>';
-    if(it.wechat_pub_time) st='<span class="wd-badge2 wd-b-green">✅ 已发布</span>';
-    else if(it.wechat_draft_id) st='<span class="wd-badge2 wd-b-yellow">📝 草稿</span>';
-    else if(it.wechat_publish) st='<span class="wd-badge2 wd-b-blue">⏳ 待发</span>';
-    html+='<tr>';
-    html+='<td><a class="wd-title-main2" href="/wechat/'+it.key+'">'+title+'</a>';
-    if(sub) html+='<span class="wd-title-sub2">'+sub+'</span>';
-    html+='</td>';
-    html+='<td>'+st+'</td>';
-    html+='<td style="font-size:10.5px;color:var(--text3);font-family:monospace">'+draftId+'</td>';
-    html+='<td style="font-size:11px;color:var(--text2)">'+date+'</td>';
-    html+='<td><a class="wd-edit2" href="/wechat/'+it.key+'">编辑</a></td>';
-    html+='</tr>';
-  }
-  tbody.innerHTML=html;
+  items.forEach(function(n){
+    var title=esc(n.wechat_title||n.title||'(无标题)');
+    var date=(n.updated_at||n.created_at||'').slice(0,10);
+    var dotCls='wd-dm', stLabel='未配置';
+    if(n.wechat_pub_time){dotCls='wd-dg';stLabel='已发布';}
+    else if(n.wechat_draft_id){dotCls='wd-dy';stLabel='草稿';}
+    else if(n.wechat_publish){dotCls='wd-db';stLabel='待发布';}
+    var url='/wechat/'+n.key;
+    html+='<a class="wd-row" href="'+url+'">';
+    html+='<span class="wd-dot '+dotCls+'"></span>';
+    html+='<span class="wd-row-title" title="'+title+'">'+title+'</span>';
+    html+='<span class="wd-row-st"><span class="wd-dot '+dotCls+'" style="width:6px;height:6px"></span>'+stLabel+'</span>';
+    html+='<span class="wd-row-dt">'+date+'</span>';
+    html+='<span class="wd-row-act"><a class="wd-ibtn" href="'+url+'" onclick="event.stopPropagation()" title="编辑">✎</a></span>';
+    html+='</a>';
+  });
+  body.innerHTML=html;
 }
 </script>
 </body></html>"""
@@ -3260,579 +3251,326 @@ def api_collect_metrics_batch():
 WECHAT_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>公众号编辑 — {{news.wechat_title or news.title or ''}}</title>
+<title>{{news.wechat_title or news.title}} — 公众号</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#f4f4f8;--card-bg:#fff;--text:#1a1a2e;--text2:#6b7280;--text3:#9ca3af;
-  --border:#e5e7eb;--red:#ef4444;--orange:#f59e0b;--green:#10b981;--blue:#3b82f6;
-  --wx:#07c160;--shadow:0 1px 4px rgba(0,0,0,.07);--radius:10px;
-  --font:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif
+  --bg:#0f0f10;--bg2:#16161a;--bg3:#1c1c20;
+  --hv:rgba(255,255,255,.04);--br:rgba(255,255,255,.06);--br2:rgba(255,255,255,.10);
+  --t:#e8e8e8;--t2:#8a8a8a;--t3:#525252;
+  --ac:#07c160;--bl:#5e6ad2;--rd:#e5484d;--yw:#ffc53d;
+  --r:6px;--f:"Inter",-apple-system,"PingFang SC",sans-serif;
 }
-body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+html,body{height:100%;overflow:hidden}
+body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
 
-/* Topbar */
-.topbar{background:var(--card-bg);border-bottom:1px solid var(--border);padding:0 18px;height:50px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-.topbar-back{color:var(--text2);text-decoration:none;font-size:12px;font-weight:500;display:flex;align-items:center;gap:3px;padding:4px 8px;border-radius:6px;transition:all .12s;flex-shrink:0}
-.topbar-back:hover{background:var(--bg);color:var(--text)}
-.topbar-sep{width:1px;height:16px;background:var(--border);flex-shrink:0}
-.topbar-crumb{font-size:11.5px;color:var(--text3);flex-shrink:0}
-.topbar-doc{font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.topbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
-.save-ind{font-size:11px;color:var(--text3);padding:0 4px}
-.save-ind.saving{color:var(--orange)}.save-ind.saved{color:var(--green)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border:1px solid transparent;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;transition:all .12s;font-family:var(--font)}
+/* topbar */
+.tb{height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--bg2);border-bottom:1px solid var(--br);flex-shrink:0;z-index:100}
+.tb-back{display:flex;align-items:center;gap:5px;color:var(--t2);text-decoration:none;font-size:12px;padding:0 8px;height:28px;border-radius:var(--r);border:1px solid var(--br);cursor:pointer;white-space:nowrap;flex-shrink:0;background:transparent;font-family:var(--f)}
+.tb-back:hover{border-color:var(--br2);color:var(--t)}
+.tb-sep{width:1px;height:16px;background:var(--br);flex-shrink:0}
+.tb-crumb{font-size:11px;color:var(--t3);white-space:nowrap;flex-shrink:0}
+.tb-crumb a{color:var(--t3);text-decoration:none}.tb-crumb a:hover{color:var(--t2)}
+.tb-doc{flex:1;min-width:0;font-size:13px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-saved{font-size:11px;color:var(--t3);white-space:nowrap;flex-shrink:0}
+.tb-saved.saving{color:var(--yw)}.tb-saved.saved{color:var(--ac)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 12px;border-radius:var(--r);font-size:12px;font-weight:500;font-family:var(--f);cursor:pointer;white-space:nowrap;flex-shrink:0;text-decoration:none;border:1px solid transparent;transition:opacity .12s,border-color .12s}
 .btn:disabled{opacity:.35;pointer-events:none}
-.btn-blue{background:var(--blue);color:#fff}.btn-wx{background:var(--wx);color:#fff}
-.btn-gray{background:#f3f4f6;color:var(--text2);border-color:var(--border)}
-.btn-outline{background:var(--card-bg);border-color:var(--border);color:var(--text2)}
-.btn-outline:hover{border-color:var(--text3);color:var(--text)}
-.btn-sm{height:26px;padding:0 10px;font-size:11px;border-radius:6px}
-.btn-xs{height:22px;padding:0 8px;font-size:10px;border-radius:5px}
+.btn-ghost{background:transparent;border-color:var(--br);color:var(--t2)}.btn-ghost:hover{border-color:var(--br2);color:var(--t)}
+.btn-fill{background:var(--ac);color:#fff}.btn-fill:hover{opacity:.88}
+.btn-sm{height:26px;padding:0 10px;font-size:11px}
 
-/* Layout */
-.wx-layout{flex:1;display:flex;overflow:hidden}
+/* layout */
+.layout{flex:1;display:flex;overflow:hidden}
 
-/* Left panel */
-.wx-left{width:272px;min-width:272px;overflow-y:auto;border-right:1px solid var(--border);background:var(--card-bg);display:flex;flex-direction:column}
-.lp-sec{padding:14px 16px;border-bottom:1px solid var(--border)}
-.lp-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+/* sidebar */
+.sb{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--br);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+.sb::-webkit-scrollbar{width:4px}.sb::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px}
+.sb-sec{padding:14px 16px;border-bottom:1px solid var(--br)}
+.sb-lbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
+.sb-link{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border-radius:var(--r);font-size:11px;color:var(--t2);text-decoration:none;border:1px solid var(--br);background:transparent;transition:border-color .12s,color .12s;cursor:pointer}
+.sb-link:hover{border-color:var(--br2);color:var(--t)}
+.sb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sb-dg{background:var(--ac)}.sb-dy{background:var(--yw)}.sb-db{background:var(--bl)}.sb-dm{background:var(--t3)}
+.sb-sel{background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);color:var(--t);font-size:11px;font-family:var(--f);padding:5px 9px;outline:none;cursor:pointer;width:100%;margin-top:8px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%23525252' d='M5 6L0 0h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:24px}
+.sb-sel:focus{border-color:var(--br2)}
+.sb-cover{aspect-ratio:3/2;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);overflow:hidden;position:relative;cursor:pointer}
+.sb-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.sb-cover-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;height:100%;color:var(--t3);font-size:11px}
+.sb-cover-ov{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;opacity:0;transition:opacity .15s}
+.sb-cover:hover .sb-cover-ov{opacity:1}
+.sb-themes{display:flex;flex-direction:column;gap:2px}
+.sb-theme{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r);cursor:pointer;position:relative;transition:background .1s}
+.sb-theme:hover{background:var(--hv)}
+.sb-theme.on{background:var(--bg3)}
+.sb-theme.on::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;background:var(--ac);border-radius:0 2px 2px 0}
+.sb-theme-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sb-theme-name{font-size:12px;color:var(--t2)}.sb-theme.on .sb-theme-name{color:var(--t)}
+.sb-theme-desc{font-size:10px;color:var(--t3);margin-left:auto}
+.sb-imgs{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:200px;overflow-y:auto}
+.sb-img{aspect-ratio:1;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);overflow:hidden;position:relative;cursor:pointer}
+.sb-img img{width:100%;height:100%;object-fit:cover;display:block}
+.sb-img-ov{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;opacity:0;transition:opacity .12s}
+.sb-img:hover .sb-img-ov{opacity:1}
+.sb-bottom{margin-top:auto;padding:14px 16px 20px;border-top:1px solid var(--br);display:flex;flex-direction:column;gap:8px}
+.sb-meta{font-size:10px;color:var(--t3);line-height:1.5}
 
-/* Status */
-.st-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;margin-bottom:8px}
-.st-green{background:#f0fdf4;color:#15803d}.st-yellow{background:#fffbeb;color:#92400e}
-.st-blue{background:#eff6ff;color:#2563eb}.st-gray{background:#f3f4f6;color:#6b7280}
-select.lp-sel{width:100%;padding:5px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--card-bg);color:var(--text);font-family:var(--font);outline:none;cursor:pointer}
-select.lp-sel:focus{border-color:var(--blue)}
+/* editor */
+.ed-area{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fafafa}
+.ed-scroll{flex:1;overflow-y:auto;padding:40px 48px 80px}
+.ed-scroll::-webkit-scrollbar{width:6px}.ed-scroll::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
+.ed-title-wrap{display:flex;align-items:flex-start;gap:12px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid #e8e8e8}
+.ed-title{flex:1;border:none;background:transparent;color:#111;font-size:24px;font-weight:700;font-family:var(--f);line-height:1.35;outline:none;resize:none;overflow:hidden}
+.ed-title::placeholder{color:#ccc}
+.ed-cnt{font-size:11px;color:#bbb;padding-top:8px;flex-shrink:0;white-space:nowrap}
+.ed-cnt.w{color:#f76b15}
+#wxEditorjs{min-height:360px;font-family:var(--f);color:#1a1a1a}
+#wxEditorjs .ce-block__content{max-width:none}
+#wxEditorjs .codex-editor__redactor{padding-bottom:40px!important}
 
-/* Cover */
-.cover-box{border-radius:8px;overflow:hidden;background:#f3f4f6;aspect-ratio:4/3;cursor:pointer;border:2px dashed var(--border);transition:border-color .15s;position:relative}
-.cover-box:hover{border-color:var(--blue)}
-.cover-box img{width:100%;height:100%;object-fit:cover;display:block}
-.cover-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:11px;gap:6px}
-.cover-overlay{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;font-size:11.5px;color:#fff;font-weight:600;gap:4px}
-.cover-box:hover .cover-overlay{opacity:1}
-
-/* Theme */
-.theme-grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.th-opt{padding:8px 10px;border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px}
-.th-opt:hover{border-color:var(--text3)}
-.th-opt.active{border-color:var(--blue);background:#eff6ff}
-.th-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.th-name{font-size:11.5px;font-weight:600}
-
-/* Image grid */
-.img-grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px;max-height:220px;overflow-y:auto}
-.img-item2{position:relative;border-radius:6px;overflow:hidden;aspect-ratio:1;cursor:pointer;border:2px solid transparent;transition:all .15s;background:#f3f4f6}
-.img-item2:hover{border-color:var(--blue)}
-.img-item2 img{width:100%;height:100%;object-fit:cover;display:block}
-.img-ins{position:absolute;inset:0;background:rgba(59,130,246,.75);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;font-size:11px;color:#fff;font-weight:600}
-.img-item2:hover .img-ins{opacity:1}
-.img-src-tag{position:absolute;top:3px;left:3px;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:700;background:rgba(0,0,0,.55);color:#fff}
-
-/* Publish action */
-.pub-box{padding:14px 16px;border-top:1px solid var(--border);margin-top:auto}
-.pub-hint2{font-size:11px;color:var(--text3);margin-top:7px;line-height:1.5}
-.pub-hint2.warn{color:var(--orange)}
-
-/* Right panel */
-.wx-right{flex:1;overflow-y:auto;min-width:0}
-.editor-wrap{max-width:740px;width:100%;margin:0 auto;padding:18px 22px 32px;display:flex;flex-direction:column;gap:14px}
-
-/* Title card */
-.title-card2{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);padding:18px 20px}
-.title-inp{width:100%;border:none;background:transparent;font-size:21px;font-weight:700;color:var(--text);font-family:var(--font);outline:none;line-height:1.3;resize:none;overflow:hidden}
-.title-inp::placeholder{color:var(--text3);font-weight:400}
-.title-meta2{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
-.title-cnt{font-size:11px;color:var(--text3)}.title-cnt.warn{color:var(--orange)}.title-cnt.err{color:var(--red)}
-
-/* Editor card */
-.editor-card2{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
-.editor-card2-hdr{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#fafafa}
-.editor-card2-title{font-size:11.5px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px}
-.editor-card2-body{padding:8px 4px 20px}
-#wechat-editorjs{min-height:360px}
-#wechat-editorjs .ce-block__content{max-width:none;padding:0 14px}
-
-/* Toast */
-.toast2{position:fixed;top:16px;right:16px;padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:500;color:#fff;z-index:9999;display:none;box-shadow:0 4px 14px rgba(0,0,0,.18)}
-.toast2.ok{background:var(--green)}.toast2.err{background:var(--red)}.toast2.info{background:var(--blue)}.toast2.warn{background:var(--orange)}
-
-/* Gallery modal */
-.gmodal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
-.gmodal.active{display:flex}
-.gmodal-card{background:var(--card-bg);border-radius:14px;max-width:620px;width:92%;max-height:78vh;overflow-y:auto;padding:20px;box-shadow:0 16px 48px rgba(0,0,0,.18)}
-.gmodal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.gmodal-hdr h3{font-size:15px;font-weight:700}
-.gmodal-close{background:none;border:none;font-size:17px;cursor:pointer;color:var(--text3);padding:2px 7px;border-radius:4px}
-.gmodal-close:hover{color:var(--text);background:var(--bg)}
-.gallery-grid2{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.gallery-item2{position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;cursor:pointer;border:2px solid transparent;transition:all .15s}
-.gallery-item2:hover,.gallery-item2.sel{border-color:var(--blue)}
-.gallery-item2 img{width:100%;height:100%;object-fit:cover;display:block}
-.gallery-item2 .sel-mk{display:none;position:absolute;inset:0;background:rgba(59,130,246,.25);align-items:center;justify-content:center;font-size:18px;color:var(--blue)}
-.gallery-item2.sel .sel-mk{display:flex}
+/* toast */
+.wx-toast{position:fixed;bottom:24px;right:24px;background:#1c1c20;border:1px solid var(--br2);color:var(--t);padding:10px 16px;border-radius:var(--r);font-size:12px;font-weight:500;z-index:9999;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+.wx-toast.show{opacity:1;transform:none}
+.wx-toast.ok{border-left:3px solid var(--ac)}.wx-toast.err{border-left:3px solid var(--rd)}
 </style>
 </head>
 <body>
-
-<div class="toast2" id="toast2"></div>
-
-<!-- Topbar -->
-<div class="topbar">
-  <a class="topbar-back" href="/">← 返回</a>
-  <div class="topbar-sep"></div>
-  <span class="topbar-crumb">公众号 /</span>
-  <div class="topbar-doc">{{(news.wechat_title or news.title or '')[:60]}}</div>
-  <div class="topbar-actions">
-    <span class="save-ind" id="saveInd">—</span>
-    <button class="btn btn-outline btn-sm" onclick="previewWechat()">👁 预览</button>
-    <button class="btn btn-gray btn-sm" onclick="saveWechat(false)">💾 保存</button>
-    <button class="btn btn-wx btn-sm" id="pushBtn" onclick="pushDraft()" {{'' if news.wechat_publish else 'disabled'}}>📤 推送草稿</button>
-  </div>
+<div class="wx-toast" id="wxToast"></div>
+<div class="tb">
+  <a class="tb-back" href="javascript:history.back()">← 返回</a>
+  <div class="tb-sep"></div>
+  <span class="tb-crumb"><a href="/">文章列表</a> / <a href="/detail/{{news.key}}">详情</a> / 公众号</span>
+  <div class="tb-sep"></div>
+  <div class="tb-doc" id="tbDoc">{{news.wechat_title or news.title or '(无标题)'}}</div>
+  <span class="tb-saved" id="tbSaved">已保存</span>
+  <button class="btn btn-ghost btn-sm" onclick="doPreview()">预览</button>
+  <button class="btn btn-ghost btn-sm" onclick="doSave()">保存</button>
+  <button class="btn btn-fill btn-sm" id="btnPush" onclick="doPush()">推送草稿</button>
 </div>
-
-<!-- Layout -->
-<div class="wx-layout">
-
-  <!-- Left -->
-  <div class="wx-left">
-
-    <!-- Links -->
-    <div class="lp-sec" style="display:flex;gap:8px;flex-wrap:wrap">
-      <a href="/detail/{{news.key}}" target="_blank" class="btn btn-outline btn-sm" style="flex:1;justify-content:center;text-decoration:none">📄 文章详情</a>
-      {% if news.link %}<a href="{{news.link}}" target="_blank" class="btn btn-outline btn-sm" style="flex:1;justify-content:center;text-decoration:none">🔗 日文原文</a>{% endif %}
-    </div>
-
-    <!-- Status -->
-    <div class="lp-sec">
-      <div class="lp-lbl">发布状态</div>
-      <div id="stBadge">
-        {% if news.wechat_pub_time %}<span class="st-badge st-green">✅ 已发布</span>
-        {% elif news.wechat_draft_id %}<span class="st-badge st-yellow">📝 草稿箱</span>
-        {% elif news.wechat_publish %}<span class="st-badge st-blue">⏳ 待发布</span>
-        {% else %}<span class="st-badge st-gray">— 未配置</span>{% endif %}
+<div class="layout">
+  <div class="sb">
+    <div class="sb-sec"><div class="sb-lbl">链接</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a class="sb-link" href="/detail/{{news.key}}" target="_blank">📄 文章详情</a>
+        {% if news.link %}<a class="sb-link" href="{{news.link}}" target="_blank">🔗 日文原文</a>{% endif %}
       </div>
-      <select class="lp-sel" id="publishSel" onchange="onPublishChange(+this.value)">
+    </div>
+    <div class="sb-sec"><div class="sb-lbl">发布状态</div>
+      <div style="display:flex;align-items:center;gap:8px" id="sbStRow">
+        <span class="sb-dot" id="sbStDot"></span>
+        <span style="font-size:12px;color:var(--t2)" id="sbStTxt">—</span>
+      </div>
+      <select class="sb-sel" id="sbStSel" onchange="onStChange(this.value)">
         <option value="0" {{'selected' if not news.wechat_publish else ''}}>不发布</option>
         <option value="1" {{'selected' if news.wechat_publish else ''}}>标记待发布</option>
       </select>
-      {% if news.wechat_pub_time %}
-      <div style="font-size:11px;color:var(--text3);margin-top:5px">发布: {{news.wechat_pub_time[:16]}}</div>
-      {% endif %}
-      {% if news.wechat_draft_id %}
-      <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:monospace;word-break:break-all;line-height:1.4">ID: {{news.wechat_draft_id[:24]}}…</div>
-      {% endif %}
+      {% if news.wechat_pub_time %}<div style="font-size:10px;color:var(--t3);margin-top:6px">发布: {{news.wechat_pub_time[:16]}}</div>{% endif %}
+      {% if news.wechat_draft_id %}<div style="font-size:10px;color:var(--t3);margin-top:3px;word-break:break-all">ID: {{news.wechat_draft_id[:24]}}…</div>{% endif %}
     </div>
-
-    <!-- Cover -->
-    <div class="lp-sec">
-      <div class="lp-lbl">封面图</div>
-      <div class="cover-box" onclick="openGallery('cover')">
-        {% if news.image_url %}
-        <img id="coverImg" src="{{'/local-image?path='+news.image_url if news.image_url.startswith('/') else news.image_url}}">
-        {% else %}
-        <div class="cover-empty"><span style="font-size:26px;opacity:.4">🖼</span><span>点击选择封面</span></div>
-        <img id="coverImg" src="" style="display:none">
-        {% endif %}
-        <div class="cover-overlay">🔄 更换封面</div>
+    <div class="sb-sec"><div class="sb-lbl">封面图</div>
+      <div class="sb-cover" onclick="document.getElementById('cvFile').click()">
+        {% if news.image_url %}<img id="sbCvImg" src="{{'/local-image?path='+news.image_url if news.image_url.startswith('/') else news.image_url}}">
+        {% else %}<div class="sb-cover-ph"><span style="font-size:22px">🖼</span><span>点击选择封面</span></div><img id="sbCvImg" src="" style="display:none">{% endif %}
+        <div class="sb-cover-ov">更换封面</div>
+      </div>
+      <input type="file" id="cvFile" accept="image/*" style="display:none" onchange="onCvChange(this)">
+    </div>
+    <div class="sb-sec"><div class="sb-lbl">排版主题</div>
+      <div class="sb-themes" id="sbThemes">
+        <div class="sb-theme on" data-t="fresh" onclick="selTheme('fresh')"><span class="sb-theme-dot" style="background:#FA5151"></span><span class="sb-theme-name">活力橘</span><span class="sb-theme-desc">偶像/娱乐</span></div>
+        <div class="sb-theme" data-t="newspaper" onclick="selTheme('newspaper')"><span class="sb-theme-dot" style="background:#0F4C81"></span><span class="sb-theme-name">新闻蓝</span><span class="sb-theme-desc">权威感</span></div>
+        <div class="sb-theme" data-t="elegant" onclick="selTheme('elegant')"><span class="sb-theme-dot" style="background:#92617E"></span><span class="sb-theme-name">优雅紫</span><span class="sb-theme-desc">深度报道</span></div>
+        <div class="sb-theme" data-t="minimal" onclick="selTheme('minimal')"><span class="sb-theme-dot" style="background:#333"></span><span class="sb-theme-name">简洁黑</span><span class="sb-theme-desc">严肃媒体</span></div>
       </div>
     </div>
-
-    <!-- Theme -->
-    <div class="lp-sec">
-      <div class="lp-lbl">排版主题</div>
-      <div class="theme-grid2">
-        <div class="th-opt" data-theme="fresh" onclick="setTheme(this)"><div class="th-dot" style="background:#FA5151"></div><span class="th-name">活力</span></div>
-        <div class="th-opt active" data-theme="newspaper" onclick="setTheme(this)"><div class="th-dot" style="background:#0F4C81"></div><span class="th-name">新闻</span></div>
-        <div class="th-opt" data-theme="elegant" onclick="setTheme(this)"><div class="th-dot" style="background:#92617E"></div><span class="th-name">优雅</span></div>
-        <div class="th-opt" data-theme="minimal" onclick="setTheme(this)"><div class="th-dot" style="background:#374151"></div><span class="th-name">极简</span></div>
-      </div>
-    </div>
-
-    <!-- Images -->
-    <div class="lp-sec" style="flex:1">
-      <div class="lp-lbl" style="display:flex;justify-content:space-between">图片素材<span style="font-weight:400">点击插入</span></div>
-      <div class="img-grid2">
+    <div class="sb-sec" style="flex:1"><div class="sb-lbl">图片素材</div>
+      <div class="sb-imgs" id="sbImgs">
         {% for img in all_images %}
-        <div class="img-item2" onclick="insertImg('{{img.path}}')" title="{{img.source}}">
-          <img src="{{'/local-image?path='+img.path if img.path.startswith('/') else img.path}}" loading="lazy" onerror="this.parentElement.style.display='none'">
-          <div class="img-ins">+ 插入</div>
-          <span class="img-src-tag">{{img.source[:4] if img.source else 'IMG'}}</span>
+        <div class="sb-img" onclick="insImg('{{img.path}}')" title="{{img.source}}">
+          <img src="{{'( \'/local-image?path=\'+img.path) if img.path.startswith(\'/\') else img.path' | replace('(','') | replace(')','')}}" loading="lazy" onerror="this.parentElement.style.display='none'">
+          <div class="sb-img-ov">＋</div>
         </div>
-        {% else %}
-        <div style="grid-column:1/-1;text-align:center;padding:18px 0;font-size:11px;color:var(--text3)">暂无图片素材</div>
-        {% endfor %}
+        {% else %}<div style="font-size:11px;color:var(--t3);padding:8px 0">暂无素材</div>{% endfor %}
       </div>
     </div>
-
-    <!-- Publish -->
-    <div class="pub-box">
-      <button class="btn btn-wx" style="width:100%;justify-content:center" id="pushBtn2" onclick="pushDraft()" {{'' if news.wechat_publish else 'disabled'}}>
-        📤 推送到草稿箱
-      </button>
-      <div class="pub-hint2 {{'' if news.wechat_publish else 'warn'}}" id="pubHint">
-        {{('先保存再推送，推送后在公众平台发布。') if news.wechat_publish else ('请先将状态改为「标记待发布」。')}}
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Right: title + side-by-side editor & original -->
-  <div class="wx-right">
-    <div class="editor-wrap">
-
-      <!-- Title -->
-      <div class="title-card2">
-        <textarea class="title-inp" id="wechatTitleInput" rows="1" placeholder="公众号文章标题（建议 10 字以内）…" oninput="onTitleInput(this)">{{news.wechat_title or news.title or ''}}</textarea>
-        <div class="title-meta2">
-          <span class="title-cnt" id="titleCnt">0 字</span>
-          <span style="font-size:11px;color:var(--text3)">微信标题建议不超过 10 字</span>
-        </div>
-      </div>
-
-      <!-- Editor -->
-      <div class="editor-card2">
-        <div class="editor-card2-hdr">
-          <div class="editor-card2-title">✏️ 公众号正文</div>
-          <span id="wxWordCount" style="font-size:11px;color:var(--text3)"></span>
-          <div style="display:flex;gap:5px;margin-left:8px">
-            <button class="btn btn-gray btn-xs" onclick="openWxImgPicker()">🖼 插入图片</button>
-            <button class="btn btn-gray btn-xs" onclick="toggleOrigDrawer()">📄 原文参考</button>
-          </div>
-        </div>
-        <div class="editor-card2-body">
-          <div id="wechat-editorjs"></div>
-        </div>
-      </div>
-
+    <div class="sb-bottom">
+      <button class="btn btn-fill" style="width:100%;justify-content:center" id="btnPush2" onclick="doPush()">推送草稿到公众号</button>
+      <div class="sb-meta" id="sbMeta">{{('草稿 ID: '+news.wechat_draft_id[:20]+'…') if news.wechat_draft_id else '尚未推送'}}</div>
     </div>
   </div>
-
-</div>
-
-<!-- Gallery modal -->
-<!-- Wechat image picker -->
-<!-- Original content drawer -->
-<div id="origDrawer" style="position:fixed;top:50px;right:-420px;width:420px;bottom:0;background:var(--card-bg);border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,.1);z-index:300;transition:right .25s ease;display:flex;flex-direction:column">
-  <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">
-    <span style="font-size:13px;font-weight:600">📄 原文参考</span>
-    <span style="flex:1"></span>
-    <button onclick="toggleOrigDrawer()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:2px 6px">✕</button>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:14px 16px;font-size:12.5px;line-height:1.8;color:var(--text2);white-space:pre-wrap">{{news.content or '（无原文）'}}</div>
-</div>
-
-<div id="wxImgPicker" onclick="if(event.target===this)closeWxImgPicker()"
-  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:600;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
-  <div style="background:var(--card-bg);border-radius:14px;max-width:520px;width:92%;max-height:72vh;overflow-y:auto;padding:18px;box-shadow:0 16px 48px rgba(0,0,0,.18)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h3 style="font-size:14px;font-weight:700">选择图片</h3>
-      <button onclick="closeWxImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text3);padding:2px 7px;border-radius:4px">✕</button>
-    </div>
-    <div id="wxImgPickerGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-  </div>
-</div>
-
-<div class="gmodal" id="gmodal" onclick="if(event.target===this)closeGallery()">
-  <div class="gmodal-card">
-    <div class="gmodal-hdr">
-      <h3>选择封面图</h3>
-      <button class="gmodal-close" onclick="closeGallery()">✕</button>
-    </div>
-    <div class="gallery-grid2">
-      {% for img in all_images %}
-      <div class="gallery-item2" data-path="{{img.path}}" onclick="selectCover('{{img.path}}',this)">
-        <img src="{{'/local-image?path='+img.path if img.path.startswith('/') else img.path}}" onerror="this.parentElement.style.display='none'">
-        <div class="sel-mk">✓</div>
+  <div class="ed-area">
+    <div class="ed-scroll">
+      <div class="ed-title-wrap">
+        <textarea class="ed-title" id="wxTitle" rows="1" placeholder="输入公众号标题..." oninput="onTitleIn(this)">{{news.wechat_title or news.title or ''}}</textarea>
+        <span class="ed-cnt" id="wxCnt">0 字</span>
       </div>
-      {% endfor %}
+      <div id="wxEditorjs"></div>
     </div>
   </div>
 </div>
-
+<textarea id="wxHidden" style="display:none">{{news.wechat_content or news.content or ''}}</textarea>
 <script>
-function _wxLoadScript(src,cb){var s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
-_wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',function(){
-  _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',function(){
-    _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',function(){
-      _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',function(){
-        window._wxEditorReady=true;
-        if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',_wxInitAll);}
-        else{_wxInitAll();}
+var WK="{{news.key}}";
+var _th="fresh",_ed=null,_dirty=false,_stimer=null;
+function _S(id){return document.getElementById(id);}
+function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
+function _setSave(s){var e=_S('tbSaved');if(!e)return;if(s==='saving'){e.textContent='保存中…';e.className='tb-saved saving';}else if(s==='saved'){e.textContent='已保存';e.className='tb-saved saved';}else{e.textContent='未保存';e.className='tb-saved';}}
+function onTitleIn(el){
+  el.style.height='auto';el.style.height=el.scrollHeight+'px';
+  var n=el.value.length;var c=_S('wxCnt');if(c){c.textContent=n+' 字';c.className='ed-cnt'+(n>64?' w':'');}
+  var d=_S('tbDoc');if(d)d.textContent=el.value||'(无标题)';
+  _markDirty();
+}
+(function(){var e=_S('wxTitle');if(e){onTitleIn(e);}})();
+function _initStDot(){
+  var v=_S('sbStSel').value;
+  var dot=_S('sbStDot'),txt=_S('sbStTxt');
+  if(v==='1'&&{{1 if news.wechat_pub_time else 0}}){dot.className='sb-dot sb-dg';txt.textContent='已发布';}
+  else if(v==='1'&&{{'1' if news.wechat_draft_id else '0'}}!=='0'){dot.className='sb-dot sb-dy';txt.textContent='草稿';}
+  else if(v==='1'){dot.className='sb-dot sb-db';txt.textContent='待发布';}
+  else{dot.className='sb-dot sb-dm';txt.textContent='未配置';}
+}
+_initStDot();
+function onStChange(v){
+  var dot=_S('sbStDot'),txt=_S('sbStTxt');
+  if(v==='1'){dot.className='sb-dot sb-db';txt.textContent='待发布';}
+  else{dot.className='sb-dot sb-dm';txt.textContent='未配置';}
+  _markDirty();
+}
+function selTheme(name){
+  _th=name;
+  document.querySelectorAll('#sbThemes .sb-theme').forEach(function(e){e.classList.toggle('on',e.getAttribute('data-t')===name);});
+}
+function onCvChange(inp){
+  if(!inp.files||!inp.files[0])return;
+  var r=new FileReader();
+  r.onload=function(e){var i=_S('sbCvImg');if(i){i.src=e.target.result;i.style.display='block';}};
+  r.readAsDataURL(inp.files[0]);_markDirty();
+}
+function insImg(path){
+  if(!_ed)return;
+  var src=path.startsWith('/')?'/local-image?path='+encodeURIComponent(path):path;
+  var idx=_ed.blocks.getCurrentBlockIndex();
+  _ed.blocks.insert('image',{file:{url:src},caption:'',withBorder:false,stretched:false,withBackground:false},{},idx+1,true);
+}
+function _markDirty(){_dirty=true;_setSave('unsaved');clearTimeout(_stimer);_stimer=setTimeout(function(){if(_dirty)doSave(true);},4000);}
+function _blocks2txt(blocks){
+  var parts=[],n=1;
+  (blocks||[]).forEach(function(b){
+    if(b.type==='paragraph'&&b.data&&b.data.text)parts.push(b.data.text.replace(/<[^>]+>/g,''));
+    else if(b.type==='header'&&b.data&&b.data.text)parts.push((b.data.level===3?'### ':'## ')+b.data.text.replace(/<[^>]+>/g,''));
+    else if(b.type==='quote'&&b.data&&b.data.text)parts.push('> '+b.data.text.replace(/<[^>]+>/g,''));
+    else if(b.type==='image'&&b.data&&b.data.file&&b.data.file.url){parts.push('【图片'+n+'：'+b.data.file.url+'】');n++;}
+    else if(b.type==='galleryImage'&&b.data){var ps=(b.data.paths||[]).filter(function(p){return !!p;});if(ps.length){parts.push('【图片'+n+'：'+ps.join('|')+'】');n++;}}
+  });
+  return parts.filter(function(s){return s&&s.trim();}).join('\n\n');
+}
+function _txt2blocks(txt){
+  var blocks=[],last=0,n=0;
+  var re=/【(?:图片|推文)\d+：([^】]*)】/g;
+  function addText(t){
+    if(!t||!t.trim())return;
+    t.split(/\n{2,}/).forEach(function(p){
+      p=p.trim();if(!p)return;
+      if(p.indexOf('### ')===0)blocks.push({type:'header',data:{text:p.slice(4),level:3}});
+      else if(p.indexOf('## ')===0)blocks.push({type:'header',data:{text:p.slice(3),level:2}});
+      else if(p.indexOf('> ')===0)blocks.push({type:'quote',data:{text:p.slice(2),caption:''}});
+      else blocks.push({type:'paragraph',data:{text:p}});
+    });
+  }
+  var m;re.lastIndex=0;
+  while((m=re.exec(txt))!==null){
+    addText(txt.slice(last,m.index));
+    var ps=m[1].split('|').filter(function(p){return p.trim();});
+    if(ps.length===1&&(ps[0].indexOf('http')===0||ps[0].indexOf('/')===0))
+      blocks.push({type:'image',data:{file:{url:ps[0]},caption:'',withBorder:false,stretched:false,withBackground:false}});
+    else if(ps.length>0)blocks.push({type:'galleryImage',data:{paths:ps,caption:m[0]}});
+    last=m.index+m[0].length;n++;
+  }
+  addText(txt.slice(last));
+  if(!blocks.length)blocks.push({type:'paragraph',data:{text:txt}});
+  return blocks;
+}
+var WxGalleryBlock=(function(){
+  function C(o){this.api=o.api;this.data={paths:(o.data&&o.data.paths)||[],caption:(o.data&&o.data.caption)||''};}
+  C.toolbox={title:'图片组',icon:'🖼'};C.isReadOnlySupported=true;
+  C.prototype.render=function(){
+    var w=document.createElement('div');w.style.cssText='border:1px dashed rgba(0,0,0,.12);border-radius:6px;padding:8px;margin:4px 0;background:#f8f8f8';
+    var ps=this.data.paths||[];
+    if(ps.length){var g=document.createElement('div');g.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
+      ps.forEach(function(p){var i=document.createElement('img');i.src=p.indexOf('/')===0?'/local-image?path='+encodeURIComponent(p):p;i.style.cssText='height:80px;border-radius:4px;object-fit:cover';g.appendChild(i);});w.appendChild(g);}
+    else{w.textContent='(图片占位)';w.style.color='#aaa';w.style.fontSize='12px';}
+    this._el=w;return w;
+  };
+  C.prototype.save=function(){return{paths:this.data.paths||[],caption:this.data.caption||''};};
+  return C;
+})();
+function _initEd(){
+  if(typeof EditorJS==='undefined')return;
+  var raw=(_S('wxHidden')||{}).value||'';
+  var blocks=_txt2blocks(raw);
+  _ed=new EditorJS({
+    holder:'wxEditorjs',minHeight:200,
+    placeholder:'开始写公众号正文... (/ 插入标题或图片)',
+    tools:{
+      header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+      quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'引用内容',captionPlaceholder:'出处（可选）'}},
+      galleryImage:{class:WxGalleryBlock}
+    },
+    data:{blocks:blocks},
+    onChange:function(){
+      _ed.save().then(function(o){
+        if(_S('wxHidden'))_S('wxHidden').value=_blocks2txt(o.blocks||[]);
+        var cnt=_S('wxCnt'); if(cnt){var n=(_S('wxHidden').value||'').length;cnt.textContent=n+' 字';}
+        _markDirty();
+      }).catch(function(){});
+    },
+    onReady:function(){
+      var raw2=(_S('wxHidden')||{}).value||'';
+      var n=raw2.length;var c=_S('wxCnt');if(c)c.textContent=n+' 字';
+    }
+  });
+}
+(function(){
+  function L(s,cb){var sc=document.createElement('script');sc.src=s;sc.onload=cb;sc.onerror=function(){cb();};document.head.appendChild(sc);}
+  L('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',function(){
+    L('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',function(){
+      L('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',function(){
+        L('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',function(){
+          _initEd();
+        });
       });
     });
   });
-});
-function _wxInitAll(){initEd(); onTitleInput(document.getElementById('wechatTitleInput'));}
-
-var WKEY='{{news.key}}';
-var _editor=null, _theme='newspaper', _dirty=false, _stimer=null;
-var _origContent = {{news.content|tojson}} || '';
-
-// Init handled by _wxInitAll after CDN load
-
-// ── Text ↔ Editor.js blocks (mirrors detail page) ─────────────────────
-function _textToBlocks(txt){
-  var blocks=[], last=0, re=/【(?:图片|推文)\d+：[^】]*】/g, m;
-  function addText(t){
-    if(!t.trim()) return;
-    t.split('\n').forEach(function(line){
-      var s=line.trim(); if(!s) return;
-      if(s.slice(0,4)==='### ') blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
-      else if(s.slice(0,3)==='## ') blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
-      else if(s.slice(0,2)==='> ') blocks.push({type:'quote',data:{text:s.slice(2).trim(),caption:'',alignment:'left'}});
-      else blocks.push({type:'paragraph',data:{text:s}});
-    });
-  }
-  while((m=re.exec(txt))!==null){
-    addText(txt.slice(last,m.index));
-    var inner=m[0].replace(/^【(?:图片|推文)\d+：/,'').replace(/】$/,'');
-    var paths=inner.startsWith('/')?inner.split('|').filter(function(p){return p.startsWith('/');}):[inner];
-    blocks.push({type:'galleryImage',data:{paths:paths,caption:m[0]}});
-    last=m.index+m[0].length;
-  }
-  addText(txt.slice(last));
-  return blocks.length ? blocks : [{type:'paragraph',data:{text:txt}}];
+})();
+async function doSave(silent){
+  _setSave('saving');
+  var title=(_S('wxTitle')||{}).value||'';
+  var publish=parseInt((_S('sbStSel')||{}).value)||0;
+  var content=(_S('wxHidden')||{}).value||'';
+  if(_ed){try{var o=await _ed.save();content=_blocks2txt(o.blocks||[]);}catch(e){}}
+  try{
+    var r=await fetch('/api/wechat/'+WK,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_title:title,wechat_publish:publish,wechat_content:content})});
+    if(r.ok){_dirty=false;_setSave('saved');if(!silent)_toast('已保存','ok');}
+    else{_setSave('');if(!silent)_toast('保存失败','err');}
+  }catch(e){_setSave('');if(!silent)_toast('网络错误','err');}
 }
-function _blocksToText(blocks){
-  var parts=[]; var imgN=1;
-  (blocks||[]).forEach(function(b){
-    if(b.type==='paragraph'&&b.data.text) parts.push(b.data.text);
-    else if(b.type==='header'&&b.data.text) parts.push((b.data.level===3?'### ':'## ')+b.data.text);
-    else if(b.type==='quote'&&b.data.text) parts.push('> '+b.data.text);
-    else if(b.type==='galleryImage'){
-      var ps=(b.data.paths||[]).filter(function(p){return p;});
-      if(ps.length){parts.push('【图片'+imgN+'：'+ps.join('|')+'】');imgN++;}
-    }
-  });
-  return parts.join('\n');
+function doPreview(){window.open('/api/wechat/'+WK+'/preview?theme='+_th,'_blank');}
+async function doPush(){
+  ['btnPush','btnPush2'].forEach(function(id){var b=_S(id);if(b){b.disabled=true;b.textContent='推送中…';}});
+  try{
+    await doSave(true);
+    var r=await fetch('/api/wechat/'+WK+'/publish?theme='+_th,{method:'POST'});
+    var d=await r.json();
+    if(r.ok&&d.ok){_toast('已推送到草稿箱','ok');}
+    else{_toast((d.error||'推送失败'),'err');}
+  }catch(e){_toast('推送失败','err');}
+  ['btnPush','btnPush2'].forEach(function(id){var b=_S(id);if(b){b.disabled=false;b.textContent=id==='btnPush'?'推送草稿':'推送草稿到公众号';}});
 }
-function _expandBlocks(rawBlocks){
-  var out=[];
-  (rawBlocks||[]).forEach(function(b){
-    if(b.type==='paragraph'&&b.data&&b.data.text&&b.data.text.indexOf('## ')>=0){
-      _textToBlocks(b.data.text).forEach(function(nb){out.push(nb);});
-    } else { out.push(b); }
-  });
-  return out.length ? out : rawBlocks;
-}
-function initEd(){
-  var raw = {{news.wechat_content|tojson}} || '';
-  var initData = {blocks:[]};
-  if(raw){
-    try{
-      var p=JSON.parse(raw);
-      if(p&&p.blocks) initData={blocks:_expandBlocks(p.blocks)};
-      else initData={blocks:_textToBlocks(raw)};
-    }catch(e){ initData={blocks:_textToBlocks(raw)}; }
-  }
-  // Full GalleryImageBlock — matches detail page capability
-  class GalleryImageBlockWx {
-    static get toolbox(){return{title:'图片',icon:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="15" viewBox="0 0 336 276"><path d="M291 150V79c0-19-15-34-34-34H79c-19 0-34 15-34 34v42l67-44 81 72 56-29 42 30zm0 52l-43-30-56 30-81-72-66 44v30c0 19 15 34 34 34h178c17 0 31-13 34-29zM79 0h178c44 0 79 35 79 79v118c0 44-35 79-79 79H79c-44 0-79-35-79-79V79C0 35 35 0 79 0z"/></svg>'};}
-    static get isReadOnlySupported(){return true;}
-    constructor({data,api}){this.api=api;this.data={paths:data.paths||[],caption:data.caption||''};}
-    render(){var w=document.createElement('div');w.style.cssText='border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';this._el=w;this._rebuild();return w;}
-    _rebuild(){
-      var w=this._el; if(!w) return; w.innerHTML='';
-      var paths=this.data.paths.filter(function(p){return p;}); this.data.paths=paths;
-      if(paths.length){
-        var row=document.createElement('div');
-        row.style.cssText='display:flex;gap:4px;padding:6px;background:#f0f0f0;justify-content:center';
-        var self=this;
-        paths.forEach(function(p,idx){
-          var cell=document.createElement('div');
-          cell.style.cssText='position:relative;flex:'+(paths.length===1?'0 0 auto':'1 1 0')+';max-width:'+(paths.length===1?'100%':'50%');
-          var img=document.createElement('img');
-          img.src=p.startsWith('/')?'/local-image?path='+encodeURIComponent(p):p;
-          img.style.cssText='width:100%;max-height:320px;object-fit:contain;border-radius:4px;display:block';
-          var del=document.createElement('button');
-          del.textContent='✕'; del.title='移除此图';
-          del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;padding:0';
-          del.onclick=function(){self.data.paths.splice(idx,1);if(self.data.paths.length===0){try{var bi=self.api.blocks.getCurrentBlockIndex();self.api.blocks.delete(bi);}catch(e){self._rebuild();}}else{self._rebuild();}};
-          cell.appendChild(img);cell.appendChild(del);row.appendChild(cell);
-        });
-        w.appendChild(row);
-      }
-      var bar=document.createElement('div');
-      bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;flex-wrap:wrap;background:#fff';
-      var self=this;
-      var addBtn=document.createElement('button');
-      addBtn.textContent=paths.length?'+ 添加图片':'📷 从图库选图';
-      addBtn.style.cssText='font-size:11px;padding:3px 10px;border:1px dashed #999;border-radius:12px;background:none;cursor:pointer;color:#555';
-      addBtn.onclick=function(){openWxImgPicker(function(p){self.data.paths.push(p);self._rebuild();});};
-      bar.appendChild(addBtn);
-      var cap=document.createElement('input');
-      cap.placeholder='图片说明（图片标记）';cap.value=this.data.caption;
-      cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888;min-width:80px';
-      cap.oninput=function(){self.data.caption=cap.value;};
-      bar.appendChild(cap);w.appendChild(bar);
-    }
-    save(){return{paths:this.data.paths,caption:this.data.caption};}
-  }
-
-  _editor = new EditorJS({
-    holder:'wechat-editorjs',
-    tools:{
-      header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
-      quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
-      galleryImage:{class:GalleryImageBlockWx}
-    },
-    data:initData,
-    onChange:function(){ _dirty=true; setSave('—'); clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},2500); updateWxWordCount(); },
-    placeholder:'开始编写公众号正文…',
-    onReady:function(){ setTimeout(updateWxWordCount, 500); }
-  });
-}
-
-function onTitleInput(el){
-  el.style.height='auto'; el.style.height=el.scrollHeight+'px';
-  var n=el.value.length, el2=document.getElementById('titleCnt');
-  if(el2){ el2.textContent=n+' 字'; el2.className='title-cnt'+(n>12?' err':n>10?' warn':''); }
-  _dirty=true; setSave('—'); clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},1800);
-}
-
-function setSave(s){
-  var el=document.getElementById('saveInd');
-  if(!el) return;
-  if(s==='saving'){el.textContent='保存中…';el.className='save-ind saving';}
-  else if(s==='saved'){el.textContent='✓ 已保存';el.className='save-ind saved';}
-  else{el.textContent='— 未保存';el.className='save-ind';}
-}
-
-function autoSave(){ if(!_dirty) return; saveWechat(true); }
-
-function saveWechat(silent){
-  setSave('saving');
-  var title=document.getElementById('wechatTitleInput').value;
-  var publish=parseInt(document.getElementById('publishSel').value)||0;
-  _editor.save().then(function(d){
-    return fetch('/api/wechat/'+WKEY,{
-      method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({wechat_title:title,wechat_content:_blocksToText(d.blocks||[]),wechat_publish:publish})
-    });
-  }).then(function(r){return r.json();}).then(function(){
-    _dirty=false; setSave('saved'); if(!silent) showToast('已保存','ok');
-  }).catch(function(e){ setSave('—'); if(!silent) showToast('保存失败','err'); });
-}
-
-function onPublishChange(v){
-  var b1=document.getElementById('pushBtn'), b2=document.getElementById('pushBtn2'), h=document.getElementById('pubHint');
-  var en=v===1;
-  if(b1) b1.disabled=!en; if(b2) b2.disabled=!en;
-  if(h){ h.className='pub-hint2'+(en?'':' warn'); h.textContent=en?'先保存再推送，推送后在公众平台发布。':'请先将状态改为「标记待发布」。'; }
-  var bd=document.getElementById('stBadge');
-  if(bd) bd.innerHTML=en?'<span class="st-badge st-blue">⏳ 待发布</span>':'<span class="st-badge st-gray">— 未配置</span>';
-  _dirty=true; clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},800);
-}
-
-function pushDraft(){
-  var b1=document.getElementById('pushBtn'), b2=document.getElementById('pushBtn2');
-  if(b1) b1.disabled=true; if(b2) b2.disabled=true;
-  showToast('推送中…','info');
-  saveWechat(true);
-  setTimeout(function(){
-    fetch('/api/wechat/'+WKEY+'/publish?theme='+_theme,{method:'POST'})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(d.ok){ showToast('草稿推送成功！','ok'); setTimeout(function(){location.reload();},1500); }
-        else{ showToast('推送失败: '+(d.error||'').slice(0,60),'err'); if(b1)b1.disabled=false; if(b2)b2.disabled=false; }
-      }).catch(function(e){ showToast('推送失败','err'); if(b1)b1.disabled=false; if(b2)b2.disabled=false; });
-  }, 700);
-}
-
-function previewWechat(){
-  window.open('/api/wechat/'+WKEY+'/preview?theme='+_theme,'_blank');
-}
-
-function setTheme(el){
-  document.querySelectorAll('.th-opt').forEach(function(e){e.classList.remove('active');});
-  el.classList.add('active'); _theme=el.dataset.theme;
-}
-
-function updateWxWordCount(){
-  if(!_editor) return;
-  _editor.save().then(function(d){
-    var txt=(d.blocks||[]).map(function(b){
-      if(b.type==='paragraph'||b.type==='header') return b.data.text||'';
-      if(b.type==='quote') return b.data.text||'';
-      return '';
-    }).join('');
-    var n=txt.replace(/\s/g,'').length;
-    var el=document.getElementById('wxWordCount');
-    if(el) el.textContent=n+' 字';
-  }).catch(function(){});
-}
-function toggleOrigDrawer(){
-  var d=document.getElementById('origDrawer');
-  d.style.right=(d.style.right==='-420px'||!d.style.right)?'0':'-420px';
-}
-var _wxImgPickerCb=null;
-function openWxImgPicker(cb){
-  _wxImgPickerCb=cb||null;
-  var grid=document.getElementById('wxImgPickerGrid');
-  var allImgs={{all_images|tojson}};
-  grid.innerHTML='';
-  allImgs.forEach(function(img){
-    var d=document.createElement('div');
-    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;position:relative';
-    d.onmouseenter=function(){d.style.borderColor='var(--blue)';};
-    d.onmouseleave=function(){d.style.borderColor='transparent';};
-    d.onclick=function(){
-      closeWxImgPicker();
-      if(_wxImgPickerCb){_wxImgPickerCb(img.path);return;}
-      insertImg(img.path);
-    };
-    var i=document.createElement('img');
-    var src=img.path.startsWith('/')?'/local-image?path='+encodeURIComponent(img.path):img.path;
-    i.src=src; i.style.cssText='width:80px;height:80px;object-fit:cover;display:block';
-    var lbl=document.createElement('div');
-    lbl.textContent=img.source;
-    lbl.style.cssText='font-size:9px;text-align:center;color:#888;padding:1px 2px;background:#fff';
-    d.appendChild(i);d.appendChild(lbl);grid.appendChild(d);
-  });
-  document.getElementById('wxImgPicker').style.display='flex';
-}
-function closeWxImgPicker(){document.getElementById('wxImgPicker').style.display='none';}
-function insertImg(path){
-  if(!_editor) return;
-  var idx=_editor.blocks.getCurrentBlockIndex();
-  _editor.blocks.insert('galleryImage',{paths:[path],caption:''},{},idx+1,true);
-  showToast('图片已插入','ok');
-}
-
-function loadOrig(){
-  if(!_origContent){showToast('无原始内容','info');return;}
-  if(!confirm('用原始正文覆盖当前内容？')) return;
-  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok');
-}
-function copyOrigToEditor(){
-  if(!_origContent){showToast('无原始内容','info');return;}
-  if(!confirm('将原文载入编辑器（会覆盖当前内容）？')) return;
-  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok'); _dirty=true;
-}
-
-function clearEd(){ if(!confirm('确定清空？')) return; _editor.render({blocks:[]}); }
-
-function openGallery(){ document.getElementById('gmodal').classList.add('active'); }
-function closeGallery(){ document.getElementById('gmodal').classList.remove('active'); }
-function selectCover(path, el){
-  var img=document.getElementById('coverImg');
-  if(img){ img.src=(path.startsWith('/')?'/local-image?path='+encodeURIComponent(path):path); img.style.display='block'; }
-  closeGallery();
-  fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:path})});
-  showToast('封面已更新','ok');
-}
-
-function showToast(msg,type){
-  var el=document.getElementById('toast2');
-  el.textContent=msg; el.className='toast2 '+(type||'ok'); el.style.display='block';
-  clearTimeout(el._t); el._t=setTimeout(function(){el.style.display='none';},2200);
-}
+document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();doSave(false);}});
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 @app.route('/api/wechat-list')
 def api_wechat_list():
