@@ -1931,6 +1931,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 <!-- Topbar -->
 <div class="topbar">
   <a href="javascript:history.back()">← 返回</a>
+  {% if news.link %}<a href="{{news.link}}" target="_blank" class="btn btn-outline btn-sm" style="flex-shrink:0;color:var(--text2)" title="查看日文原文">🔗 原文</a>{% endif %}
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
   {% if scores and scores|length > 0 %}
@@ -4061,6 +4062,22 @@ def wechat_editor(key):
             pass
 
     return rts(WECHAT_HTML, news=news, all_images=all_images)
+
+@app.route('/api/wechat/<key>/preview')
+def api_wechat_preview(key):
+    theme = request.args.get('theme', 'newspaper')
+    news = get_by_key(key)
+    if not news: return 'Not found', 404
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+    try:
+        from wechat_publisher import _render_html_preview
+        content = news.get('wechat_content') or news.get('content') or ''
+        title   = news.get('wechat_title')  or news.get('title', '')
+        html = _render_html_preview(content, title, theme)
+        return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    except Exception as e:
+        return f'<pre>预览渲染失败: {e}</pre>', 500
 
 @app.route('/api/wechat/<key>', methods=['PUT'])
 def api_wechat_update(key):
