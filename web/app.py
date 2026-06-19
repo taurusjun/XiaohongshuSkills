@@ -869,13 +869,13 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <div class="sidebar-section">
     <div class="sidebar-label">运营工具</div>
-    <div class="nav-item" onclick="toggleFetchDrawer()">
+    <div class="nav-item" onclick="switchToNewsView();toggleFetchDrawer()">
       <span class="ni">🔍</span> 抓取管理
     </div>
-    <div class="nav-item" onclick="toggleConfigPanel()">
+    <div class="nav-item" onclick="switchToNewsView();toggleConfigPanel()">
       <span class="ni">⚙️</span> 策略配置
     </div>
-    <div class="nav-item" onclick="toggleTagPanel()">
+    <div class="nav-item" onclick="switchToNewsView();toggleTagPanel()">
       <span class="ni">🏷️</span> 标签配置
     </div>
     <div class="nav-item" id="wechatNavItem" onclick="toggleWechatPanel()">
