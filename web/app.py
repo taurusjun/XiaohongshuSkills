@@ -1931,7 +1931,6 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 <!-- Topbar -->
 <div class="topbar">
   <a href="javascript:history.back()">← 返回</a>
-  {% if news.link %}<a href="{{news.link}}" target="_blank" class="btn btn-outline btn-sm" style="flex-shrink:0;color:var(--text2)" title="查看日文原文">🔗 原文</a>{% endif %}
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
   {% if scores and scores|length > 0 %}
@@ -3383,7 +3382,6 @@ select.lp-sel:focus{border-color:var(--blue)}
 <div class="topbar">
   <a class="topbar-back" href="/">← 返回</a>
   <div class="topbar-sep"></div>
-  <a href="/detail/{{news.key}}" target="_blank" class="topbar-back" title="查看文章详情">📄 详情</a><div class="topbar-sep"></div>
   <span class="topbar-crumb">公众号 /</span>
   <div class="topbar-doc">{{(news.wechat_title or news.title or '')[:60]}}</div>
   <div class="topbar-actions">
@@ -3399,6 +3397,12 @@ select.lp-sel:focus{border-color:var(--blue)}
 
   <!-- Left -->
   <div class="wx-left">
+
+    <!-- Links -->
+    <div class="lp-sec" style="display:flex;gap:8px;flex-wrap:wrap">
+      <a href="/detail/{{news.key}}" target="_blank" class="btn btn-outline btn-sm" style="flex:1;justify-content:center;text-decoration:none">📄 文章详情</a>
+      {% if news.link %}<a href="{{news.link}}" target="_blank" class="btn btn-outline btn-sm" style="flex:1;justify-content:center;text-decoration:none">🔗 日文原文</a>{% endif %}
+    </div>
 
     <!-- Status -->
     <div class="lp-sec">
