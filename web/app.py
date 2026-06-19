@@ -3535,6 +3535,22 @@ window.addEventListener('DOMContentLoaded', function(){
   initEd(); onTitleInput(document.getElementById('wechatTitleInput'));
 });
 
+function _textToBlocks(txt){
+  var blocks=[], paras=txt.split('\n\n');
+  for(var i=0;i<paras.length;i++){
+    var p=paras[i].trim(); if(!p) continue;
+    var lines=p.split('\n');
+    for(var j=0;j<lines.length;j++){
+      var l=lines[j].trim(); if(!l) continue;
+      if(l.slice(0,4)==='### ') blocks.push({type:'header',data:{text:l.slice(4),level:3}});
+      else if(l.slice(0,3)==='## ') blocks.push({type:'header',data:{text:l.slice(3),level:2}});
+      else if(l.slice(0,2)==='# ') blocks.push({type:'header',data:{text:l.slice(2),level:1}});
+      else if(l.slice(0,2)==='> ') blocks.push({type:'quote',data:{text:l.slice(2),caption:''}});
+      else blocks.push({type:'paragraph',data:{text:l}});
+    }
+  }
+  return blocks;
+}
 function initEd(){
   var raw = {{news.wechat_content|tojson}} || '';
   var initData = {blocks:[]};
@@ -3542,8 +3558,8 @@ function initEd(){
     try{
       var p=JSON.parse(raw);
       if(p&&p.blocks) initData=p;
-      else initData={blocks:[{type:'paragraph',data:{text:raw}}]};
-    }catch(e){ initData={blocks:[{type:'paragraph',data:{text:raw}}]}; }
+      else initData={blocks:_textToBlocks(raw)};
+    }catch(e){ initData={blocks:_textToBlocks(raw)}; }
   }
   _editor = new EditorJS({
     holder:'wechat-editorjs',
@@ -3628,14 +3644,7 @@ function insertImg(path){
 function loadOrig(){
   if(!_origContent){showToast('无原始内容','info');return;}
   if(!confirm('用原始正文覆盖当前内容？')) return;
-  var lines=_origContent.split('\n'), blocks=[];
-  for(var i=0;i<lines.length;i++){
-    var l=lines[i].trim(); if(!l) continue;
-    if(l.slice(0,3)==='## ') blocks.push({type:'header',data:{text:l.slice(3),level:2}});
-    else if(l.slice(0,2)==='# ') blocks.push({type:'header',data:{text:l.slice(2),level:1}});
-    else blocks.push({type:'paragraph',data:{text:l}});
-  }
-  _editor.render({blocks:blocks}); showToast('原文已载入','ok');
+  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok');
 }
 
 function clearEd(){ if(!confirm('确定清空？')) return; _editor.render({blocks:[]}); }
