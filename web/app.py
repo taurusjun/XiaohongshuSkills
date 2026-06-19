@@ -3491,9 +3491,9 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
 .sidebar-logo{display:flex;align-items:center;gap:10px;padding:4px 16px 18px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:10px}
 .sidebar-logo-icon{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#07c160,#1aad19);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
 .sidebar-logo-text{font-size:13px;font-weight:600;color:#fff}
-.nav-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4b4b6a;padding:6px 16px 4px}
-.nav-item{display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:6px;margin:1px 8px;cursor:pointer;color:#9090b0;font-size:12px;font-weight:500;transition:all .15s;text-decoration:none}
-.nav-item:hover{background:rgba(255,255,255,.06);color:#d0d0e8}
+.nav-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#7070a0;padding:6px 16px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:6px;margin:1px 8px;cursor:pointer;color:#c0c0d8;font-size:12px;font-weight:500;transition:all .15s;text-decoration:none}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#ffffff}
 .nav-item.active{background:rgba(7,193,96,.12);color:#07c160}
 .nav-item .ni{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 
