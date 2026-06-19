@@ -1785,9 +1785,12 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         <span class="mk">XHS时间</span>
         <input type="datetime-local" name="publish_time" value="{{news.publish_time or ''}}" onchange="autoSaveField('publish_time',this.value)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:{% if news.publish_time %}var(--green){% else %}var(--text2){% endif %}" title="手动设置XHS发布时间">
       </div>
-      <div style="margin-top:8px">
+      <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
         <a href="{{news.link or ''}}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none;display:flex;align-items:center;gap:4px" title="{{news.link or ''}}">
           <span>🔗</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">查看原文</span>
+        </a>
+        <a href="/wechat/{{news.key}}" target="_blank" style="font-size:11px;color:#07c160;text-decoration:none;display:flex;align-items:center;gap:4px" title="公众号编辑">
+          <span>💬</span><span>公众号</span>
         </a>
       </div>
       <div style="margin-top:8px">
