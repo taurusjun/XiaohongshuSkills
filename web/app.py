@@ -916,7 +916,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <button class="btn btn-outline" onclick="location.reload()">🔄 刷新</button>
   </div>
 
-<div id="newsView">
+<div id="newsView" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
   <!-- Fetch drawer (hidden by default, toggled from sidebar) -->
   <div class="fetch-drawer" id="fetchDrawer">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
