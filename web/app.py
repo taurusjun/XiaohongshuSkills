@@ -3628,8 +3628,7 @@ function insertImg(path){
 function loadOrig(){
   if(!_origContent){showToast('无原始内容','info');return;}
   if(!confirm('用原始正文覆盖当前内容？')) return;
-  var lines=_origContent.split('
-'), blocks=[];
+  var lines=_origContent.split('\n'), blocks=[];
   for(var i=0;i<lines.length;i++){
     var l=lines[i].trim(); if(!l) continue;
     if(l.slice(0,3)==='## ') blocks.push({type:'header',data:{text:l.slice(3),level:2}});
