@@ -856,7 +856,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <div class="sidebar-section">
     <div class="sidebar-label">内容管理</div>
-    <div class="nav-item active" onclick="">
+    <div class="nav-item active" id="newsNavItem" onclick="switchToNewsView()">
       <span class="ni">📋</span> 文章列表
       <span class="nav-badge g" id="sidebarPending" style="display:none">0</span>
     </div>
@@ -866,13 +866,13 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <div class="sidebar-section">
     <div class="sidebar-label">运营工具</div>
-    <div class="nav-item" onclick="toggleFetchDrawer()">
+    <div class="nav-item" onclick="switchToNewsView();toggleFetchDrawer()">
       <span class="ni">🔍</span> 抓取管理
     </div>
-    <div class="nav-item" onclick="toggleConfigPanel()">
+    <div class="nav-item" onclick="switchToNewsView();toggleConfigPanel()">
       <span class="ni">⚙️</span> 策略配置
     </div>
-    <div class="nav-item" onclick="toggleTagPanel()">
+    <div class="nav-item" onclick="switchToNewsView();toggleTagPanel()">
       <span class="ni">🏷️</span> 标签配置
     </div>
     <div class="nav-item" id="wechatNavItem" onclick="switchToWechatView()">
@@ -1631,10 +1631,12 @@ function switchToWechatView(){
   loadWechatList();
 }
 function switchToNewsView(){
-  var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView'),n=document.getElementById('wechatNavItem');
+  var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView');
+  var wn=document.getElementById('wechatNavItem'),nn=document.getElementById('newsNavItem');
   if(wv) wv.style.display='none';
   if(nv) nv.style.display='';
-  if(n) n.classList.remove('active');
+  if(wn) wn.classList.remove('active');
+  if(nn) nn.classList.add('active');
 }
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
