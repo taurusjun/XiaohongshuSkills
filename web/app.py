@@ -3640,7 +3640,13 @@ async function doPush(){
 }
 function toggleOrigDrawer(){
   var d=document.getElementById('origDrawer');
-  if(d) d.classList.toggle('open');
+  if(!d) return;
+  var willOpen = !d.classList.contains('open');
+  if(willOpen) {
+    var pd=document.getElementById('previewDrawer');
+    if(pd) pd.classList.remove('open');
+  }
+  d.classList.toggle('open');
 }
 function togglePreviewDrawer(){
   var d=document.getElementById('previewDrawer');
@@ -3648,6 +3654,8 @@ function togglePreviewDrawer(){
   if(d.classList.contains('open')){
     d.classList.remove('open');
   } else {
+    var od=document.getElementById('origDrawer');
+    if(od) od.classList.remove('open');
     doPreview();
   }
 }
