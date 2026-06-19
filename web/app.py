@@ -1044,16 +1044,20 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
 <!-- WeChat view -->
 <div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
-  <div style="padding:14px 20px 10px;flex-shrink:0;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);background:var(--card-bg)">
-    <span style="font-size:13px;font-weight:600">💬 公众号文章</span>
-    <span id="wechatCount" style="font-size:11px;color:var(--text3)"></span>
+  <!-- topbar -->
+  <div class="topbar">
+    <span class="topbar-title">💬 公众号管理</span>
     <span style="flex:1"></span>
-    <input id="wdSearch" placeholder="搜索…" oninput="filterWechatItems(this.value)"
-      style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;width:180px;background:var(--bg);outline:none">
-    <a href="/wechat-list" target="_blank" class="btn btn-outline btn-sm">↗ 完整管理</a>
+    <input id="wdSearch" placeholder="搜索标题…" oninput="filterWechatItems(this.value)"
+      style="height:28px;padding:0 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;width:180px;background:var(--bg);outline:none;color:var(--text)">
   </div>
-  <div style="flex:1;overflow-y:auto;padding:8px 16px" id="wdBody">
-    <div style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">加载中…</div>
+  <!-- stats -->
+  <div style="flex-shrink:0;padding:14px 20px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px" id="wdStats"></div>
+  <!-- table -->
+  <div style="flex:1;overflow-y:auto;padding:12px 20px 16px">
+    <div class="table-card" id="wdBody">
+      <div style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">加载中…</div>
+    </div>
   </div>
 </div>
 
@@ -1675,11 +1679,21 @@ let _wdAllItems=[];
 function loadWechatList(){
   fetch('/api/wechat-list').then(r=>r.json()).then(d=>{
     _wdAllItems=d.items||[];
+    // stats
+    var total=_wdAllItems.length;
+    var drafts=_wdAllItems.filter(function(i){return i.wechat_draft_id;}).length;
+    var pending=_wdAllItems.filter(function(i){return i.wechat_publish&&!i.wechat_draft_id;}).length;
+    var published=_wdAllItems.filter(function(i){return i.wechat_pub_time;}).length;
+    var stats=document.getElementById('wdStats');
+    if(stats) stats.innerHTML=
+      '<div class="mc"><div class="mc-icon" style="background:#f0fdf4">📄</div><div><div class="mc-num">'+total+'</div><div class="mc-label">总文章</div></div></div>'+
+      '<div class="mc"><div class="mc-icon" style="background:#fef3c7">📝</div><div><div class="mc-num">'+drafts+'</div><div class="mc-label">草稿箱</div></div></div>'+
+      '<div class="mc"><div class="mc-icon" style="background:#dbeafe">⏳</div><div><div class="mc-num">'+pending+'</div><div class="mc-label">待发布</div></div></div>'+
+      '<div class="mc"><div class="mc-icon" style="background:#d1fae5">✅</div><div><div class="mc-num">'+published+'</div><div class="mc-label">已发布</div></div></div>';
+    // badge
+    var badge=document.getElementById('wechatBadge');
+    if(badge&&total){badge.textContent=total;badge.style.display='';}
     renderWechatItems(_wdAllItems);
-    const badge=document.getElementById('wechatBadge');
-    if(badge&&_wdAllItems.length){badge.textContent=_wdAllItems.length;badge.style.display='';}
-    const cnt=document.getElementById('wechatCount');
-    if(cnt) cnt.textContent=_wdAllItems.length+' 篇';
   }).catch(()=>{document.getElementById('wdBody').innerHTML='<div style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">加载失败</div>';});
 }
 function filterWechatItems(q){
@@ -1688,25 +1702,37 @@ function filterWechatItems(q){
 }
 function renderWechatItems(items){
   var body=document.getElementById('wdBody');
-  if(!items.length){body.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3)">暂无公众号文章</div>';return;}
-  var html='';
+  if(!items.length){
+    body.innerHTML='<div style="padding:48px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:500;color:var(--text2);margin-bottom:4px">暂无公众号文章</div><div style="font-size:12px">在文章详情页开启公众号编辑</div></div>';
+    return;
+  }
+  var html='<div class="table-hdr" style="grid-template-columns:1fr 90px 100px 80px">'+
+    '<span class="table-hdr-title">标题</span>'+
+    '<span>状态</span><span>更新时间</span><span></span></div>'+
+    '<div id="wdTableBody"></div>';
+  body.innerHTML=html;
+  var rows='';
   for(var i=0;i<items.length;i++){
     var it=items[i];
-    var st='';
-    if(it.wechat_pub_time) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#d1fae5;color:#065f46;font-weight:500;flex-shrink:0">&#10003; 已发布</span>';
-    else if(it.wechat_draft_id) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#fef3c7;color:#92400e;font-weight:500;flex-shrink:0">草稿</span>';
-    else if(it.wechat_publish) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#dbeafe;color:#1d4ed8;font-weight:500;flex-shrink:0">待发</span>';
+    var st='<span style="color:var(--text3);font-size:11px">—</span>';
+    if(it.wechat_pub_time) st='<span class="badge" style="background:#d1fae5;color:#065f46;font-size:10px;padding:2px 7px;border-radius:10px">✅ 已发布</span>';
+    else if(it.wechat_draft_id) st='<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 7px;border-radius:10px">📝 草稿</span>';
+    else if(it.wechat_publish) st='<span class="badge" style="background:#dbeafe;color:#1d4ed8;font-size:10px;padding:2px 7px;border-radius:10px">⏳ 待发</span>';
     var title=esc(it.wechat_title||it.title||it.key.slice(0,16));
     var date=(it.updated_at||it.created_at||'').slice(0,10);
-    html+='<div class="wd-row" data-url="/wechat/'+it.key+'">';
-    html+='<span class="wd-row-title">'+title+'</span>';
-    html+=st;
-    html+='<span class="wd-row-date">'+date+'</span>';
-    html+='</div>';
+    rows+='<div class="table-row" style="grid-template-columns:1fr 90px 100px 80px" data-url="/wechat/'+it.key+'">'+
+      '<span style="font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:var(--text)" class="row-link">'+title+'</span>'+
+      '<div>'+st+'</div>'+
+      '<span style="font-size:11px;color:var(--text3)">'+date+'</span>'+
+      '<a href="/wechat/'+it.key+'" target="_blank" style="font-size:11px;color:var(--wx,#07c160);text-decoration:none;padding:3px 8px;border:1px solid rgba(7,193,96,.3);border-radius:5px">编辑</a>'+
+      '</div>';
   }
-  body.innerHTML=html;
-  body.querySelectorAll('.wd-row').forEach(function(el){
-    el.addEventListener('click',function(){window.open(this.dataset.url,'_blank');});
+  document.getElementById('wdTableBody').innerHTML=rows;
+  document.querySelectorAll('#wdTableBody .row-link').forEach(function(el){
+    el.closest('.table-row').addEventListener('click',function(e){
+      if(e.target.tagName==='A') return;
+      window.open(this.dataset.url,'_blank');
+    });
   });
 }
 </script>
