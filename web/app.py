@@ -738,28 +738,11 @@ input[type=date],input[type=datetime-local]{width:135px}
 .fetch-drawer.open{display:block}
 .side-panel{display:none;background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px}
 .side-panel.open{display:block}
-.wechat-drawer{position:fixed;top:0;right:-360px;width:360px;height:100vh;background:var(--card-bg);border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,.1);z-index:200;transition:right .25s ease;display:flex;flex-direction:column}
-.wechat-drawer.open{right:0}
-.wd-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
-.wd-title{font-size:13px;font-weight:600;color:var(--text)}
-.wd-close{margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:2px 6px;border-radius:4px}
-.wd-close:hover{background:var(--bg);color:var(--text)}
-.wd-search{padding:10px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
-.wd-search input{width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--bg);outline:none;color:var(--text)}
-.wd-search input:focus{border-color:var(--blue)}
-.wd-body{flex:1;overflow-y:auto;padding:8px 0}
-.wd-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
-.wd-item:last-child{border-bottom:none}
-.wd-item:hover{background:var(--bg)}
-.wd-item-title{flex:1;font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wd-item-meta{font-size:10px;color:var(--text3);white-space:nowrap}
-.wd-badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500;flex-shrink:0}
-.wd-badge-draft{background:#fef3c7;color:#92400e}
-.wd-badge-pub{background:#d1fae5;color:#065f46}
-.wd-badge-pend{background:#dbeafe;color:#1d4ed8}
-.wd-footer{padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0}
-.wd-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:199}
-.wd-overlay.open{display:block}
+.wd-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.wd-row:hover{background:var(--bg);margin:0 -16px;padding:10px 16px}
+.wd-row-title{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wd-row-date{font-size:11px;color:var(--text3);white-space:nowrap}
+
 .side-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .side-panel-header span{font-size:12px;font-weight:700}
 
@@ -933,6 +916,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <button class="btn btn-outline" onclick="location.reload()">🔄 刷新</button>
   </div>
 
+<div id="newsView">
   <!-- Fetch drawer (hidden by default, toggled from sidebar) -->
   <div class="fetch-drawer" id="fetchDrawer">
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
@@ -1056,6 +1040,23 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     </div>
   </div>
 
+</div><!-- /newsView -->
+
+<!-- WeChat view -->
+<div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+  <div style="padding:14px 20px 10px;flex-shrink:0;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);background:var(--card-bg)">
+    <span style="font-size:13px;font-weight:600">💬 公众号文章</span>
+    <span id="wechatCount" style="font-size:11px;color:var(--text3)"></span>
+    <span style="flex:1"></span>
+    <input id="wdSearch" placeholder="搜索…" oninput="filterWechatItems(this.value)"
+      style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;width:180px;background:var(--bg);outline:none">
+    <a href="/wechat-list" target="_blank" class="btn btn-outline btn-sm">↗ 完整管理</a>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:8px 16px" id="wdBody">
+    <div style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">加载中…</div>
+  </div>
+</div>
+
 </div><!-- /main -->
 
 <!-- Config modal -->
@@ -1107,24 +1108,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 <!-- Preview modal -->
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
 
-<!-- WeChat drawer -->
-<div class="wd-overlay" id="wechatOverlay" onclick="closeWechatPanel()"></div>
-<div class="wechat-drawer" id="wechatDrawer">
-  <div class="wd-header">
-    <span style="font-size:16px">💬</span>
-    <span class="wd-title">公众号文章</span>
-    <button class="wd-close" onclick="closeWechatPanel()">✕</button>
-  </div>
-  <div class="wd-search">
-    <input id="wdSearch" placeholder="搜索标题…" oninput="filterWechatItems(this.value)">
-  </div>
-  <div class="wd-body" id="wdBody">
-    <div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">加载中…</div>
-  </div>
-  <div class="wd-footer">
-    <a href="/wechat-list" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none">↗ 完整列表</a>
-  </div>
-</div>
+
 
 <!-- Terminal modal -->
 <div class="modal" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
@@ -1653,17 +1637,28 @@ function updateQuickTimeBtns(){
 updateQuickTimeBtns();setInterval(updateQuickTimeBtns,60000);
 
 function toggleWechatPanel(){
-  const d=document.getElementById('wechatDrawer');
-  const o=document.getElementById('wechatOverlay');
+  const nv=document.getElementById('newsView');
+  const wv=document.getElementById('wechatView');
   const n=document.getElementById('wechatNavItem');
-  if(d.classList.contains('open')){closeWechatPanel();return;}
-  d.classList.add('open');o.classList.add('open');if(n)n.classList.add('open');
+  const newsNav=document.querySelector('.nav-item.active');
+  if(wv.style.display!=='none'&&wv.style.display!==''){
+    // already showing wechat, switch back
+    wv.style.display='none'; nv.style.display=''; if(n)n.classList.remove('active'); return;
+  }
+  nv.style.display='none';
+  wv.style.display='flex';
+  wv.style.flexDirection='column';
+  if(newsNav) newsNav.classList.remove('active');
+  if(n) n.classList.add('active');
   loadWechatList();
 }
 function closeWechatPanel(){
-  document.getElementById('wechatDrawer').classList.remove('open');
-  document.getElementById('wechatOverlay').classList.remove('open');
-  const n=document.getElementById('wechatNavItem');if(n)n.classList.remove('open');
+  const nv=document.getElementById('newsView');
+  const wv=document.getElementById('wechatView');
+  const n=document.getElementById('wechatNavItem');
+  if(wv) wv.style.display='none';
+  if(nv) nv.style.display='';
+  if(n) n.classList.remove('active');
 }
 let _wdAllItems=[];
 function loadWechatList(){
@@ -1672,7 +1667,9 @@ function loadWechatList(){
     renderWechatItems(_wdAllItems);
     const badge=document.getElementById('wechatBadge');
     if(badge&&_wdAllItems.length){badge.textContent=_wdAllItems.length;badge.style.display='';}
-  }).catch(()=>{document.getElementById('wdBody').innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--text3)">加载失败</div>';});
+    const cnt=document.getElementById('wechatCount');
+    if(cnt) cnt.textContent=_wdAllItems.length+' 篇';
+  }).catch(()=>{document.getElementById('wdBody').innerHTML='<div style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">加载失败</div>';});
 }
 function filterWechatItems(q){
   const items=q?_wdAllItems.filter(i=>(i.title||'').toLowerCase().includes(q.toLowerCase())):_wdAllItems;
@@ -1680,17 +1677,26 @@ function filterWechatItems(q){
 }
 function renderWechatItems(items){
   var body=document.getElementById('wdBody');
-  if(!items.length){body.innerHTML='<div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">暂无文章</div>';return;}
-  body.innerHTML=items.map(function(i){
-    var badge='';
-    if(i.wechat_pub_time) badge='<span class="wd-badge wd-badge-pub">✅</span>';
-    else if(i.wechat_draft_id) badge='<span class="wd-badge wd-badge-draft">草稿</span>';
-    else if(i.wechat_publish) badge='<span class="wd-badge wd-badge-pend">待发</span>';
-    var title=esc(i.wechat_title||i.title||i.key.slice(0,16));
-    var date=(i.updated_at||i.created_at||'').slice(0,10);
-    var url='/wechat/'+i.key;
-    return '<div class="wd-item" onclick="window.open(this.dataset.url,\'_blank\')" data-url="'+url+'">'+badge+'<span class="wd-item-title">'+title+'</span><span class="wd-item-meta">'+date+'</span></div>';
-  }).join('');
+  if(!items.length){body.innerHTML='<div style="padding:32px;text-align:center;color:var(--text3)">暂无公众号文章</div>';return;}
+  var html='';
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    var st='';
+    if(it.wechat_pub_time) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#d1fae5;color:#065f46;font-weight:500;flex-shrink:0">&#10003; 已发布</span>';
+    else if(it.wechat_draft_id) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#fef3c7;color:#92400e;font-weight:500;flex-shrink:0">草稿</span>';
+    else if(it.wechat_publish) st='<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#dbeafe;color:#1d4ed8;font-weight:500;flex-shrink:0">待发</span>';
+    var title=esc(it.wechat_title||it.title||it.key.slice(0,16));
+    var date=(it.updated_at||it.created_at||'').slice(0,10);
+    html+='<div class="wd-row" data-url="/wechat/'+it.key+'">';
+    html+='<span class="wd-row-title">'+title+'</span>';
+    html+=st;
+    html+='<span class="wd-row-date">'+date+'</span>';
+    html+='</div>';
+  }
+  body.innerHTML=html;
+  body.querySelectorAll('.wd-row').forEach(function(el){
+    el.addEventListener('click',function(){window.open(this.dataset.url,'_blank');});
+  });
 }
 </script>
 </body></html>"""
