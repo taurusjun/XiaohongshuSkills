@@ -3535,21 +3535,35 @@ window.addEventListener('DOMContentLoaded', function(){
   initEd(); onTitleInput(document.getElementById('wechatTitleInput'));
 });
 
+function _parseLines(txt, out){
+  // 与详情页 _textToEjsBlocks 保持一致：按行解析 ##/>/普通段落
+  var lines=txt.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var l=lines[i].trim(); if(!l) continue;
+    if(l.slice(0,4)==='### ') out.push({type:'header',data:{text:l.slice(4),level:3}});
+    else if(l.slice(0,3)==='## ') out.push({type:'header',data:{text:l.slice(3),level:2}});
+    else if(l.slice(0,2)==='# ') out.push({type:'header',data:{text:l.slice(2),level:1}});
+    else if(l.slice(0,2)==='> ') out.push({type:'quote',data:{text:l.slice(2),caption:''}});
+    else out.push({type:'paragraph',data:{text:l}});
+  }
+}
 function _textToBlocks(txt){
-  var blocks=[], paras=txt.split('\n\n');
-  for(var i=0;i<paras.length;i++){
-    var p=paras[i].trim(); if(!p) continue;
-    var lines=p.split('\n');
-    for(var j=0;j<lines.length;j++){
-      var l=lines[j].trim(); if(!l) continue;
-      if(l.slice(0,4)==='### ') blocks.push({type:'header',data:{text:l.slice(4),level:3}});
-      else if(l.slice(0,3)==='## ') blocks.push({type:'header',data:{text:l.slice(3),level:2}});
-      else if(l.slice(0,2)==='# ') blocks.push({type:'header',data:{text:l.slice(2),level:1}});
-      else if(l.slice(0,2)==='> ') blocks.push({type:'quote',data:{text:l.slice(2),caption:''}});
-      else blocks.push({type:'paragraph',data:{text:l}});
+  var blocks=[];
+  _parseLines(txt, blocks);
+  return blocks.length ? blocks : [{type:'paragraph',data:{text:txt}}];
+}
+function _expandBlocks(rawBlocks){
+  // 如果段落里包含 ## 标记，重新解析成多块
+  var out=[];
+  for(var i=0;i<rawBlocks.length;i++){
+    var b=rawBlocks[i];
+    if(b.type==='paragraph' && b.data && b.data.text && b.data.text.indexOf('## ')>=0){
+      _parseLines(b.data.text, out);
+    } else {
+      out.push(b);
     }
   }
-  return blocks;
+  return out.length ? out : rawBlocks;
 }
 function initEd(){
   var raw = {{news.wechat_content|tojson}} || '';
@@ -3557,7 +3571,7 @@ function initEd(){
   if(raw){
     try{
       var p=JSON.parse(raw);
-      if(p&&p.blocks) initData=p;
+      if(p&&p.blocks) initData={blocks:_expandBlocks(p.blocks)};
       else initData={blocks:_textToBlocks(raw)};
     }catch(e){ initData={blocks:_textToBlocks(raw)}; }
   }
