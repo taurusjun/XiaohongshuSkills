@@ -186,7 +186,9 @@ def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THE
                 if p.startswith("/") and p not in img_url_map:
                     img_url_map[p] = f"file://{p}"
 
-    body = _render_html(content, img_url_map, theme_name)
+    # Prepend title as H1 so format_engine doesn't fall back to input_path stem
+    content_with_title = f'# {title}\n\n{content}' if title and not content.lstrip().startswith('# ') else content
+    body = _render_html(content_with_title, img_url_map, theme_name)
     theme = load_theme(theme_name) if _theme_exists(theme_name) else {}
     colors = theme.get("colors", {}) if theme else {}
     primary = colors.get("accent", "#333")
@@ -264,7 +266,7 @@ def _render_html(content: str, img_url_map: dict,
 
     result = format_for_output(
         md_content,
-        input_path=Path("/dev/stdin"),  # 占位路径
+        input_path=Path("/tmp/wechat_article.md"),  # 占位路径
         theme=theme,
         output_dir=Path("/tmp/wechat-format"),
         vault_root=Path.home(),
