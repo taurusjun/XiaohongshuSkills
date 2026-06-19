@@ -3672,7 +3672,7 @@ def api_wechat_list():
     from sqlite_db import _connect
     with _connect() as db:
         rows = [dict(r) for r in db.execute(
-            "SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,updated_at,created_at "
+            "SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,updated_at,created_at,image_url "
             "FROM news WHERE status='active' AND (wechat_content!='' OR wechat_publish=1 OR wechat_draft_id!='') "
             "ORDER BY updated_at DESC LIMIT 200"
         ).fetchall()]
