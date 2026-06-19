@@ -3410,10 +3410,10 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
     </div>
     <div class="sb-sec"><div class="sb-lbl">排版主题</div>
       <div class="sb-themes" id="sbThemes">
-        <div class="sb-theme on" data-t="fresh" onclick="selTheme('fresh')"><span class="sb-theme-dot" style="background:#FA5151"></span><span class="sb-theme-name">活力橘</span><span class="sb-theme-desc">偶像/娱乐</span></div>
+        <div class="sb-theme on" data-t="sports" onclick="selTheme('sports')"><span class="sb-theme-dot" style="background:#FA5151"></span><span class="sb-theme-name">活力橘</span><span class="sb-theme-desc">偶像/娱乐</span></div>
         <div class="sb-theme" data-t="newspaper" onclick="selTheme('newspaper')"><span class="sb-theme-dot" style="background:#0F4C81"></span><span class="sb-theme-name">新闻蓝</span><span class="sb-theme-desc">权威感</span></div>
-        <div class="sb-theme" data-t="elegant" onclick="selTheme('elegant')"><span class="sb-theme-dot" style="background:#92617E"></span><span class="sb-theme-name">优雅紫</span><span class="sb-theme-desc">深度报道</span></div>
-        <div class="sb-theme" data-t="minimal" onclick="selTheme('minimal')"><span class="sb-theme-dot" style="background:#333"></span><span class="sb-theme-name">简洁黑</span><span class="sb-theme-desc">严肃媒体</span></div>
+        <div class="sb-theme" data-t="magazine" onclick="selTheme('magazine')"><span class="sb-theme-dot" style="background:#92617E"></span><span class="sb-theme-name">优雅紫</span><span class="sb-theme-desc">深度报道</span></div>
+        <div class="sb-theme" data-t="minimal-gray" onclick="selTheme('minimal-gray')"><span class="sb-theme-dot" style="background:#333"></span><span class="sb-theme-name">简洁黑</span><span class="sb-theme-desc">严肃媒体</span></div>
       </div>
     </div>
     <div class="sb-sec" style="flex:1"><div class="sb-lbl">图片素材</div>
@@ -3465,7 +3465,7 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 <textarea id="wxHidden" style="display:none">{{news.wechat_content or news.content or ''}}</textarea>
 <script>
 var WK="{{news.key}}";
-var _th="fresh",_ed=null,_dirty=false,_stimer=null;
+var _th='newspaper',_ed=null,_dirty=false,_stimer=null;
 function _S(id){return document.getElementById(id);}
 function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
 function _setSave(s){var e=_S('tbSaved');if(!e)return;if(s==='saving'){e.textContent='保存中…';e.className='tb-saved saving';}else if(s==='saved'){e.textContent='已保存';e.className='tb-saved saved';}else{e.textContent='未保存';e.className='tb-saved';}}
@@ -3615,8 +3615,13 @@ function doPreview(){
   var frame=document.getElementById('previewFrame');
   var lbl=document.getElementById('previewThemeLbl');
   if(lbl) lbl.textContent='主题：'+_th;
-  if(frame) frame.src='/api/wechat/'+WK+'/preview?theme='+_th;
   if(drawer) drawer.classList.add('open');
+  if(!frame) return;
+  frame.srcdoc='<div style="padding:20px;font-size:13px;color:#888">加载中...</div>';
+  fetch('/api/wechat/'+WK+'/preview?theme='+_th)
+    .then(function(r){return r.text();})
+    .then(function(html){frame.srcdoc=html;})
+    .catch(function(e){frame.srcdoc='<div style="padding:20px;color:red">预览失败: '+e.message+'</div>';});
 }
 function closePreviewDrawer(){
   var drawer=document.getElementById('previewDrawer');
