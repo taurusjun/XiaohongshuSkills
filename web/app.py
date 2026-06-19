@@ -3680,7 +3680,8 @@ function initEd(){
     },
     data:initData,
     onChange:function(){ _dirty=true; setSave('—'); clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},2500); updateWxWordCount(); },
-    placeholder:'开始编写公众号正文…'
+    placeholder:'开始编写公众号正文…',
+    onReady:function(){ setTimeout(updateWxWordCount, 500); }
   });
 }
 
