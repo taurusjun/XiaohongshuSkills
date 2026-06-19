@@ -3076,5 +3076,235 @@ def api_collect_metrics_batch():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+WECHAT_HTML = r"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>公众号编辑 — {{news.wechat_title or news.title or ''}}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#f5f6fa;--card-bg:#fff;--text:#222;--text2:#555;--text3:#999;--border:#e1e4e8;--blue:#2563eb;--red:#dc2626;--green:#16a34a}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
+  .topbar{display:flex;align-items:center;padding:8px 16px;background:var(--card-bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+  .card-section{background:var(--card-bg);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid var(--border)}
+  .card-section-title{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text)}
+  .btn{padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer}
+  .btn-sm{padding:4px 10px;font-size:11px}
+  .btn-gray{background:#e5e7eb;color:#374151}
+  .inline-textarea{border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit;width:100%;resize:vertical;min-height:60px;outline:none;color:var(--text)}
+  .inline-textarea:focus{border-color:var(--blue)}
+</style>
+<style>
+  .wechat-layout{display:flex;gap:14px;height:calc(100vh - 120px)}
+  .wechat-left{width:220px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding-right:10px}
+  .wechat-center{flex:1;overflow-y:auto;min-width:0}
+  .wechat-right{width:280px;flex-shrink:0;overflow-y:auto}
+  .img-thumb{cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;margin-bottom:6px;position:relative}
+  .img-thumb:hover{border-color:var(--blue)}
+  .img-thumb img{width:100%;height:80px;object-fit:cover;display:block}
+  .img-thumb .src-tag{position:absolute;top:2px;left:2px;font-size:8px;background:rgba(0,0,0,.6);color:#fff;padding:1px 4px;border-radius:2px;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #wechat-status{font-size:11px;padding:4px 8px;border-radius:4px;display:inline-block}
+  #wechat-status.draft{background:#fef3c7;color:#92400e}
+  #wechat-status.published{background:#d1fae5;color:#065f46}
+  #wechat-status.none{background:#f3f4f6;color:#6b7280}
+</style>
+<div class="topbar"><a href="/" style="color:var(--blue);text-decoration:none;font-size:12px">← 返回管理</a><span style="margin-left:12px;font-size:13px;font-weight:600">公众号编辑</span></div>
+<div class="wechat-layout">
+  <!-- 左栏：图片 -->
+  <div class="wechat-left">
+    <div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--text)">📷 图片素材 ({{all_images|length}})</div>
+    <div id="wechatImgGallery">
+      {% for img in all_images %}
+      <div class="img-thumb" onclick="insertWechatImage('{{img.path}}')" title="{{img.source}}">
+        <img src="/local-image?path={{img.path}}" loading="lazy">
+        <span class="src-tag">{{img.source}}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <!-- 中栏：编辑器 -->
+  <div class="wechat-center">
+    <textarea id="wechatContentHidden" style="display:none">{{news.wechat_content or ''}}</textarea>
+    <div id="wechat-editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:400px"></div>
+  </div>
+  <!-- 右栏：标题 + 发布 -->
+  <div class="wechat-right">
+    <div class="card-section">
+      <div class="card-section-title">公众号标题</div>
+      <textarea class="inline-textarea auto-resize" id="wechatTitleInput" style="min-height:40px;font-size:14px;font-weight:600" oninput="autoSaveWechatTitle()">{{news.wechat_title or news.title or ''}}</textarea>
+      <span style="font-size:10px;color:var(--text3)">微信标题上限约 10 个汉字</span>
+    </div>
+    <div class="card-section">
+      <div class="card-section-title">发布状态</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <select id="wechatPublish" onchange="autoSaveWechatPublish()" style="font-size:11px;padding:2px 5px;border:1px solid var(--border);border-radius:4px">
+          <option value="0" {{'selected' if not news.wechat_publish else ''}}>不发</option>
+          <option value="1" {{'selected' if news.wechat_publish else ''}}>待发</option>
+        </select>
+        <span id="wechat-status" class="{% if news.wechat_draft_id %}draft{% elif news.wechat_pub_time %}published{% else %}none{% endif %}">
+          {% if news.wechat_draft_id %}草稿: {{news.wechat_draft_id[:16]}}...{% elif news.wechat_pub_time %}已发布: {{news.wechat_pub_time}}{% else %}未发布{% endif %}
+        </span>
+      </div>
+    </div>
+    <div class="card-section">
+      <button class="btn btn-sm" onclick="saveWechat()" style="background:var(--blue);color:#fff;width:100%">💾 保存</button>
+      <button class="btn btn-gray btn-sm" onclick="publishWechat()" style="width:100%;margin-top:6px" {{'disabled' if not news.wechat_publish else ''}}>📤 发布到公众号草稿箱</button>
+    </div>
+  </div>
+</div>
+<script>
+const WKEY='{{news.key}}';
+let _wechatEditor=null;
+const _allImgs={{all_images|tojson}}.map(i=>i.path);
+
+// Editor.js helpers (same as detail page)
+function _textToEjsBlocks(text,imgs){
+  var blocks=[];if(!text)return blocks;
+  var paras=text.split('\n\n');
+  for(var i=0;i<paras.length;i++){
+    var p=paras[i].trim();if(!p)continue;
+    if(p.startsWith('## ')||p.startsWith('### ')){blocks.push({type:'header',data:{text:p.replace(/^#+\s*/,''),level:p.startsWith('### ')?3:2}});continue}
+    var m=p.match(/^【(?:图片|推文)(\d+)[：:]([^】]+)/);
+    if(m){var idx=parseInt(m[1])-1;if(idx>=0&&idx<imgs.length){blocks.push({type:'galleryImage',data:{paths:[imgs[idx]],caption:m[0]}})}continue}
+    blocks.push({type:'paragraph',data:{text:p}});
+  }
+  return blocks;
+}
+function _ejsBlocksToText(blocks){
+  var lines=[];for(var i=0;i<blocks.length;i++){var b=blocks[i];
+    if(b.type==='header'){lines.push('## '+b.data.text)}
+    else if(b.type==='galleryImage'){lines.push((b.data.caption||''))}
+    else if(b.type==='quote'){lines.push('> '+b.data.text+(b.data.caption?' — '+b.data.caption:''))}
+    else{lines.push(b.data.text||'')}
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function autoSaveWechatTitle(){
+  const v=document.getElementById('wechatTitleInput').value;
+  fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_title:v})});
+}
+function autoSaveWechatPublish(){
+  const v=document.getElementById('wechatPublish').value;
+  fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_publish:parseInt(v)})});
+}
+async function saveWechat(){
+  if(_wechatEditor){
+    const out=await _wechatEditor.save();
+    const text=_ejsBlocksToText(out.blocks||[]);
+    document.getElementById('wechatContentHidden').value=text;
+    await fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_content:text})});
+  }
+  var t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1000);
+}
+function insertWechatImage(path){
+  if(!_wechatEditor) return;
+  const url='/local-image?path='+encodeURIComponent(path);
+  const cap='【图片：'+path.split('/').pop()+'】';
+  const idx=_wechatEditor.blocks.getCurrentBlockIndex();
+  _wechatEditor.blocks.insert('galleryImage',{paths:[path],caption:cap},{},idx+1,true);
+}
+function publishWechat(){
+  if(!confirm('将当前内容发布到微信公众号草稿箱？')) return;
+  saveWechat().then(()=>{
+    fetch('/api/wechat/'+WKEY+'/publish',{method:'POST'}).then(r=>r.json()).then(d=>{
+      if(d.ok) alert('草稿创建成功！\\nmedia_id: '+d.media_id);
+      else alert('发布失败: '+(d.error||'unknown'));
+    });
+  });
+}
+// Editor.js init
+(function loadWechatEditorJs(){
+  const el=document.getElementById('wechat-editorjs');
+  if(!el) return;
+  function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s)}
+  loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
+    loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
+      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',()=>{
+        loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',()=>{
+          // GalleryImageBlock class
+          class GalleryImageBlock{constructor({data}){this.data=data||{paths:[],caption:''}}static get toolbox(){return{title:'图片',icon:'🖼'}}render(){const w=document.createElement('div');w.style.cssText='display:flex;flex-wrap:wrap;gap:6px';if(this.data.paths){this.data.paths.forEach(p=>{const img=document.createElement('img');img.src='/local-image?path='+encodeURIComponent(p);img.style.cssText='max-width:100%;max-height:400px;border-radius:8px';w.appendChild(img)})}return w}save(blockContent){return this.data}}
+          const raw=document.getElementById('wechatContentHidden').value;
+          _wechatEditor=new EditorJS({
+            holder:'wechat-editorjs',minHeight:200,
+            placeholder:'编辑公众号正文...',
+            tools:{
+              header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+              quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处'}},
+              galleryImage:{class:GalleryImageBlock}
+            },
+            data:{blocks:_textToEjsBlocks(raw,_allImgs||[])}
+          });
+        });
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
+"""
+
+@app.route('/wechat/<key>')
+def wechat_editor(key):
+    from flask import render_template_string as rts
+    import json as _json
+    news = get_by_key(key)
+    if not news:
+        return "Not found", 404
+    # Parse gallery
+    gi = news.get('gallery_images', '')
+    news['gallery_images'] = _json.loads(gi) if isinstance(gi, str) and gi else (gi or [])
+    # Collect images from current + related articles
+    rk_raw = news.get('related_keys', '') or ''
+    all_images = []
+    seen = set()
+    for p in (news['gallery_images'] or []):
+        if p not in seen:
+            seen.add(p)
+            all_images.append({'path': p, 'source': '本文'})
+    for rk in rk_raw.split(','):
+        rk = rk.strip()
+        if not rk: continue
+        rr = get_by_key(rk)
+        if not rr: continue
+        title_short = (rr.get('title', '') or rk)[:15]
+        gi2 = rr.get('gallery_images', '')
+        gi2_list = _json.loads(gi2) if isinstance(gi2, str) and gi2 else (gi2 or [])
+        for p in gi2_list:
+            if p not in seen:
+                seen.add(p)
+                all_images.append({'path': p, 'source': title_short})
+    return rts(WECHAT_HTML, news=news, all_images=all_images)
+
+@app.route('/api/wechat/<key>', methods=['PUT'])
+def api_wechat_update(key):
+    data = request.get_json()
+    allowed = {'wechat_title','wechat_content','wechat_publish'}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if updates:
+        update_news(key, updates)
+    return jsonify({"ok": True})
+
+@app.route('/api/wechat/<key>/publish', methods=['POST'])
+def api_wechat_publish(key):
+    import subprocess, os
+    scripts_dir = os.path.join(os.path.dirname(__file__), '..', 'scripts')
+    result = subprocess.run(
+        [sys.executable, 'wechat_publisher.py', '--key', key],
+        capture_output=True, text=True, timeout=120,
+        cwd=scripts_dir,
+        env={**os.environ, 'PYTHONPATH': scripts_dir}
+    )
+    if result.returncode == 0:
+        # Extract media_id from output
+        import re
+        m = re.search(r'media_id\s*=\s*(\S+)', result.stdout)
+        if m:
+            update_news(key, {'wechat_draft_id': m.group(1)})
+        return jsonify({"ok": True, "output": result.stdout[-500:]})
+    return jsonify({"ok": False, "error": result.stderr[-500:]})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
