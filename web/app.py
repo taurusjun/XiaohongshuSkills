@@ -1077,7 +1077,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 .wd-row-title{flex:1;min-width:0;font-size:13px;color:var(--wdt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wd-row-st{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--wdt2);width:72px;flex-shrink:0}
 .wd-row-dt{font-size:11px;color:var(--wdt3);width:80px;text-align:right;flex-shrink:0}
-.wd-row-act{opacity:0 !important;flex-shrink:0;transition:opacity .1s}.wd-row:hover .wd-row-act{opacity:1 !important}
+
 .wd-ibtn{width:26px;height:26px;border-radius:var(--wdrad);border:1px solid var(--wdbr2);background:var(--wdb3);color:var(--wdt2);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .wd-ibtn:hover{color:var(--wdt)}
 .wd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 20px;color:var(--wdt3);font-size:13px}
@@ -1766,13 +1766,12 @@ function renderWechatItems(items){
     else if(n.wechat_draft_id){dotCls='wd-dy';stLabel='草稿';}
     else if(n.wechat_publish){dotCls='wd-db';stLabel='待发布';}
     var url='/wechat/'+n.key;
-    html+='<a class="wd-row" href="'+url+'">';
+    html+='<div class="wd-row" onclick="location.href=''+url+''">';
     html+='<span class="wd-dot '+dotCls+'"></span>';
     html+='<span class="wd-row-title" title="'+title+'">'+title+'</span>';
     html+='<span class="wd-row-st"><span class="wd-dot '+dotCls+'" style="width:6px;height:6px"></span>'+stLabel+'</span>';
     html+='<span class="wd-row-dt">'+date+'</span>';
-    html+='<span class="wd-row-act"><a class="wd-ibtn" href="'+url+'" onclick="event.stopPropagation()" title="编辑">✎</a></span>';
-    html+='</a>';
+    html+='</div>';
   });
   body.innerHTML=html;
 }
