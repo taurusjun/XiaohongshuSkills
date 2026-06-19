@@ -3485,29 +3485,18 @@ select.lp-sel:focus{border-color:var(--blue)}
         </div>
       </div>
 
-      <!-- Side-by-side: editor + original -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
-
-        <!-- Editor -->
-        <div class="editor-card2">
-          <div class="editor-card2-hdr">
-            <div class="editor-card2-title">✏️ 公众号正文</div>
+      <!-- Editor -->
+      <div class="editor-card2">
+        <div class="editor-card2-hdr">
+          <div class="editor-card2-title">✏️ 公众号正文</div>
+          <div style="display:flex;gap:5px">
             <button class="btn btn-gray btn-xs" onclick="openWxImgPicker()">🖼 插入图片</button>
-          </div>
-          <div class="editor-card2-body">
-            <div id="wechat-editorjs"></div>
+            <button class="btn btn-gray btn-xs" onclick="toggleOrigDrawer()">📄 原文参考</button>
           </div>
         </div>
-
-        <!-- Original content -->
-        <div class="editor-card2">
-          <div class="editor-card2-hdr">
-            <div class="editor-card2-title">📄 原文参考</div>
-            <button class="btn btn-gray btn-xs" onclick="copyOrigToEditor()">← 载入到编辑器</button>
-          </div>
-          <div style="padding:8px 16px 16px;font-size:12.5px;line-height:1.8;color:var(--text2);white-space:pre-wrap;max-height:600px;overflow-y:auto" id="origPanel">{{news.content or '（无原文）'}}</div>
+        <div class="editor-card2-body">
+          <div id="wechat-editorjs"></div>
         </div>
-
       </div>
 
     </div>
@@ -3517,6 +3506,17 @@ select.lp-sel:focus{border-color:var(--blue)}
 
 <!-- Gallery modal -->
 <!-- Wechat image picker -->
+<!-- Original content drawer -->
+<div id="origDrawer" style="position:fixed;top:50px;right:-420px;width:420px;bottom:0;background:var(--card-bg);border-left:1px solid var(--border);box-shadow:-4px 0 20px rgba(0,0,0,.1);z-index:300;transition:right .25s ease;display:flex;flex-direction:column">
+  <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span style="font-size:13px;font-weight:600">📄 原文参考</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-gray btn-xs" onclick="copyOrigToEditor()">← 载入编辑器</button>
+    <button onclick="toggleOrigDrawer()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:2px 6px">✕</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px 16px;font-size:12.5px;line-height:1.8;color:var(--text2);white-space:pre-wrap">{{news.content or '（无原文）'}}</div>
+</div>
+
 <div id="wxImgPicker" onclick="if(event.target===this)closeWxImgPicker()"
   style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:600;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
   <div style="background:var(--card-bg);border-radius:14px;max-width:520px;width:92%;max-height:72vh;overflow-y:auto;padding:18px;box-shadow:0 16px 48px rgba(0,0,0,.18)">
@@ -3743,6 +3743,10 @@ function setTheme(el){
   el.classList.add('active'); _theme=el.dataset.theme;
 }
 
+function toggleOrigDrawer(){
+  var d=document.getElementById('origDrawer');
+  d.style.right=(d.style.right==='-420px'||!d.style.right)?'0':'-420px';
+}
 var _wxImgPickerCb=null;
 function openWxImgPicker(cb){
   _wxImgPickerCb=cb||null;
