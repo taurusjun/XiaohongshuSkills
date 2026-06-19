@@ -3351,15 +3351,15 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 .preview-drawer-body{flex:1;overflow-y:auto;background:#f0f0f0}
 .preview-drawer-body iframe{width:100%;height:100%;border:none}
 /* orig drawer */
-.orig-drawer{position:fixed;top:48px;right:-440px;width:440px;bottom:0;background:var(--bg2);border-left:1px solid var(--br);z-index:200;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden}
+.orig-drawer{position:fixed;top:48px;right:-440px;width:440px;bottom:0;background:#fff;border-left:1px solid #e5e7eb;z-index:200;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden;box-shadow:-4px 0 20px rgba(0,0,0,.08)}
 .orig-drawer.open{right:0}
-.orig-drawer-hdr{padding:12px 16px;border-bottom:1px solid var(--br);display:flex;align-items:center;gap:10px;flex-shrink:0}
-.orig-drawer-title{font-size:13px;font-weight:600;color:var(--t)}
-.orig-drawer-close{background:none;border:none;cursor:pointer;color:var(--t3);font-size:16px;padding:2px 6px;border-radius:var(--r);margin-left:auto}
-.orig-drawer-close:hover{color:var(--t);background:var(--hv)}
-.orig-drawer-body{flex:1;overflow-y:auto;padding:16px;font-size:12.5px;line-height:1.8;color:var(--t2);white-space:pre-wrap}
+.orig-drawer-hdr{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#fff}
+.orig-drawer-title{font-size:13px;font-weight:600;color:#1a1a2e}
+.orig-drawer-close{background:none;border:none;cursor:pointer;color:#9ca3af;font-size:16px;padding:2px 6px;border-radius:6px;margin-left:auto}
+.orig-drawer-close:hover{color:#1a1a2e;background:#f3f4f6}
+.orig-drawer-body{flex:1;overflow-y:auto;padding:16px;font-size:12.5px;line-height:1.8;color:#374151;white-space:pre-wrap;background:#fafafa}
 .orig-drawer-body::-webkit-scrollbar{width:4px}
-.orig-drawer-body::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px}
+.orig-drawer-body::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:2px}
 /* toast */
 .wx-toast{position:fixed;bottom:24px;right:24px;background:#1c1c20;border:1px solid var(--br2);color:var(--t);padding:10px 16px;border-radius:var(--r);font-size:12px;font-weight:500;z-index:9999;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
 .wx-toast.show{opacity:1;transform:none}
@@ -3376,7 +3376,7 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
   <div class="tb-doc" id="tbDoc">{{news.wechat_title or news.title or '(无标题)'}}</div>
   <span class="tb-saved" id="tbSaved">已保存</span>
   <button class="btn btn-ghost btn-sm" onclick="toggleOrigDrawer()">原文参考</button>
-  <button class="btn btn-ghost btn-sm" onclick="doPreview()">预览</button>
+  <button class="btn btn-ghost btn-sm" onclick="togglePreviewDrawer()">预览</button>
   <button class="btn btn-ghost btn-sm" onclick="doSave()">保存</button>
   <button class="btn btn-fill btn-sm" id="btnPush" onclick="doPush()">推送草稿</button>
 </div>
@@ -3641,6 +3641,15 @@ async function doPush(){
 function toggleOrigDrawer(){
   var d=document.getElementById('origDrawer');
   if(d) d.classList.toggle('open');
+}
+function togglePreviewDrawer(){
+  var d=document.getElementById('previewDrawer');
+  if(!d) return;
+  if(d.classList.contains('open')){
+    d.classList.remove('open');
+  } else {
+    doPreview();
+  }
 }
 document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();doSave(false);}});
 </script>
