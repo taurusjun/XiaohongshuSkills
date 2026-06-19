@@ -3545,47 +3545,70 @@ select.lp-sel:focus{border-color:var(--blue)}
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js"></script>
 <script>
+function _wxLoadScript(src,cb){var s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
+_wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',function(){
+  _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',function(){
+    _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',function(){
+      _wxLoadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',function(){
+        window._wxEditorReady=true;
+        if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',_wxInitAll);}
+        else{_wxInitAll();}
+      });
+    });
+  });
+});
+function _wxInitAll(){initEd(); onTitleInput(document.getElementById('wechatTitleInput'));}
+
 var WKEY='{{news.key}}';
 var _editor=null, _theme='newspaper', _dirty=false, _stimer=null;
 var _origContent = {{news.content|tojson}} || '';
 
-// Init
-window.addEventListener('DOMContentLoaded', function(){
-  initEd(); onTitleInput(document.getElementById('wechatTitleInput'));
-});
+// Init handled by _wxInitAll after CDN load
 
-function _parseLines(txt, out){
-  // 与详情页 _textToEjsBlocks 保持一致：按行解析 ##/>/普通段落
-  var lines=txt.split('\n');
-  for(var i=0;i<lines.length;i++){
-    var l=lines[i].trim(); if(!l) continue;
-    if(l.slice(0,4)==='### ') out.push({type:'header',data:{text:l.slice(4),level:3}});
-    else if(l.slice(0,3)==='## ') out.push({type:'header',data:{text:l.slice(3),level:2}});
-    else if(l.slice(0,2)==='# ') out.push({type:'header',data:{text:l.slice(2),level:1}});
-    else if(l.slice(0,2)==='> ') out.push({type:'quote',data:{text:l.slice(2),caption:''}});
-    else out.push({type:'paragraph',data:{text:l}});
-  }
-}
+// ── Text ↔ Editor.js blocks (mirrors detail page) ─────────────────────
 function _textToBlocks(txt){
-  var blocks=[];
-  _parseLines(txt, blocks);
+  var blocks=[], last=0, re=/【(?:图片|推文)\d+：[^】]*】/g, m;
+  function addText(t){
+    if(!t.trim()) return;
+    t.split('\n').forEach(function(line){
+      var s=line.trim(); if(!s) return;
+      if(s.slice(0,4)==='### ') blocks.push({type:'header',data:{text:s.slice(4).trim(),level:3}});
+      else if(s.slice(0,3)==='## ') blocks.push({type:'header',data:{text:s.slice(3).trim(),level:2}});
+      else if(s.slice(0,2)==='> ') blocks.push({type:'quote',data:{text:s.slice(2).trim(),caption:'',alignment:'left'}});
+      else blocks.push({type:'paragraph',data:{text:s}});
+    });
+  }
+  while((m=re.exec(txt))!==null){
+    addText(txt.slice(last,m.index));
+    var inner=m[0].replace(/^【(?:图片|推文)\d+：/,'').replace(/】$/,'');
+    var paths=inner.startsWith('/')?inner.split('|').filter(function(p){return p.startsWith('/');}):[inner];
+    blocks.push({type:'galleryImage',data:{paths:paths,caption:m[0]}});
+    last=m.index+m[0].length;
+  }
+  addText(txt.slice(last));
   return blocks.length ? blocks : [{type:'paragraph',data:{text:txt}}];
 }
-function _expandBlocks(rawBlocks){
-  // 如果段落里包含 ## 标记，重新解析成多块
-  var out=[];
-  for(var i=0;i<rawBlocks.length;i++){
-    var b=rawBlocks[i];
-    if(b.type==='paragraph' && b.data && b.data.text && b.data.text.indexOf('## ')>=0){
-      _parseLines(b.data.text, out);
-    } else {
-      out.push(b);
+function _blocksToText(blocks){
+  var parts=[]; var imgN=1;
+  (blocks||[]).forEach(function(b){
+    if(b.type==='paragraph'&&b.data.text) parts.push(b.data.text);
+    else if(b.type==='header'&&b.data.text) parts.push((b.data.level===3?'### ':'## ')+b.data.text);
+    else if(b.type==='quote'&&b.data.text) parts.push('> '+b.data.text);
+    else if(b.type==='galleryImage'){
+      var ps=(b.data.paths||[]).filter(function(p){return p;});
+      if(ps.length){parts.push('【图片'+imgN+'：'+ps.join('|')+'】');imgN++;}
     }
-  }
+  });
+  return parts.join('\n');
+}
+function _expandBlocks(rawBlocks){
+  var out=[];
+  (rawBlocks||[]).forEach(function(b){
+    if(b.type==='paragraph'&&b.data&&b.data.text&&b.data.text.indexOf('## ')>=0){
+      _textToBlocks(b.data.text).forEach(function(nb){out.push(nb);});
+    } else { out.push(b); }
+  });
   return out.length ? out : rawBlocks;
 }
 function initEd(){
@@ -3598,58 +3621,57 @@ function initEd(){
       else initData={blocks:_textToBlocks(raw)};
     }catch(e){ initData={blocks:_textToBlocks(raw)}; }
   }
-  // GalleryImageBlock for wechat editor
-  class WxGalleryBlock {
-    static get toolbox(){return{title:'插入图片',icon:'🖼'};}
+  // Full GalleryImageBlock — matches detail page capability
+  class GalleryImageBlockWx {
+    static get toolbox(){return{title:'图片',icon:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="15" viewBox="0 0 336 276"><path d="M291 150V79c0-19-15-34-34-34H79c-19 0-34 15-34 34v42l67-44 81 72 56-29 42 30zm0 52l-43-30-56 30-81-72-66 44v30c0 19 15 34 34 34h178c17 0 31-13 34-29zM79 0h178c44 0 79 35 79 79v118c0 44-35 79-79 79H79c-44 0-79-35-79-79V79C0 35 35 0 79 0z"/></svg>'};}
+    static get isReadOnlySupported(){return true;}
     constructor({data,api}){this.api=api;this.data={paths:data.paths||[],caption:data.caption||''};}
-    render(){
-      var w=document.createElement('div');
-      w.style.cssText='border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';
-      this._el=w; this._rebuild(); return w;
-    }
+    render(){var w=document.createElement('div');w.style.cssText='border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';this._el=w;this._rebuild();return w;}
     _rebuild(){
       var w=this._el; if(!w) return; w.innerHTML='';
-      var paths=this.data.paths.filter(function(p){return p;});
-      this.data.paths=paths;
+      var paths=this.data.paths.filter(function(p){return p;}); this.data.paths=paths;
       if(paths.length){
         var row=document.createElement('div');
         row.style.cssText='display:flex;gap:4px;padding:6px;background:#f0f0f0;justify-content:center';
         var self=this;
         paths.forEach(function(p,idx){
           var cell=document.createElement('div');
-          cell.style.cssText='position:relative;flex:1 1 0;max-width:100%';
+          cell.style.cssText='position:relative;flex:'+(paths.length===1?'0 0 auto':'1 1 0')+';max-width:'+(paths.length===1?'100%':'50%');
           var img=document.createElement('img');
-          img.src=(p.startsWith('/')?'/local-image?path='+encodeURIComponent(p):p);
-          img.style.cssText='width:100%;max-height:300px;object-fit:contain;border-radius:4px;display:block';
+          img.src=p.startsWith('/')?'/local-image?path='+encodeURIComponent(p):p;
+          img.style.cssText='width:100%;max-height:320px;object-fit:contain;border-radius:4px;display:block';
           var del=document.createElement('button');
-          del.textContent='✕';
-          del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px';
-          del.onclick=function(){self.data.paths.splice(idx,1);self._rebuild();};
+          del.textContent='✕'; del.title='移除此图';
+          del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;padding:0';
+          del.onclick=function(){self.data.paths.splice(idx,1);if(self.data.paths.length===0){try{var bi=self.api.blocks.getCurrentBlockIndex();self.api.blocks.delete(bi);}catch(e){self._rebuild();}}else{self._rebuild();}};
           cell.appendChild(img);cell.appendChild(del);row.appendChild(cell);
         });
         w.appendChild(row);
       }
       var bar=document.createElement('div');
-      bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;background:#fff';
+      bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;flex-wrap:wrap;background:#fff';
       var self=this;
       var addBtn=document.createElement('button');
-      addBtn.textContent=paths.length?'+ 追加图片':'📷 选择图片';
+      addBtn.textContent=paths.length?'+ 添加图片':'📷 从图库选图';
       addBtn.style.cssText='font-size:11px;padding:3px 10px;border:1px dashed #999;border-radius:12px;background:none;cursor:pointer;color:#555';
       addBtn.onclick=function(){openWxImgPicker(function(p){self.data.paths.push(p);self._rebuild();});};
+      bar.appendChild(addBtn);
       var cap=document.createElement('input');
-      cap.placeholder='图片说明';
-      cap.value=this.data.caption;
-      cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888';
+      cap.placeholder='图片说明（图片标记）';cap.value=this.data.caption;
+      cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888;min-width:80px';
       cap.oninput=function(){self.data.caption=cap.value;};
-      bar.appendChild(addBtn);bar.appendChild(cap);
-      w.appendChild(bar);
+      bar.appendChild(cap);w.appendChild(bar);
     }
     save(){return{paths:this.data.paths,caption:this.data.caption};}
   }
 
   _editor = new EditorJS({
     holder:'wechat-editorjs',
-    tools:{ header:{class:Header,inlineToolbar:true}, quote:{class:Quote,inlineToolbar:true}, galleryImage:{class:WxGalleryBlock} },
+    tools:{
+      header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
+      quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处（可选）'}},
+      galleryImage:{class:GalleryImageBlockWx}
+    },
     data:initData,
     onChange:function(){ _dirty=true; setSave('—'); clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},2500); },
     placeholder:'开始编写公众号正文…'
@@ -3680,7 +3702,7 @@ function saveWechat(silent){
   _editor.save().then(function(d){
     return fetch('/api/wechat/'+WKEY,{
       method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({wechat_title:title,wechat_content:JSON.stringify(d),wechat_publish:publish})
+      body:JSON.stringify({wechat_title:title,wechat_content:_blocksToText(d.blocks||[]),wechat_publish:publish})
     });
   }).then(function(r){return r.json();}).then(function(){
     _dirty=false; setSave('saved'); if(!silent) showToast('已保存','ok');
@@ -3763,7 +3785,7 @@ function loadOrig(){
 function copyOrigToEditor(){
   if(!_origContent){showToast('无原始内容','info');return;}
   if(!confirm('将原文载入编辑器（会覆盖当前内容）？')) return;
-  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok');
+  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok'); _dirty=true;
 }
 
 function clearEd(){ if(!confirm('确定清空？')) return; _editor.render({blocks:[]}); }
