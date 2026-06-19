@@ -3397,7 +3397,7 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
       <div class="sb-imgs" id="sbImgs">
         {% for img in all_images %}
         <div class="sb-img" onclick="insImg('{{img.path}}')" title="{{img.source}}">
-          <img src="{{'( \'/local-image?path=\'+img.path) if img.path.startswith(\'/\') else img.path' | replace('(','') | replace(')','')}}" loading="lazy" onerror="this.parentElement.style.display='none'">
+          <img src="{{'/local-image?path='+img.path if img.path.startswith('/') else img.path}}" loading="lazy" onerror="this.parentElement.style.display='none'">
           <div class="sb-img-ov">＋</div>
         </div>
         {% else %}<div style="font-size:11px;color:var(--t3);padding:8px 0">暂无素材</div>{% endfor %}
