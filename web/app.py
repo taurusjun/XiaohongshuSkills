@@ -1766,7 +1766,7 @@ function renderWechatItems(items){
     else if(n.wechat_draft_id){dotCls='wd-dy';stLabel='草稿';}
     else if(n.wechat_publish){dotCls='wd-db';stLabel='待发布';}
     var url='/wechat/'+n.key;
-    html+='<div class="wd-row" onclick="location.href=''+url+''">';
+    html+='<div class="wd-row" onclick="location.href=this.dataset.url" data-url="'+url+'">';
     html+='<span class="wd-dot '+dotCls+'"></span>';
     html+='<span class="wd-row-title" title="'+title+'">'+title+'</span>';
     html+='<span class="wd-row-st"><span class="wd-dot '+dotCls+'" style="width:6px;height:6px"></span>'+stLabel+'</span>';
