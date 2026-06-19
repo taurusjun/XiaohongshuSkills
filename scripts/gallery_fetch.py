@@ -2547,6 +2547,12 @@ def _scrape_sponichi(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_nishispo(gallery_url: str) -> list[str]:
+    """nishispo.nishinippon.co.jp 图集（独立脚本 scripts/scrapers/nishispo_dl.py）"""
+    from scrapers.nishispo_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2863,6 +2869,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "sponichi.co.jp" in domain:
         images = _scrape_sponichi(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "nishispo.nishinippon.co.jp" in domain:
+        images = _scrape_nishispo(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
