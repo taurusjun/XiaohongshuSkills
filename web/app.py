@@ -3328,6 +3328,16 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 #wxEditorjs .ce-block__content{max-width:none}
 #wxEditorjs .codex-editor__redactor{padding-bottom:40px!important}
 
+/* orig drawer */
+.orig-drawer{position:fixed;top:48px;right:-440px;width:440px;bottom:0;background:var(--bg2);border-left:1px solid var(--br);z-index:200;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden}
+.orig-drawer.open{right:0}
+.orig-drawer-hdr{padding:12px 16px;border-bottom:1px solid var(--br);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.orig-drawer-title{font-size:13px;font-weight:600;color:var(--t)}
+.orig-drawer-close{background:none;border:none;cursor:pointer;color:var(--t3);font-size:16px;padding:2px 6px;border-radius:var(--r);margin-left:auto}
+.orig-drawer-close:hover{color:var(--t);background:var(--hv)}
+.orig-drawer-body{flex:1;overflow-y:auto;padding:16px;font-size:12.5px;line-height:1.8;color:var(--t2);white-space:pre-wrap}
+.orig-drawer-body::-webkit-scrollbar{width:4px}
+.orig-drawer-body::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px}
 /* toast */
 .wx-toast{position:fixed;bottom:24px;right:24px;background:#1c1c20;border:1px solid var(--br2);color:var(--t);padding:10px 16px;border-radius:var(--r);font-size:12px;font-weight:500;z-index:9999;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
 .wx-toast.show{opacity:1;transform:none}
@@ -3343,6 +3353,7 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
   <div class="tb-sep"></div>
   <div class="tb-doc" id="tbDoc">{{news.wechat_title or news.title or '(无标题)'}}</div>
   <span class="tb-saved" id="tbSaved">已保存</span>
+  <button class="btn btn-ghost btn-sm" onclick="toggleOrigDrawer()">原文参考</button>
   <button class="btn btn-ghost btn-sm" onclick="doPreview()">预览</button>
   <button class="btn btn-ghost btn-sm" onclick="doSave()">保存</button>
   <button class="btn btn-fill btn-sm" id="btnPush" onclick="doPush()">推送草稿</button>
@@ -3408,6 +3419,15 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
     </div>
   </div>
 </div>
+<!-- Orig drawer -->
+<div class="orig-drawer" id="origDrawer">
+  <div class="orig-drawer-hdr">
+    <span class="orig-drawer-title">📄 原文参考</span>
+    <button class="orig-drawer-close" onclick="toggleOrigDrawer()">✕</button>
+  </div>
+  <div class="orig-drawer-body">{{news.content or '（无原文）'}}</div>
+</div>
+
 <textarea id="wxHidden" style="display:none">{{news.wechat_content or news.content or ''}}</textarea>
 <script>
 var WK="{{news.key}}";
@@ -3567,6 +3587,10 @@ async function doPush(){
     else{_toast((d.error||'推送失败'),'err');}
   }catch(e){_toast('推送失败','err');}
   ['btnPush','btnPush2'].forEach(function(id){var b=_S(id);if(b){b.disabled=false;b.textContent=id==='btnPush'?'推送草稿':'推送草稿到公众号';}});
+}
+function toggleOrigDrawer(){
+  var d=document.getElementById('origDrawer');
+  if(d) d.classList.toggle('open');
 }
 document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();doSave(false);}});
 </script>
