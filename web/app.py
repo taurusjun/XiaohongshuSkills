@@ -1269,8 +1269,10 @@ async function loadList(){
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
-    const coverPath='/Users/user/.cache/xhs_images/'+n.key+'/cover.jpg';
-    const thumb=`<img src="/local-image?path=${encodeURIComponent(coverPath)}" class="thumb-img" onerror="this.className='thumb-empty';this.removeAttribute('src');this.removeAttribute('onerror')">`;
+    const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
+    const thumb=imgSrc
+      ?`<img src="${imgSrc}" class="thumb-img" onerror="this.className='thumb-empty';this.removeAttribute('src');this.removeAttribute('onerror')">`
+      :`<div class="thumb-empty">📰</div>`;
     const badgeCls=n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green';
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
     const ts=n.title_score||0,cs=n.content_score||0,sc=ts+cs;const scCls=sc>6?'score-hi':sc>3?'score-mid':'score-lo';
