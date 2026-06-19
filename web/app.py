@@ -1269,10 +1269,8 @@ async function loadList(){
     fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
-    const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
-    const thumb=imgSrc
-      ?`<img src="${imgSrc}" class="thumb-img" onerror="this.className='thumb-empty';this.removeAttribute('src');this.removeAttribute('onerror')">`
-      :`<div class="thumb-empty">📰</div>`;
+    const coverPath='/Users/user/.cache/xhs_images/'+n.key+'/cover.jpg';
+    const thumb=`<img src="/local-image?path=${encodeURIComponent(coverPath)}" class="thumb-img" onerror="this.className='thumb-empty';this.removeAttribute('src');this.removeAttribute('onerror')">`;
     const badgeCls=n.status==='archived'?'badge-gray':n.status==='discarded'?'badge-red':'badge-green';
     const badgeTxt=n.status==='archived'?'归档':n.status==='discarded'?'丢弃':'活跃';
     const ts=n.title_score||0,cs=n.content_score||0,sc=ts+cs;const scCls=sc>6?'score-hi':sc>3?'score-mid':'score-lo';
@@ -1773,8 +1771,8 @@ function renderWechatItems(items){
     var wTitle=esc(n.wechat_title||n.title||'(无标题)');
     var sub=esc(n.title||'');
     var date=(n.updated_at||n.created_at||'').slice(0,10);
-    var imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
-    var thumb=imgSrc?('<img class="wx-thumb" src="'+imgSrc+'" onerror="this.className=\'wx-thumb-empty\';this.removeAttribute(\'src\')">'):('<div class="wx-thumb-empty">\uD83D\uDCF0</div>');
+    var coverPath='/Users/user/.cache/xhs_images/'+n.key+'/cover.jpg';
+    var thumb='<img class="wx-thumb" src="/local-image?path='+encodeURIComponent(coverPath)+'" onerror="this.className=\'wx-thumb-empty\';this.removeAttribute(\'src\')">';
     var badgeCls='wx-b-gray', stLabel='未配置';
     if(n.wechat_pub_time){badgeCls='wx-b-green';stLabel='已发布';}
     else if(n.wechat_draft_id){badgeCls='wx-b-yellow';stLabel='草稿';}
