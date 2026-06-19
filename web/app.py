@@ -3341,6 +3341,15 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 #wxEditorjs .ce-block__content{max-width:none}
 #wxEditorjs .codex-editor__redactor{padding-bottom:40px!important}
 
+/* preview drawer */
+.preview-drawer{position:fixed;top:48px;right:-520px;width:520px;bottom:0;background:#fff;border-left:1px solid #e5e7eb;z-index:300;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden;box-shadow:-4px 0 20px rgba(0,0,0,.1)}
+.preview-drawer.open{right:0}
+.preview-drawer-hdr{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#fff}
+.preview-drawer-title{font-size:13px;font-weight:600;color:#1a1a2e}
+.preview-drawer-close{background:none;border:none;cursor:pointer;color:#9ca3af;font-size:16px;padding:2px 6px;border-radius:6px;margin-left:auto}
+.preview-drawer-close:hover{color:#1a1a2e;background:#f3f4f6}
+.preview-drawer-body{flex:1;overflow-y:auto;background:#f0f0f0}
+.preview-drawer-body iframe{width:100%;height:100%;border:none}
 /* orig drawer */
 .orig-drawer{position:fixed;top:48px;right:-440px;width:440px;bottom:0;background:var(--bg2);border-left:1px solid var(--br);z-index:200;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden}
 .orig-drawer.open{right:0}
@@ -3432,6 +3441,18 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
     </div>
   </div>
 </div>
+<!-- Preview drawer -->
+<div class="preview-drawer" id="previewDrawer">
+  <div class="preview-drawer-hdr">
+    <span class="preview-drawer-title">👁 微信预览</span>
+    <span id="previewThemeLbl" style="font-size:11px;color:#9ca3af"></span>
+    <button class="preview-drawer-close" onclick="closePreviewDrawer()">✕</button>
+  </div>
+  <div class="preview-drawer-body">
+    <iframe id="previewFrame" src="about:blank"></iframe>
+  </div>
+</div>
+
 <!-- Orig drawer -->
 <div class="orig-drawer" id="origDrawer">
   <div class="orig-drawer-hdr">
@@ -3589,7 +3610,18 @@ async function doSave(silent){
     else{_setSave('');if(!silent)_toast('保存失败','err');}
   }catch(e){_setSave('');if(!silent)_toast('网络错误','err');}
 }
-function doPreview(){window.open('/api/wechat/'+WK+'/preview?theme='+_th,'_blank');}
+function doPreview(){
+  var drawer=document.getElementById('previewDrawer');
+  var frame=document.getElementById('previewFrame');
+  var lbl=document.getElementById('previewThemeLbl');
+  if(lbl) lbl.textContent='主题：'+_th;
+  if(frame) frame.src='/api/wechat/'+WK+'/preview?theme='+_th;
+  if(drawer) drawer.classList.add('open');
+}
+function closePreviewDrawer(){
+  var drawer=document.getElementById('previewDrawer');
+  if(drawer) drawer.classList.remove('open');
+}
 async function doPush(){
   ['btnPush','btnPush2'].forEach(function(id){var b=_S(id);if(b){b.disabled=true;b.textContent='推送中…';}});
   try{
