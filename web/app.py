@@ -3472,7 +3472,7 @@ select.lp-sel:focus{border-color:var(--blue)}
 
   </div>
 
-  <!-- Right -->
+  <!-- Right: title + side-by-side editor & original -->
   <div class="wx-right">
     <div class="editor-wrap">
 
@@ -3485,19 +3485,29 @@ select.lp-sel:focus{border-color:var(--blue)}
         </div>
       </div>
 
-      <!-- Editor -->
-      <div class="editor-card2">
-        <div class="editor-card2-hdr">
-          <div class="editor-card2-title">✏️ 正文内容</div>
-          <div style="display:flex;gap:5px">
+      <!-- Side-by-side: editor + original -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+
+        <!-- Editor -->
+        <div class="editor-card2">
+          <div class="editor-card2-hdr">
+            <div class="editor-card2-title">✏️ 公众号正文</div>
             <button class="btn btn-gray btn-xs" onclick="openWxImgPicker()">🖼 插入图片</button>
-            <button class="btn btn-gray btn-xs" onclick="loadOrig()">载入原文</button>
-            <button class="btn btn-gray btn-xs" onclick="clearEd()">清空</button>
+          </div>
+          <div class="editor-card2-body">
+            <div id="wechat-editorjs"></div>
           </div>
         </div>
-        <div class="editor-card2-body">
-          <div id="wechat-editorjs"></div>
+
+        <!-- Original content -->
+        <div class="editor-card2">
+          <div class="editor-card2-hdr">
+            <div class="editor-card2-title">📄 原文参考</div>
+            <button class="btn btn-gray btn-xs" onclick="copyOrigToEditor()">← 载入到编辑器</button>
+          </div>
+          <div style="padding:8px 16px 16px;font-size:12.5px;line-height:1.8;color:var(--text2);white-space:pre-wrap;max-height:600px;overflow-y:auto" id="origPanel">{{news.content or '（无原文）'}}</div>
         </div>
+
       </div>
 
     </div>
@@ -3748,6 +3758,11 @@ function insertImg(path){
 function loadOrig(){
   if(!_origContent){showToast('无原始内容','info');return;}
   if(!confirm('用原始正文覆盖当前内容？')) return;
+  _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok');
+}
+function copyOrigToEditor(){
+  if(!_origContent){showToast('无原始内容','info');return;}
+  if(!confirm('将原文载入编辑器（会覆盖当前内容）？')) return;
   _editor.render({blocks:_textToBlocks(_origContent)}); showToast('原文已载入','ok');
 }
 
