@@ -3490,6 +3490,7 @@ select.lp-sel:focus{border-color:var(--blue)}
         <div class="editor-card2-hdr">
           <div class="editor-card2-title">✏️ 正文内容</div>
           <div style="display:flex;gap:5px">
+            <button class="btn btn-gray btn-xs" onclick="openWxImgPicker()">🖼 插入图片</button>
             <button class="btn btn-gray btn-xs" onclick="loadOrig()">载入原文</button>
             <button class="btn btn-gray btn-xs" onclick="clearEd()">清空</button>
           </div>
@@ -3505,6 +3506,18 @@ select.lp-sel:focus{border-color:var(--blue)}
 </div>
 
 <!-- Gallery modal -->
+<!-- Wechat image picker -->
+<div id="wxImgPicker" onclick="if(event.target===this)closeWxImgPicker()"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:600;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--card-bg);border-radius:14px;max-width:520px;width:92%;max-height:72vh;overflow-y:auto;padding:18px;box-shadow:0 16px 48px rgba(0,0,0,.18)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="font-size:14px;font-weight:700">选择图片</h3>
+      <button onclick="closeWxImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text3);padding:2px 7px;border-radius:4px">✕</button>
+    </div>
+    <div id="wxImgPickerGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+  </div>
+</div>
+
 <div class="gmodal" id="gmodal" onclick="if(event.target===this)closeGallery()">
   <div class="gmodal-card">
     <div class="gmodal-hdr">
@@ -3575,9 +3588,58 @@ function initEd(){
       else initData={blocks:_textToBlocks(raw)};
     }catch(e){ initData={blocks:_textToBlocks(raw)}; }
   }
+  // GalleryImageBlock for wechat editor
+  class WxGalleryBlock {
+    static get toolbox(){return{title:'插入图片',icon:'🖼'};}
+    constructor({data,api}){this.api=api;this.data={paths:data.paths||[],caption:data.caption||''};}
+    render(){
+      var w=document.createElement('div');
+      w.style.cssText='border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';
+      this._el=w; this._rebuild(); return w;
+    }
+    _rebuild(){
+      var w=this._el; if(!w) return; w.innerHTML='';
+      var paths=this.data.paths.filter(function(p){return p;});
+      this.data.paths=paths;
+      if(paths.length){
+        var row=document.createElement('div');
+        row.style.cssText='display:flex;gap:4px;padding:6px;background:#f0f0f0;justify-content:center';
+        var self=this;
+        paths.forEach(function(p,idx){
+          var cell=document.createElement('div');
+          cell.style.cssText='position:relative;flex:1 1 0;max-width:100%';
+          var img=document.createElement('img');
+          img.src=(p.startsWith('/')?'/local-image?path='+encodeURIComponent(p):p);
+          img.style.cssText='width:100%;max-height:300px;object-fit:contain;border-radius:4px;display:block';
+          var del=document.createElement('button');
+          del.textContent='✕';
+          del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px';
+          del.onclick=function(){self.data.paths.splice(idx,1);self._rebuild();};
+          cell.appendChild(img);cell.appendChild(del);row.appendChild(cell);
+        });
+        w.appendChild(row);
+      }
+      var bar=document.createElement('div');
+      bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;background:#fff';
+      var self=this;
+      var addBtn=document.createElement('button');
+      addBtn.textContent=paths.length?'+ 追加图片':'📷 选择图片';
+      addBtn.style.cssText='font-size:11px;padding:3px 10px;border:1px dashed #999;border-radius:12px;background:none;cursor:pointer;color:#555';
+      addBtn.onclick=function(){openWxImgPicker(function(p){self.data.paths.push(p);self._rebuild();});};
+      var cap=document.createElement('input');
+      cap.placeholder='图片说明';
+      cap.value=this.data.caption;
+      cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888';
+      cap.oninput=function(){self.data.caption=cap.value;};
+      bar.appendChild(addBtn);bar.appendChild(cap);
+      w.appendChild(bar);
+    }
+    save(){return{paths:this.data.paths,caption:this.data.caption};}
+  }
+
   _editor = new EditorJS({
     holder:'wechat-editorjs',
-    tools:{ header:{class:Header,inlineToolbar:true}, quote:{class:Quote,inlineToolbar:true} },
+    tools:{ header:{class:Header,inlineToolbar:true}, quote:{class:Quote,inlineToolbar:true}, galleryImage:{class:WxGalleryBlock} },
     data:initData,
     onChange:function(){ _dirty=true; setSave('—'); clearTimeout(_stimer); _stimer=setTimeout(function(){autoSave();},2500); },
     placeholder:'开始编写公众号正文…'
@@ -3649,10 +3711,38 @@ function setTheme(el){
   el.classList.add('active'); _theme=el.dataset.theme;
 }
 
+var _wxImgPickerCb=null;
+function openWxImgPicker(cb){
+  _wxImgPickerCb=cb||null;
+  var grid=document.getElementById('wxImgPickerGrid');
+  var allImgs={{all_images|tojson}};
+  grid.innerHTML='';
+  allImgs.forEach(function(img){
+    var d=document.createElement('div');
+    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;position:relative';
+    d.onmouseenter=function(){d.style.borderColor='var(--blue)';};
+    d.onmouseleave=function(){d.style.borderColor='transparent';};
+    d.onclick=function(){
+      closeWxImgPicker();
+      if(_wxImgPickerCb){_wxImgPickerCb(img.path);return;}
+      insertImg(img.path);
+    };
+    var i=document.createElement('img');
+    var src=img.path.startsWith('/')?'/local-image?path='+encodeURIComponent(img.path):img.path;
+    i.src=src; i.style.cssText='width:80px;height:80px;object-fit:cover;display:block';
+    var lbl=document.createElement('div');
+    lbl.textContent=img.source;
+    lbl.style.cssText='font-size:9px;text-align:center;color:#888;padding:1px 2px;background:#fff';
+    d.appendChild(i);d.appendChild(lbl);grid.appendChild(d);
+  });
+  document.getElementById('wxImgPicker').style.display='flex';
+}
+function closeWxImgPicker(){document.getElementById('wxImgPicker').style.display='none';}
 function insertImg(path){
   if(!_editor) return;
-  _editor.blocks.insert('paragraph',{text:'[图片: '+path+']'});
-  showToast('图片标记已插入','ok');
+  var idx=_editor.blocks.getCurrentBlockIndex();
+  _editor.blocks.insert('galleryImage',{paths:[path],caption:''},{},idx+1,true);
+  showToast('图片已插入','ok');
 }
 
 function loadOrig(){
@@ -3875,26 +3965,60 @@ def wechat_editor(key):
     # Parse gallery
     gi = news.get('gallery_images', '')
     news['gallery_images'] = _json.loads(gi) if isinstance(gi, str) and gi else (gi or [])
-    # Collect images from current + related articles
+    # Collect images: gallery_images + cached images + related keys
     rk_raw = news.get('related_keys', '') or ''
     all_images = []
     seen = set()
-    for p in (news['gallery_images'] or []):
-        if p not in seen:
-            seen.add(p)
-            all_images.append({'path': p, 'source': '本文'})
+
+    def _add_imgs(paths, source):
+        for p in (paths or []):
+            if p and p not in seen:
+                seen.add(p)
+                all_images.append({'path': p, 'source': source})
+
+    # 1. Current article gallery + cached images
+    _add_imgs(news['gallery_images'], '本文')
+    try:
+        from config.yahoo_conf import GALLERY_CACHE_DIR
+        import glob as _glob
+        cache_dir = os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), key)
+        if os.path.isdir(cache_dir):
+            for f in sorted(_glob.glob(os.path.join(cache_dir, '*.jpg')) +
+                           _glob.glob(os.path.join(cache_dir, '*.webp')) +
+                           _glob.glob(os.path.join(cache_dir, '*.png'))):
+                if 'cover' not in os.path.basename(f):
+                    _add_imgs([f], '本文')
+        cover = os.path.join(cache_dir, 'cover.jpg')
+        if os.path.isfile(cover):
+            _add_imgs([cover], '封面')
+    except Exception:
+        pass
+
+    # 2. Cover image from news.image_url
+    if news.get('image_url'):
+        _add_imgs([news['image_url']], '封面')
+
+    # 3. Related keys
     for rk in rk_raw.split(','):
         rk = rk.strip()
         if not rk: continue
         rr = get_by_key(rk)
         if not rr: continue
-        title_short = (rr.get('title', '') or rk)[:15]
+        title_short = (rr.get('title', '') or rk)[:12]
         gi2 = rr.get('gallery_images', '')
         gi2_list = _json.loads(gi2) if isinstance(gi2, str) and gi2 else (gi2 or [])
-        for p in gi2_list:
-            if p not in seen:
-                seen.add(p)
-                all_images.append({'path': p, 'source': title_short})
+        _add_imgs(gi2_list, title_short)
+        try:
+            from config.yahoo_conf import GALLERY_CACHE_DIR
+            import glob as _glob
+            c2 = os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), rk)
+            if os.path.isdir(c2):
+                for f in sorted(_glob.glob(os.path.join(c2, '*.jpg')) +
+                               _glob.glob(os.path.join(c2, '*.webp'))):
+                    _add_imgs([f], title_short)
+        except Exception:
+            pass
+
     return rts(WECHAT_HTML, news=news, all_images=all_images)
 
 @app.route('/api/wechat/<key>', methods=['PUT'])
