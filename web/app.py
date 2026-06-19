@@ -1634,7 +1634,7 @@ function switchToNewsView(){
   var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView');
   var wn=document.getElementById('wechatNavItem'),nn=document.getElementById('newsNavItem');
   if(wv) wv.style.display='none';
-  if(nv) nv.style.display='';
+  if(nv){ nv.style.display='flex'; nv.style.flexDirection='column'; }
   if(wn) wn.classList.remove('active');
   if(nn) nn.classList.add('active');
 }
@@ -1643,6 +1643,7 @@ function _buildWechatView(){
   if(!wv||wv.querySelector('.wx-topbar')) return;
   wv.innerHTML='<div class="wx-topbar"><span class="wx-title">公众号</span><div class="wx-search"><span style="color:var(--text3);font-size:12px">&#128269;</span><input id="wdSearch" placeholder="搜索标题..." oninput="filterWechatItems(this.value)"></div><div class="wx-stats"><b id="wdTotal">—</b> 总数 &nbsp;|&nbsp; <b id="wdDraft" style="color:var(--orange)">—</b> 草稿 <b id="wdPending" style="color:var(--blue)">—</b> 待发 <b id="wdPublished" style="color:var(--green)">—</b> 已发</div></div><div class="wx-wrap"><div class="wx-card"><div class="wx-thead"><div class="wx-th"></div><div class="wx-th" style="padding-left:12px">标题</div><div class="wx-th">状态</div><div class="wx-th">日期</div><div class="wx-th"></div></div><div class="wx-scroll" id="wdBody"><div class="wx-empty">加载中…</div></div></div></div>';
 }
+var _wdPage=0,_wdPageSize=50,_wdFiltered=[];
 function loadWechatList(){
   fetch('/api/wechat-list').then(function(r){return r.json();}).then(function(d){
     _wdAllItems=d.items||[];
@@ -1652,19 +1653,25 @@ function loadWechatList(){
     se('wdTotal',tot);se('wdDraft',dr);se('wdPending',pe);se('wdPublished',pu);
     var badge=document.getElementById('wechatBadge');
     if(badge&&tot){badge.textContent=tot;badge.style.display='';}
-    renderWechatItems(_wdAllItems);
+    _wdPage=0;_wdFiltered=_wdAllItems;renderWechatItems(_wdFiltered);
   }).catch(function(){var b=document.getElementById('wdBody');if(b)b.innerHTML='<div class="wx-empty">加载失败</div>';});
 }
 function filterWechatItems(q){
-  if(!q||!q.trim()){renderWechatItems(_wdAllItems);return;}
-  var kw=q.trim().toLowerCase();
-  renderWechatItems(_wdAllItems.filter(function(n){return((n.wechat_title||'')+(n.title||'')).toLowerCase().indexOf(kw)>=0;}));
+  _wdPage=0;
+  if(!q||!q.trim()){_wdFiltered=_wdAllItems;}
+  else{var kw=q.trim().toLowerCase();_wdFiltered=_wdAllItems.filter(function(n){return((n.wechat_title||'')+(n.title||'')).toLowerCase().indexOf(kw)>=0;});}
+  renderWechatItems(_wdFiltered);
 }
+function _wdGoPage(p){_wdPage=p;renderWechatItems(_wdFiltered);var s=document.querySelector('#wechatView .wx-scroll');if(s)s.scrollTop=0;}
 function renderWechatItems(items){
   var body=document.getElementById('wdBody');if(!body)return;
   if(!items||!items.length){body.innerHTML='<div class="wx-empty"><span style="font-size:24px">&#128237;</span>暂无公众号文章</div>';return;}
+  var total=items.length,pages=Math.ceil(total/_wdPageSize);
+  if(_wdPage>=pages)_wdPage=Math.max(0,pages-1);
+  var start=_wdPage*_wdPageSize,end=Math.min(start+_wdPageSize,total);
+  var pageItems=items.slice(start,end);
   var html='';
-  items.forEach(function(n){
+  pageItems.forEach(function(n){
     var imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
     var thumb=imgSrc?('<img src="'+imgSrc+'" class="thumb-img" onerror="this.className=\'thumb-empty\';this.removeAttribute(\'src\');this.removeAttribute(\'onerror\')">'):'<div class="thumb-empty">&#128240;</div>';
     var wt=esc(n.wechat_title||n.title||'');
@@ -1684,6 +1691,15 @@ function renderWechatItems(items){
     html+='<div><a class="wx-btn" href="/wechat/'+n.key+'" onclick="event.stopPropagation()">编辑</a></div>';
     html+='</div>';
   });
+  // Pagination
+  var total=items.length,pages=Math.ceil(total/_wdPageSize);
+  if(pages>1){
+    html+='<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border);flex-shrink:0">';
+    html+='<button class="btn btn-xs btn-outline" onclick="_wdGoPage('+(_wdPage-1)+')" '+((_wdPage===0)?'disabled':'')+'>上一页</button>';
+    html+='<span style="font-size:11px;color:var(--text2)">'+(_wdPage+1)+' / '+pages+' 页（共'+total+'篇）</span>';
+    html+='<button class="btn btn-xs btn-outline" onclick="_wdGoPage('+(_wdPage+1)+')" '+((_wdPage>=pages-1)?'disabled':'')+'>下一页</button>';
+    html+='</div>';
+  }
   body.innerHTML=html;
 }
 </script>
