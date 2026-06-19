@@ -1044,68 +1044,69 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
 <!-- WeChat view -->
 <style>
-#wechatView{display:flex;flex-direction:column;height:100%;overflow:hidden;font-family:"Inter",-apple-system,"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
-#wechatView *{box-sizing:border-box;margin:0;padding:0}
-#wechatView{
-  --wdb:#0f0f10;--wdb2:#16161a;--wdb3:#1c1c20;
-  --wdhv:rgba(255,255,255,.04);--wdbr:rgba(255,255,255,.06);--wdbr2:rgba(255,255,255,.10);
-  --wdt:#e8e8e8;--wdt2:#8a8a8a;--wdt3:#525252;
-  --wdac:#07c160;--wdbl:#5e6ad2;--wdrd:#e5484d;--wdyw:#ffc53d;
-  --wdrad:6px;
-}
-.wd-topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0;color:var(--wdt)}
-.wd-topbar-title{font-size:13px;font-weight:600;color:var(--wdt);letter-spacing:-.01em}
-.wd-search{display:flex;align-items:center;gap:6px;background:var(--wdb3);border:1px solid var(--wdbr);border-radius:var(--wdrad);padding:0 10px;height:30px;width:200px;transition:border-color .15s}
-.wd-search:focus-within{border-color:var(--wdbr2)}
-.wd-search input{border:none;background:transparent;color:var(--wdt);font-size:12px;font-family:inherit;outline:none;width:100%}
-.wd-search input::placeholder{color:var(--wdt3)}
-.wd-stats{display:flex;align-items:center;gap:0;padding:0 20px;height:40px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0}
-.wd-stat{display:flex;align-items:baseline;gap:5px;padding-right:16px;margin-right:16px;border-right:1px solid var(--wdbr)}
-.wd-stat:last-child{border-right:none}
-.wd-stat-num{font-size:18px;font-weight:700;color:var(--wdt);line-height:1;font-variant-numeric:tabular-nums}
-.wd-stat-lbl{font-size:11px;color:var(--wdt2)}
-.wd-colhdr{display:flex;align-items:center;gap:12px;padding:0 20px;height:32px;border-bottom:1px solid var(--wdbr);background:var(--wdb2);flex-shrink:0}
-.wd-ch{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--wdt3)}
-.wd-list{flex:1;overflow-y:auto;background:var(--wdb)}
-.wd-list::-webkit-scrollbar{width:4px}
-.wd-list::-webkit-scrollbar-thumb{background:var(--wdbr2);border-radius:2px}
-.wd-row{display:flex;align-items:center;gap:12px;padding:0 20px;height:44px;border-bottom:1px solid var(--wdbr);cursor:pointer;text-decoration:none;color:inherit;position:relative}
-.wd-row:hover{background:var(--wdhv)}
-.wd-row:hover .wd-row-act{opacity:1}
-.wd-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.wd-dg{background:var(--wdac)}.wd-dy{background:var(--wdyw)}.wd-db{background:var(--wdbl)}.wd-dm{background:var(--wdt3)}
-.wd-row-title{flex:1;min-width:0;font-size:13px;color:var(--wdt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wd-row-st{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--wdt2);width:72px;flex-shrink:0}
-.wd-row-dt{font-size:11px;color:var(--wdt3);width:80px;text-align:right;flex-shrink:0}
-
-.wd-ibtn{width:26px;height:26px;border-radius:var(--wdrad);border:1px solid var(--wdbr2);background:var(--wdb3);color:var(--wdt2);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
-.wd-ibtn:hover{color:var(--wdt)}
-.wd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 20px;color:var(--wdt3);font-size:13px}
+/* wechat list — matches main article list style */
+#wechatView .wx-wrap{flex:1;overflow:hidden;padding:8px 20px 16px;display:flex;flex-direction:column}
+#wechatView .wx-topbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-shrink:0}
+#wechatView .wx-title{font-size:13px;font-weight:600;color:var(--text)}
+#wechatView .wx-count{font-size:11px;color:var(--text3)}
+#wechatView .wx-search{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:5px 11px;width:200px}
+#wechatView .wx-search input{border:none;background:none;font-size:12px;color:var(--text);outline:none;width:100%}
+#wechatView .wx-stats{display:flex;gap:12px;align-items:center;margin-left:auto}
+#wechatView .wx-stat{font-size:11.5px;color:var(--text2);display:flex;align-items:center;gap:4px}
+#wechatView .wx-stat b{font-weight:600;color:var(--text)}
+#wechatView .wx-card{flex:1;background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#wechatView .wx-thead{display:grid;grid-template-columns:42px 1fr 80px 90px 96px;gap:0;padding:8px 14px;border-bottom:1px solid var(--border);background:#f9fafb;flex-shrink:0}
+#wechatView .wx-th{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center}
+#wechatView .wx-tbody{flex:1;overflow-y:auto}
+#wechatView .wx-tbody::-webkit-scrollbar{width:4px}
+#wechatView .wx-tbody::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+#wechatView .wx-row{display:grid;grid-template-columns:42px 1fr 80px 90px 96px;gap:0;padding:9px 14px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;transition:background .08s}
+#wechatView .wx-row:last-child{border-bottom:none}
+#wechatView .wx-row:hover{background:#f9fafb}
+#wechatView .wx-thumb{width:42px;height:42px;border-radius:6px;object-fit:cover;display:block;background:#f3f4f6}
+#wechatView .wx-thumb-empty{width:42px;height:42px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:16px}
+#wechatView .wx-col-title{padding:0 12px;min-width:0}
+#wechatView .wx-row-title{font-size:12.5px;font-weight:600;color:var(--text);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block}
+#wechatView .wx-row-sub{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+#wechatView .wx-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:500;white-space:nowrap}
+#wechatView .wx-b-green{background:#d1fae5;color:#065f46}
+#wechatView .wx-b-yellow{background:#fef3c7;color:#92400e}
+#wechatView .wx-b-blue{background:#dbeafe;color:#1d4ed8}
+#wechatView .wx-b-gray{background:#f3f4f6;color:#6b7280}
+#wechatView .wx-date{font-size:11px;color:var(--text3);white-space:nowrap}
+#wechatView .wx-btn{height:26px;padding:0 10px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:11px;color:var(--text2);font-family:var(--font);transition:all .12s;text-decoration:none;display:inline-flex;align-items:center}
+#wechatView .wx-btn:hover{border-color:#07c160;color:#07c160}
+#wechatView .wx-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:48px 20px;color:var(--text3);font-size:12px}
 </style>
-<div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column;background:#0f0f10">
-  <div class="wd-topbar">
-    <span class="wd-topbar-title">公众号</span>
-    <span style="flex:1"></span>
-    <div class="wd-search">
-      <span style="font-size:11px;color:var(--wdt3)">⌕</span>
-      <input id="wdSearch" placeholder="搜索标题..." oninput="filterWechatItems(this.value)">
+<div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+  <div class="wx-wrap">
+    <div class="wx-topbar">
+      <span class="wx-title">公众号</span>
+      <span class="wx-count" id="wdCount"></span>
+      <div class="wx-search">
+        <span style="color:var(--text3);font-size:13px">🔍</span>
+        <input id="wdSearch" placeholder="搜索标题..." oninput="filterWechatItems(this.value)">
+      </div>
+      <div class="wx-stats">
+        <span class="wx-stat"><b id="wdTotal">—</b> 总数</span>
+        <span class="wx-stat" style="color:var(--text3)">|</span>
+        <span class="wx-stat"><b id="wdDraft" style="color:var(--orange)">—</b> 草稿</span>
+        <span class="wx-stat"><b id="wdPending" style="color:var(--blue)">—</b> 待发</span>
+        <span class="wx-stat"><b id="wdPublished" style="color:var(--green)">—</b> 已发</span>
+      </div>
     </div>
-  </div>
-  <div class="wd-stats">
-    <div class="wd-stat"><span class="wd-stat-num" id="wdTotal">—</span><span class="wd-stat-lbl">总数</span></div>
-    <div class="wd-stat"><span class="wd-stat-num" id="wdDraft">—</span><span class="wd-stat-lbl">草稿箱</span></div>
-    <div class="wd-stat"><span class="wd-stat-num" id="wdPending">—</span><span class="wd-stat-lbl">待发布</span></div>
-    <div class="wd-stat"><span class="wd-stat-num" id="wdPublished">—</span><span class="wd-stat-lbl">已发布</span></div>
-  </div>
-  <div class="wd-colhdr">
-    <div style="width:8px"></div>
-    <div class="wd-ch" style="flex:1">标题</div>
-    <div class="wd-ch" style="width:72px">状态</div>
-    <div class="wd-ch" style="width:80px;text-align:right">日期</div>
-    <div style="width:26px"></div>
-  </div>
-  <div class="wd-list" id="wdBody">
-    <div class="wd-empty"><span style="font-size:24px">⏳</span>加载中...</div>
+    <div class="wx-card">
+      <div class="wx-thead">
+        <div class="wx-th"></div>
+        <div class="wx-th" style="padding-left:12px">标题</div>
+        <div class="wx-th">状态</div>
+        <div class="wx-th">日期</div>
+        <div class="wx-th"></div>
+      </div>
+      <div class="wx-tbody" id="wdBody">
+        <div class="wx-empty">加载中…</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1754,23 +1755,38 @@ function filterWechatItems(q){
 }
 function renderWechatItems(items){
   var body=document.getElementById('wdBody');
+  var cnt=document.getElementById('wdCount');
+  if(cnt) cnt.textContent=items.length+' 篇';
   if(!items||!items.length){
-    body.innerHTML='<div class="wd-empty"><span style="font-size:24px">📭</span>暂无公众号文章</div>';return;
+    body.innerHTML='<div class="wx-empty"><span style="font-size:28px">📭</span>暂无公众号文章</div>';return;
   }
+  var total=items.length,draft=0,pending=0,published=0;
+  items.forEach(function(n){
+    if(n.wechat_pub_time) published++;
+    else if(n.wechat_draft_id) draft++;
+    else if(n.wechat_publish) pending++;
+  });
+  function setEl(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
+  setEl('wdTotal',total);setEl('wdDraft',draft);setEl('wdPending',pending);setEl('wdPublished',published);
   var html='';
   items.forEach(function(n){
-    var title=esc(n.wechat_title||n.title||'(无标题)');
+    var wTitle=esc(n.wechat_title||n.title||'(无标题)');
+    var sub=esc(n.title||'');
     var date=(n.updated_at||n.created_at||'').slice(0,10);
-    var dotCls='wd-dm', stLabel='未配置';
-    if(n.wechat_pub_time){dotCls='wd-dg';stLabel='已发布';}
-    else if(n.wechat_draft_id){dotCls='wd-dy';stLabel='草稿';}
-    else if(n.wechat_publish){dotCls='wd-db';stLabel='待发布';}
-    var url='/wechat/'+n.key;
-    html+='<div class="wd-row" onclick="location.href=this.dataset.url" data-url="'+url+'">';
-    html+='<span class="wd-dot '+dotCls+'"></span>';
-    html+='<span class="wd-row-title" title="'+title+'">'+title+'</span>';
-    html+='<span class="wd-row-st"><span class="wd-dot '+dotCls+'" style="width:6px;height:6px"></span>'+stLabel+'</span>';
-    html+='<span class="wd-row-dt">'+date+'</span>';
+    var imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
+    var thumb=imgSrc?('<img class="wx-thumb" src="'+imgSrc+'" onerror="this.outerHTML='<div class=wx-thumb-empty>📰</div>'">'):'<div class="wx-thumb-empty">📰</div>';
+    var badgeCls='wx-b-gray', stLabel='未配置';
+    if(n.wechat_pub_time){badgeCls='wx-b-green';stLabel='已发布';}
+    else if(n.wechat_draft_id){badgeCls='wx-b-yellow';stLabel='草稿';}
+    else if(n.wechat_publish){badgeCls='wx-b-blue';stLabel='待发布';}
+    html+='<div class="wx-row" onclick="location.href=this.dataset.url" data-url="/wechat/'+n.key+'">';
+    html+=thumb;
+    html+='<div class="wx-col-title"><span class="wx-row-title" title="'+wTitle+'">'+wTitle+'</span>';
+    if(sub&&sub!==wTitle) html+='<div class="wx-row-sub">'+sub+'</div>';
+    html+='</div>';
+    html+='<div><span class="wx-badge '+badgeCls+'">'+stLabel+'</span></div>';
+    html+='<span class="wx-date">'+date+'</span>';
+    html+='<div style="text-align:right"><a class="wx-btn" href="/wechat/'+n.key+'" onclick="event.stopPropagation()">编辑</a></div>';
     html+='</div>';
   });
   body.innerHTML=html;
