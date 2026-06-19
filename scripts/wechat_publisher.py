@@ -186,16 +186,7 @@ def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THE
                 if p.startswith("/") and p not in img_url_map:
                     img_url_map[p] = f"file://{p}"
 
-    # 1. Strip leading title line from content if it matches the wechat title
-    content_clean = content
-    if title:
-        first_line = content_clean.lstrip().split('\n')[0].strip()
-        if first_line == title or first_line == f'# {title}':
-            content_clean = content_clean.lstrip()[len(first_line):].lstrip('\n')
-    body = _render_html(content_clean, img_url_map, theme_name, title=title)
-    # 3. Strip the rendered H1 from body — phone-frame already shows .article-title
-    import re as _re
-    body = _re.sub(r'<h1\b[^>]*>.*?</h1>', '', body, count=1, flags=_re.DOTALL)
+    body = _render_html(content, img_url_map, theme_name)
     theme = load_theme(theme_name) if _theme_exists(theme_name) else {}
     colors = theme.get("colors", {}) if theme else {}
     primary = colors.get("accent", "#333")
@@ -256,8 +247,7 @@ def _theme_exists(name: str) -> bool:
 
 
 def _render_html(content: str, img_url_map: dict,
-                 theme_name: str = DEFAULT_THEME,
-                 title: str = "") -> str:
+                 theme_name: str = DEFAULT_THEME) -> str:
     """用 format_engine 渲染 Markdown → 微信内联 HTML。
 
     流程：
@@ -266,9 +256,6 @@ def _render_html(content: str, img_url_map: dict,
     """
     # 图片标记转换
     md_content = xhs_img_to_markdown(content, img_url_map)
-    # 注入 frontmatter title，让 extract_title 用正确标题而非文件名
-    if title:
-        md_content = f"---\ntitle: {title}\n---\n\n{md_content}"
 
     # 用 format_engine 渲染
     # 构造一个临时文件路径，让引擎能提取标题
@@ -277,7 +264,7 @@ def _render_html(content: str, img_url_map: dict,
 
     result = format_for_output(
         md_content,
-        input_path=Path("/tmp/wechat_article.md"),  # 占位路径
+        input_path=Path("/dev/stdin"),  # 占位路径
         theme=theme,
         output_dir=Path("/tmp/wechat-format"),
         vault_root=Path.home(),
