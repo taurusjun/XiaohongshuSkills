@@ -1077,7 +1077,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 .wd-row-title{flex:1;min-width:0;font-size:13px;color:var(--wdt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wd-row-st{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--wdt2);width:72px;flex-shrink:0}
 .wd-row-dt{font-size:11px;color:var(--wdt3);width:80px;text-align:right;flex-shrink:0}
-.wd-row-act{opacity:0;flex-shrink:0;transition:opacity .1s}
+.wd-row-act{opacity:0 !important;flex-shrink:0;transition:opacity .1s}.wd-row:hover .wd-row-act{opacity:1 !important}
 .wd-ibtn{width:26px;height:26px;border-radius:var(--wdrad);border:1px solid var(--wdbr2);background:var(--wdb3);color:var(--wdt2);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .wd-ibtn:hover{color:var(--wdt)}
 .wd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 20px;color:var(--wdt3);font-size:13px}
@@ -3470,8 +3470,9 @@ function _txt2blocks(txt){
   var re=/【(?:图片|推文)\d+：([^】]*)】/g;
   function addText(t){
     if(!t||!t.trim())return;
-    t.split(/\n{2,}/).forEach(function(p){
-      p=p.trim();if(!p)return;
+    // Split on single newlines too, like detail page
+    t.split('\n').forEach(function(line){
+      var p=line.trim();if(!p)return;
       if(p.indexOf('### ')===0)blocks.push({type:'header',data:{text:p.slice(4),level:3}});
       else if(p.indexOf('## ')===0)blocks.push({type:'header',data:{text:p.slice(3),level:2}});
       else if(p.indexOf('> ')===0)blocks.push({type:'quote',data:{text:p.slice(2),caption:''}});
