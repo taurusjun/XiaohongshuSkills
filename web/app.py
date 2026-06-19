@@ -1679,7 +1679,7 @@ function filterWechatItems(q){
   renderWechatItems(items);
 }
 function renderWechatItems(items){
-  const body=document.getElementById('wdBody');
+  var body=document.getElementById('wdBody');
   if(!items.length){body.innerHTML='<div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">暂无文章</div>';return;}
   body.innerHTML=items.map(function(i){
     var badge='';
@@ -1688,7 +1688,8 @@ function renderWechatItems(items){
     else if(i.wechat_publish) badge='<span class="wd-badge wd-badge-pend">待发</span>';
     var title=esc(i.wechat_title||i.title||i.key.slice(0,16));
     var date=(i.updated_at||i.created_at||'').slice(0,10);
-    return '<div class="wd-item" onclick="window.open('/wechat/'+i.key+'','_blank')">'+badge+'<span class="wd-item-title">'+title+'</span><span class="wd-item-meta">'+date+'</span></div>';
+    var url='/wechat/'+i.key;
+    return '<div class="wd-item" onclick="window.open(this.dataset.url,\'_blank\')" data-url="'+url+'">'+badge+'<span class="wd-item-title">'+title+'</span><span class="wd-item-meta">'+date+'</span></div>';
   }).join('');
 }
 </script>
