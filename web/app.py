@@ -873,8 +873,8 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" onclick="toggleTagPanel()">
       <span class="ni">🏷️</span> 标签配置
     </div>
-    <a href="/wechat-list" class="nav-item" style="text-decoration:none;color:inherit">
-      <span class="ni">💬</span> 公众号
+    <a href="/wechat-list" class="nav-item" style="text-decoration:none;color:#7878a0">
+      <span class="ni">💬</span><span>公众号</span>
     </a>
   </div>
 
