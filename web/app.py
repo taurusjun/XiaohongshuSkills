@@ -873,6 +873,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" onclick="toggleTagPanel()">
       <span class="ni">🏷️</span> 标签配置
     </div>
+    <a href="/wechat-list" class="nav-item" style="text-decoration:none;color:inherit;display:flex">
+      <span class="ni">💬</span> 公众号
+    </a>
   </div>
 
   <div class="sidebar-divider"></div>
@@ -3245,6 +3248,83 @@ function publishWechat(){
   });
 })();
 </script>
+</body>
+</html>
+"""
+
+@app.route('/wechat-list')
+def wechat_list():
+    from flask import render_template_string as rts
+    from sqlite_db import _connect
+    search = request.args.get('search', '')
+    with _connect() as db:
+        sql = "SELECT * FROM news WHERE status='active' AND (wechat_content!='' OR wechat_publish=1 OR wechat_draft_id!='')"
+        params = []
+        if search:
+            sql += " AND (wechat_title LIKE ? OR title LIKE ?)"
+            params.extend([f'%{search}%', f'%{search}%'])
+        sql += " ORDER BY created_at DESC LIMIT 200"
+        rows = [dict(r) for r in db.execute(sql, params).fetchall()]
+    return rts(WECHAT_LIST_HTML, rows=rows, search=search)
+
+WECHAT_LIST_HTML = r"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>公众号文章列表</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#f5f6fa;--card-bg:#fff;--text:#222;--text2:#555;--text3:#999;--border:#e1e4e8;--blue:#2563eb;--green:#16a34a;--wechat:#07c160}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;color:var(--text);background:var(--bg);display:flex;min-height:100vh}
+  .sidebar{width:220px;min-width:220px;background:#1c1c2e;display:flex;flex-direction:column;padding:18px 0}
+  .sidebar a{color:#b0b0c0;text-decoration:none;padding:8px 18px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .sidebar a:hover,.sidebar a.active{color:#fff;background:#252538}
+  .main{flex:1;padding:20px;overflow-y:auto}
+  table{width:100%;border-collapse:collapse;background:var(--card-bg);border-radius:10px;overflow:hidden}
+  th{text-align:left;padding:10px 14px;font-size:11px;color:var(--text3);background:#f9fafb;border-bottom:1px solid var(--border)}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px}
+  tr:hover{background:#f9fafb}
+  .badge{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
+  .badge-wechat{background:#d1fae5;color:#065f46}
+  .badge-draft{background:#fef3c7;color:#92400e}
+  .empty{margin:48px auto;text-align:center;font-size:14px;color:var(--text3)}
+  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .topbar input{border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;outline:none;width:200px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div style="padding:0 18px 20px;font-size:14px;font-weight:700;color:#fff">💬 公众号</div>
+  <a href="/" style="color:#b0b0c0">← 返回管理</a>
+</div>
+<div class="main">
+  <div class="topbar">
+    <h2 style="font-size:16px;font-weight:600">公众号文章</h2>
+    <span style="font-size:12px;color:var(--text3)">{{rows|length}} 篇</span>
+    <input placeholder="搜索..." value="{{search or ''}}" oninput="clearTimeout(_t);_t=setTimeout(()=>{const u=new URL(location);u.searchParams.set('search',this.value);location=u.toString()},400)">
+  </div>
+  {% if rows %}
+  <table>
+    <thead><tr><th>标题</th><th style="width:100px">状态</th><th style="width:80px">操作</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><a href="/detail/{{r.key}}" style="color:var(--text);text-decoration:none">{{r.wechat_title or r.title}}</a></td>
+      <td>
+        {% if r.wechat_draft_id %}<span class="badge badge-wechat">草稿</span>
+        {% elif r.wechat_pub_time %}<span class="badge badge-draft">已发布 {{r.wechat_pub_time[:10]}}</span>
+        {% elif r.wechat_publish %}<span class="badge badge-wechat">待发</span>
+        {% else %}<span style="color:var(--text3)">—</span>{% endif %}
+      </td>
+      <td><a href="/wechat/{{r.key}}" style="color:var(--wechat);text-decoration:none;font-size:12px">编辑</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">暂无公众号文章<br><span style="font-size:11px">在详情页点击"公众号"入口编辑内容</span></div>
+  {% endif %}
+</div>
 </body>
 </html>
 """
