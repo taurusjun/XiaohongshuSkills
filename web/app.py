@@ -3118,7 +3118,7 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
 /* layout */
 .editor-layout{flex:1;display:flex;overflow:hidden;gap:0}
 .editor-main{flex:1;overflow-y:auto;padding:18px 20px;min-width:0}
-.editor-sidebar{width:270px;min-width:270px;background:var(--card-bg);border-left:1px solid var(--border);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.editor-sidebar{width:270px;min-width:270px;background:var(--card-bg);border-right:1px solid var(--border);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;order:-1}
 
 /* title */
 .title-area{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);padding:14px 16px;margin-bottom:14px}
