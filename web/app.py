@@ -1651,6 +1651,46 @@ function updateQuickTimeBtns(){
   });
 }
 updateQuickTimeBtns();setInterval(updateQuickTimeBtns,60000);
+
+function toggleWechatPanel(){
+  const d=document.getElementById('wechatDrawer');
+  const o=document.getElementById('wechatOverlay');
+  const n=document.getElementById('wechatNavItem');
+  if(d.classList.contains('open')){closeWechatPanel();return;}
+  d.classList.add('open');o.classList.add('open');if(n)n.classList.add('open');
+  loadWechatList();
+}
+function closeWechatPanel(){
+  document.getElementById('wechatDrawer').classList.remove('open');
+  document.getElementById('wechatOverlay').classList.remove('open');
+  const n=document.getElementById('wechatNavItem');if(n)n.classList.remove('open');
+}
+let _wdAllItems=[];
+function loadWechatList(){
+  fetch('/api/wechat-list').then(r=>r.json()).then(d=>{
+    _wdAllItems=d.items||[];
+    renderWechatItems(_wdAllItems);
+    const badge=document.getElementById('wechatBadge');
+    if(badge&&_wdAllItems.length){badge.textContent=_wdAllItems.length;badge.style.display='';}
+  }).catch(()=>{document.getElementById('wdBody').innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--text3)">加载失败</div>';});
+}
+function filterWechatItems(q){
+  const items=q?_wdAllItems.filter(i=>(i.title||'').toLowerCase().includes(q.toLowerCase())):_wdAllItems;
+  renderWechatItems(items);
+}
+function renderWechatItems(items){
+  const body=document.getElementById('wdBody');
+  if(!items.length){body.innerHTML='<div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">暂无文章</div>';return;}
+  body.innerHTML=items.map(function(i){
+    var badge='';
+    if(i.wechat_pub_time) badge='<span class="wd-badge wd-badge-pub">✅</span>';
+    else if(i.wechat_draft_id) badge='<span class="wd-badge wd-badge-draft">草稿</span>';
+    else if(i.wechat_publish) badge='<span class="wd-badge wd-badge-pend">待发</span>';
+    var title=esc(i.wechat_title||i.title||i.key.slice(0,16));
+    var date=(i.updated_at||i.created_at||'').slice(0,10);
+    return '<div class="wd-item" onclick="window.open('/wechat/'+i.key+'','_blank')">'+badge+'<span class="wd-item-title">'+title+'</span><span class="wd-item-meta">'+date+'</span></div>';
+  }).join('');
+}
 </script>
 </body></html>"""
 
@@ -2466,52 +2506,6 @@ updateContentCount();
 })();
 {% endif %}
 
-function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
-function toggleWechatPanel(){
-  const drawer=document.getElementById('wechatDrawer');
-  const overlay=document.getElementById('wechatOverlay');
-  const navItem=document.getElementById('wechatNavItem');
-  if(drawer.classList.contains('open')){
-    closeWechatPanel(); return;
-  }
-  drawer.classList.add('open');
-  overlay.classList.add('open');
-  navItem.classList.add('open');
-  loadWechatList();
-}
-function closeWechatPanel(){
-  document.getElementById('wechatDrawer').classList.remove('open');
-  document.getElementById('wechatOverlay').classList.remove('open');
-  const n=document.getElementById('wechatNavItem');if(n)n.classList.remove('open');
-}
-let _wdAllItems=[];
-function loadWechatList(){
-  fetch('/api/wechat-list').then(r=>r.json()).then(d=>{
-    _wdAllItems=d.items||[];
-    renderWechatItems(_wdAllItems);
-    const badge=document.getElementById('wechatBadge');
-    if(badge&&_wdAllItems.length){badge.textContent=_wdAllItems.length;badge.style.display='';}
-  }).catch(()=>{document.getElementById('wdBody').innerHTML='<div style="padding:20px;text-align:center;font-size:12px;color:var(--text3)">加载失败</div>';});
-}
-function filterWechatItems(q){
-  const items=q?_wdAllItems.filter(i=>(i.title||'').toLowerCase().includes(q.toLowerCase())):_wdAllItems;
-  renderWechatItems(items);
-}
-function renderWechatItems(items){
-  const body=document.getElementById('wdBody');
-  if(!items.length){body.innerHTML='<div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">暂无文章</div>';return;}
-  body.innerHTML=items.map(i=>{
-    let badge='';
-    if(i.wechat_pub_time) badge='<span class="wd-badge wd-badge-pub">✅</span>';
-    else if(i.wechat_draft_id) badge='<span class="wd-badge wd-badge-draft">草稿</span>';
-    else if(i.wechat_publish) badge='<span class="wd-badge wd-badge-pend">待发</span>';
-    return `<div class="wd-item" onclick="window.open('/wechat/${esc(i.key)}','_blank')">
-      ${badge}
-      <span class="wd-item-title" title="${esc(i.title||'')}">${esc(i.wechat_title||i.title||i.key.slice(0,16))}</span>
-      <span class="wd-item-meta">${(i.updated_at||i.created_at||'').slice(0,10)}</span>
-    </div>`;
-  }).join('');
-}
 function bindAutoResize(){
   document.querySelectorAll('.auto-resize:not([data-bound])').forEach(function(ta){
     ta.setAttribute('data-bound','1');
