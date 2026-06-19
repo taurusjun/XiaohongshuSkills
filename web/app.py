@@ -3383,7 +3383,7 @@ select.lp-sel:focus{border-color:var(--blue)}
 <div class="topbar">
   <a class="topbar-back" href="/">← 返回</a>
   <div class="topbar-sep"></div>
-  {% if news.link %}<a href="{{news.link}}" target="_blank" class="topbar-back" title="查看日文原文">🔗 原文</a><div class="topbar-sep"></div>{% endif %}
+  <a href="/detail/{{news.key}}" target="_blank" class="topbar-back" title="查看文章详情">📄 详情</a><div class="topbar-sep"></div>
   <span class="topbar-crumb">公众号 /</span>
   <div class="topbar-doc">{{(news.wechat_title or news.title or '')[:60]}}</div>
   <div class="topbar-actions">
