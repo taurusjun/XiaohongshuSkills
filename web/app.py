@@ -873,7 +873,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" onclick="toggleTagPanel()">
       <span class="ni">🏷️</span> 标签配置
     </div>
-    <a href="/wechat-list" class="nav-item" style="text-decoration:none;color:inherit;display:flex">
+    <a href="/wechat-list" class="nav-item" style="text-decoration:none;color:inherit">
       <span class="ni">💬</span> 公众号
     </a>
   </div>
@@ -3082,170 +3082,374 @@ def api_collect_metrics_batch():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-WECHAT_HTML = r"""
-<!DOCTYPE html>
+WECHAT_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>公众号编辑 — {{news.wechat_title or news.title or ''}}</title>
+<title>公众号编辑 · {{news.wechat_title or news.title or ''}}</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  :root{--bg:#f5f6fa;--card-bg:#fff;--text:#222;--text2:#555;--text3:#999;--border:#e1e4e8;--blue:#2563eb;--red:#dc2626;--green:#16a34a}
-  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
-  .topbar{display:flex;align-items:center;padding:8px 16px;background:var(--card-bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
-  .card-section{background:var(--card-bg);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid var(--border)}
-  .card-section-title{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text)}
-  .btn{padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer}
-  .btn-sm{padding:4px 10px;font-size:11px}
-  .btn-gray{background:#e5e7eb;color:#374151}
-  .inline-textarea{border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit;width:100%;resize:vertical;min-height:60px;outline:none;color:var(--text)}
-  .inline-textarea:focus{border-color:var(--blue)}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f4f4f8;--card-bg:#fff;
+  --text:#1a1a2e;--text2:#6b7280;--text3:#9ca3af;
+  --border:#e5e7eb;--radius:10px;--shadow:0 1px 4px rgba(0,0,0,.07);
+  --blue:#3b82f6;--green:#10b981;--red:#ef4444;--orange:#f59e0b;
+  --wx:#07c160;--font:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--bg);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* topbar */
+.topbar{height:50px;background:var(--card-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;z-index:100}
+.topbar-back{color:var(--text3);text-decoration:none;font-size:12px;display:flex;align-items:center;gap:4px}
+.topbar-back:hover{color:var(--text2)}
+.topbar-sep{width:1px;height:18px;background:var(--border)}
+.topbar-title{font-size:13px;font-weight:600;color:var(--text)}
+.topbar-subtitle{font-size:11px;color:var(--text3)}
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border:none;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;border:1px solid transparent}
+.btn-wx{background:var(--wx);color:#fff}
+.btn-wx:hover{background:#06ad56}
+.btn-gray{background:#f3f4f6;color:var(--text2);border-color:var(--border)}
+.btn-gray:hover{background:#e9ebee}
+.btn-outline{background:var(--card-bg);border-color:var(--border);color:var(--text2)}
+.btn-sm{height:26px;padding:0 10px;font-size:11px;border-radius:6px}
+#saveStatus{font-size:11px;color:var(--text3);transition:color .3s}
+#saveStatus.saving{color:var(--orange)}
+#saveStatus.saved{color:var(--green)}
+
+/* layout */
+.editor-layout{flex:1;display:flex;overflow:hidden;gap:0}
+.editor-main{flex:1;overflow-y:auto;padding:18px 20px;min-width:0}
+.editor-sidebar{width:270px;min-width:270px;background:var(--card-bg);border-left:1px solid var(--border);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+
+/* title */
+.title-area{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);padding:14px 16px;margin-bottom:14px}
+.title-label{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.title-input{width:100%;border:none;outline:none;font:600 17px/1.4 var(--font);color:var(--text);background:transparent;resize:none}
+.title-input::placeholder{color:var(--text3);font-weight:400}
+.title-meta{font-size:10.5px;color:var(--text3);margin-top:6px}
+.title-meta span{color:var(--orange)}
+
+/* editor area */
+.editor-area{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);padding:4px 0;min-height:400px}
+.editor-area .ce-block__content{max-width:100%;padding:0 16px}
+
+/* sidebar sections */
+.s-section{background:var(--bg);border-radius:8px;padding:12px;border:1px solid var(--border)}
+.s-title{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.s-title-icon{font-size:14px}
+
+/* status badge */
+.status-badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:4px 10px;border-radius:20px;font-weight:500}
+.status-none{background:#f3f4f6;color:#6b7280}
+.status-draft{background:#fef3c7;color:#92400e}
+.status-published{background:#d1fae5;color:#065f46}
+.status-pending{background:#dbeafe;color:#1d4ed8}
+
+/* cover */
+.cover-preview{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:7px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:pointer;background:#f9fafb}
+.cover-empty{width:100%;aspect-ratio:3/2;border-radius:7px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:var(--text3);font-size:11px;margin-bottom:8px;transition:border-color .15s;background:#fafafa}
+.cover-empty:hover{border-color:var(--wx);color:var(--wx)}
+
+/* image gallery */
+.img-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:220px;overflow-y:auto}
+.img-item{border-radius:6px;overflow:hidden;cursor:pointer;position:relative;aspect-ratio:4/3;background:#f3f4f6;border:2px solid transparent;transition:all .15s}
+.img-item:hover{border-color:var(--wx);transform:scale(1.02)}
+.img-item img{width:100%;height:100%;object-fit:cover;display:block}
+.img-src{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));color:#fff;font-size:9px;padding:4px 5px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+
+/* theme selector */
+.theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.theme-item{padding:7px 8px;border-radius:6px;border:1.5px solid var(--border);cursor:pointer;transition:all .15s;font-size:11px;text-align:center}
+.theme-item:hover{border-color:var(--wx);background:rgba(7,193,96,.06)}
+.theme-item.active{border-color:var(--wx);background:rgba(7,193,96,.1);color:var(--wx);font-weight:500}
+
+/* select */
+select{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text);background:var(--card-bg);outline:none;cursor:pointer}
+select:focus{border-color:var(--wx)}
+
+/* toast */
+.toast{position:fixed;bottom:24px;right:24px;background:#1a1a2e;color:#fff;font-size:12px;padding:8px 14px;border-radius:8px;display:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+
+/* publish action */
+.pub-action{padding:12px;background:linear-gradient(135deg,rgba(7,193,96,.08),rgba(7,193,96,.04));border-radius:8px;border:1px solid rgba(7,193,96,.2)}
 </style>
-<style>
-  .wechat-layout{display:flex;gap:14px;height:calc(100vh - 120px)}
-  .wechat-left{width:220px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding-right:10px}
-  .wechat-center{flex:1;overflow-y:auto;min-width:0}
-  .wechat-right{width:280px;flex-shrink:0;overflow-y:auto}
-  .img-thumb{cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;margin-bottom:6px;position:relative}
-  .img-thumb:hover{border-color:var(--blue)}
-  .img-thumb img{width:100%;height:80px;object-fit:cover;display:block}
-  .img-thumb .src-tag{position:absolute;top:2px;left:2px;font-size:8px;background:rgba(0,0,0,.6);color:#fff;padding:1px 4px;border-radius:2px;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #wechat-status{font-size:11px;padding:4px 8px;border-radius:4px;display:inline-block}
-  #wechat-status.draft{background:#fef3c7;color:#92400e}
-  #wechat-status.published{background:#d1fae5;color:#065f46}
-  #wechat-status.none{background:#f3f4f6;color:#6b7280}
-</style>
-<div class="topbar"><a href="/" style="color:var(--blue);text-decoration:none;font-size:12px">← 返回管理</a><span style="margin-left:12px;font-size:13px;font-weight:600">公众号编辑</span></div>
-<div class="wechat-layout">
-  <!-- 左栏：图片 -->
-  <div class="wechat-left">
-    <div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--text)">📷 图片素材 ({{all_images|length}})</div>
-    <div id="wechatImgGallery">
-      {% for img in all_images %}
-      <div class="img-thumb" onclick="insertWechatImage('{{img.path}}')" title="{{img.source}}">
-        <img src="/local-image?path={{img.path}}" loading="lazy">
-        <span class="src-tag">{{img.source}}</span>
-      </div>
-      {% endfor %}
-    </div>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <a href="/" class="topbar-back">← 返回</a>
+  <div class="topbar-sep"></div>
+  <div>
+    <div class="topbar-title">公众号编辑</div>
+    <div class="topbar-subtitle">{{news.title[:30] if news.title else news.key[:16]}}</div>
   </div>
-  <!-- 中栏：编辑器 -->
-  <div class="wechat-center">
+  <span style="flex:1"></span>
+  <span id="saveStatus">— 未保存</span>
+  <button class="btn btn-gray btn-sm" onclick="previewWechat()">👁 预览</button>
+  <button class="btn btn-gray btn-sm" onclick="saveWechat()">💾 保存</button>
+  <button class="btn btn-wx btn-sm" id="pubBtn" onclick="publishWechat()" {% if not news.wechat_publish %}style="opacity:.45;cursor:not-allowed"{% endif %}>📤 推送草稿</button>
+</div>
+
+<!-- Layout -->
+<div class="editor-layout">
+
+  <!-- Main: title + editor -->
+  <div class="editor-main">
     <textarea id="wechatContentHidden" style="display:none">{{news.wechat_content or ''}}</textarea>
-    <div id="wechat-editorjs" style="border:1px solid var(--border);border-radius:8px;padding:4px 0;background:var(--bg);min-height:400px"></div>
-  </div>
-  <!-- 右栏：标题 + 发布 -->
-  <div class="wechat-right">
-    <div class="card-section">
-      <div class="card-section-title">公众号标题</div>
-      <textarea class="inline-textarea auto-resize" id="wechatTitleInput" style="min-height:40px;font-size:14px;font-weight:600" oninput="autoSaveWechatTitle()">{{news.wechat_title or news.title or ''}}</textarea>
-      <span style="font-size:10px;color:var(--text3)">微信标题上限约 10 个汉字</span>
-    </div>
-    <div class="card-section">
-      <div class="card-section-title">发布状态</div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <select id="wechatPublish" onchange="autoSaveWechatPublish()" style="font-size:11px;padding:2px 5px;border:1px solid var(--border);border-radius:4px">
-          <option value="0" {{'selected' if not news.wechat_publish else ''}}>不发</option>
-          <option value="1" {{'selected' if news.wechat_publish else ''}}>待发</option>
-        </select>
-        <span id="wechat-status" class="{% if news.wechat_draft_id %}draft{% elif news.wechat_pub_time %}published{% else %}none{% endif %}">
-          {% if news.wechat_draft_id %}草稿: {{news.wechat_draft_id[:16]}}...{% elif news.wechat_pub_time %}已发布: {{news.wechat_pub_time}}{% else %}未发布{% endif %}
-        </span>
+
+    <div class="title-area">
+      <div class="title-label">公众号标题</div>
+      <textarea id="wechatTitleInput" class="title-input" rows="2" placeholder="输入公众号标题…" oninput="onTitleChange()">{{news.wechat_title or news.title or ''}}</textarea>
+      <div class="title-meta">
+        <span id="titleLen">{{(news.wechat_title or news.title or '')|length}}</span> 字
+        {% if (news.wechat_title or news.title or '')|length > 26 %}<span> · 建议不超过 26 字</span>{% endif %}
       </div>
     </div>
-    <div class="card-section">
-      <button class="btn btn-sm" onclick="saveWechat()" style="background:var(--blue);color:#fff;width:100%">💾 保存</button>
-      <button class="btn btn-gray btn-sm" onclick="publishWechat()" style="width:100%;margin-top:6px" {{'disabled' if not news.wechat_publish else ''}}>📤 发布到公众号草稿箱</button>
+
+    <div class="editor-area" id="wechat-editorjs"></div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="editor-sidebar">
+
+    <!-- status -->
+    <div class="s-section">
+      <div class="s-title"><span class="s-title-icon">📌</span>发布状态</div>
+      <div style="margin-bottom:10px">
+        {% if news.wechat_pub_time %}
+          <span class="status-badge status-published">✅ 已发布 · {{news.wechat_pub_time[:10]}}</span>
+        {% elif news.wechat_draft_id %}
+          <span class="status-badge status-draft">📝 草稿箱</span>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px;word-break:break-all">ID: {{news.wechat_draft_id[:32]}}...</div>
+        {% elif news.wechat_publish %}
+          <span class="status-badge status-pending">⏳ 待推送</span>
+        {% else %}
+          <span class="status-badge status-none">— 未配置</span>
+        {% endif %}
+      </div>
+      <select id="wechatPublish" onchange="onPublishChange()">
+        <option value="0" {{'selected' if not news.wechat_publish else ''}}>不发布</option>
+        <option value="1" {{'selected' if news.wechat_publish else ''}}>标记待发</option>
+      </select>
     </div>
+
+    <!-- cover -->
+    <div class="s-section">
+      <div class="s-title"><span class="s-title-icon">🖼</span>封面图</div>
+      {% if news.image_url %}
+        <img id="coverImg" class="cover-preview"
+          src="{{'/local-image?path='+news.image_url if news.image_url.startswith('/') else news.image_url}}"
+          onclick="openCoverPicker()" title="点击更换封面">
+      {% else %}
+        <div class="cover-empty" onclick="openCoverPicker()">
+          <span style="font-size:22px">+</span>
+          <span>选择封面图</span>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- theme -->
+    <div class="s-section">
+      <div class="s-title"><span class="s-title-icon">🎨</span>排版主题</div>
+      <div class="theme-grid" id="themeGrid">
+        {% for t in [('newspaper','📰 报刊'),('magazine','📖 杂志'),('ink','✒️ 墨水'),('minimal-gray','◻️ 极简')] %}
+        <div class="theme-item {% if loop.first %}active{% endif %}" data-theme="{{t[0]}}" onclick="selectTheme(this)">{{t[1]}}</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- image gallery -->
+    <div class="s-section">
+      <div class="s-title"><span class="s-title-icon">📷</span>图片素材
+        <span style="margin-left:auto;font-size:10px;color:var(--text3)">点击插入</span>
+      </div>
+      {% if all_images %}
+      <div class="img-grid">
+        {% for img in all_images %}
+        <div class="img-item" onclick="insertImage('{{img.path}}')" title="{{img.source}}">
+          <img src="/local-image?path={{img.path}}" loading="lazy">
+          <div class="img-src">{{img.source}}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="font-size:11px;color:var(--text3);text-align:center;padding:12px 0">暂无图片素材</div>
+      {% endif %}
+    </div>
+
+    <!-- publish action -->
+    <div class="pub-action">
+      <button class="btn btn-wx" style="width:100%;justify-content:center" onclick="publishWechat()"
+        {% if not news.wechat_publish %}disabled style="opacity:.45;cursor:not-allowed"{% endif %}>
+        📤 推送到草稿箱
+      </button>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">先保存再推送 · 推送后在公众号后台发布</div>
+    </div>
+
   </div>
 </div>
-<script>
-const WKEY='{{news.key}}';
-let _wechatEditor=null;
-const _allImgs={{all_images|tojson}}.map(i=>i.path);
 
-// Editor.js helpers (same as detail page)
-function _textToEjsBlocks(text,imgs){
-  var blocks=[];if(!text)return blocks;
-  var paras=text.split('\n\n');
-  for(var i=0;i<paras.length;i++){
-    var p=paras[i].trim();if(!p)continue;
-    if(p.startsWith('## ')||p.startsWith('### ')){blocks.push({type:'header',data:{text:p.replace(/^#+\s*/,''),level:p.startsWith('### ')?3:2}});continue}
-    var m=p.match(/^【(?:图片|推文)(\d+)[：:]([^】]+)/);
-    if(m){var idx=parseInt(m[1])-1;if(idx>=0&&idx<imgs.length){blocks.push({type:'galleryImage',data:{paths:[imgs[idx]],caption:m[0]}})}continue}
-    blocks.push({type:'paragraph',data:{text:p}});
+<div class="toast" id="toast"></div>
+
+<script>
+const WKEY = '{{news.key}}';
+const _allImgs = {{all_images|tojson}}.map(i=>i.path);
+let _editor = null;
+let _saveTimer = null;
+let _currentTheme = 'newspaper';
+
+function showToast(msg, duration=1500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', duration);
+}
+function setSaveStatus(s) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = s === 'saving' ? '保存中…' : s === 'saved' ? '✓ 已保存' : '— 未保存';
+  el.className = s;
+}
+
+function onTitleChange() {
+  const v = document.getElementById('wechatTitleInput').value;
+  document.getElementById('titleLen').textContent = v.length;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => autoSave('title', v), 600);
+}
+function onPublishChange() {
+  const v = parseInt(document.getElementById('wechatPublish').value);
+  autoSave('publish', v);
+  const btn = document.getElementById('pubBtn');
+  btn.disabled = !v;
+  btn.style.opacity = v ? '1' : '.45';
+  btn.style.cursor = v ? 'pointer' : 'not-allowed';
+}
+function selectTheme(el) {
+  document.querySelectorAll('.theme-item').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  _currentTheme = el.dataset.theme;
+}
+
+async function autoSave(field, val) {
+  setSaveStatus('saving');
+  const body = {};
+  if (field === 'title') body.wechat_title = val;
+  if (field === 'publish') body.wechat_publish = val;
+  await fetch('/api/wechat/' + WKEY, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  setSaveStatus('saved');
+}
+
+async function saveWechat() {
+  setSaveStatus('saving');
+  const title = document.getElementById('wechatTitleInput').value;
+  let content = document.getElementById('wechatContentHidden').value;
+  if (_editor) {
+    const out = await _editor.save();
+    content = _ejsBlocksToText(out.blocks || []);
+    document.getElementById('wechatContentHidden').value = content;
+  }
+  await fetch('/api/wechat/' + WKEY, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({wechat_title: title, wechat_content: content})
+  });
+  setSaveStatus('saved');
+  showToast('✓ 已保存');
+}
+
+function previewWechat() {
+  window.open('/wechat/' + WKEY + '/preview?theme=' + _currentTheme, '_blank');
+}
+
+async function publishWechat() {
+  const btn = document.getElementById('pubBtn');
+  if (btn.disabled) { showToast('请先标记为「待发布」'); return; }
+  if (!confirm('保存并推送到微信公众号草稿箱？')) return;
+  await saveWechat();
+  btn.textContent = '推送中…'; btn.disabled = true;
+  try {
+    const r = await fetch('/api/wechat/' + WKEY + '/publish?theme=' + _currentTheme, {method:'POST'});
+    const d = await r.json();
+    if (d.ok) { showToast('✅ 草稿推送成功！', 3000); setTimeout(() => location.reload(), 1500); }
+    else { showToast('❌ 推送失败: ' + (d.error || '').slice(0,60), 4000); }
+  } finally {
+    btn.textContent = '📤 推送草稿'; btn.disabled = false;
+  }
+}
+
+function insertImage(path) {
+  if (!_editor) return;
+  const idx = _editor.blocks.getCurrentBlockIndex();
+  _editor.blocks.insert('galleryImage', {paths:[path], caption:''}, {}, idx + 1, true);
+  showToast('图片已插入');
+}
+
+function openCoverPicker() {
+  showToast('请从图片素材中右键设为封面（功能开发中）');
+}
+
+// Editor.js text helpers
+function _textToEjsBlocks(text, imgs) {
+  const blocks = [];
+  if (!text) return blocks;
+  const paras = text.split(/\n{2,}/);
+  for (const p of paras) {
+    const t = p.trim(); if (!t) continue;
+    if (t.startsWith('## ') || t.startsWith('### ')) {
+      blocks.push({type:'header', data:{text:t.replace(/^#+\s*/,''), level:t.startsWith('###')?3:2}}); continue;
+    }
+    const m = t.match(/^【(?:图片|推文)(\d+)[：:]([^】]*)/);
+    if (m) { const idx=parseInt(m[1])-1; if(idx>=0&&idx<imgs.length) blocks.push({type:'galleryImage',data:{paths:[imgs[idx]],caption:t}}); continue; }
+    blocks.push({type:'paragraph', data:{text:t}});
   }
   return blocks;
 }
-function _ejsBlocksToText(blocks){
-  var lines=[];for(var i=0;i<blocks.length;i++){var b=blocks[i];
-    if(b.type==='header'){lines.push('## '+b.data.text)}
-    else if(b.type==='galleryImage'){lines.push((b.data.caption||''))}
-    else if(b.type==='quote'){lines.push('> '+b.data.text+(b.data.caption?' — '+b.data.caption:''))}
-    else{lines.push(b.data.text||'')}
+function _ejsBlocksToText(blocks) {
+  const lines = [];
+  for (const b of blocks) {
+    if (b.type==='header') lines.push('## '+b.data.text);
+    else if (b.type==='galleryImage') lines.push(b.data.caption||'');
+    else if (b.type==='quote') lines.push('> '+b.data.text+(b.data.caption?' — '+b.data.caption:''));
+    else lines.push(b.data.text||'');
     lines.push('');
   }
   return lines.join('\n');
 }
 
-function autoSaveWechatTitle(){
-  const v=document.getElementById('wechatTitleInput').value;
-  fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_title:v})});
-}
-function autoSaveWechatPublish(){
-  const v=document.getElementById('wechatPublish').value;
-  fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_publish:parseInt(v)})});
-}
-async function saveWechat(){
-  if(_wechatEditor){
-    const out=await _wechatEditor.save();
-    const text=_ejsBlocksToText(out.blocks||[]);
-    document.getElementById('wechatContentHidden').value=text;
-    await fetch('/api/wechat/'+WKEY,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({wechat_content:text})});
-  }
-  var t=document.getElementById('toast');t.textContent='已保存';t.style.display='block';setTimeout(()=>t.style.display='none',1000);
-}
-function insertWechatImage(path){
-  if(!_wechatEditor) return;
-  const url='/local-image?path='+encodeURIComponent(path);
-  const cap='【图片：'+path.split('/').pop()+'】';
-  const idx=_wechatEditor.blocks.getCurrentBlockIndex();
-  _wechatEditor.blocks.insert('galleryImage',{paths:[path],caption:cap},{},idx+1,true);
-}
-function publishWechat(){
-  if(!confirm('将当前内容发布到微信公众号草稿箱？')) return;
-  saveWechat().then(()=>{
-    fetch('/api/wechat/'+WKEY+'/publish',{method:'POST'}).then(r=>r.json()).then(d=>{
-      if(d.ok) alert('草稿创建成功！\\nmedia_id: '+d.media_id);
-      else alert('发布失败: '+(d.error||'unknown'));
-    });
-  });
-}
-// Editor.js init
-(function loadWechatEditorJs(){
-  const el=document.getElementById('wechat-editorjs');
-  if(!el) return;
-  function loadScript(src,cb){const s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s)}
-  loadScript('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js',()=>{
-    loadScript('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js',()=>{
-      loadScript('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js',()=>{
-        loadScript('https://cdn.jsdelivr.net/npm/@editorjs/image@2.10.3/dist/image.umd.js',()=>{
-          // GalleryImageBlock class
-          class GalleryImageBlock{constructor({data}){this.data=data||{paths:[],caption:''}}static get toolbox(){return{title:'图片',icon:'🖼'}}render(){const w=document.createElement('div');w.style.cssText='display:flex;flex-wrap:wrap;gap:6px';if(this.data.paths){this.data.paths.forEach(p=>{const img=document.createElement('img');img.src='/local-image?path='+encodeURIComponent(p);img.style.cssText='max-width:100%;max-height:400px;border-radius:8px';w.appendChild(img)})}return w}save(blockContent){return this.data}}
-          const raw=document.getElementById('wechatContentHidden').value;
-          _wechatEditor=new EditorJS({
-            holder:'wechat-editorjs',minHeight:200,
-            placeholder:'编辑公众号正文...',
-            tools:{
-              header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
-              quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'输入引用内容',captionPlaceholder:'出处'}},
-              galleryImage:{class:GalleryImageBlock}
-            },
-            data:{blocks:_textToEjsBlocks(raw,_allImgs||[])}
-          });
+// Load Editor.js
+(function init() {
+  function load(src, cb) { const s=document.createElement('script'); s.src=src; s.onload=cb; document.head.appendChild(s); }
+  load('https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.29.1/dist/editorjs.umd.min.js', () =>
+  load('https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.1/dist/header.umd.min.js', () =>
+  load('https://cdn.jsdelivr.net/npm/@editorjs/quote@2.6.0/dist/quote.umd.min.js', () => {
+    class GalleryImageBlock {
+      constructor({data}){this.data=data||{paths:[],caption:''}}
+      static get toolbox(){return{title:'图片',icon:'🖼'}}
+      render(){
+        const w=document.createElement('div');
+        w.style.cssText='padding:4px 0';
+        (this.data.paths||[]).forEach(p=>{
+          const img=document.createElement('img');
+          img.src='/local-image?path='+encodeURIComponent(p);
+          img.style.cssText='max-width:100%;border-radius:8px;display:block;margin-bottom:6px';
+          w.appendChild(img);
         });
-      });
+        if(this.data.caption){const cap=document.createElement('p');cap.style.cssText='font-size:11px;color:#9ca3af;margin-top:2px';cap.textContent=this.data.caption;w.appendChild(cap);}
+        return w;
+      }
+      save(){return this.data}
+    }
+    const raw = document.getElementById('wechatContentHidden').value;
+    _editor = new EditorJS({
+      holder: 'wechat-editorjs',
+      minHeight: 300,
+      placeholder: '开始编辑公众号正文…',
+      tools: {
+        header: {class:Header, config:{levels:[2,3],defaultLevel:2}, inlineToolbar:true},
+        quote: {class:Quote, inlineToolbar:true, config:{quotePlaceholder:'引用内容',captionPlaceholder:'来源'}},
+        galleryImage: {class:GalleryImageBlock}
+      },
+      data: {blocks: _textToEjsBlocks(raw, _allImgs)}
     });
-  });
+  })));
 })();
 </script>
 </body>
@@ -3267,63 +3471,157 @@ def wechat_list():
         rows = [dict(r) for r in db.execute(sql, params).fetchall()]
     return rts(WECHAT_LIST_HTML, rows=rows, search=search)
 
-WECHAT_LIST_HTML = r"""
-<!DOCTYPE html>
+WECHAT_LIST_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>公众号文章列表</title>
+<title>公众号 · 文章管理</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  :root{--bg:#f5f6fa;--card-bg:#fff;--text:#222;--text2:#555;--text3:#999;--border:#e1e4e8;--blue:#2563eb;--green:#16a34a;--wechat:#07c160}
-  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;color:var(--text);background:var(--bg);display:flex;min-height:100vh}
-  .sidebar{width:220px;min-width:220px;background:#1c1c2e;display:flex;flex-direction:column;padding:18px 0}
-  .sidebar a{color:#b0b0c0;text-decoration:none;padding:8px 18px;font-size:13px;display:flex;align-items:center;gap:8px}
-  .sidebar a:hover,.sidebar a.active{color:#fff;background:#252538}
-  .main{flex:1;padding:20px;overflow-y:auto}
-  table{width:100%;border-collapse:collapse;background:var(--card-bg);border-radius:10px;overflow:hidden}
-  th{text-align:left;padding:10px 14px;font-size:11px;color:var(--text3);background:#f9fafb;border-bottom:1px solid var(--border)}
-  td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px}
-  tr:hover{background:#f9fafb}
-  .badge{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
-  .badge-wechat{background:#d1fae5;color:#065f46}
-  .badge-draft{background:#fef3c7;color:#92400e}
-  .empty{margin:48px auto;text-align:center;font-size:14px;color:var(--text3)}
-  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-  .topbar input{border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;outline:none;width:200px}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f4f4f8;--card-bg:#fff;--sidebar-bg:#16162a;
+  --text:#1a1a2e;--text2:#6b7280;--text3:#9ca3af;
+  --border:#e5e7eb;--radius:10px;--shadow:0 1px 4px rgba(0,0,0,.07);
+  --blue:#3b82f6;--green:#10b981;--orange:#f59e0b;--red:#ef4444;
+  --wx:#07c160;--font:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--bg);display:flex;height:100vh;overflow:hidden}
+
+/* sidebar */
+.sidebar{width:200px;min-width:200px;background:var(--sidebar-bg);display:flex;flex-direction:column;padding:16px 0;overflow-y:auto}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:4px 16px 18px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:10px}
+.sidebar-logo-icon{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#07c160,#1aad19);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sidebar-logo-text{font-size:13px;font-weight:600;color:#fff}
+.nav-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4b4b6a;padding:6px 16px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:6px;margin:1px 8px;cursor:pointer;color:#9090b0;font-size:12px;font-weight:500;transition:all .15s;text-decoration:none}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#d0d0e8}
+.nav-item.active{background:rgba(7,193,96,.12);color:#07c160}
+.nav-item .ni{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+
+/* main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--card-bg);border-bottom:1px solid var(--border);padding:0 20px;height:50px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.topbar-title{font-size:13px;font-weight:600;color:var(--text)}
+.content{flex:1;overflow-y:auto;padding:18px 20px}
+
+/* stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat-card{background:var(--card-bg);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);border:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.stat-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.stat-num{font-size:20px;font-weight:700;line-height:1;color:var(--text)}
+.stat-label{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* toolbar */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.search-box{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:5px 11px;width:220px}
+.search-box input{border:none;background:none;font-size:12px;color:var(--text);outline:none;width:100%}
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border:none;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;border:1px solid transparent}
+.btn-wx{background:var(--wx);color:#fff}
+.btn-gray{background:#f3f4f6;color:var(--text2);border-color:var(--border)}
+
+/* table */
+.table-card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
+.table-header{display:grid;grid-template-columns:1fr 90px 100px 80px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid var(--border)}
+.table-header span{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.table-row{display:grid;grid-template-columns:1fr 90px 100px 80px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;transition:background .1s}
+.table-row:last-child{border-bottom:none}
+.table-row:hover{background:#f9fafb}
+.row-title{font-size:12.5px;font-weight:500;color:var(--text);text-decoration:none;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-title:hover{color:var(--wx)}
+.row-date{font-size:11px;color:var(--text3)}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:500;white-space:nowrap}
+.badge-draft{background:#fef3c7;color:#92400e}
+.badge-published{background:#d1fae5;color:#065f46}
+.badge-pending{background:#dbeafe;color:#1d4ed8}
+.badge-none{background:#f3f4f6;color:#9ca3af}
+.act-btn{font-size:11px;color:var(--wx);text-decoration:none;padding:3px 8px;border-radius:5px;border:1px solid rgba(7,193,96,.3);transition:all .15s}
+.act-btn:hover{background:rgba(7,193,96,.08)}
+.empty{padding:60px 20px;text-align:center;color:var(--text3)}
+.empty-icon{font-size:36px;margin-bottom:12px}
 </style>
 </head>
 <body>
+
 <div class="sidebar">
-  <div style="padding:0 18px 20px;font-size:14px;font-weight:700;color:#fff">💬 公众号</div>
-  <a href="/" style="color:#b0b0c0">← 返回管理</a>
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">💬</div>
+    <span class="sidebar-logo-text">公众号</span>
+  </div>
+  <div class="nav-section-label">管理</div>
+  <a href="/wechat-list" class="nav-item active"><span class="ni">📄</span>文章列表</a>
+  <a href="/" class="nav-item"><span class="ni">←</span>返回主管理</a>
 </div>
+
 <div class="main">
   <div class="topbar">
-    <h2 style="font-size:16px;font-weight:600">公众号文章</h2>
-    <span style="font-size:12px;color:var(--text3)">{{rows|length}} 篇</span>
-    <input placeholder="搜索..." value="{{search or ''}}" oninput="clearTimeout(_t);_t=setTimeout(()=>{const u=new URL(location);u.searchParams.set('search',this.value);location=u.toString()},400)">
+    <span class="topbar-title">公众号文章管理</span>
+    <span style="flex:1"></span>
+    <a href="/" class="btn btn-gray" style="text-decoration:none;font-size:11px">← 返回</a>
   </div>
-  {% if rows %}
-  <table>
-    <thead><tr><th>标题</th><th style="width:100px">状态</th><th style="width:80px">操作</th></tr></thead>
-    <tbody>
-    {% for r in rows %}
-    <tr>
-      <td><a href="/detail/{{r.key}}" style="color:var(--text);text-decoration:none">{{r.wechat_title or r.title}}</a></td>
-      <td>
-        {% if r.wechat_draft_id %}<span class="badge badge-wechat">草稿</span>
-        {% elif r.wechat_pub_time %}<span class="badge badge-draft">已发布 {{r.wechat_pub_time[:10]}}</span>
-        {% elif r.wechat_publish %}<span class="badge badge-wechat">待发</span>
-        {% else %}<span style="color:var(--text3)">—</span>{% endif %}
-      </td>
-      <td><a href="/wechat/{{r.key}}" style="color:var(--wechat);text-decoration:none;font-size:12px">编辑</a></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">暂无公众号文章<br><span style="font-size:11px">在详情页点击"公众号"入口编辑内容</span></div>
-  {% endif %}
+  <div class="content">
+
+    <!-- stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#f0fdf4">📄</div>
+        <div><div class="stat-num">{{rows|length}}</div><div class="stat-label">文章总数</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#fef3c7">📝</div>
+        <div><div class="stat-num">{{rows|selectattr('wechat_draft_id')|list|length}}</div><div class="stat-label">草稿箱</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#dbeafe">⏳</div>
+        <div><div class="stat-num">{{rows|selectattr('wechat_publish')|rejectattr('wechat_draft_id')|list|length}}</div><div class="stat-label">待发布</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#d1fae5">✅</div>
+        <div><div class="stat-num">{{rows|selectattr('wechat_pub_time')|list|length}}</div><div class="stat-label">已发布</div></div>
+      </div>
+    </div>
+
+    <!-- toolbar -->
+    <div class="toolbar">
+      <div class="search-box">
+        <span style="color:var(--text3);font-size:13px">🔍</span>
+        <input id="searchInput" placeholder="搜索文章..." value="{{search or ''}}"
+          oninput="clearTimeout(_t);_t=setTimeout(()=>{const u=new URL(location);u.searchParams.set('search',this.value);location=u.toString()},400)">
+      </div>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text3)">共 {{rows|length}} 篇</span>
+    </div>
+
+    <!-- table -->
+    <div class="table-card">
+      {% if rows %}
+      <div class="table-header">
+        <span>标题</span>
+        <span>状态</span>
+        <span>更新时间</span>
+        <span></span>
+      </div>
+      {% for r in rows %}
+      <div class="table-row">
+        <a href="/wechat/{{r.key}}" class="row-title">{{r.wechat_title or r.title or r.key[:16]}}</a>
+        <div>
+          {% if r.wechat_pub_time %}<span class="badge badge-published">✅ 已发布</span>
+          {% elif r.wechat_draft_id %}<span class="badge badge-draft">📝 草稿箱</span>
+          {% elif r.wechat_publish %}<span class="badge badge-pending">⏳ 待发布</span>
+          {% else %}<span class="badge badge-none">— 未配置</span>{% endif %}
+        </div>
+        <span class="row-date">{{(r.updated_at or r.created_at or '')[:10]}}</span>
+        <a href="/wechat/{{r.key}}" class="act-btn">编辑 →</a>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="empty">
+        <div class="empty-icon">💬</div>
+        <div style="font-size:14px;font-weight:500;color:var(--text2);margin-bottom:6px">暂无公众号文章</div>
+        <div style="font-size:12px">在文章详情页点击「公众号」入口配置内容</div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
 </div>
 </body>
 </html>
