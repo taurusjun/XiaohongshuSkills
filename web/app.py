@@ -859,7 +859,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <div class="sidebar-section">
     <div class="sidebar-label">内容管理</div>
-    <div class="nav-item active" onclick="">
+    <div class="nav-item active" id="newsNavItem" onclick="switchToNewsView()">
       <span class="ni">📋</span> 文章列表
       <span class="nav-badge g" id="sidebarPending" style="display:none">0</span>
     </div>
@@ -1636,6 +1636,16 @@ function updateQuickTimeBtns(){
 }
 updateQuickTimeBtns();setInterval(updateQuickTimeBtns,60000);
 
+function switchToNewsView(){
+  var nv=document.getElementById('newsView');
+  var wv=document.getElementById('wechatView');
+  var wn=document.getElementById('wechatNavItem');
+  var nn=document.getElementById('newsNavItem');
+  if(wv) wv.style.display='none';
+  if(nv) nv.style.display='';
+  if(wn) wn.classList.remove('active');
+  if(nn) nn.classList.add('active');
+}
 function toggleWechatPanel(){
   const nv=document.getElementById('newsView');
   const wv=document.getElementById('wechatView');
@@ -1648,7 +1658,8 @@ function toggleWechatPanel(){
   nv.style.display='none';
   wv.style.display='flex';
   wv.style.flexDirection='column';
-  if(newsNav) newsNav.classList.remove('active');
+  var nn=document.getElementById('newsNavItem');
+  if(nn) nn.classList.remove('active');
   if(n) n.classList.add('active');
   loadWechatList();
 }
