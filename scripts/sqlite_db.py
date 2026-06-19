@@ -239,6 +239,11 @@ def init_db():
             ("rewritten_title", "TEXT DEFAULT ''"),
             ("related_keys", "TEXT DEFAULT ''"),
             ("publish_method", "TEXT DEFAULT 'post'"),
+            ("wechat_title", "TEXT DEFAULT ''"),
+            ("wechat_content", "TEXT DEFAULT ''"),
+            ("wechat_publish", "INTEGER DEFAULT 0"),
+            ("wechat_draft_id", "TEXT DEFAULT ''"),
+            ("wechat_pub_time", "TEXT DEFAULT ''"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -417,6 +422,7 @@ def update_news(key: str, fields: dict) -> bool:
                'format','preselected',
                'publish_mode','publish_free_text','rewritten_content','rewritten_title',
                'related_keys','publish_method',
+               'wechat_title','wechat_content','wechat_publish','wechat_draft_id','wechat_pub_time',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
