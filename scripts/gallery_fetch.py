@@ -488,20 +488,28 @@ def _scrape_smart_flash(gallery_url: str) -> list[str]:
                 pass
 
         # Step 3: 取 imageSlider 前 img_count 项的全尺寸 URL
+        # 新版结构：直接 <img src="..."> 无 venoboxImageDetail 链接
         slider = s.select_one(".imageSlider")
         if slider:
             items = slider.select("div.item")
             for item in items[:img_count]:
+                # 新版：直接取 img.src
+                img_el = item.select_one("img[src]")
+                if img_el:
+                    src = img_el["src"]
+                    if "data.smart-flash.jp" in src and src not in seen:
+                        seen.add(src); images.append(src)
+                    continue
+                # 旧版兼容：venoboxImageDetail href
                 a = item.select_one("a.venoboxImageDetail[href]")
                 if a and "data.smart-flash.jp" in a["href"] and a["href"] not in seen:
-                    seen.add(a["href"])
-                    images.append(a["href"])
+                    seen.add(a["href"]); images.append(a["href"])
 
-        # Fallback: 抓整个 imageSlider 的第一张
+        # Fallback: 整个 slider 第一张
         if not images and slider:
-            a = slider.select_one("a.venoboxImageDetail[href]")
-            if a and "data.smart-flash.jp" in a["href"]:
-                images.append(a["href"])
+            img_el = slider.select_one("img[src*='data.smart-flash.jp']")
+            if img_el:
+                images.append(img_el["src"])
     except Exception as e:
         print(f"  ⚠️ smart-flash 抓取失败: {e}")
 
