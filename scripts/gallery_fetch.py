@@ -308,6 +308,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     import re
     from urllib.parse import urlparse, urlunparse
     headers = {**HEADERS, "Referer": "https://www.crank-in.net/"}
+    ssl_kwargs = {"verify": False}  # crank-in has SSL EOF issue with Python 3.14
 
     # 先去掉 query string，再截掉末尾页码
     p = urlparse(gallery_url)
@@ -315,7 +316,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     base = re.sub(r'/\d+$', '', clean_url)
 
     # 先取第一页获取总页数
-    resp = requests.get(f"{base}/1", headers=headers, timeout=15)
+    resp = requests.get(f"{base}/1", headers=headers, timeout=15, **ssl_kwargs)
     soup = BeautifulSoup(resp.text, "html.parser")
     num_el = soup.select_one(".photo-link-num")
     total = 1
@@ -330,7 +331,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     for page in range(1, total + 1):
         try:
             if page != 1:
-                r = requests.get(f"{base}/{page}", headers=headers, timeout=15)
+                r = requests.get(f"{base}/{page}", headers=headers, timeout=15, **ssl_kwargs)
                 s = BeautifulSoup(r.text, "html.parser")
             else:
                 s = soup
@@ -2553,6 +2554,12 @@ def _scrape_nishispo(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_billboard_jp(gallery_url: str) -> list[str]:
+    """billboard-japan.com 图集（独立脚本 scripts/scrapers/billboard_jp_dl.py）"""
+    from scrapers.billboard_jp_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2873,6 +2880,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "nishispo.nishinippon.co.jp" in domain:
         images = _scrape_nishispo(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "billboard-japan.com" in domain:
+        images = _scrape_billboard_jp(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
