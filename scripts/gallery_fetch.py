@@ -62,6 +62,7 @@ GALLERY_SITES: dict[str, str] = {
     "oricon.co.jp":         "div.main_photo",
     "natalie.mu":           ".chronicle-article-photo, article",
     "billboard-japan.com":  ".article-photo, article",
+    "iza.ne.jp":             "main, article",
     "crank-in.net":         ".photo-link-img",
     "limo.media":           "article, .article-body",
     "mezamashi.media":      "article, .gallery-body",
@@ -109,7 +110,8 @@ GALLERY_SITES: dict[str, str] = {
 GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
-                         "nishispo.nishinippon.co.jp", "thefirsttimes.jp", "kstyle.com",
+                         "nishispo.nishinippon.co.jp",
+                         "iza.ne.jp", "thefirsttimes.jp", "kstyle.com",
                          "realsound.jp", "lasisa.net",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
                          "mainichikirei.jp", "deview.co.jp", "qjweb.jp", "pinzuba.news",
@@ -2568,6 +2570,27 @@ def _scrape_billboard_jp(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_iza(gallery_url: str) -> list[str]:
+    """iza.ne.jp 图集：/resizer/v2/ 直链图片，去重后返回。"""
+    headers = {**HEADERS, "Referer": "https://www.iza.ne.jp/"}
+    images, seen = [], set()
+    try:
+        r = requests.get(gallery_url.split("?")[0], headers=headers, timeout=15)
+        s = BeautifulSoup(r.text, "html.parser")
+        for img in s.find_all("img"):
+            src = img.get("src", "")
+            if not src or "/resizer/v2/" not in src:
+                continue
+            # Deduplicate by image ID (before ?auth=)
+            key = src.split("?")[0]
+            if key not in seen:
+                seen.add(key)
+                images.append(src)
+    except Exception as e:
+        print(f"  ⚠️ iza.ne.jp 抓取失败: {e}")
+    return images
+
+
 def _scrape_pia(gallery_url: str) -> list[str]:
     """lp.p.pia.jp 图集：data-src 懒加载图片，?id=N 分页"""
     import re
@@ -2892,6 +2915,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "billboard-japan.com" in domain:
         images = _scrape_billboard_jp(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "iza.ne.jp" in domain:
+        images = _scrape_iza(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     selector = next((v for k, v in GALLERY_SITES.items() if k in domain), "article, body")
