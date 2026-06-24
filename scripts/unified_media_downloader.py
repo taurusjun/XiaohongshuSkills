@@ -773,9 +773,38 @@ def _download_twitter_images_fx(url: str, output_dir: Path, tweet_id: str) -> li
         print(f"  ❌ fxTwitter API 失败: {e}")
         return []
 
-    photos = (tweet_data.get("tweet", {}) or {}).get("media", {}).get("photos", [])
+    media = (tweet_data.get("tweet", {}) or {}).get("media", {})
+    photos = media.get("photos", []) or []
+    videos = media.get("videos", []) or []
+
+    # Handle videos via yt-dlp (proxy handled by env vars set in plist)
+    if not photos and videos:
+        print(f"  🎬 推文含视频，尝试 yt-dlp 下载...")
+        import subprocess, shutil
+        ytdlp = shutil.which("yt-dlp") or "/Users/user/PG/XiaohongshuSkills/.venv/bin/yt-dlp"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        env_proxy = {"HTTP_PROXY": "socks5h://127.0.0.1:10090",
+                     "HTTPS_PROXY": "socks5h://127.0.0.1:10090"}
+        import os as _os
+        run_env = {**_os.environ, **env_proxy}
+        out_tmpl = str(output_dir / "%(id)s.%(ext)s")
+        cmd = [ytdlp, url, "-o", out_tmpl, "--no-playlist",
+               "-S", "vcodec:h264,ext:mp4,res:1080", "--merge-output-format", "mp4"]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=run_env)
+        saved = []
+        if res.returncode == 0:
+            for f in sorted(output_dir.glob("*.mp4")):
+                target = output_dir / f"{len(saved)+1:03d}_video.mp4"
+                if f != target:
+                    f.rename(target)
+                saved.append(target.name)
+                print(f"    ✓ {target.name} ({target.stat().st_size//1024}KB) yt-dlp")
+        else:
+            print(f"  ❌ yt-dlp 失败: {res.stderr[-200:]}")
+        return saved
+
     if not photos:
-        print("  ❌ 推文无图片")
+        print("  ❌ 推文无图片也无视频")
         return []
 
     img_urls = [p.get("url", "").split("?")[0] + "?name=orig" for p in photos if p.get("url")]
