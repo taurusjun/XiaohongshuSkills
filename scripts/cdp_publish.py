@@ -611,7 +611,7 @@ class XiaohongshuPublisher:
 
         print(f"[cdp_publish] Connecting to {ws_url}")
         self._tab_ws_url = ws_url  # saved for reconnect after page navigation
-        self.ws = ws_client.connect(ws_url)
+        self.ws = ws_client.connect(ws_url, max_size=None)
         print("[cdp_publish] Connected to Chrome tab.")
 
     def disconnect(self):
@@ -907,7 +907,7 @@ class XiaohongshuPublisher:
                 self.ws.close()
         except Exception:
             pass
-        self.ws = ws_client.connect(self._tab_ws_url)
+        self.ws = ws_client.connect(self._tab_ws_url, max_size=None)
 
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
@@ -3119,7 +3119,7 @@ class XiaohongshuPublisher:
                     except Exception:
                         pass
                     self._tab_ws_url = new_ws
-                    self.ws = ws_client.connect(new_ws)
+                    self.ws = ws_client.connect(new_ws, max_size=None)
                     self._sleep(PAGE_LOAD_WAIT + 1, minimum_seconds=3.0)
                     self._check_feed_page_accessible()
                     self._wait_engage_bar(max_polls=10)
