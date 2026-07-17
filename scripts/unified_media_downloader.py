@@ -45,6 +45,11 @@ HEADERS = {
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
 YTDLP_BIN = shutil.which("yt-dlp") or "/opt/homebrew/bin/yt-dlp"
+# Also try project venv path (for launchd subprocesses without full PATH)
+if not os.path.exists(YTDLP_BIN):
+    for _p in [os.path.expanduser("~/PG/XiaohongshuSkills/.venv/bin/yt-dlp"),
+               os.path.join(os.path.dirname(__file__), "..", ".venv", "bin", "yt-dlp")]:
+        if os.path.exists(_p): YTDLP_BIN = _p; break
 
 
 # ================================================================
@@ -388,44 +393,68 @@ def download_youtube(url_or_id: str, output_dir: Path, *,
 
 INSTAGRAM_JS = r"""
 (function(){
-    var code = '__SHORTCODE__';
+    // Strategy 1: grab rendered <img> and <video> tags (works with new Polaris API)
     var seen = {};
     var results = [];
 
-    function bestImg(obj) {
-        if (!obj.image_versions2) return '';
-        var cands = obj.image_versions2.candidates || [];
-        var best = cands.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, cands[0]||{});
-        return best.url || '';
-    }
-    function bestVid(obj) {
-        if (obj.video_url) return obj.video_url;
-        var vers = obj.video_versions || [];
-        return vers.length ? vers[0].url : '';
-    }
-    function addMedia(obj) {
-        var url = bestVid(obj) || bestImg(obj);
+    function addUrl(url, type) {
         if (!url || seen[url]) return;
-        var idMatch = url.match(/\/(\d{5,})_/);
-        var deduKey = idMatch ? idMatch[1] : url;
-        if (seen[deduKey]) return;
-        seen[deduKey] = 1;
-        results.push({url: url, type: bestVid(obj) ? 'video' : 'img'});
+        // Deduplicate by numeric ID in URL
+        var m = url.match(/\/([0-9]{10,})[_x]/);
+        var key = m ? m[1] : url;
+        if (seen[key]) return;
+        seen[url] = seen[key] = 1;
+        results.push({url: url, type: type});
     }
-    function walk(obj, depth) {
-        if (!obj || typeof obj !== 'object' || depth > 20) return;
-        if (obj.code === code) {
-            addMedia(obj);
-            (obj.carousel_media || []).forEach(addMedia);
-            return;
+
+    // Post images: t51.82787-15 (not -19 which is profile pic)
+    document.querySelectorAll('img').forEach(function(el) {
+        var src = el.src || '';
+        if ((src.includes('cdninstagram') || src.includes('fbcdn')) && src.includes('t51.') && !src.includes('-19/')) {
+            addUrl(src, 'img');
         }
-        if (Array.isArray(obj)) { obj.forEach(function(i){ walk(i, depth+1); }); }
-        else { Object.values(obj).forEach(function(v){ walk(v, depth+1); }); }
-    }
-    document.querySelectorAll('script[type="application/json"]').forEach(function(s){
-        if (s.textContent.indexOf(code) === -1) return;
-        try { walk(JSON.parse(s.textContent), 0); } catch(e){}
     });
+
+    // Videos: blob: URL 不能直接下载，跳过；让 strategy 2 从 JSON 提取真实 mp4 URL
+    document.querySelectorAll('video').forEach(function(el) {
+        var src = el.src || el.currentSrc || '';
+        if (src && !src.startsWith('blob:')) addUrl(src, 'video');
+    });
+
+    // Strategy 2: 从 JSON 提取真实视频/图片 URL（reel 视频在 video_versions 里）
+    (function() {
+        var code = '__SHORTCODE__';
+        function bestImg(o) {
+            if (!o.image_versions2) return '';
+            var c = o.image_versions2.candidates || [];
+            var b = c.reduce(function(a,b){ return (b.width||0)>(a.width||0)?b:a; }, c[0]||{});
+            return b.url || '';
+        }
+        function bestVid(o) {
+            if (o.video_url) return o.video_url;
+            var vv = o.video_versions || [];
+            var best = null;
+            vv.forEach(function(v) { if (!best || (v.type||0) > (best.type||0)) best = v; });
+            return best ? best.url : '';
+        }
+        function addMedia(o) {
+            var v = bestVid(o), i = bestImg(o);
+            if (v) addUrl(v, 'video');
+            if (i) addUrl(i, 'img');
+        }
+        function walk(o, d) {
+            if (!o || typeof o !== 'object' || d > 25) return;
+            if (o.video_versions || o.image_versions2) { addMedia(o); }
+            if (o.code === code) { addMedia(o); (o.carousel_media||[]).forEach(addMedia); return; }
+            if (Array.isArray(o)) o.forEach(function(i){ walk(i,d+1); });
+            else Object.values(o).forEach(function(v){ walk(v,d+1); });
+        }
+        document.querySelectorAll('script[type="application/json"]').forEach(function(s){
+            if (s.textContent.indexOf(code) === -1) return;
+            try { walk(JSON.parse(s.textContent), 0); } catch(e){}
+        });
+    })();
+
     return JSON.stringify(results);
 })()
 """
@@ -437,6 +466,95 @@ def _get_ig_tab(tab_list: list[dict]) -> dict | None:
     return t or next((t for t in tab_list if t.get("type") == "page"), None)
 
 
+def _capture_ig_reel_via_network(gallery_url: str, cdp_host: str, cdp_port: int) -> list[str]:
+    """通过 CDP Network 域拦截 reel 自动播放时的 mp4 请求。返回去重后的 video URL 列表（按捕获顺序）。"""
+    try:
+        import websocket
+    except ImportError:
+        return []
+    try:
+        new_tab_resp = requests.put(f"http://{cdp_host}:{cdp_port}/json/new", timeout=5)
+        page_tab = new_tab_resp.json()
+    except Exception as e:
+        print(f"  ⚠️ Network 拦截: 无法创建 tab: {e}")
+        return []
+    _tab_id = page_tab.get("id", "")
+    try:
+        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=30)
+        ws.settimeout(2)
+        ws.send(json.dumps({"id": 1, "method": "Network.enable"}))
+        ws.send(json.dumps({"id": 2, "method": "Page.enable"}))
+        ws.send(json.dumps({"id": 3, "method": "Page.navigate", "params": {"url": gallery_url}}))
+        video_urls: list[str] = []
+        seen: set[str] = set()
+        start = time.time()
+        loaded = False
+        while time.time() - start < 25:
+            try:
+                msg = json.loads(ws.recv())
+            except websocket.WebSocketTimeoutException:
+                if loaded and time.time() - start > 18: break
+                continue
+            except Exception:
+                break
+            if msg.get("method") == "Page.loadEventFired":
+                loaded = True
+            elif msg.get("method") == "Network.responseReceived":
+                u = msg["params"]["response"].get("url", "")
+                mt = msg["params"]["response"].get("mimeType", "")
+                if ("cdninstagram.com" in u and (".mp4" in u or "video" in mt)):
+                    # IG 用 bytestart/byteend 做 range 请求，剥掉这两个参数拿完整视频
+                    import re as _re
+                    u_clean = _re.sub(r"[&?]bytestart=[^&]*", "", u)
+                    u_clean = _re.sub(r"[&?]byteend=[^&]*", "", u_clean)
+                    base = u_clean.split("?")[0]
+                    if base not in seen:
+                        seen.add(base)
+                        video_urls.append(u_clean)
+        try: ws.close()
+        except: pass
+        print(f"  🎬 Network 拦截到 {len(video_urls)} 个 mp4 URL")
+        return video_urls
+    except Exception as e:
+        print(f"  ⚠️ Network 拦截失败: {e}")
+        return []
+    finally:
+        if _tab_id:
+            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_tab_id}", timeout=3)
+            except: pass
+
+
+def _extract_ig_imgs_js(gallery_url: str, cdp_host: str, cdp_port: int, shortcode: str) -> list[dict]:
+    """导航到 IG 帖子后用 INSTAGRAM_JS 提取图片 URL（用于 reel 与视频一起返回）。"""
+    js_extract = INSTAGRAM_JS.replace("__SHORTCODE__", shortcode)
+    try:
+        import websocket
+    except ImportError:
+        return []
+    try:
+        tabs = requests.get(f"http://{cdp_host}:{cdp_port}/json", timeout=5).json()
+        ig_tab = next((t for t in tabs if t.get("type")=="page" and "instagram.com" in t.get("url","")), None)
+        if not ig_tab:
+            return []
+        ws = websocket.create_connection(ig_tab["webSocketDebuggerUrl"], timeout=15)
+        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": js_extract, "returnByValue": True}}))
+        ws.settimeout(10)
+        items = []
+        for _ in range(30):
+            try:
+                msg = json.loads(ws.recv())
+                if msg.get("id") == 1:
+                    val = msg.get("result", {}).get("result", {}).get("value", "[]")
+                    items = json.loads(val) if val else []
+                    break
+            except: break
+        ws.close()
+        # 只保留图片（视频已在 Network 拦截里）
+        return [{"url": it["url"], "type": "img"} for it in items if it.get("type") == "img"]
+    except Exception:
+        return []
+
+
 def _extract_instagram_media_cdp(gallery_url: str,
                                   cdp_host: str, cdp_port: int) -> list[dict]:
     """通过 CDP 导航到 Instagram 帖子并提取媒体 URL。返回 [{url, type}]。"""
@@ -444,6 +562,34 @@ def _extract_instagram_media_cdp(gallery_url: str,
     if not shortcode:
         print(f"  ⚠️ 无法解析 Instagram shortcode: {gallery_url}")
         return []
+
+    # Reel 视频走 Network 拦截（DOM/JSON 元数据 IG 异步注入，时序不稳）
+    is_reel = "/reel/" in gallery_url
+    if is_reel:
+        net_videos = _capture_ig_reel_via_network(gallery_url, cdp_host, cdp_port)
+        if net_videos:
+            # 去重：IG 同一 reel 会请求多个 bitrate/CDN，按 efg.xpv_asset_id 去重保留首个（最高 bitrate）
+            import re as _re, base64 as _b64, urllib.parse as _up
+            seen_asset = set()
+            unique_videos = []
+            for u in net_videos:
+                m = _re.search(r"efg=([A-Za-z0-9%]+)", u)
+                key = None
+                if m:
+                    try:
+                        decoded = _b64.b64decode(_up.unquote(m.group(1))).decode(errors="ignore")
+                        am = _re.search(r"xpv_asset_id.*?:.*?(\d+)", decoded)
+                        if am: key = am.group(1)
+                    except Exception: pass
+                if not key:
+                    key = u.split("?")[0]
+                if key in seen_asset: continue
+                seen_asset.add(key)
+                unique_videos.append(u)
+            # 兼容现有下载流程：图片也走 JS 抓取，视频用拦截到的真实 mp4 URL
+            js_imgs = _extract_ig_imgs_js(gallery_url, cdp_host, cdp_port, shortcode)
+            return [{"url": u, "type": "video"} for u in unique_videos] + js_imgs
+        # 拦截失败则继续走原 JS 路径作为兜底
 
     js_extract = INSTAGRAM_JS.replace("__SHORTCODE__", shortcode)
 
@@ -459,12 +605,20 @@ def _extract_instagram_media_cdp(gallery_url: str,
         print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
         return []
 
-    page_tab = _get_ig_tab(tabs)
+    # Phase 1: 创建新 tab（避免复用 extension 后台 tab）
+    try:
+        new_tab_resp = requests.put(f"http://{cdp_host}:{cdp_port}/json/new", timeout=5)
+        page_tab = new_tab_resp.json()
+    except Exception as e:
+        print(f"  ⚠️ 无法创建新 tab: {e}")
+        page_tab = _get_ig_tab(tabs)
+
     if not page_tab:
         print("  ⚠️ 找不到可用的 Chrome tab")
         return []
 
-    # Phase 1: 导航
+    _new_tab_id = page_tab.get("id", "")
+
     try:
         ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=15)
         ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
@@ -486,6 +640,9 @@ def _extract_instagram_media_cdp(gallery_url: str,
             pass
     except Exception as e:
         print(f"  ⚠️ CDP 导航失败: {e}")
+        if _new_tab_id:
+            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
+            except: pass
         return []
 
     # Phase 2: 重连 + 提取
@@ -511,6 +668,10 @@ def _extract_instagram_media_cdp(gallery_url: str,
     except Exception as e:
         print(f"  ⚠️ CDP 提取失败: {e}")
         return []
+    finally:
+        if _new_tab_id:
+            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
+            except: pass
 
     return media_items
 
@@ -526,6 +687,11 @@ def _download_instagram_ytdlp(gallery_url: str, output_dir: Path,
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(output_dir / "%(id)s.%(ext)s")
+    try:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY
+    except Exception:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY
+
     cmd = [
         YTDLP_BIN, gallery_url,
         "-o", out_tmpl,
@@ -535,10 +701,12 @@ def _download_instagram_ytdlp(gallery_url: str, output_dir: Path,
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
     ]
+    if _IG_PROXY:
+        cmd += ["--proxy", _IG_PROXY]
     if cookie_file and cookie_file.stat().st_size > 30:
         cmd += ["--cookies", str(cookie_file)]
 
-    print(f"  ▶ yt-dlp 备用下载 Instagram...")
+    print(f"  ▶ yt-dlp 备用下载 Instagram (proxy={_IG_PROXY or 'none'})...")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -577,8 +745,45 @@ def download_instagram(url: str, output_dir: Path, *,
                        use_ytdlp_fallback: bool = True,
                        timeout: int = 300) -> list[str]:
     """下载 Instagram 帖子。返回 ['001.jpg', '002_video.mp4', ...] 或 []。"""
-    # 主方案：CDP
+    # 主方案：代理 Chrome CDP（port 9223）— Instagram 需要代理访问
+    try:
+        from chrome_launcher import ensure_proxy_chrome, CDP_PORT_PROXY
+        if ensure_proxy_chrome():
+            cdp_port = CDP_PORT_PROXY
+    except Exception:
+        pass
     media_items = _extract_instagram_media_cdp(url, cdp_host, cdp_port)
+
+    # Reel 视频往往只有 blob URL，CDP JSON 元数据被 IG 改造，无法可靠提取视频直链
+    # 对 reel 优先走 yt-dlp（更稳）
+    is_reel = "/reel/" in url
+    has_video = any(it.get("type") == "video" for it in media_items)
+    if is_reel and not has_video and use_ytdlp_fallback:
+        print("  📹 reel 但 CDP 未抓到视频，走 yt-dlp")
+        # 先保留已抓到的图片，再追加 yt-dlp 视频
+        saved_imgs = []
+        # Reuse already-fetched image URLs: call _download_instagram_ytdlp only for video
+        yt_saved = _download_instagram_ytdlp(url, output_dir, timeout)
+        # Now also download the img URLs we already have
+        from pathlib import Path as _P
+        ig_cookies = _extract_cookies_from_cdp("instagram.com", cdp_host, cdp_port)
+        dl_headers = {**HEADERS, "Cookie": "; ".join(f"{k}={v}" for k, v in ig_cookies.items()), "Referer": "https://www.instagram.com/"}
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY
+        _ig_proxies = {"http": _IG_PROXY, "https": _IG_PROXY} if _IG_PROXY else None
+        img_idx = 1
+        for item in media_items:
+            if item["type"] != "img": continue
+            try:
+                r = requests.get(item["url"], headers=dl_headers, proxies=_ig_proxies, timeout=30)
+                ext = "jpg"
+                fname = f"{img_idx:03d}.{ext}"
+                (output_dir / fname).write_bytes(r.content)
+                saved_imgs.append(fname)
+                img_idx += 1
+            except Exception as e:
+                print(f"    ✗ img {img_idx}: {e}")
+                img_idx += 1
+        return saved_imgs + yt_saved
 
     if not media_items:
         if use_ytdlp_fallback:
@@ -599,23 +804,63 @@ def download_instagram(url: str, output_dir: Path, *,
         "Cookie": "; ".join(f"{k}={v}" for k, v in ig_cookies.items()),
         "Referer": "https://www.instagram.com/",
     }
+    try:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY2
+    except Exception:
+        from config.yahoo_conf import PROXY_URL as _IG_PROXY2
+    _ig_proxies = {"http": _IG_PROXY2, "https": _IG_PROXY2} if _IG_PROXY2 else None
 
     saved = []
     img_idx = 1
     for item in media_items:
         murl, mtype = item["url"], item["type"]
-        try:
-            resp = requests.get(murl, headers=dl_headers, timeout=30)
-            resp.raise_for_status()
-            fname = (f"{img_idx:03d}_video.mp4" if mtype == "video"
-                     else f"{img_idx:03d}.jpg")
-            (output_dir / fname).write_bytes(resp.content)
-            print(f"    ✓ {fname}  ({len(resp.content) // 1024} KB)")
-            saved.append(fname)
-            img_idx += 1
-        except Exception as e:
-            print(f"    ✗ 下载失败: {e}")
-        time.sleep(0.2)
+        fname = (f"{img_idx:03d}_video.mp4" if mtype == "video"
+                 else f"{img_idx:03d}.jpg")
+        fpath = output_dir / fname
+        # 视频：流式 + 断点续传（IG CDN 不稳，需要重试 + Range）
+        if mtype == "video":
+            ok = False
+            for attempt in range(5):
+                have = fpath.stat().st_size if fpath.exists() else 0
+                hdrs = dict(dl_headers)
+                if have > 0:
+                    hdrs['Range'] = f'bytes={have}-'
+                try:
+                    resp = requests.get(murl, headers=hdrs, proxies=_ig_proxies, timeout=(60, 300), stream=True)
+                    if resp.status_code not in (200, 206):
+                        print(f"    ✗ HTTP {resp.status_code}"); break
+                    total = have
+                    mode = 'ab' if have > 0 else 'wb'
+                    with open(fpath, mode) as f:
+                        for chunk in resp.iter_content(65536):
+                            if chunk: f.write(chunk); total += len(chunk)
+                    if resp.headers.get('content-length'):
+                        cl = int(resp.headers['content-length'])
+                        # 206 partial: total - have + cl == expected
+                        if resp.status_code == 206 and have + cl == total:
+                            ok = True; break
+                        if resp.status_code == 200 and total == cl:
+                            ok = True; break
+                    if total > 100000:
+                        ok = True; break
+                except Exception as e:
+                    print(f"    ⚠️ attempt {attempt+1}: {e}")
+                    time.sleep(2)
+            if ok:
+                print(f"    ✓ {fname}  ({fpath.stat().st_size // 1024} KB)")
+                saved.append(fname)
+            else:
+                print(f"    ✗ {fname} 不完整")
+        else:
+            try:
+                resp = requests.get(murl, headers=dl_headers, proxies=_ig_proxies, timeout=30)
+                resp.raise_for_status()
+                fpath.write_bytes(resp.content)
+                print(f"    ✓ {fname}  ({len(resp.content) // 1024} KB)")
+                saved.append(fname)
+            except Exception as e:
+                print(f"    ✗ 下载失败: {e}")
+        img_idx += 1
 
     return saved
 
@@ -624,6 +869,155 @@ def download_instagram(url: str, output_dir: Path, *,
 # Twitter / X
 # ================================================================
 
+def _download_via_cdp(img_urls: list[str], output_dir: Path) -> list[str]:
+    """通过 CDP 浏览器 fetch() 下载图片，绕过代理。"""
+    import requests as _req, base64 as _b64, websocket as _ws, json as _j, time as _t
+    CDP = "http://127.0.0.1:9222"
+    saved = []
+
+    # Create tab
+    try:
+        resp = _req.put(f"{CDP}/json/new?url=about:blank", timeout=5)
+        tab = resp.json()
+        tab_id = tab["id"]
+        ws = _ws.create_connection(tab["webSocketDebuggerUrl"], timeout=10)
+        ws.send(_j.dumps({"id": 1, "method": "Runtime.enable"}))
+        _t.sleep(0.3)
+    except Exception as e:
+        print(f"  ❌ CDP 连接失败: {e}")
+        return saved
+
+    try:
+        for i, url in enumerate(img_urls):
+            ext = url.rsplit(".", 1)[-1].split("?")[0] or "jpg"
+            if ext not in ("jpg", "jpeg", "png", "webp"):
+                ext = "jpg"
+            dst = output_dir / f"{i+1:03d}.{ext}"
+
+            script = f"""
+(async () => {{
+    const resp = await fetch('{url}');
+    if (!resp.ok) return 'HTTP ' + resp.status;
+    const blob = await resp.blob();
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let j = 0; j < bytes.length; j += 8192) {{
+        binary += String.fromCharCode.apply(null, bytes.slice(j, j + 8192));
+    }}
+    return 'OK:' + btoa(binary);
+}})()
+"""
+            ws.send(_j.dumps({"id": 10+i, "method": "Runtime.evaluate",
+                "params": {"expression": script, "returnByValue": True, "awaitPromise": True}}))
+            _t.sleep(3)
+
+            deadline = _t.time() + 20
+            while _t.time() < deadline:
+                try:
+                    ws.settimeout(2)
+                    msg = _j.loads(ws.recv())
+                    if msg.get("id") == 10+i:
+                        val = msg["result"]["result"]["value"]
+                        if val and val.startswith("OK:"):
+                            b64 = val[3:]
+                            dst.write_bytes(_b64.b64decode(b64))
+                            saved.append(dst.name)
+                            print(f"    ✓ {dst.name} ({dst.stat().st_size//1024}KB) CDP")
+                        else:
+                            print(f"    ❌ {dst.name}: {str(val)[:100]}")
+                        break
+                except Exception:
+                    pass
+    finally:
+        try:
+            ws.close()
+            _req.get(f"{CDP}/json/close/{tab_id}", timeout=3)
+        except Exception:
+            pass
+    return saved
+
+
+def _download_twitter_images_fx(url: str, output_dir: Path, tweet_id: str) -> list[str]:
+    """通过 fxTwitter API + requests 下载推文图片（加代理，不走 Chrome CDP）。
+    Chrome 现在 --no-proxy-server，无法访问 Twitter 基础设施，改用 requests + PROXY_URL。"""
+    import requests as _req, re as _re
+    m = _re.search(r'(?:x\.com|twitter\.com)/(\w+)/status/(\d+)', url)
+    if not m:
+        return []
+    author, tid = m.group(1), m.group(2)
+    fx_url = f"https://api.fxtwitter.com/{author}/status/{tid}"
+
+    try:
+        from config.yahoo_conf import PROXY_URL
+    except Exception:
+        from config.yahoo_conf import PROXY_URL
+    _proxies = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else None
+    _headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+
+    # Step 1: fxTwitter API via requests + proxy
+    try:
+        r = _req.get(fx_url, headers=_headers, proxies=_proxies, timeout=15)
+        r.raise_for_status()
+        tweet_data = r.json()
+    except Exception as e:
+        print(f"  ❌ fxTwitter API 失败: {e}")
+        return []
+
+    media = (tweet_data.get("tweet", {}) or {}).get("media", {})
+    photos = media.get("photos", []) or []
+    videos = media.get("videos", []) or []
+
+    # Handle videos via yt-dlp (proxy handled by env vars set in plist)
+    if not photos and videos:
+        print(f"  🎬 推文含视频，尝试 yt-dlp 下载...")
+        import subprocess, shutil
+        ytdlp = shutil.which("yt-dlp") or "/Users/user/PG/XiaohongshuSkills/.venv/bin/yt-dlp"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        from config.yahoo_conf import get_proxy_env as _gpe
+        env_proxy = _gpe()
+        import os as _os
+        run_env = {**_os.environ, **env_proxy}
+        out_tmpl = str(output_dir / "%(id)s.%(ext)s")
+        cmd = [ytdlp, url, "-o", out_tmpl, "--no-playlist",
+               "-S", "vcodec:h264,ext:mp4,res:1080", "--merge-output-format", "mp4"]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=run_env)
+        saved = []
+        if res.returncode == 0:
+            for f in sorted(output_dir.glob("*.mp4")):
+                target = output_dir / f"{len(saved)+1:03d}_video.mp4"
+                if f != target:
+                    f.rename(target)
+                saved.append(target.name)
+                print(f"    ✓ {target.name} ({target.stat().st_size//1024}KB) yt-dlp")
+        else:
+            print(f"  ❌ yt-dlp 失败: {res.stderr[-200:]}")
+        return saved
+
+    if not photos:
+        print("  ❌ 推文无图片也无视频")
+        return []
+
+    img_urls = [p.get("url", "").split("?")[0] + "?name=orig" for p in photos if p.get("url")]
+
+    # Step 2: Download images via requests + proxy
+    saved = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for i, img_url in enumerate(img_urls):
+        ext = img_url.rsplit(".", 1)[-1].split("?")[0] or "jpg"
+        if ext not in ("jpg", "jpeg", "png", "webp"):
+            ext = "jpg"
+        dst = output_dir / f"{i+1:03d}.{ext}"
+        try:
+            r2 = _req.get(img_url, headers=_headers, proxies=_proxies, timeout=30)
+            r2.raise_for_status()
+            dst.write_bytes(r2.content)
+            saved.append(dst.name)
+            print(f"    ✓ {dst.name} ({dst.stat().st_size//1024}KB) fxTwitter+proxy")
+        except Exception as e:
+            print(f"    ❌ {dst.name}: {e}")
+    return saved
+
 def download_twitter(url: str, output_dir: Path, *,
                      timeout: int = 300) -> list[str]:
     """用 yt-dlp 下载 x.com 推文的视频/图片。返回 ['001_video.mp4', ...] 或 []。"""
@@ -631,6 +1025,9 @@ def download_twitter(url: str, output_dir: Path, *,
     tweet_id = extract_tweet_id(url)
     out_tmpl = str(output_dir / f"{tweet_id}.%(ext)s" if tweet_id
                    else str(output_dir / "%(id)s.%(ext)s"))
+    # Twitter 代理不稳定，直接走 CDP/fxTwitter，不用 yt-dlp
+    return _download_twitter_images_fx(url, output_dir, tweet_id)
+
     cmd = [
         YTDLP_BIN, url,
         "-o", out_tmpl,
@@ -647,10 +1044,13 @@ def download_twitter(url: str, output_dir: Path, *,
     except subprocess.TimeoutExpired:
         print("  ✗ yt-dlp 超时")
         return []
+    except (FileNotFoundError, OSError):
+        print(f"  ⚠️ yt-dlp 不可用，用 fxTwitter API")
+        return _download_twitter_images_fx(url, output_dir, tweet_id)
 
     if result.returncode != 0:
-        print(f"  ❌ yt-dlp 失败: {result.stderr[-300:]}")
-        return []
+        print(f"  ⚠️ yt-dlp 失败（非视频推文），尝试 fxTwitter API...")
+        return _download_twitter_images_fx(url, output_dir, tweet_id)
 
     # 找到下载的文件并重命名为统一格式
     mp4_files = sorted(output_dir.glob("*.mp4"),

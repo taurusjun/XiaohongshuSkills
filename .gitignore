@@ -45,6 +45,9 @@ content.txt
 # Config with sensitive data
 config/accounts.json
 
+# Environment variables (API keys, secrets)
+.env
+
 # Images
 images/publish_temp/*
 !images/publish_temp/.gitkeep
@@ -53,8 +56,25 @@ images/publish_temp/*
 .DS_Store
 Thumbs.db
 
-# Claude Code
-.claude/
 
 # Generated data
 yahoo_china_news_*.json
+data/news.db-shm
+data/news.db-wal
+data/news.db
+data/news_dev.db-shm
+data/news_dev.db-wal
+data/news_dev.db
+data/logs/
+config/wechat_conf.json
+
+# Backup/temp DB files
+data/news_dev_backup_*.db
+data/news_dev_backup_*.db-shm
+data/news_dev_backup_*.db-wal
+data/multi_source.db
+data/multi_source.db-shm
+data/multi_source.db-wal
+
+data/custom_keywords.json
+xhs-visual-director-skill.bak/

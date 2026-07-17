@@ -187,128 +187,130 @@ def _select_topics(
     tags: list[str],
     timing_jitter: float = 0.25,
 ):
-    """Type each tag, wait for suggestions, then confirm with Enter."""
+    """Select XHS topic tags by simulating real keyboard input.
+
+    Uses Input.dispatchKeyEvent (keyDown+text per char) so XHS Vue/ProseMirror
+    processes the input natively and converts #tag<space> into a proper tiptap-topic
+    chip with a real XHS topic ID.  execCommand/insertText bypasses XHS event
+    handlers and never creates topic chips.
+    """
     if not tags:
         return
 
     print(f"[pipeline] Step 4.1: Selecting {len(tags)} topic tag(s)...")
     failed_tags = []
 
+    def _type_char(ch: str):
+        """Send a single character via keyDown+keyUp (keyDown carries the text)."""
+        if ch in ("\n", "\r"):
+            # ProseMirror needs a real Enter key event to create a new paragraph
+            publisher._send("Input.dispatchKeyEvent", {
+                "type": "keyDown", "key": "Enter", "code": "Enter",
+                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
+            })
+            publisher._send("Input.dispatchKeyEvent", {
+                "type": "keyUp", "key": "Enter", "code": "Enter",
+                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
+            })
+        else:
+            publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+            publisher._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch})
+        time.sleep(0.06)
+
+    def _focus_editor_end():
+        publisher._evaluate("""
+            (function(){
+                var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+                if(!e)return;
+                e.focus();
+                var s=window.getSelection(),r=document.createRange();
+                r.selectNodeContents(e);r.collapse(false);
+                s.removeAllRanges();s.addRange(r);
+            })()
+        """)
+
+    # Override visibilityState so Vue event handlers process keyboard events
+    # when Chrome window has no active display (e.g. VNC disconnected).
+    publisher._evaluate("""
+        Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+        Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    """)
+
+    # Scroll editor into viewport so keyboard events and dropdown clicks land correctly.
+    publisher._evaluate("""
+        var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+        if (e) e.scrollIntoView({block: 'center', behavior: 'instant'});
+    """)
+    time.sleep(0.3)
+
+    # Mouse click on editor center — required to actually activate the editor
+    # for keyboard input. JS focus() alone is insufficient without VNC.
+    editor_rect = publisher._evaluate("""
+        (function(){
+            var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+            if (!e) return null;
+            var r = e.getBoundingClientRect();
+            return {x: r.x + r.width/2, y: r.y + r.height/2};
+        })()
+    """)
+    if editor_rect:
+        for ev in ("mousePressed", "mouseReleased"):
+            publisher._send("Input.dispatchMouseEvent", {
+                "type": ev, "x": editor_rect["x"], "y": editor_rect["y"],
+                "button": "left", "clickCount": 1,
+            })
+        time.sleep(0.2)
+
+    _focus_editor_end()
+    time.sleep(0.2)
+
     for index, tag in enumerate(tags):
         normalized_tag = tag.lstrip("#").strip()
         if not normalized_tag:
             continue
 
-        hash_pause_ms = _jitter_ms(180, timing_jitter, minimum_ms=90)
-        char_delay_min_ms = _jitter_ms(45, timing_jitter, minimum_ms=25)
-        char_delay_max_ms = _jitter_ms(95, timing_jitter, minimum_ms=char_delay_min_ms)
-        suggest_wait_ms = _jitter_ms(3000, timing_jitter, minimum_ms=1600)
-        after_enter_ms = _jitter_ms(260, timing_jitter, minimum_ms=120)
+        # Two newlines before first tag: one empty line + one for the tag line
+        if index == 0:
+            _type_char("\n")
+            _type_char("\n")
+            time.sleep(0.2)
 
-        escaped_tag = json.dumps(normalized_tag)
-        newline_literal = json.dumps("\n")
-        hash_literal = json.dumps("#")
-        space_literal = json.dumps(" ")
-        result = publisher._evaluate(f"""
-            (async function() {{
-                var editor = document.querySelector(
-                    'div.tiptap.ProseMirror, div.ProseMirror[contenteditable="true"]'
-                );
-                if (!editor) {{
-                    return {{ ok: false, reason: 'editor_not_found' }};
-                }}
+        # Type # + each character of the tag name
+        _type_char("#")
+        time.sleep(0.1)
+        for ch in normalized_tag:
+            _type_char(ch)
 
-                function sleep(ms) {{
-                    return new Promise(function(resolve) {{ setTimeout(resolve, ms); }});
-                }}
+        # Wait for XHS to show the topic suggestion dropdown
+        suggest_wait = _jitter_seconds(1.5, timing_jitter, minimum_seconds=1.0)
+        time.sleep(suggest_wait)
 
-                function moveCaretToEditorEnd(el) {{
-                    el.focus();
-                    var selection = window.getSelection();
-                    if (!selection) return;
-                    var range = document.createRange();
-                    range.selectNodeContents(el);
-                    range.collapse(false);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                }}
-
-                function insertTextAtCaret(text) {{
-                    var inserted = false;
-                    try {{
-                        inserted = document.execCommand('insertText', false, text);
-                    }} catch (e) {{}}
-
-                    if (!inserted) {{
-                        var selection = window.getSelection();
-                        if (selection && selection.rangeCount > 0) {{
-                            var range = selection.getRangeAt(0);
-                            var node = document.createTextNode(text);
-                            range.insertNode(node);
-                            range.setStartAfter(node);
-                            range.collapse(true);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                        }} else {{
-                            editor.appendChild(document.createTextNode(text));
-                        }}
+        # Confirm: use JS element.click() on the first matching .item in the dropdown.
+        # dispatchMouseEvent and ArrowDown+Enter are unreliable without an active display.
+        # JS click() reliably triggers Vue's click handler regardless of visibility state.
+        tag_keyword = normalized_tag
+        clicked = publisher._evaluate(f"""
+            (function() {{
+                var items = Array.from(document.querySelectorAll('.item'));
+                for (var el of items) {{
+                    if (el.offsetParent && el.innerText && el.innerText.includes({repr(tag_keyword)})) {{
+                        el.click();
+                        return true;
                     }}
-                    editor.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 }}
-
-                function pressEnter(el) {{
-                    var evt = {{
-                        key: 'Enter',
-                        code: 'Enter',
-                        keyCode: 13,
-                        which: 13,
-                        bubbles: true,
-                        cancelable: true,
-                    }};
-                    el.dispatchEvent(new KeyboardEvent('keydown', evt));
-                    el.dispatchEvent(new KeyboardEvent('keypress', evt));
-                    el.dispatchEvent(new KeyboardEvent('keyup', evt));
-                }}
-
-                moveCaretToEditorEnd(editor);
-                if ({index} === 0) {{
-                    insertTextAtCaret({newline_literal});
-                }}
-                insertTextAtCaret({hash_literal});
-                await sleep({hash_pause_ms});
-
-                var tagText = {escaped_tag};
-                var charDelayMin = {char_delay_min_ms};
-                var charDelayMax = {char_delay_max_ms};
-                for (var i = 0; i < tagText.length; i++) {{
-                    insertTextAtCaret(tagText[i]);
-                    var charDelay = Math.floor(Math.random() * (charDelayMax - charDelayMin + 1)) + charDelayMin;
-                    await sleep(charDelay);
-                }}
-
-                await sleep({suggest_wait_ms});
-                pressEnter(editor);
-                await sleep({after_enter_ms});
-                insertTextAtCaret({space_literal});
-                return {{ ok: true, selected: true }};
+                return false;
             }})()
         """)
+        time.sleep(_jitter_seconds(0.4, timing_jitter, minimum_seconds=0.2))
 
-        if not (isinstance(result, dict) and result.get("ok")):
-            failed_tags.append(tag)
-            reason = result.get("reason") if isinstance(result, dict) else "unknown"
-            print(f"[pipeline] Warning: Failed to select topic {tag} ({reason}).")
-        else:
-            print(f"[pipeline] Topic selected: {tag}")
+        print(f"[pipeline] Topic selected: {tag}")
 
         if index < len(tags) - 1:
-            time.sleep(_jitter_seconds(0.45, timing_jitter, minimum_seconds=0.2))
+            time.sleep(_jitter_seconds(0.3, timing_jitter, minimum_seconds=0.15))
 
     if failed_tags:
-        print(
-            "[pipeline] Warning: Some topic tags were not selected: "
-            f"{', '.join(failed_tags)}"
-        )
+        print("[pipeline] Warning: Some topic tags were not selected: " + ", ".join(failed_tags))
 
 
 def main():

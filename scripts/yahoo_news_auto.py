@@ -39,7 +39,11 @@ DEFAULT_KEYWORDS = [
     ("乃木坂",  10, False),
     ("日向坂",  5, False),
     ("欅坂",    5, False),
-    ("アイドル",    10, False),    
+    ("アイドル",    10, False),
+    ("King & Prince", 10, False),
+    ("ももクロ",    5, False),
+    ("嵐",         5, False),
+    ("STARTO",     5, False),
     # ("コスプレ", 3, False),
     # ("原神",    3, False),
     # ("鳴潮",    3, False),
@@ -52,6 +56,10 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
     "日向坂":  ["日向坂", "日向坂46"],
     "欅坂":    ["欅坂", "欅坂46", "樱坂", "樱坂46"],
     "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
+    "King & Prince": ["King & Prince", "キンプリ"],
+    "ももクロ": ["ももクロ", "ももいろクローバー"],
+    "嵐": ["嵐", "ARASHI"],
+    "STARTO": ["STARTO", "スタート"],
 }
 
 
@@ -59,7 +67,6 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
 
 def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        china_filter: bool = True,
-                       existing_keys: set | None = None,
                        max_retries: int = 2) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
@@ -69,14 +76,16 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
             print(f"  🔄 重试 ({attempt}/{max_retries})...")
             time.sleep(3)
         try:
-            resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=10)
+            # 每次搜索创建新 tab，避免重连同一个 DevTools endpoint 导致 recv 超时
+            resp = requests.put(
+                f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10
+            )
             if resp.status_code != 200:
-                print("❌ 无法连接 Chrome")
+                print("❌ 无法创建新 tab")
                 return []
-            tabs = resp.json()
-            if not tabs:
-                return []
-            ws_url = tabs[0].get("webSocketDebuggerUrl", "")
+            new_tab = resp.json()
+            tab_id = new_tab.get("id", "")
+            ws_url = new_tab.get("webSocketDebuggerUrl", "")
             if not ws_url:
                 return []
 
@@ -103,18 +112,36 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     "params": {"expression": "document.documentElement.outerHTML"},
                 }))
                 html = ""
-                while True:
-                    msg = json.loads(ws.recv())
-                    if msg.get("id") == 3:
-                        html = msg.get("result", {}).get("result", {}).get("value", "")
-                        break
+                start = time.time()
+                while time.time() - start < 10:
+                    try:
+                        ws.settimeout(3)
+                        msg = json.loads(ws.recv())
+                        if msg.get("id") == 3:
+                            html = msg.get("result", {}).get("result", {}).get("value", "")
+                            break
+                    except Exception:
+                        pass
             finally:
                 try:
                     ws.close()
                 except Exception:
                     pass
+                if tab_id:
+                    try:
+                        requests.get(
+                            f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}",
+                            timeout=3
+                        )
+                    except Exception:
+                        pass
 
             if not html:
+                continue
+
+            # 校验页面是否真的是 Yahoo 搜索结果页（防止 Clash 抖动返回错误页）
+            if "news.yahoo.co.jp" not in html and "Yahoo" not in html[:2000]:
+                print(f"  ⚠️ 拿到非 Yahoo 页面，跳过重试")
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
@@ -138,8 +165,6 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                     continue
 
                 full_link = href if href.startswith("http") else YAHOO_BASE_URL + href
-                if existing_keys and extract_key_from_url(full_link) in existing_keys:
-                    continue
 
                 source = "Yahoo Japan"
                 li = link.find_parent("li")
@@ -173,7 +198,7 @@ def process_keyword(keyword: str, max_results: int, china_filter: bool,
     print(f"🔍 关键词: 【{keyword}】| {filter_desc} | 最多 {max_results} 条")
     print(f"{'━' * 60}")
 
-    news_list = fetch_news_via_cdp(keyword, max_results, china_filter, existing_keys)
+    news_list = fetch_news_via_cdp(keyword, max_results, china_filter)
     if not news_list:
         print("  ❌ 未找到相关新闻")
         return []
@@ -242,7 +267,7 @@ def main():
         all_candidates: list[dict] = []
         for keyword, max_results, china_filter in tasks:
             print(f"\n🔍 关键词: 【{keyword}】")
-            candidates = fetch_news_via_cdp(keyword, max_results, china_filter, existing_keys)
+            candidates = fetch_news_via_cdp(keyword, max_results, china_filter)
             for news in candidates:
                 news['keyword'] = keyword
                 print(f"    翻译: {news['title_ja'][:40]}...")
@@ -321,7 +346,11 @@ def main():
 
     if args.push:
         print(f"✅ 完成！已推送 {len(all_processed)} 条")
-        print(f"🔗 查看: https://www.notion.so/{NOTION_DATABASE_ID}")
+        from config.yahoo_conf import STORAGE_BACKEND
+        if STORAGE_BACKEND == 'sqlite':
+            print("🔗 查看: http://localhost:5000/")
+        else:
+            print(f"🔗 查看: https://www.notion.so/{NOTION_DATABASE_ID}")
     else:
         print("使用 --push 或 -p 参数自动推送到 Notion")
         print("=" * 60)

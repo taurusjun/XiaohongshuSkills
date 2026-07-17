@@ -1,0 +1,98 @@
+{
+  "growth_stage": "cold_start",
+  "planner_mode": "llm",
+
+  "focus_topics": ["乃木坂46", "AKB48", "日向坂46", "欅坂46", "日本写真集", "日本偶像", "日本性感女星"],
+
+  "cold_start_quota": 5,
+  "cold_start_max_quota": 6,
+  "daily_quota": 5,
+  "max_daily_quota": 8,
+
+  "default_post_times": ["09:30", "12:00", "18:00"],
+
+  "content_format_rotation": ["news", "story", "news", "story", "ranking", "news", "news"],
+
+  "engagement_weights": {"saves": 0.5, "comments": 0.5},
+
+  "publish_threshold": 2.5,
+  "retry_threshold": 1.5,
+  "exploration_ratio": 0.25,
+  "baseline_ratio": 0.1,
+
+  "dim_weights": {
+    "剧情感": 1.8,
+    "用户共鸣": 1.8,
+    "名人": 1.5,
+    "冲突感": 1.2,
+    "猎奇感": 0.5,
+    "有用信息": 0.3,
+    "收藏驱动": 0.3,
+    "视频": 0.3
+  },
+
+  "dim_weights_by_vertical": {},
+
+  "candidate_weights": {
+    "w1": 0.35,
+    "w2": 0.25,
+    "w3": 0.40
+  },
+
+  "active_verticals": [
+    {"id": "idol", "label": "日本偶像/写真", "quota_share": 1.0}
+  ],
+
+  "ai_banned_phrases": [
+    "不容错过", "干货满满", "强烈推荐", "值得关注",
+    "精心整理", "满满干货", "绝对值得", "必须收藏"
+  ],
+
+  "ai_phrase_threshold": 15,
+
+  "my_user_id": "69e099cb00000000330241c7",
+  "competitor_accounts": ["63d8d8d20000000026004e37"],
+
+  "tag_config": {
+    "must_tags": ["日本娱乐", "日本文化", "日本新闻"],
+    "random_tag_pools": {
+      "fashion": ["日系穿搭", "日本穿搭", "日系风格", "穿搭分享", "今日穿搭"],
+      "beauty": ["日本化妆", "日系妆容", "日本美妆", "日本护肤", "护肤分享", "化妆教程"]
+    },
+    "keyword_tag_map": {
+      "AKB":        ["AKB48", "akb48"],
+      "乃木坂":     ["乃木坂", "乃木坂46"],
+      "欅坂":       ["欅坂", "桜坂", "櫻坂", "欅坂46"],
+      "伊織もえ":   ["伊織もえ", "伊织萌"],
+      "えなこ":     ["えなこ", "enako"],
+      "アークナイツ": ["明日方舟"],
+      "辻野かなみ": ["超心宣", "超ときめき宣伝部", "超とき宣"],
+      "≠ME":       ["notequalme", "指原系", "符号系"],
+      "=LOVE":     ["equallove", "等爱", "指原系", "符号系"],
+      "柏木由纪":   ["柏木由纪"],
+      "指原莉乃":   ["指原莉乃"],
+      "lesserafim": ["lesserafim", "炽", "Kpop", "韩国女团"],
+      "コスプレ":   ["cosplay"],
+      "ファッション": ["日系穿搭"],
+      "コーデ":     ["穿搭分享"],
+      "メイク":     ["日系妆容"],
+      "コスメ":     ["日本美妆"],
+      "アニメ":     ["动漫"],
+      "ゲーム":     ["游戏"],
+      "鳴潮":       ["鸣潮"],
+      "崩壊":       ["崩坏"],
+      "スターレイル": ["星穹铁道"]
+    }
+  },
+
+  "_comment_yahoo_keyword_map": "每个 focus_topic 的 Yahoo 搜索词 + 每次抓取上限，数字为独立配额。未配置的话题用 daily_quota 兜底（keyword 取原词）",
+  "yahoo_keyword_map": {
+    "乃木坂46":  {"keyword": "乃木坂", "max": 10},
+    "AKB48":     {"keyword": "AKB", "max": 10},
+    "日向坂46":  {"keyword": "日向坂", "max": 5},
+    "欅坂46":    {"keyword": "櫻坂", "max": 5},
+    "日本写真集": {"keyword": "グラビア", "max": 5},
+    "日本偶像":  {"keyword": "アイドル", "max": 10},
+    "日本性感女星": {"keyword": "セクシー女優", "max": 5}
+  }
+}

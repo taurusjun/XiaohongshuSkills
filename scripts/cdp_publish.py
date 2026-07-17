@@ -315,8 +315,16 @@ def _write_content_data_csv(csv_file: str, rows: list[dict[str, Any]]) -> str:
     return abs_path
 
 
+class _PromiseCollectedError(Exception):
+    """Internal: Chrome GC collected a CDP Promise. Caller should retry."""
+
+
 class CDPError(Exception):
     """Error communicating with Chrome via CDP."""
+
+
+class XHSRateLimitError(CDPError):
+    """小红书触发频率限制（安全验证弹窗），需等待后重试。"""
 
 
 class XiaohongshuPublisher:
@@ -607,7 +615,7 @@ class XiaohongshuPublisher:
 
         print(f"[cdp_publish] Connecting to {ws_url}")
         self._tab_ws_url = ws_url  # saved for reconnect after page navigation
-        self.ws = ws_client.connect(ws_url)
+        self.ws = ws_client.connect(ws_url, max_size=None)
         print("[cdp_publish] Connected to Chrome tab.")
 
     def disconnect(self):
@@ -668,7 +676,12 @@ class XiaohongshuPublisher:
 
             if data.get("id") == message_id:
                 if "error" in data:
-                    raise CDPError(f"CDP error: {data['error']}")
+                    err = data["error"]
+                    # Chrome CDP GC bug: retry once on 'Promise was collected'
+                    if (isinstance(err, dict) and err.get("code") == -32000
+                            and "Promise was collected" in err.get("message", "")):
+                        raise _PromiseCollectedError(f"CDP error: {err}")
+                    raise CDPError(f"CDP error: {err}")
                 return data.get("result", {})
             # else: it's an event, skip it
 
@@ -882,17 +895,26 @@ class XiaohongshuPublisher:
             capture_mode="network_capture",
         )
 
-    def _evaluate(self, expression: str) -> Any:
+    def _evaluate(self, expression: str, timeout_seconds: float | None = None) -> Any:
         """Execute JavaScript in the page and return the result value."""
-        result = self._send("Runtime.evaluate", {
-            "expression": expression,
-            "returnByValue": True,
-            "awaitPromise": True,
-        })
-        remote_obj = result.get("result", {})
-        if remote_obj.get("subtype") == "error":
-            raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
-        return remote_obj.get("value")
+        # Retry once on 'Promise was collected' — Chrome CDP GC bug that occurs
+        # under memory pressure (e.g. during image uploads).
+        for attempt in range(2):
+            try:
+                result = self._send("Runtime.evaluate", {
+                    "expression": expression,
+                    "returnByValue": True,
+                    "awaitPromise": True,
+                }, timeout_seconds=timeout_seconds)
+            except _PromiseCollectedError:
+                if attempt == 0:
+                    time.sleep(0.5)
+                    continue
+                raise CDPError("CDP error: Promise was collected (retry exhausted)")
+            remote_obj = result.get("result", {})
+            if remote_obj.get("subtype") == "error":
+                raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
+            return remote_obj.get("value")
 
     def _reconnect(self):
         """Reconnect WebSocket to the same tab (used after full-page navigations)."""
@@ -903,7 +925,7 @@ class XiaohongshuPublisher:
                 self.ws.close()
         except Exception:
             pass
-        self.ws = ws_client.connect(self._tab_ws_url)
+        self.ws = ws_client.connect(self._tab_ws_url, max_size=None)
 
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
@@ -1561,11 +1583,60 @@ class XiaohongshuPublisher:
         self._sleep(0.3, minimum_seconds=0.2)
         return True
 
+    def _select_time_filter_1day(self) -> bool:
+        """在筛选面板中点击「一天内」发布时间筛选。需要面板已打开。"""
+        coords = self._evaluate("""
+(function(){
+    var panel = document.querySelector('.filter-panel');
+    if (!panel) return null;
+    var target = Array.from(panel.querySelectorAll('.tags')).find(function(el){
+        return (el.innerText || '').trim() === '一天内';
+    });
+    if (!target) return null;
+    var r = target.getBoundingClientRect();
+    if (r.width === 0) return null;
+    return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+})()
+""")
+        if not coords or not coords.get("x"):
+            return False
+        self._mouse_click(coords["x"], coords["y"])
+        self._sleep(0.5, minimum_seconds=0.3)
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 50, "y": 300})
+        self._sleep(0.3, minimum_seconds=0.2)
+        return True
+
+    def _open_filter_panel(self) -> bool:
+        """打开搜索筛选面板，返回是否成功。"""
+        clicked = self._evaluate("""
+(function(){
+    var btn = document.querySelector('.filter');
+    if (!btn) return false;
+    btn.click();
+    return true;
+})()
+""")
+        if not clicked:
+            return False
+        self._sleep(0.8, minimum_seconds=0.6)
+        for _ in range(8):
+            visible = self._evaluate(
+                "(function(){"
+                "var p=document.querySelector('.filter-panel');"
+                "return !!(p && window.getComputedStyle(p).display !== 'none');"
+                "})()"
+            )
+            if visible:
+                return True
+            self._sleep(0.3, minimum_seconds=0.2)
+        return False
+
     def search_feeds(
         self,
         keyword: str,
         filters: SearchFilters | None = None,
         sort: str = "newest",
+        time_filter: str = "",
     ) -> dict[str, Any]:
         """
         Search Xiaohongshu feeds by keyword and optional filters.
@@ -1613,20 +1684,66 @@ class XiaohongshuPublisher:
         self._navigate(search_url)
         self._sleep(2, minimum_seconds=1.0)
 
-        # Select sort order via filter panel click
-        if sort == "newest":
-            ok = self._select_sort_newest()
-            if ok:
-                print("[cdp_publish] Sort set to 最新.")
-                self._sleep(1.5, minimum_seconds=1.0)
+        # 检测「安全验证/频率限制」弹窗
+        rate_limited = self._evaluate("""
+(function(){
+    var texts = document.body?.innerText || '';
+    return texts.includes('请勿频繁操作') || texts.includes('安全验证') || texts.includes('稍后重试');
+})()
+""")
+        if rate_limited:
+            raise XHSRateLimitError(
+                f"search_feeds: 触发小红书频率限制（安全验证弹窗），keyword='{keyword}'"
+            )
+
+        # Select sort order and optional time filter via filter panel
+        need_panel = (sort == "newest") or bool(time_filter)
+        if need_panel:
+            panel_ok = self._open_filter_panel()
+            if panel_ok:
+                if sort == "newest":
+                    sort_ok = self._evaluate("""
+(function(){
+    var panel = document.querySelector('.filter-panel');
+    if (!panel) return false;
+    var target = Array.from(panel.querySelectorAll('.tags')).find(function(el){
+        return (el.innerText || '').trim() === '最新';
+    });
+    if (!target) return null;
+    var r = target.getBoundingClientRect();
+    return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+})()
+""")
+                    if sort_ok and sort_ok.get("x"):
+                        self._mouse_click(sort_ok["x"], sort_ok["y"])
+                        self._sleep(0.5, minimum_seconds=0.3)
+                        print("[cdp_publish] Sort set to 最新.")
+                    else:
+                        print("[cdp_publish] Warning: failed to select 最新 sort, using default.")
+
+                if time_filter == "1day":
+                    tf_ok = self._select_time_filter_1day()
+                    if tf_ok:
+                        print("[cdp_publish] Time filter set to 一天内.")
+                    else:
+                        print("[cdp_publish] Warning: failed to select 一天内 time filter.")
+
+                # Dismiss panel
+                self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 50, "y": 300})
+                self._sleep(1.0, minimum_seconds=0.8)
             else:
-                print("[cdp_publish] Warning: failed to select 最新 sort, using default.")
+                print("[cdp_publish] Warning: failed to open filter panel.")
 
         try:
             feeds = explorer.search_feeds(keyword=keyword, filters=filters)
         except FeedExplorerError as e:
             raise CDPError(str(e)) from e
 
+        if not feeds:
+            raise CDPError(
+                f"search_feeds: keyword='{keyword}' 返回0条结果。"
+                "可能原因：未登录小红书、关键词无内容、或页面加载超时。"
+            )
         print(
             f"[cdp_publish] Search completed. keyword={keyword}, "
             f"recommended_keywords={len(recommended_keywords)}, feeds={len(feeds)}"
@@ -1656,6 +1773,105 @@ class XiaohongshuPublisher:
             "count": len(feeds),
             "feeds": feeds,
         }
+
+    def fetch_note_stats(self, note_url: str) -> dict[str, Any]:
+        """
+        Get interaction stats for a published note via creator dashboard API.
+
+        Navigates to creator.xiaohongshu.com data-center, intercepts the page's
+        analyze/list API response (which includes X-s/X-t signing) via CDP Network.
+
+        Returns {"views": int|None, "likes": int|None, "saves": int|None, "comments": int|None}.
+        On failure returns {} without raising.
+        """
+        if not self.ws:
+            print("[cdp_publish] Warning: not connected, cannot fetch note stats.")
+            return {}
+        try:
+            import json as _json, time as _time, re as _re
+
+            # Enable Network on the main connection
+            self._send("Network.enable")
+
+            # Send navigation (don't use _navigate — it consumes unsolicited events)
+            self._send("Page.enable")
+            nav_id = self._msg_id + 1
+            self._msg_id = nav_id
+            self.ws.send(_json.dumps({
+                "id": nav_id, "method": "Page.navigate",
+                "params": {"url": "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"},
+            }))
+
+            # Collect all messages — both command responses and unsolicited Network events
+            request_ids = []
+            nav_done = False
+            deadline = _time.time() + 25
+
+            while _time.time() < deadline:
+                try:
+                    raw = self.ws.recv(timeout=2)
+                    msg = _json.loads(raw)
+                    msg_id = msg.get("id", 0)
+                    m = msg.get("method", "")
+
+                    # Track navigation completion
+                    if msg_id == nav_id:
+                        nav_done = True
+
+                    # Track analyze/list request
+                    if m == "Network.responseReceived":
+                        url = msg.get("params", {}).get("response", {}).get("url", "")
+                        if "analyze/list" in url:
+                            request_ids.append(msg["params"]["requestId"])
+
+                    # When analyze/list finishes loading, grab the body
+                    if m == "Network.loadingFinished":
+                        pid = msg.get("params", {}).get("requestId", "")
+                        if pid in request_ids:
+                            get_body_id = self._msg_id + 1
+                            self._msg_id = get_body_id
+                            self.ws.send(_json.dumps({
+                                "id": get_body_id,
+                                "method": "Network.getResponseBody",
+                                "params": {"requestId": pid},
+                            }))
+                            # Read the body response
+                            body_raw = _json.loads(self.ws.recv())
+                            body = body_raw.get("result", {}).get("body", "")
+
+                            if body and '"note_infos"' in body:
+                                data = _json.loads(body)
+                                notes = data.get("data", {}).get("note_infos", [])
+
+                                note_id = ""
+                                m = _re.search(r'/explore/([a-f0-9]+)', note_url)
+                                if m:
+                                    note_id = m.group(1)
+
+                                for n in notes:
+                                    if note_id and n.get("id") == note_id:
+                                        return {
+                                            "views": n.get("read_count"),
+                                            "likes": n.get("like_count"),
+                                            "saves": n.get("fav_count"),
+                                            "comments": n.get("comment_count"),
+                                        }
+                                break  # Not the note we want? return empty
+                except Exception:
+                    continue
+
+            # Drain remaining messages and reconnect if needed
+            if nav_done:
+                try:
+                    self._reconnect()
+                except Exception:
+                    pass
+
+            print("[cdp_publish] Could not capture analyze/list response")
+            return {}
+        except Exception as e:
+            print(f"[cdp_publish] fetch_note_stats failed: {e}")
+            return {}
 
     def _extract_feed_comments_state(self) -> dict[str, Any]:
         """Read current comment loading state from feed detail page DOM."""
@@ -2921,7 +3137,7 @@ class XiaohongshuPublisher:
                     except Exception:
                         pass
                     self._tab_ws_url = new_ws
-                    self.ws = ws_client.connect(new_ws)
+                    self.ws = ws_client.connect(new_ws, max_size=None)
                     self._sleep(PAGE_LOAD_WAIT + 1, minimum_seconds=3.0)
                     self._check_feed_page_accessible()
                     self._wait_engage_bar(max_polls=10)
@@ -3872,11 +4088,18 @@ class XiaohongshuPublisher:
             raise CDPError("--page-num must be >= 1.")
         if page_size < 1:
             raise CDPError("--page-size must be >= 1.")
-        return self._capture_content_data_from_page_request(
+        result = self._capture_content_data_from_page_request(
             page_num=page_num,
             page_size=page_size,
             note_type=note_type,
         )
+        rows = result.get("rows", [])
+        if not rows:
+            raise CDPError(
+                "get_content_data: 返回0行数据。"
+                "可能原因：未登录创作者后台、账号无已发布内容、或 API 请求超时。"
+            )
+        return result
 
     # ------------------------------------------------------------------
     # Publishing actions
@@ -3918,18 +4141,38 @@ class XiaohongshuPublisher:
         """Wait until image preview count reaches the expected value."""
         deadline = time.time() + max(5.0, float(timeout_seconds))
         last_count = -1
+        ticks = 0
         while time.time() < deadline:
             current_count = self._count_uploaded_images()
+            ticks += 1
             if current_count != last_count:
                 print(
                     "[cdp_publish] Waiting for uploaded image previews: "
                     f"{current_count}/{expected_count}"
                 )
                 last_count = current_count
+            elif ticks % 10 == 0:
+                # Every 5s, report to show we're still waiting
+                print(
+                    "[cdp_publish] Still waiting for image previews: "
+                    f"{current_count}/{expected_count} (elapsed {ticks*0.5:.0f}s)"
+                )
             if current_count >= expected_count:
                 return
             self._sleep(0.5, minimum_seconds=0.15)
 
+        # Timeout — dump diagnostic info
+        final_count = self._count_uploaded_images()
+        page_state = self._evaluate("""
+            JSON.stringify({
+                title: document.title,
+                url: location.href,
+                previewAreaHTML: document.querySelector('.img-preview-area')?.innerHTML?.substring(0, 300) || 'not found',
+                allPreviews: document.querySelectorAll('[class*=\"preview\"], [class*=\"img\"], .pr').length,
+                fileInputs: document.querySelectorAll('input[type=\"file\"]').length
+            })
+        """)
+        print(f"[cdp_publish] Timeout diagnostic: final_count={final_count}, state={page_state}")
         raise CDPError(
             f"Timed out waiting for image upload preview {expected_count}. "
             "The creator page structure may have changed."
@@ -4192,8 +4435,30 @@ class XiaohongshuPublisher:
 
         coords = json.loads(pos)
         x, y = coords["x"], coords["y"]
-        print(f"[cdp_publish] Found visible tab at ({x}, {y}), dispatching mouse click...")
+        print(f"[cdp_publish] Found visible tab at ({x}, {y}), clicking via JS + mouse event...")
 
+        # JS click 优先（Vue SPA 导航后 hydration 期间 mouse event 可能不触发）
+        self._evaluate(f"""
+            (function() {{
+                var candidates = document.querySelectorAll(
+                    'div.creator-tab, .creator-tab, [class*="creator-tab"], [role="tab"]'
+                );
+                for (var i = 0; i < candidates.length; i++) {{
+                    var t = (candidates[i].textContent || '').trim();
+                    if (t.indexOf({tab_text_literal}) !== -1 || t.indexOf('图文') !== -1) {{
+                        var r = candidates[i].getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {{
+                            candidates[i].click();
+                            return 'clicked:' + t;
+                        }}
+                    }}
+                }}
+                return 'not_found';
+            }})()
+        """)
+        self._sleep(0.3, minimum_seconds=0.2)
+
+        # 再补发 mouse event 双保险
         self._send("Input.dispatchMouseEvent", {
             "type": "mousePressed", "x": x, "y": y,
             "button": "left", "clickCount": 1
@@ -4213,7 +4478,25 @@ class XiaohongshuPublisher:
         使用 Input.dispatchMouseEvent 发送真实鼠标事件以触发 Vue 组件切换。"""
         self._click_tab(SELECTORS["image_text_tab"], SELECTORS["image_text_tab_text"])
 
-        # 验证切换是否成功
+        # 验证：确认已切到图文模式（视频上传区消失，或出现图文 input）
+        # 不能只查 input[type=file]，视频模式也有 file input
+        in_image_mode = self._evaluate("""
+            (function() {
+                // 图文模式标志：没有"上传视频"按钮，或者有 .img-preview-area
+                var hasVideoBtn = !!document.querySelector('.upload-video-btn, [class*="upload-video"]');
+                var hasImgArea = !!document.querySelector('.img-preview-area, .upload-img-input, .upload-input');
+                // 检查当前激活 tab 文字
+                var activeTab = '';
+                var tabs = document.querySelectorAll('div.creator-tab, .creator-tab');
+                for (var i = 0; i < tabs.length; i++) {
+                    if (tabs[i].classList.contains('active') || tabs[i].getAttribute('aria-selected') === 'true') {
+                        activeTab = tabs[i].textContent.trim();
+                    }
+                }
+                return JSON.stringify({hasVideoBtn: hasVideoBtn, hasImgArea: hasImgArea, activeTab: activeTab});
+            })()
+        """)
+        print(f"[cdp_publish] Tab mode check: {in_image_mode}")
         upload_ready = self._evaluate(
             f"!!document.querySelector('{SELECTORS['upload_input']}') || "
             f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
@@ -4229,11 +4512,31 @@ class XiaohongshuPublisher:
         """Click the '上传视频' tab to switch to video publish mode."""
         self._click_tab(SELECTORS["video_tab"], SELECTORS["video_tab_text"])
 
+    def _activate_current_tab(self):
+        """Bring the current CDP tab to the foreground so JS events fire correctly."""
+        if not self._tab_ws_url:
+            return
+        import re as _re
+        m = _re.search(r'/devtools/page/([^/]+)$', self._tab_ws_url)
+        if not m:
+            return
+        target_id = m.group(1)
+        try:
+            self._send("Target.activateTarget", {"targetId": target_id})
+            print(f"[cdp_publish] Tab activated (targetId={target_id})")
+        except Exception as e:
+            print(f"[cdp_publish] Tab activate failed (non-fatal): {e}")
+
     def _upload_images(self, image_paths: list[str]):
         """Upload images via the file input element."""
         if not image_paths:
             print("[cdp_publish] No images to upload, skipping.")
             return
+
+        # XHS relies on the change event to show the upload preview.
+        # This event is throttled on background tabs, so activate the tab first.
+        self._activate_current_tab()
+        self._sleep(0.5, minimum_seconds=0.3)
 
         preserve_flags = [self._should_preserve_upload_path(path) for path in image_paths]
         prepared_paths = [self._prepare_upload_file_path(path) for path in image_paths]
@@ -4266,7 +4569,24 @@ class XiaohongshuPublisher:
                 "nodeId": node_id,
                 "files": [file_path],
             })
-            print(f"[cdp_publish] Image {index}/{len(prepared_paths)} submitted: {file_path}")
+            # Verify files were set
+            self._sleep(0.3, minimum_seconds=0.1)
+            file_count = self._evaluate(f"""
+                (() => {{
+                    const el = document.querySelector({json.dumps(selectors[0])});
+                    return el && el.files ? el.files.length : -1;
+                }})()
+            """)
+            print(f"[cdp_publish] Image {index}/{len(prepared_paths)} submitted: {file_path} (files on input: {file_count})")
+            if file_count == 0:
+                alt_node_id = self._query_node_id(selectors[1] if selectors[1] != selectors[0] else 'input[type="file"]')
+                if alt_node_id and alt_node_id != node_id:
+                    print(f"[cdp_publish] Retrying with alt selector, nodeId={alt_node_id}")
+                    self._send("DOM.setFileInputFiles", {
+                        "nodeId": alt_node_id,
+                        "files": [file_path],
+                    })
+                    self._sleep(0.3, minimum_seconds=0.1)
             self._wait_for_uploaded_images(index)
             self._sleep(0.9, minimum_seconds=0.25)
 
@@ -4447,60 +4767,68 @@ class XiaohongshuPublisher:
         print(f"[cdp_publish] Content set via selector: {selector}")
 
     def _set_schedule_post_time(self, post_time: str | None):
-        """Set schedle publish time if necessary"""
-        if post_time == None:
+        """Set schedule publish time if necessary.
+
+        Rewritten to use two synchronous evaluate calls (no async/await) so
+        Chrome cannot GC a Promise while the page is in background/hidden state.
+        """
+        if post_time is None:
             return
-        
+
         print(f"[cdp_publish] Setting schedule publish time: {post_time}")
         self._sleep(ACTION_INTERVAL, minimum_seconds=0.25)
 
-        post_time_enabled = self._evaluate(f"""
-            (async function() {{
-                try {{
-                    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-                    const visible = (node) => (
-                        node instanceof HTMLElement &&
-                        node.offsetParent !== null &&
-                        node.getBoundingClientRect().width > 0 &&
-                        node.getBoundingClientRect().height > 0
-                    );
-
-                    // Click scheduled publish switch if needed
-                    const switchSelector = {json.dumps(SELECTORS["schedule_switch"])};
-                    const switchElement = document.querySelector(switchSelector);
-                    if (!(switchElement instanceof HTMLElement) || !visible(switchElement)) {{
-                        return 'Schedule publish switch is missing.';
-                    }}
-                    const isChecked = switchElement.getAttribute('aria-checked');
-                    if (isChecked !== 'true') {{
-                        switchElement.click();
-                        await sleep(300);
-                    }}
-                    
-                    // Set publish time
-                    const el = document.querySelector({json.dumps(SELECTORS["schedule_datetime_input"])});
-                    if (!(el instanceof HTMLInputElement)) {{
-                        return 'Schedule publish date-picker input is missing.';
-                    }}
-                    var nativeSetter = Object.getOwnPropertyDescriptor(
-                        window.HTMLInputElement.prototype, 'value'
-                    ).set;
-                    el.focus();
-                    el.select();
-                    nativeSetter.call(el, {json.dumps(post_time)});
-                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    return 'ok';
-                }} catch (err) {{
-                    return String(err);
-                }}
-            }})();
+        # Override visibilityState so Vue click handlers fire correctly.
+        self._evaluate("""
+            Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+            Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
         """)
 
-        if not post_time_enabled == 'ok':
-            raise CDPError("Could not set scheduled publish time. Reason:" + post_time_enabled)
-        
+        # Step 1 (synchronous): click the schedule switch if not already enabled.
+        switch_result = self._evaluate(f"""
+            (function() {{
+                var switchEl = document.querySelector({json.dumps(SELECTORS["schedule_switch"])});
+                if (!(switchEl instanceof HTMLElement) || switchEl.offsetParent === null) {{
+                    return 'missing';
+                }}
+                if (switchEl.getAttribute('aria-checked') !== 'true') {{
+                    switchEl.click();
+                    return 'clicked';
+                }}
+                return 'already_on';
+            }})()
+        """)
+
+        if switch_result == 'missing':
+            raise CDPError("Could not set scheduled publish time. Reason: Schedule publish switch is missing.")
+
+        # Wait for the switch animation with Python sleep — no JS Promise needed.
+        if switch_result == 'clicked':
+            self._sleep(0.4, minimum_seconds=0.3)
+
+        # Step 2 (synchronous): set the datetime value.
+        time_result = self._evaluate(f"""
+            (function() {{
+                var el = document.querySelector({json.dumps(SELECTORS["schedule_datetime_input"])});
+                if (!(el instanceof HTMLInputElement)) {{
+                    return 'missing_input';
+                }}
+                var nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                ).set;
+                el.focus();
+                el.select();
+                nativeSetter.call(el, {json.dumps(post_time)});
+                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                return 'ok';
+            }})()
+        """)
+
+        if time_result != 'ok':
+            raise CDPError(f"Could not set scheduled publish time. Reason: {time_result}")
+
         print("[cdp_publish] Schedule publish time set.")
         return
 
@@ -4635,6 +4963,21 @@ class XiaohongshuPublisher:
         print("[cdp_publish] Clicking publish button...")
         self._sleep(ACTION_INTERVAL, minimum_seconds=0.25)
         self._wait_for_publish_button_ready(timeout_seconds=20.0)
+
+        # Override visibilityState so the Vue click handler fires even when
+        # the Chrome window has no active display (VNC disconnected).
+        self._evaluate("""
+            Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+            Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
+        """)
+
+        # Scroll publish button into viewport before clicking.
+        self._evaluate("""
+            var btn = document.querySelector('xhs-publish-btn');
+            if (btn) btn.scrollIntoView({block: 'center', behavior: 'instant'});
+        """)
+        self._sleep(0.3, minimum_seconds=0.3)
+
         rect = self._get_publish_button_rect()
         if not rect:
             raise CDPError(
@@ -4707,7 +5050,23 @@ class XiaohongshuPublisher:
             )
 
         # Step 1: Navigate to publish page
-        self._navigate(XHS_CREATOR_URL)
+        # 先 dismiss 任何 beforeunload 弹窗（上次发布失败后可能残留），再强制 reload
+        try:
+            self._send("Page.handleJavaScriptDialog", {"accept": True})
+        except Exception:
+            pass
+        current_url = self._evaluate("location.href") or ""
+        if "creator.xiaohongshu.com" in current_url:
+            # 已在 creator 域 — navigate 到干净 URL（不做 reload，
+            # 避免 ?published=true 等残留参数重载到非表单页）
+            print("[cdp_publish] Already on creator page, navigating to clean URL...")
+            try:
+                self._send("Page.handleJavaScriptDialog", {"accept": True})
+            except Exception:
+                pass
+            self._navigate(XHS_CREATOR_URL)
+        else:
+            self._navigate(XHS_CREATOR_URL)
         self._sleep(2, minimum_seconds=1.0)
 
         # Step 2: Click '上传图文' tab

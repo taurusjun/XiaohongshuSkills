@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>小红书运营智能体 · 架构图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f1a;
+    color: #e8e8f0;
+    font-family: -apple-system, "PingFang SC", "SF Pro Display", sans-serif;
+    padding: 40px 48px 56px;
+    min-width: 960px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+    color: #fff;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 36px;
+    letter-spacing: .06em;
+  }
+
+  /* layer rows */
+  .layer { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px; }
+  .layer-label {
+    width: 72px; min-width: 72px;
+    padding-top: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    letter-spacing: .06em;
+    line-height: 1.5;
+    text-align: right;
+  }
+  .layer-label span { display: block; color: #444; font-weight: 400; }
+  .cards { display: flex; gap: 12px; flex: 1; }
+
+  /* arrow rows */
+  .arrow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    color: #444;
+    font-size: 20px;
+    letter-spacing: 4px;
+    margin-left: 88px;
+  }
+
+  /* card */
+  .card {
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid;
+    flex: 1;
+    min-width: 0;
+  }
+  .card-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    opacity: .7;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 5px;
+    line-height: 1.3;
+  }
+  .card-desc {
+    font-size: 11px;
+    color: #aaa;
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", monospace;
+    background: rgba(255,255,255,.06);
+    color: #bbb;
+    white-space: nowrap;
+  }
+
+  /* color themes */
+  .blue   { border-color: #2563eb44; background: #0f1c3a; }
+  .blue   .card-label { color: #60a5fa; }
+  .blue   .card-title { color: #93c5fd; }
+
+  .purple { border-color: #7c3aed44; background: #1a0f3a; }
+  .purple .card-label { color: #a78bfa; }
+  .purple .card-title { color: #c4b5fd; }
+
+  .green  { border-color: #05966944; background: #0a2318; }
+  .green  .card-label { color: #34d399; }
+  .green  .card-title { color: #6ee7b7; }
+
+  .orange { border-color: #ea580c44; background: #2a1200; }
+  .orange .card-label { color: #fb923c; }
+  .orange .card-title { color: #fed7aa; }
+
+  .red    { border-color: #dc262644; background: #2a0a0a; }
+  .red    .card-label { color: #f87171; }
+  .red    .card-title { color: #fca5a5; }
+
+  .gray   { border-color: #33333388; background: #141418; }
+  .gray   .card-label { color: #888; }
+  .gray   .card-title { color: #ccc; }
+
+  /* pipeline row special */
+  .pipeline {
+    display: flex;
+    gap: 0;
+    flex: 1;
+    border: 1px solid #2a2a3a;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .pipe-step {
+    flex: 1;
+    padding: 12px 14px;
+    border-right: 1px solid #2a2a3a;
+    background: #12121e;
+  }
+  .pipe-step:last-child { border-right: none; }
+  .pipe-num {
+    font-size: 9px;
+    color: #555;
+    font-weight: 700;
+    letter-spacing: .1em;
+    margin-bottom: 3px;
+  }
+  .pipe-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #e0e0f0;
+    margin-bottom: 3px;
+  }
+  .pipe-desc { font-size: 10px; color: #666; line-height: 1.5; }
+
+  /* context window */
+  .context-box {
+    flex: 1;
+    border: 1px dashed #333;
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: #0d0d18;
+  }
+  .context-label {
+    font-size: 9px;
+    color: #555;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .context-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+  .ctx-item {
+    background: #181825;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+  .ctx-num { color: #555; font-weight: 700; margin-bottom: 2px; }
+  .ctx-name { color: #ccc; font-weight: 600; margin-bottom: 1px; }
+  .ctx-detail { color: #555; font-size: 9px; }
+</style>
+</head>
+<body>
+
+<h1>小红书运营智能体 · 施工图</h1>
+<div class="subtitle">感知 → 规划 → 执行 → 发布 → 采集 → 复盘 · 每日 07:00 触发 · 每周日复盘 · Claude Code 驱动</div>
+
+<!-- Layer 1 -->
+<div class="layer">
+  <div class="layer-label">第一层<span>外部数据源</span></div>
+  <div class="cards">
+
+    <div class="card blue" style="flex:1.2">
+      <div class="card-label">XHS · 感知目标</div>
+      <div class="card-title">小红书平台</div>
+      <div class="card-desc">Phase 1 扫描的对象：话题热度 / 竞品内容 / 发布频率</div>
+      <div class="tags">
+        <span class="tag">search_feeds</span>
+        <span class="tag">fresh_count_24h</span>
+        <span class="tag">baseline_saves</span>
+        <span class="tag">is_fresh</span>
+      </div>
+    </div>
+
+    <div class="card gray" style="flex:1">
+      <div class="card-label">CONFIG · 策略</div>
+      <div class="card-title">运营配置</div>
+      <div class="card-desc">话题权重、配额上下限、体裁轮转</div>
+      <div class="tags">
+        <span class="tag">agent_strategy.json</span>
+        <span class="tag">focus_topics</span>
+        <span class="tag">planner_mode</span>
+      </div>
+    </div>
+
+    <div class="card purple" style="flex:1">
+      <div class="card-label">MEMORY · 记忆</div>
+      <div class="card-title">话题历史表现</div>
+      <div class="card-desc">滚动均值 avg_saves · 参与度分 · 趋势时间戳</div>
+      <div class="tags">
+        <span class="tag">topic_performance</span>
+        <span class="tag">engagement_score</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="arrow-row">↓</div>
+
+<!-- Layer 2 -->
+<div class="layer">
+  <div class="layer-label">第二层<span>智能体核心</span></div>
+  <div class="cards">
+
+    <div class="card green">
+      <div class="card-label">PHASE 1 · 感知</div>
+      <div class="card-title">xhs_trend_scanner</div>
+      <div class="card-desc">扫描 focus_topics 当日热度，写入 topic_performance</div>
+      <div class="tags">
+        <span class="tag">scan_topic_trends</span>
+        <span class="tag">update_trend_signals</span>
+      </div>
+    </div>
+
+    <div class="card blue">
+      <div class="card-label">PHASE 2 · 规划</div>
+      <div class="card-title">LLM Planner</div>
+      <div class="card-desc">感知数据 + 记忆 → LLM 一次推理出今日话题分配</div>
+      <div class="tags">
+        <span class="tag">agent_planner_llm</span>
+        <span class="tag">DailyPlan</span>
+        <span class="tag">shadow_plan</span>
+      </div>
+    </div>
+
+    <div class="card orange">
+      <div class="card-label">PHASE 3 · 执行</div>
+      <div class="card-title">抓取 + 内容生成</div>
+      <div class="card-desc">调 Yahoo Japan 抓 quota×6 候选 → 日译中 → story/news 体裁生成 → 评分入库</div>
+      <div class="tags">
+        <span class="tag">yahoo_news_auto</span>
+        <span class="tag">Yahoo Japan</span>
+        <span class="tag">quota × 6</span>
+        <span class="tag">generate_story_article</span>
+        <span class="tag">story_type</span>
+      </div>
+    </div>
+
+    <div class="card purple">
+      <div class="card-label">PHASE 4 · 通知</div>
+      <div class="card-title">飞书日报</div>
+      <div class="card-desc">候选摘要 + Web UI 链接推送，等待人工审批确认</div>
+      <div class="tags">
+        <span class="tag">feishu_bot</span>
+        <span class="tag">send_daily_summary</span>
+      </div>
+    </div>
+
+    <div class="card gray">
+      <div class="card-label">STATE · 持久化</div>
+      <div class="card-title">状态 · 记忆</div>
+      <div class="card-desc">每日计划缓存 · 阶段进度 · 话题表现 · 跨重启持久</div>
+      <div class="tags">
+        <span class="tag">news.db</span>
+        <span class="tag">daily_plan_cache</span>
+        <span class="tag">runner_progress</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Layer 3: Pipeline (Phase 3 展开) -->
+<div class="layer" style="margin-left:40px;opacity:.95">
+  <div class="layer-label" style="font-size:10px;color:#444">Phase 3<span style="color:#333">展开</span></div>
+  <div style="flex:1;border-left:2px solid #1e2040;padding-left:16px">
+  <div style="font-size:9px;color:#444;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">▸ 抓取完成后的内部处理流程</div>
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-num">① 评分</div>
+      <div class="pipe-title">LLM 打分</div>
+      <div class="pipe-desc">title_score<br>content_score<br>8 维度权重</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">② 去重</div>
+      <div class="pipe-title">标题聚类</div>
+      <div class="pipe-desc">字符重叠 &gt;50%<br>同事件保留高分<br>打印审查日志</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">③ 分类</div>
+      <div class="pipe-title">体裁判断</div>
+      <div class="pipe-desc">对谈型 / 叙事型<br>对比型 / 评介型<br>story_type 字段</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">④ 筛选</div>
+      <div class="pipe-title">阈值过滤</div>
+      <div class="pipe-desc">publish_threshold<br>PUBLISH / REVIEW<br>DISCARD</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-num">⑤ 格式化</div>
+      <div class="pipe-title">发布适配</div>
+      <div class="pipe-desc">strip markdown<br>1000字上限检查<br>标题截断 20字</div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="arrow-row">↓</div>
+
+<!-- Layer 4 -->
+<div class="layer">
+  <div class="layer-label">第三层<span>输出端</span></div>
+  <div class="cards">
+
+    <div class="card gray">
+      <div class="card-label">WEB UI · 审批</div>
+      <div class="card-title">运营控制台</div>
+      <div class="card-desc">候选列表 · 人工评分修正 · 一键发布</div>
+      <div class="tags">
+        <span class="tag">:5000/list</span>
+        <span class="tag">:5000/detail</span>
+      </div>
+    </div>
+
+    <div class="card red">
+      <div class="card-label">XHS · 发布</div>
+      <div class="card-title">小红书笔记</div>
+      <div class="card-desc">CDP 自动化发布 · 图文 / 视频 · 定时发布</div>
+      <div class="tags">
+        <span class="tag">cdp_publish</span>
+        <span class="tag">XiaohongshuPublisher</span>
+      </div>
+    </div>
+
+    <div class="card blue">
+      <div class="card-label">WECHAT · 长文</div>
+      <div class="card-title">微信公众号</div>
+      <div class="card-desc">story 体裁 → 4 主题内联 HTML · 草稿箱推送</div>
+      <div class="tags">
+        <span class="tag">wechat_publisher</span>
+        <span class="tag">fresh / news / elegant</span>
+      </div>
+    </div>
+
+    <div class="card purple">
+      <div class="card-label">FEISHU · 通知</div>
+      <div class="card-title">飞书告警</div>
+      <div class="card-desc">每日计划 · 异常告警 · 人工确认节点</div>
+      <div class="tags">
+        <span class="tag">feishu_bot</span>
+        <span class="tag">_alert</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<div class="arrow-row">↓</div>
+
+<!-- Layer 5: Feedback Loop -->
+<div class="layer">
+  <div class="layer-label">第四层<span>反馈闭环</span></div>
+  <div class="cards">
+
+    <div class="card green" style="flex:1.4">
+      <div class="card-label">METRICS · 每小时</div>
+      <div class="card-title">metrics_collector</div>
+      <div class="card-desc">CDP 导出创作者后台 Excel，解析笔记真实数据写入 metrics_history</div>
+      <div class="tags">
+        <span class="tag">xhs_views</span>
+        <span class="tag">xhs_saves</span>
+        <span class="tag">xhs_likes</span>
+        <span class="tag">metrics_history</span>
+        <span class="tag">72h后采集</span>
+      </div>
+    </div>
+
+    <div class="card purple" style="flex:1.4">
+      <div class="card-label">REFLECTION · 每周日</div>
+      <div class="card-title">reflection_runner</div>
+      <div class="card-desc">Pearson 相关性分析：各评分维度 vs 真实收藏数，输出 dim_weights 调整建议</div>
+      <div class="tags">
+        <span class="tag">dim_weights</span>
+        <span class="tag">pearson r</span>
+        <span class="tag">±30% 上限</span>
+        <span class="tag">飞书周报卡片</span>
+      </div>
+    </div>
+
+    <div class="card orange" style="flex:1">
+      <div class="card-label">LOOP · 权重更新</div>
+      <div class="card-title">评分自优化</div>
+      <div class="card-desc">运营者一键采纳 → dim_weights 写回 agent_strategy.json → 下次评分更准</div>
+      <div class="tags">
+        <span class="tag">agent_strategy.json</span>
+        <span class="tag">score_dims</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Feedback arrow back to Layer 1 -->
+<div style="margin-left:88px;margin-top:16px;padding:12px 16px;border:1px dashed #2a2a4a;border-radius:8px;font-size:11px;color:#555;text-align:center;letter-spacing:.04em">
+  ↺ &nbsp; 权重更新 → 影响下一轮 Phase 2 评分筛选 &nbsp;·&nbsp; 真实数据 → 更新 topic_performance engagement_score &nbsp;·&nbsp; 形成自优化闭环
+</div>
+
+</body>
+</html>

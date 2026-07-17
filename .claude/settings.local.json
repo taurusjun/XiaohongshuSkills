@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(rm -rf ~/.cache/xhs_images/*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(/Users/user/PG/XiaohongshuSkills/.venv/bin/python -c ' *)"
+    ],
+    "defaultMode": "bypassPermissions"
+  }
+}

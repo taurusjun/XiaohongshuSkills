@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-从 Notion 读取已勾选「发布XHS」的新闻，自动发布到小红书
+从 SQLite/Notion 读取已勾选「发布XHS」的新闻，自动发布到小红书
 - 只发布 发布XHS=True 且 发布XHS时间 为空 的条目
 - 发布成功后写入 发布XHS时间
 """
 
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project root for config
 import requests
 import json
-import sys
-import os
 import time
 from datetime import datetime, timezone
 
@@ -34,8 +34,7 @@ NOTION_HEADERS = {
 
 # ============ Notion 查询 ============
 
-def get_pending_pages() -> list:
-    """获取 发布XHS=True 且 发布XHS时间 为空 的条目"""
+def _get_pending_notion() -> list:
     resp = requests.post(
         f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
         headers=NOTION_HEADERS,
@@ -55,13 +54,79 @@ def get_pending_pages() -> list:
     return []
 
 
-def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
-    """获取页面中图片和视频 URL。
-    识别两种写法：
-    1. 新格式（to_do + image/video 成对）：只取 checked=True 的 to_do 后面紧跟的 block
-    2. 旧格式（裸 image block）：直接取所有 image URL（兼容旧数据）
-    返回 (image_urls, video_urls)
-    """
+def _get_pending_sqlite() -> list:
+    """SQLite: 返回伪 Notion page dict，兼容下游解析"""
+    from sqlite_db import get_pending_publish as sqlite_pending
+    rows = sqlite_pending(50)
+    result = []
+    for r in rows:
+        tags = r.get('tags','').split(',') if isinstance(r.get('tags'), str) else r.get('tags',[])
+        result.append({
+            "_sqlite": True,
+            "_key": r['key'],
+            "id": r['key'],
+            "properties": {
+                "Name": {"title": [{"plain_text": r.get('title','')}]},
+                "来源": {"rich_text": [{"plain_text": r.get('source','')}]},
+                "发布时间": {"rich_text": [{"plain_text": r.get('pub_time','')}]},
+                "原文链接": {"url": r.get('link','')},
+                "封面图": {"url": r.get('image_url','')},
+                "分类": {"select": {"name": r.get('category','')}},
+                "标签": {"multi_select": [{"name": t} for t in tags]},
+                "标题评分": {"number": r.get('title_score',0)},
+                "内容评分": {"number": r.get('content_score',0)},
+                "发布XHS": {"checkbox": bool(r.get('publish_xhs'))},
+                "发布XHS时间": {"date": {"start": r.get('publish_time','')} if r.get('publish_time') else None},
+                "发布模式": {"select": {"name": r.get('publish_mode','normal')}},
+                "自由发布内容": {"rich_text": [{"plain_text": r.get('publish_free_text','')}]},
+                "改写文": {"rich_text": [{"plain_text": r.get('rewritten_content','')}]},
+                "改写标题": {"rich_text": [{"plain_text": r.get('rewritten_title','')}]},
+            },
+        })
+    return result
+
+
+def get_pending_pages() -> list:
+    """获取 发布XHS=True 且 发布XHS时间 为空 的条目（支持 notion/sqlite/both）"""
+    from config.yahoo_conf import STORAGE_BACKEND
+    results = []
+    if STORAGE_BACKEND == "notion":
+        results = _get_pending_notion()
+    if STORAGE_BACKEND == "sqlite":
+        sqlite_rows = _get_pending_sqlite()
+        # 去重（同一 key 只保留一份）
+        seen_keys = set()
+        merged = []
+        for r in results:
+            key = r.get('_key') or r.get('properties',{}).get('key',{}).get('rich_text',[{}])[0].get('plain_text','')
+            if key not in seen_keys:
+                seen_keys.add(key)
+                merged.append(r)
+        for r in sqlite_rows:
+            if r['_key'] not in seen_keys:
+                seen_keys.add(r['_key'])
+                merged.append(r)
+        results = merged
+    return results
+
+
+def get_page_media_blocks(page_id: str, is_sqlite: bool = False) -> tuple[list[str], list[str]]:
+    """获取页面中图片和视频 URL。返回 (image_urls, video_urls)"""
+    if is_sqlite:
+        from sqlite_db import get_by_key
+        import json
+        row = get_by_key(page_id)
+        if row:
+            images = row.get('image_url','')
+            gallery = row.get('publish_images','') or '[]'
+            try: gallery_imgs = json.loads(gallery) if isinstance(gallery, str) else gallery
+            except: gallery_imgs = []
+            img_urls = [images] if images else []
+            img_urls.extend(gallery_imgs)
+            video = row.get('publish_video','') or row.get('gallery_video','') or row.get('video_path','')
+            return img_urls, [video] if video else []
+        return [], []
+
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
@@ -113,10 +178,44 @@ def get_page_media_blocks(page_id: str) -> tuple[list[str], list[str]]:
     return image_urls, video_urls
 
 
-def get_page_content(page_id: str) -> tuple:
+def _strip_markdown(text: str) -> str:
+    """Strip markdown formatting from story-format content for XHS publishing.
+    XHS editor doesn't render markdown — raw ##/>, **, etc. look broken."""
+    import re
+    if not text:
+        return text
+    # Image placeholders: 【图片N：描述】 — never filled, look broken on XHS
+    text = re.sub(r'\n{0,2}【图片\d+：[^】]+】\n{0,2}', '\n\n', text)
+    # Sub-headings: ## / ### → ✦ bullet (XHS-friendly decorative marker)
+    text = re.sub(r'^#{2,4}\s+', '✦ ', text, flags=re.MULTILINE)
+    # Blockquotes: > text → just the text
+    text = re.sub(r'^>\s?', '', text, flags=re.MULTILINE)
+    # Bold: **text** → text
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # Italic: *text* → text (careful not to match **)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    return text.strip()
+
+
+def get_page_content(page_id: str, is_sqlite: bool = False) -> tuple:
     """获取页面正文内容。
     返回 (正文, 词汇部分, 日文原标题, 日文摘要, 引流摘要, 短配文)
     """
+    # SQLite: 内容已在行数据中
+    if is_sqlite:
+        from sqlite_db import get_by_key
+        row = get_by_key(page_id)
+        if row:
+            content = row.get('content','') or ''
+            comment = row.get('comment','') or ''
+            # Story-format articles have markdown; strip it for XHS
+            if row.get('is_long_form') or row.get('format') == 'story':
+                content = _strip_markdown(content)
+                comment = _strip_markdown(comment)
+            return (content, comment, row.get('title_ja',''), '',
+                    row.get('summary',''), row.get('video_caption',''))
+        return "", "", "", "", "", ""
+
     resp = requests.get(
         f"https://api.notion.com/v1/blocks/{page_id}/children",
         headers=NOTION_HEADERS
@@ -208,15 +307,31 @@ def get_page_content(page_id: str) -> tuple:
     )
 
 
-def mark_as_published(page_id: str):
-    """写入发布时间"""
+def mark_as_published(page_id: str, news_key: str = "", post_time: str = ""):
+    """写入发布时间（Notion 或 SQLite）。post_time 为定时时间（空则为立即发布）"""
+    from config.yahoo_conf import STORAGE_BACKEND
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    resp = requests.patch(
-        f"https://api.notion.com/v1/pages/{page_id}",
-        headers=NOTION_HEADERS,
-        json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
-    )
-    return resp.status_code == 200
+    now_local = datetime.now().strftime("%Y-%m-%d %H:%M")
+    xhs_pub = post_time if post_time else now_local
+    ok = False
+    if STORAGE_BACKEND == "sqlite" and news_key:
+        try:
+            from sqlite_db import mark_published as sqlite_pub
+            sqlite_pub(news_key, now_local, xhs_pub)
+            ok = True
+        except Exception as e:
+            print(f"SQLite 更新失败: {e}")
+    elif STORAGE_BACKEND == "notion":
+        try:
+            resp = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=NOTION_HEADERS,
+                json={"properties": {"发布XHS时间": {"date": {"start": now}}}}
+            )
+            ok = resp.status_code == 200
+        except Exception:
+            pass
+    return ok
 
 
 def parse_page(page: dict) -> dict:
@@ -242,6 +357,10 @@ def parse_page(page: dict) -> dict:
         "gallery_url": props.get("图集链接", {}).get("url", ""),
         "category": props.get("分类", {}).get("select", {}).get("name", ""),
         "tags": [t.get("name", "") for t in props.get("标签", {}).get("multi_select", [])],
+        "publish_mode": props.get("发布模式", {}).get("select", {}).get("name", "normal"),
+        "publish_free_text": get_text("自由发布内容"),
+        "rewritten_content": get_text("改写文"),
+        "rewritten_title": get_text("改写标题"),
     }
 
 
@@ -273,8 +392,16 @@ def fetch_article_image(url: str) -> str:
 
 # ============ XHS 发布 ============
 
+def _xhs_char_units(text: str) -> float:
+    """小红书字数计算：英文字母/数字 2 个算 1 字，其余字符各算 1 字。"""
+    units = 0.0
+    for ch in text:
+        units += 0.5 if (ch.isascii() and (ch.isalpha() or ch.isdigit())) else 1.0
+    return units
+
+
 def _xhs_title_truncate(title: str, max_units: int = 20) -> str:
-    """按小红书字数规则截断标题：英文字母/数字 2 个算 1 字，其余字符各算 1 字。"""
+    """按小红书字数规则截断标题。"""
     units = 0.0
     for i, ch in enumerate(title):
         units += 0.5 if (ch.isascii() and (ch.isalpha() or ch.isdigit())) else 1.0
@@ -287,7 +414,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
                    article_url: str = "", video_url: str = "",
                    preview: bool = False, headless: bool = True,
                    post_time: str = None, timing_jitter: float = 0.25,
-                   reuse_existing_tab: bool = False) -> bool:
+                   reuse_existing_tab: bool = False) -> tuple[bool, str]:
     """调用 publish_pipeline.py 发布到小红书。"""
     import subprocess
     if image_urls is None:
@@ -322,11 +449,31 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             cmd += ["--video-url", video_url]
             print(f"  视频模式(URL): {video_url[:70]}")
     else:
-        # XHS 最多 18 张
+        # XHS 最多 18 张，统一转为本地路径
         effective_urls = image_urls[:18]
         if effective_urls:
-            cmd += ["--image-urls"] + effective_urls
-            print(f"  配图 {len(effective_urls)} 张: {effective_urls[0][:60]}...")
+            from config.yahoo_conf import STORAGE_BACKEND
+            if STORAGE_BACKEND == 'sqlite':
+                # SQLite: 图片可能为本地路径，远程URL先下载再用 --images
+                local_paths = []
+                for u in effective_urls:
+                    if u.startswith('http'):
+                        try:
+                            import tempfile, requests as _req
+                            tmp = os.path.join(tempfile.gettempdir(), 'xhs_pub_' + os.path.basename(u.split('?')[0]))
+                            if not os.path.exists(tmp):
+                                r = _req.get(u, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+                                with open(tmp, 'wb') as f: f.write(r.content)
+                            local_paths.append(tmp)
+                        except Exception:
+                            print(f"  ⚠️ 下载失败: {u[:60]}")
+                    else:
+                        local_paths.append(u)
+                cmd += ["--images"] + local_paths
+                print(f"  配图 {len(local_paths)} 张: {os.path.basename(local_paths[0])}...")
+            else:
+                cmd += ["--image-urls"] + effective_urls
+                print(f"  配图 {len(effective_urls)} 张(URL): {effective_urls[0][:60]}...")
         else:
             print(f"  ⚠️ 未找到封面图，发布可能失败")
 
@@ -334,7 +481,20 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
     if result.returncode == 0:
-        return True
+        # 打印 cdp_publish 的关键进度行，便于追溯
+        for line in (result.stdout or "").split("\n"):
+            if any(kw in line for kw in ["[cdp_publish]", "[pipeline]", "PUBLISH_STATUS", "FILL_STATUS", "Navigating", "Tab", "Uploading",
+                                          "Image", "Preview", "preview", "Waiting", "ready"]):
+                print(f"  {line}")
+        # 提取 note_id 从输出
+        import re as _re
+        note_id = ""
+        for line in (result.stdout or "").split("\n"):
+            m = _re.search(r'xiaohongshu\.com/explore/([a-f0-9]{24})', line)
+            if m:
+                note_id = m.group(1)
+                break
+        return (True, note_id)
 
     # 图片 URL 过期时降级重抓封面图（仅图文模式）
     if not video_url and "All image downloads failed" in result.stderr and article_url:
@@ -349,10 +509,13 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             if preview: cmd2.append("--preview")
             result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
             if result.returncode == 0:
-                return True
+                return (True, "")
 
+    # stdout 含 [cdp_publish] 的等待/诊断日志，失败时一并输出便于定位
+    if result.stdout:
+        print(f"  [cdp stdout]\n{result.stdout}")
     print(f"  发布失败:\n{result.stderr[-500:]}")
-    return False
+    return (False, "")
 
 
 # ============ 主程序 ============
@@ -370,7 +533,9 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("📤 小红书发布器 - 从 Notion 读取待发布内容")
+    from config.yahoo_conf import STORAGE_BACKEND
+    backend_label = "SQLite" if STORAGE_BACKEND == "sqlite" else "Notion"
+    print(f"📤 小红书发布器 - 从 {backend_label} 读取待发布内容")
     print("=" * 60)
     print(f"📅 {datetime.now().strftime('%Y.%m.%d %H:%M')}")
     if args.auto:
@@ -397,134 +562,77 @@ def main():
     # 逐条处理
     for i, page in enumerate(pages, 1):
         info = parse_page(page)
+        is_sqlite = page.get("_sqlite", False)
         print(f"━━━ [{i}/{len(pages)}] ━━━")
-        print(f"标题: {info['title'][:40]}...")
-        print(f"来源: {info['source']} | 分类: {info['category']}")
-
         # 获取正文和词汇
-        content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"])
+        content, vocab, original_title, ja_summary, summary, video_caption = get_page_content(page["id"], is_sqlite)
         if not content:
             print("⚠️ 正文为空，跳过\n")
             continue
 
-        # 拼装发布内容
-        full_title = info['title']
+        # 拼装发布内容 — 改写模式用改写标题
+        if info.get('publish_mode') == 'rewritten' and (info.get('rewritten_title') or '').strip():
+            full_title = info['rewritten_title']
+        else:
+            full_title = info['title']
+
+        if info.get('publish_mode') == 'rewritten':
+            print(f"改写标题: {full_title[:40]}...")
+        else:
+            print(f"标题: {full_title[:40]}...")
+        print(f"来源: {info['source']} | 分类: {info['category']}")
+
+        # 发布模式
+        publish_mode = info.get('publish_mode', 'normal') or 'normal'
 
         # 构建小红书正文
-        parts = []
+        if publish_mode == 'free':
+            free_text = info.get('publish_free_text', '') or ''
+            if not free_text.strip():
+                print("⚠️ 自由发布模式但未填写内容，跳过\n")
+                continue
+            xhs_content = free_text
+            print(f"  ✏️ 自由发布模式：{len(xhs_content)} 字")
+        elif publish_mode == 'caption':
+            if not video_caption:
+                print("⚠️ 短配文模式但无短配文，跳过\n")
+                continue
+            xhs_content = video_caption
+            print(f"  🎬 短配文模式：{len(xhs_content)} 字")
+        elif publish_mode == 'rewritten':
+            xhs_content = info.get('rewritten_content', '') or ''
+            xhs_content = _strip_markdown(xhs_content)
+            if not xhs_content.strip():
+                print("⚠️ 改写文模式但内容为空，仍继续发布\n")
+            else:
+                print(f"  📝 改写文模式：{len(xhs_content)} 字")
+        else:
+            parts = []
 
-        # 引流摘要（如有）作为开头
-        if summary:
-            parts.append(summary)
+            # 引流摘要（如有）作为开头
+            if summary:
+                parts.append(summary)
+                parts.append("")
+
+            # 新闻要点
+            parts.append(content)
             parts.append("")
 
-        # 新闻要点
-        parts.append(content)
-        parts.append("")
+            # 我的解读（SQLite: comment 在 vocab 位置; Notion: 词汇部分）
+            if vocab:
+                parts.append(vocab)
+                parts.append("")
 
-        xhs_content = "\n".join(parts)
+            xhs_content = "\n".join(parts)
 
-        # 添加标签（最后一行 #标签1 #标签2 格式）
-        import random
-        # 必选标签
-        must_tag = "#看新闻学日语"
-        # 分类标签池（按内容分类选择，避免不相关标签混入）
-        BASE_TAGS = [
-            "#日语学习", "#日语N1", "#日语N2", "#日语单词",
-            "#中日双语", "#中日翻译",
-            "#日语学习打卡", "#日本新闻",
-            "#日本文化", "#日本生活",
-        ]
-        FASHION_TAGS = [
-            "#日系穿搭", "#日本穿搭", "#日系风格",
-            "#穿搭分享", "#今日穿搭",
-        ]
-        BEAUTY_TAGS = [
-            "#日本化妆", "#日系妆容", "#日本美妆",
-            "#日本护肤", "#护肤分享", "#化妆教程",
-        ]
-
-        # 根据内容标签判断分类，选对应的标签池
-        existing_tag_str = " ".join(info.get("tags", []))
-        is_fashion = any(k in existing_tag_str for k in ["穿搭", "ファッション", "コーデ", "fashion"])
-        is_beauty = any(k in existing_tag_str for k in ["メイク", "コスメ", "スキンケア", "美妆", "化妆", "护肤"])
-
-        if is_fashion:
-            hot_tags = BASE_TAGS[:6] + FASHION_TAGS
-        elif is_beauty:
-            hot_tags = BASE_TAGS[:6] + BEAUTY_TAGS
-        else:
-            hot_tags = BASE_TAGS
-        # 标签规范化映射（日文/繁体 → 中文）
-        TAG_NORMALIZE = {
-            "コスプレ": "cosplay", "コスプ": "cosplay",
-            # 不再转换 AKB48/乃木坂46/欅坂46，保留完整形式
-            "鳴潮": "鸣潮", "原神": "原神", "崩壊": "崩坏", "スターレイル": "星穹铁道",
-            "アニメ": "动漫", "マンガ": "漫画", "ゲーム": "游戏",
-            "中東": "中东", "政治": "时政",
-            # 时尚美妆
-            "ファッション": "日系穿搭", "コーデ": "穿搭分享", "おしゃれ": "日系风格",
-            "メイク": "日系妆容", "コスメ": "日本美妆", "スキンケア": "日本护肤",
-            "ビューティー": "护肤分享", "トレンド": "日本潮流",
-        }
-
-# 关键词到发布标签的映射（与 yahoo_news_auto.py 保持一致）
-        KEYWORD_TAG_MAP = {
-            "AKB": ["AKB48", "akb48"],
-            "乃木坂": ["乃木坂", "乃木坂46"],
-            "欅坂": ["欅坂", "欅坂46", "樱坂", "樱坂46"],
-            "伊織もえ": ["伊織もえ", "伊织萌", "きゅるん"],
-            "えなこ": ["えなこ", "enako"],
-            "アークナイツ": ["明日方舟"],
-            "辻野かなみ": ["超心宣", "超ときめき宣伝部", "超とき宣", "辻野かなみ"],
-            "≠ME": ["notequalme","指原系","符号系"],
-            "=LOVE": ["equallove","等爱","指原系","符号系"],
-            "柏木由纪": ["柏木由纪"],
-            "指原莉乃": ["指原莉乃"],
-            "lesserafim": ["lesserafim", "炽", "韩国偶像", "Kpop", "韩国女团", "女团"],
-        }
-
-        def normalize_tag(t: str) -> str:
-            return TAG_NORMALIZE.get(t, t)
-
-        def add_tag(lst: list[str], seen_set: set[str], tag: str):
-            tag = tag.lstrip("#")
-            if tag not in seen_set:
-                seen_set.add(tag)
-                lst.append(tag)
-
-        seen_set: set[str] = set()
-        all_tags: list[str] = []
-
-        # 1. 先收集 KEYWORD_TAG_MAP 匹配的标签，优先展开（避免去重后优先级丢失）
-        raw_tags = info.get("tags", [])
-        mapped_tags: list[str] = []
-        other_tags: list[str] = []
-        for t in raw_tags:
-            if t in KEYWORD_TAG_MAP:
-                mapped_tags.append(t)
-            else:
-                other_tags.append(t)
-
-        for t in mapped_tags:
-            for mapped in KEYWORD_TAG_MAP[t]:
-                add_tag(all_tags, seen_set, normalize_tag(mapped))
-
-        for t in other_tags:
-            add_tag(all_tags, seen_set, normalize_tag(t))
-
-        # 2. 必选标签
-        add_tag(all_tags, seen_set, must_tag)
-
-        # 3. 随机热门标签（补足）
-        random_hot = random.sample(hot_tags, min(4, len(hot_tags)))
-        for t in random_hot:
-            add_tag(all_tags, seen_set, t)
-
-        tags_str = " ".join(f"#{t}" for t in all_tags[:10])
+        # 添加标签：直接读 DB 中已预展开的 tags（生成阶段已完成展开+必选+补足）
+        tags_str = " ".join(f"#{t}" for t in info.get("tags", [])[:10])
         xhs_content = f"{xhs_content}\n{tags_str}"
 
-        print(f"正文预览: {content[:80]}...")
+        if publish_mode == 'rewritten':
+            print(f"正文预览: {xhs_content[:80]}...")
+        else:
+            print(f"正文预览: {content[:80]}...")
         print()
 
         # 确认发布
@@ -551,7 +659,7 @@ def main():
             image_url = fetch_article_image(info["link"])
 
         # 图集图片 / 视频（gallery_upload 写入的 blocks）
-        gallery_urls, gallery_videos = get_page_media_blocks(page["id"])
+        gallery_urls, gallery_videos = get_page_media_blocks(page["id"], is_sqlite)
         if gallery_urls:
             print(f"  图集图片: {len(gallery_urls)} 张")
         if gallery_videos:
@@ -589,13 +697,36 @@ def main():
         elif video_url and not video_caption:
             print(f"  ⚠️ 无短配文，使用普通正文")
 
+        # 字数检测：小红书正文上限 1000 字
+        xhs_units = _xhs_char_units(xhs_content)
+        if xhs_units > 1000:
+            print(f"  ⛔ 内容过长（{xhs_units:.0f}字 > 1000），无法发布，跳过\n")
+            continue
+
         # 发布
         print("📤 发布中...")
-        if publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
+        # 每条读取自己的 xhs_pub_time 作为排期
+        sqlite_key = page.get("_key", "") if is_sqlite else ""
+        article_post_time = None
+        if sqlite_key:
+            from sqlite_db import get_by_key
+            row = get_by_key(sqlite_key)
+            if row and row.get("xhs_pub_time"):
+                article_post_time = row["xhs_pub_time"]
+        post_time = article_post_time or args.post_time
+        ok, note_id = publish_to_xhs(full_title, xhs_content, all_images, info["link"], video_url=video_url,
                           preview=args.preview, headless=not args.no_headless,
-                          post_time=args.post_time, timing_jitter=args.timing_jitter,
-                          reuse_existing_tab=args.reuse_existing_tab):
-            if mark_as_published(page["id"]):
+                          post_time=post_time, timing_jitter=args.timing_jitter,
+                          reuse_existing_tab=args.reuse_existing_tab)
+        if ok:
+            if note_id and sqlite_key:
+                try:
+                    from sqlite_db import update_news
+                    update_news(sqlite_key, {"xhs_note_id": note_id, "xhs_title": full_title})
+                    print(f"  📌 note_id: {note_id}")
+                except Exception as e:
+                    print(f"  ⚠️ 更新 note_id 失败: {e}")
+            if mark_as_published(page["id"], sqlite_key, post_time or ""):
                 print(f"✅ 发布成功，已记录时间\n")
             else:
                 print(f"✅ 发布成功，但更新时间失败\n")
