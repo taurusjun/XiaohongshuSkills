@@ -6,7 +6,7 @@ import requests
 import tweepy
 
 # 代理配置（Clash SOCKS5）
-PROXY = "socks5h://127.0.0.1:10090"
+import sys, os; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")); from config.yahoo_conf import get_socks_proxy as _gsp; PROXY = _gsp()
 os.environ["HTTP_PROXY"]  = PROXY
 os.environ["HTTPS_PROXY"] = PROXY
 os.environ["http_proxy"]  = PROXY

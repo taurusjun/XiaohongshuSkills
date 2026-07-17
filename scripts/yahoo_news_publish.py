@@ -483,7 +483,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
     if result.returncode == 0:
         # 打印 cdp_publish 的关键进度行，便于追溯
         for line in (result.stdout or "").split("\n"):
-            if any(kw in line for kw in ["[cdp_publish]", "Navigating", "Tab", "Uploading",
+            if any(kw in line for kw in ["[cdp_publish]", "[pipeline]", "PUBLISH_STATUS", "FILL_STATUS", "Navigating", "Tab", "Uploading",
                                           "Image", "Preview", "preview", "Waiting", "ready"]):
                 print(f"  {line}")
         # 提取 note_id 从输出

@@ -10,6 +10,10 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "../.."))
+from config.yahoo_conf import get_proxies as _get_proxies
+
 from . import download_images
 
 HEADERS = {
@@ -26,8 +30,15 @@ BAD_KW = ["logo", "icon", "banner", "sprite", "favicon"]
 def scrape(gallery_url: str) -> list[str]:
     """从 bunshun 文章页抓取所有大图 URL。"""
     try:
-        resp = requests.get(gallery_url, headers=HEADERS, timeout=20)
-        resp.raise_for_status()
+        resp = None
+        for kwargs in [{}, {"proxies": _get_proxies()}]:
+            try:
+                resp = requests.get(gallery_url, headers=HEADERS, timeout=20, **kwargs)
+                resp.raise_for_status()
+                break
+            except Exception:
+                resp = None
+                if kwargs: raise
     except Exception as e:
         print(f"  ⚠️ bunshun 获取页面失败: {e}")
         return []

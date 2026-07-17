@@ -87,13 +87,14 @@ def _download(key: str, gallery_url: str = ""):
             }
             _skip_ig = any(d in gallery_url for d in _SKIP_IG_DETECT)
             try:
-                from gallery_fetch import _extract_instagram_shortcode
+                from gallery_fetch import _extract_instagram_permalink, _extract_instagram_shortcode
                 import requests as _rq
-                r2 = _rq.get(gallery_url, headers=HEADERS, timeout=15) if not _skip_ig else None
-                sc = _extract_instagram_shortcode(r2.text) if r2 else None
-                if sc:
-                    log.append(f'📸 检测到 Instagram embed: instagram.com/p/{sc}/')
-                    gallery_url = f'https://www.instagram.com/p/{sc}/'
+                r2 = _rq.get(gallery_url, headers=HEADERS, proxies=__import__('config.yahoo_conf', fromlist=['get_proxies']).get_proxies(), timeout=15) if not _skip_ig else None
+                permalink = _extract_instagram_permalink(r2.text) if r2 else ''
+                sc = _extract_instagram_shortcode(r2.text) if r2 else ''
+                if permalink or sc:
+                    gallery_url = permalink if permalink else f'https://www.instagram.com/p/{sc}/'
+                    log.append(f'📸 检测到 Instagram embed: {gallery_url}')
                     files = _dl_ig(gallery_url, d)
                     for f in files:
                         log.append(f'  ✓ {f}')
@@ -137,13 +138,11 @@ def _download(key: str, gallery_url: str = ""):
             # Download images
             dl_headers = dict(HEADERS)
             dl_headers['Referer'] = gallery_url
-            try:
-                from config.yahoo_conf import PROXY_URL as _PROXY_URL
-            except Exception:
-                _PROXY_URL = "http://127.0.0.1:10090"
+            from config.yahoo_conf import get_proxies as _get_proxies
+            _proxies_all = _get_proxies()
             for i, url in enumerate(image_urls):
                 try:
-                    _proxies = {"http": _PROXY_URL, "https": _PROXY_URL} if ("twimg.com" in url and _PROXY_URL) else None
+                    _proxies = _proxies_all if ("twimg.com" in url and _proxies_all) else None
                     resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
                     ext = url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
                     if ext not in ('jpg','jpeg','png','webp','gif','mp4'):

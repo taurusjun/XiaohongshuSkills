@@ -69,6 +69,16 @@ def api_reset_publish_lock():
             _publish_running = False
             return jsonify({"ok": True, "msg": "Publish lock reset"})
         return jsonify({"ok": False, "msg": "No lock to reset"})
+
+# Quick endpoint to reset stuck fetch lock
+@app.route('/api/admin/reset-fetch-lock', methods=['POST'])
+def api_reset_fetch_lock():
+    global _fetch_running
+    with _fetch_lock:
+        if _fetch_running:
+            _fetch_running = False
+            return jsonify({"ok": True, "msg": "Fetch lock reset"})
+        return jsonify({"ok": False, "msg": "No lock to reset"})
 _fetch_lock = threading.Lock()
 _fetch_running = False
 _regen_lock = threading.Lock()
@@ -112,7 +122,9 @@ def api_gallery_download(key):
     t = _gtasks.get(key, {})
     if isinstance(t, dict) and t.get('status') == 'running':
         return jsonify({"locked": True, "msg": "该图集正在下载中"})
-    trigger_download(key)
+    data = request.get_json(silent=True) or {}
+    gallery_url = (data.get('gallery_url') or '').strip()
+    trigger_download(key, gallery_url)
     return jsonify({"status": "started"})
 
 @app.route('/api/trigger-fetch', methods=['POST'])
@@ -2415,43 +2427,46 @@ function addTag(e){
   }
 }
 renderTags();
-function xhsCharCount(s){
-  // XHS: 字符显示宽度计数。全角(中日韩/假名/全角标点)=2,半角(ASCII/数字)=1,总数/2
-  var w=0;
+function xhsTitleLen(s){
+  // 标题长度：CJK×1，其余（英文/数字/假名）×0.5，向上取整
+  var cjk=0;
   for(var i=0;i<s.length;i++){
     var c=s.charCodeAt(i);
-    if(c>=0xd800&&c<=0xdfff){w+=4;i++;continue} // surrogate emoji
-    if(c<=0x7f)w+=1;       // ASCII
-    else if(c<=0x7ff)w+=2; // Latin supplement etc
-    else w+=2;             // CJK, kana, fullwidth - all width 2
+    if((c>=0x4e00&&c<=0x9fff)||(c>=0x3000&&c<=0x303f)||(c>=0xff00&&c<=0xffef))cjk++;
   }
-  return Math.ceil(w/2);
+  return Math.ceil(cjk+(s.length-cjk)*0.5);
+}
+function xhsContentLen(s){
+  // 正文字数：所有字符×1，换行符不计
+  var newlines=0;
+  for(var i=0;i<s.length;i++){if(s.charCodeAt(i)===10)newlines++;}
+  return s.length-newlines;
 }
 function updateTitleCount(){
   var el=document.getElementById('titleInput'),c=document.getElementById('titleCount');
   if(!el||!c)return;
-  var n=xhsCharCount(el.value);
+  var n=xhsTitleLen(el.value);
   c.textContent=n+'/20';
   c.style.color=n>20?'var(--red)':'var(--text3)';
 }
 function updateRewrittenTitleCount(){
   var el=document.querySelector('[name=rewritten_title]'),c=document.getElementById('rewrittenTitleCount');
   if(!el||!c)return;
-  var n=xhsCharCount(el.value);
+  var n=xhsTitleLen(el.value);
   c.textContent=n+'/20';
   c.style.color=n>20?'var(--red)':'var(--text3)';
 }
 function updateContentCount(){
   var ta=document.getElementById('contentHidden'),c=document.getElementById('contentCount');
   if(!ta||!c)return;
-  var n=xhsCharCount(ta.value);
+  var n=xhsContentLen(ta.value);
   c.textContent=n+'/1000';
   c.style.color=n>1000?'var(--red)':'var(--text3)';
 }
 function updateRewrittenCount(){
   var ta=document.getElementById('rewrittenHidden'),c=document.getElementById('rewrittenCount');
   if(!ta||!c)return;
-  var n=xhsCharCount(ta.value);
+  var n=xhsContentLen(ta.value);
   c.textContent=n+'/1000';
   c.style.color=n>1000?'var(--red)':'var(--text3)';
 }
@@ -2607,7 +2622,9 @@ async function downloadGallery(){
   document.getElementById('taskLog').textContent='⏳ 启动中...';
   document.getElementById('taskModal').classList.add('active');
   const log=document.getElementById('galleryLog');log.style.display='block';
-  var r=await fetch('/api/gallery-download/'+key,{method:'POST'});
+  var gInput=document.querySelector('[name=gallery_url]');
+  var gUrl=(gInput&&gInput.value||'').trim();
+  var r=await fetch('/api/gallery-download/'+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_url:gUrl})});
   var d=await r.json();
   if(d.locked){document.getElementById('taskLog').textContent='🔒 '+d.msg;resetGalleryBtn();return}
   for(var i=0;i<120;i++){

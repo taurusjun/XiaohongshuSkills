@@ -219,9 +219,17 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 </div>
 
 <textarea id="wxHidden" style="display:none">{{news.wechat_content or news.content or ''}}</textarea>
+<div id="wxImgPicker" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;z-index:8000;box-shadow:0 8px 32px rgba(0,0,0,.25);width:360px;max-height:70vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <span style="font-size:13px;font-weight:600">选择图片插入</span>
+    <button onclick="closeImgPicker()" style="background:none;border:none;font-size:16px;cursor:pointer">✕</button>
+  </div>
+  <div id="wxImgPickerGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+</div>
 <script>
 var WK="{{news.key}}";
 var _th='newspaper',_ed=null,_dirty=false,_stimer=null;
+var _allImgs={{all_images|map(attribute='path')|list|tojson}};
 function _S(id){return document.getElementById(id);}
 function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
 function _setSave(s){var e=_S('tbSaved');if(!e)return;if(s==='saving'){e.textContent='保存中…';e.className='tb-saved saving';}else if(s==='saved'){e.textContent='已保存';e.className='tb-saved saved';}else{e.textContent='未保存';e.className='tb-saved';}}
@@ -285,7 +293,7 @@ function _txt2blocks(txt){
       var p=line.trim();if(!p)return;
       if(p.indexOf('### ')===0)blocks.push({type:'header',data:{text:p.slice(4),level:3}});
       else if(p.indexOf('## ')===0)blocks.push({type:'header',data:{text:p.slice(3),level:2}});
-      else if(p.indexOf('> ')===0)blocks.push({type:'quote',data:{text:p.slice(2),caption:''}});
+      else if(p.indexOf('> ')===0)blocks.push({type:'paragraph',data:{text:p.slice(2)}});
       else blocks.push({type:'paragraph',data:{text:p}});
     });
   }
@@ -302,20 +310,77 @@ function _txt2blocks(txt){
   if(!blocks.length)blocks.push({type:'paragraph',data:{text:txt}});
   return blocks;
 }
-var WxGalleryBlock=(function(){
-  function C(o){this.api=o.api;this.data={paths:(o.data&&o.data.paths)||[],caption:(o.data&&o.data.caption)||''};}
-  C.toolbox={title:'图片组',icon:'🖼'};C.isReadOnlySupported=true;
-  C.prototype.render=function(){
-    var w=document.createElement('div');w.style.cssText='border:1px dashed rgba(0,0,0,.12);border-radius:6px;padding:8px;margin:4px 0;background:#f8f8f8';
-    var ps=this.data.paths||[];
-    if(ps.length){var g=document.createElement('div');g.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
-      ps.forEach(function(p){var i=document.createElement('img');i.src=p.indexOf('/')===0?'/local-image?path='+encodeURIComponent(p):p;i.style.cssText='height:80px;border-radius:4px;object-fit:cover';g.appendChild(i);});w.appendChild(g);}
-    else{w.textContent='(图片占位)';w.style.color='#aaa';w.style.fontSize='12px';}
-    this._el=w;return w;
-  };
-  C.prototype.save=function(){return{paths:this.data.paths||[],caption:this.data.caption||''};};
-  return C;
-})();
+let _wxImgPickerCb=null;
+function openImgPicker(cb){
+  _wxImgPickerCb=cb||null;
+  const grid=document.getElementById('wxImgPickerGrid');
+  grid.innerHTML='';
+  (_allImgs||[]).forEach(function(p){
+    const d=document.createElement('div');
+    d.style.cssText='cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;flex-shrink:0';
+    d.onmouseenter=function(){d.style.borderColor='#7c3aed';};
+    d.onmouseleave=function(){d.style.borderColor='transparent';};
+    d.onclick=function(){
+      closeImgPicker();
+      if(_wxImgPickerCb){_wxImgPickerCb(p);return;}
+    };
+    const img=document.createElement('img');
+    img.src='/local-image?path='+encodeURIComponent(p);
+    img.style.cssText='width:88px;height:88px;object-fit:cover;display:block';
+    img.title=p.split('/').pop();
+    d.appendChild(img);grid.appendChild(d);
+  });
+  document.getElementById('wxImgPicker').style.display='block';
+}
+function closeImgPicker(){document.getElementById('wxImgPicker').style.display='none';}
+
+class GalleryImageBlock {
+  static get toolbox(){return{title:'图片',icon:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="15" viewBox="0 0 336 276"><path d="M291 150V79c0-19-15-34-34-34H79c-19 0-34 15-34 34v42l67-44 81 72 56-29 42 30zm0 52l-43-30-56 30-81-72-66 44v30c0 19 15 34 34 34h178c17 0 31-13 34-29zM79 0h178c44 0 79 35 79 79v118c0 44-35 79-79 79H79c-44 0-79-35-79-79V79C0 35 35 0 79 0z"/></svg>'};}
+  static get isReadOnlySupported(){return true;}
+  constructor({data,api}){this.api=api;this.data={paths:data.paths||[],caption:data.caption||''};this._el=null;}
+  render(){const wrap=document.createElement('div');wrap.className='gb-wrap';wrap.style.cssText='border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;background:#fafafa;margin:2px 0';this._el=wrap;this._rebuild();return wrap;}
+  _rebuild(){
+    const wrap=this._el;if(!wrap)return;
+    wrap.innerHTML='';
+    const paths=this.data.paths.filter(p=>p);
+    this.data.paths=paths;
+    if(paths.length){
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;gap:4px;padding:6px;background:#f0f0f0;justify-content:center';
+      paths.forEach((p,idx)=>{
+        const cell=document.createElement('div');
+        cell.style.cssText='position:relative;flex:'+(paths.length===1?'0 0 auto':'1 1 0')+';max-width:'+(paths.length===1?'100%':'50%');
+        const img=document.createElement('img');
+        img.src='/local-image?path='+encodeURIComponent(p);
+        img.style.cssText='width:100%;max-height:320px;object-fit:contain;border-radius:4px;display:block';
+        const del=document.createElement('button');
+        del.textContent='✕';del.title='移除此图';
+        del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;padding:0';
+        del.onclick=()=>{
+          this.data.paths.splice(idx,1);
+          if(this.data.paths.length===0){try{const bi=this.api.blocks.getCurrentBlockIndex();this.api.blocks.delete(bi);}catch(e){this._rebuild();}}
+          else{this._rebuild();}
+        };
+        cell.appendChild(img);cell.appendChild(del);row.appendChild(cell);
+      });
+      wrap.appendChild(row);
+    }
+    const bar=document.createElement('div');
+    bar.style.cssText='display:flex;gap:6px;padding:6px 8px;align-items:center;flex-wrap:wrap;background:#fff';
+    const addBtn=document.createElement('button');
+    addBtn.textContent=paths.length?'+ 添加图片':'📷 从图库选图';
+    addBtn.style.cssText='font-size:11px;padding:3px 10px;border:1px dashed #999;border-radius:12px;background:none;cursor:pointer;color:#555';
+    addBtn.onclick=()=>openImgPicker(p=>{this.data.paths.push(p);this._rebuild();});
+    bar.appendChild(addBtn);
+    const cap=document.createElement('input');
+    cap.placeholder='图片说明（图片标记）';cap.value=this.data.caption;
+    cap.style.cssText='flex:1;font-size:11px;border:none;outline:none;background:transparent;color:#888;min-width:80px';
+    cap.oninput=()=>{this.data.caption=cap.value;};
+    bar.appendChild(cap);
+    wrap.appendChild(bar);
+  }
+  save(){return{paths:this.data.paths,caption:this.data.caption};}
+}
 function _initEd(){
   if(typeof EditorJS==='undefined')return;
   var raw=(_S('wxHidden')||{}).value||'';
@@ -326,7 +391,7 @@ function _initEd(){
     tools:{
       header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
       quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'引用内容',captionPlaceholder:'出处（可选）'}},
-      galleryImage:{class:WxGalleryBlock}
+      galleryImage:{class:GalleryImageBlock}
     },
     data:{blocks:blocks},
     onChange:function(){

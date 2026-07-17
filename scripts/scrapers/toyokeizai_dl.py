@@ -11,7 +11,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
 }
 # SOCKS5 proxy for toyokeizai
-PROXIES = {"http": "socks5h://127.0.0.1:10090", "https": "socks5h://127.0.0.1:10090"}
+import sys, os; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../..")); from config.yahoo_conf import get_socks_proxy as _gsp; PROXIES = {"http": _gsp(), "https": _gsp()} if _gsp() else {}
 
 
 import urllib3

@@ -315,6 +315,10 @@ def _write_content_data_csv(csv_file: str, rows: list[dict[str, Any]]) -> str:
     return abs_path
 
 
+class _PromiseCollectedError(Exception):
+    """Internal: Chrome GC collected a CDP Promise. Caller should retry."""
+
+
 class CDPError(Exception):
     """Error communicating with Chrome via CDP."""
 
@@ -672,7 +676,12 @@ class XiaohongshuPublisher:
 
             if data.get("id") == message_id:
                 if "error" in data:
-                    raise CDPError(f"CDP error: {data['error']}")
+                    err = data["error"]
+                    # Chrome CDP GC bug: retry once on 'Promise was collected'
+                    if (isinstance(err, dict) and err.get("code") == -32000
+                            and "Promise was collected" in err.get("message", "")):
+                        raise _PromiseCollectedError(f"CDP error: {err}")
+                    raise CDPError(f"CDP error: {err}")
                 return data.get("result", {})
             # else: it's an event, skip it
 
@@ -888,15 +897,24 @@ class XiaohongshuPublisher:
 
     def _evaluate(self, expression: str, timeout_seconds: float | None = None) -> Any:
         """Execute JavaScript in the page and return the result value."""
-        result = self._send("Runtime.evaluate", {
-            "expression": expression,
-            "returnByValue": True,
-            "awaitPromise": True,
-        }, timeout_seconds=timeout_seconds)
-        remote_obj = result.get("result", {})
-        if remote_obj.get("subtype") == "error":
-            raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
-        return remote_obj.get("value")
+        # Retry once on 'Promise was collected' — Chrome CDP GC bug that occurs
+        # under memory pressure (e.g. during image uploads).
+        for attempt in range(2):
+            try:
+                result = self._send("Runtime.evaluate", {
+                    "expression": expression,
+                    "returnByValue": True,
+                    "awaitPromise": True,
+                }, timeout_seconds=timeout_seconds)
+            except _PromiseCollectedError:
+                if attempt == 0:
+                    time.sleep(0.5)
+                    continue
+                raise CDPError("CDP error: Promise was collected (retry exhausted)")
+            remote_obj = result.get("result", {})
+            if remote_obj.get("subtype") == "error":
+                raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
+            return remote_obj.get("value")
 
     def _reconnect(self):
         """Reconnect WebSocket to the same tab (used after full-page navigations)."""
@@ -4749,60 +4767,68 @@ class XiaohongshuPublisher:
         print(f"[cdp_publish] Content set via selector: {selector}")
 
     def _set_schedule_post_time(self, post_time: str | None):
-        """Set schedle publish time if necessary"""
-        if post_time == None:
+        """Set schedule publish time if necessary.
+
+        Rewritten to use two synchronous evaluate calls (no async/await) so
+        Chrome cannot GC a Promise while the page is in background/hidden state.
+        """
+        if post_time is None:
             return
-        
+
         print(f"[cdp_publish] Setting schedule publish time: {post_time}")
         self._sleep(ACTION_INTERVAL, minimum_seconds=0.25)
 
-        post_time_enabled = self._evaluate(f"""
-            (async function() {{
-                try {{
-                    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-                    const visible = (node) => (
-                        node instanceof HTMLElement &&
-                        node.offsetParent !== null &&
-                        node.getBoundingClientRect().width > 0 &&
-                        node.getBoundingClientRect().height > 0
-                    );
-
-                    // Click scheduled publish switch if needed
-                    const switchSelector = {json.dumps(SELECTORS["schedule_switch"])};
-                    const switchElement = document.querySelector(switchSelector);
-                    if (!(switchElement instanceof HTMLElement) || !visible(switchElement)) {{
-                        return 'Schedule publish switch is missing.';
-                    }}
-                    const isChecked = switchElement.getAttribute('aria-checked');
-                    if (isChecked !== 'true') {{
-                        switchElement.click();
-                        await sleep(300);
-                    }}
-                    
-                    // Set publish time
-                    const el = document.querySelector({json.dumps(SELECTORS["schedule_datetime_input"])});
-                    if (!(el instanceof HTMLInputElement)) {{
-                        return 'Schedule publish date-picker input is missing.';
-                    }}
-                    var nativeSetter = Object.getOwnPropertyDescriptor(
-                        window.HTMLInputElement.prototype, 'value'
-                    ).set;
-                    el.focus();
-                    el.select();
-                    nativeSetter.call(el, {json.dumps(post_time)});
-                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    return 'ok';
-                }} catch (err) {{
-                    return String(err);
-                }}
-            }})();
+        # Override visibilityState so Vue click handlers fire correctly.
+        self._evaluate("""
+            Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+            Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
         """)
 
-        if not post_time_enabled == 'ok':
-            raise CDPError("Could not set scheduled publish time. Reason:" + post_time_enabled)
-        
+        # Step 1 (synchronous): click the schedule switch if not already enabled.
+        switch_result = self._evaluate(f"""
+            (function() {{
+                var switchEl = document.querySelector({json.dumps(SELECTORS["schedule_switch"])});
+                if (!(switchEl instanceof HTMLElement) || switchEl.offsetParent === null) {{
+                    return 'missing';
+                }}
+                if (switchEl.getAttribute('aria-checked') !== 'true') {{
+                    switchEl.click();
+                    return 'clicked';
+                }}
+                return 'already_on';
+            }})()
+        """)
+
+        if switch_result == 'missing':
+            raise CDPError("Could not set scheduled publish time. Reason: Schedule publish switch is missing.")
+
+        # Wait for the switch animation with Python sleep — no JS Promise needed.
+        if switch_result == 'clicked':
+            self._sleep(0.4, minimum_seconds=0.3)
+
+        # Step 2 (synchronous): set the datetime value.
+        time_result = self._evaluate(f"""
+            (function() {{
+                var el = document.querySelector({json.dumps(SELECTORS["schedule_datetime_input"])});
+                if (!(el instanceof HTMLInputElement)) {{
+                    return 'missing_input';
+                }}
+                var nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                ).set;
+                el.focus();
+                el.select();
+                nativeSetter.call(el, {json.dumps(post_time)});
+                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                return 'ok';
+            }})()
+        """)
+
+        if time_result != 'ok':
+            raise CDPError(f"Could not set scheduled publish time. Reason: {time_result}")
+
         print("[cdp_publish] Schedule publish time set.")
         return
 
@@ -4937,6 +4963,21 @@ class XiaohongshuPublisher:
         print("[cdp_publish] Clicking publish button...")
         self._sleep(ACTION_INTERVAL, minimum_seconds=0.25)
         self._wait_for_publish_button_ready(timeout_seconds=20.0)
+
+        # Override visibilityState so the Vue click handler fires even when
+        # the Chrome window has no active display (VNC disconnected).
+        self._evaluate("""
+            Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+            Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
+        """)
+
+        # Scroll publish button into viewport before clicking.
+        self._evaluate("""
+            var btn = document.querySelector('xhs-publish-btn');
+            if (btn) btn.scrollIntoView({block: 'center', behavior: 'instant'});
+        """)
+        self._sleep(0.3, minimum_seconds=0.3)
+
         rect = self._get_publish_button_rect()
         if not rect:
             raise CDPError(

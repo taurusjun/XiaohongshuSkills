@@ -289,7 +289,7 @@ def publish_article(article_key: str, publish: bool = False,
 
     with _connect() as db:
         r = db.execute(
-            "SELECT title, content, image_url, original_image_url, gallery_images FROM news WHERE key=?",
+            "SELECT title, content, wechat_title, wechat_content, channel, image_url, original_image_url, gallery_images FROM news WHERE key=?",
             (article_key,)
         ).fetchone()
 
@@ -297,8 +297,9 @@ def publish_article(article_key: str, publish: bool = False,
         print(f"文章 {article_key} 不存在")
         return
 
-    title = r["title"]
-    content = r["content"]
+    # 优先使用 wechat_ 字段，fallback 到旧字段
+    title = r["wechat_title"] or r["title"]
+    content = r["wechat_content"] or r["content"]
     gallery_raw = r["gallery_images"]
     gallery = json.loads(gallery_raw) if isinstance(gallery_raw, str) and gallery_raw else []
 
@@ -434,10 +435,12 @@ if __name__ == "__main__":
         os.environ.setdefault("SQLITE_PATH", "data/news_dev.db")
         from scripts.sqlite_db import _connect
         with _connect() as db:
-            r = db.execute("SELECT title, content FROM news WHERE key=?", (args.key,)).fetchone()
+            r = db.execute("SELECT title, content, wechat_title, wechat_content FROM news WHERE key=?", (args.key,)).fetchone()
         if not r:
             print(f"文章 {args.key} 不存在"); sys.exit(1)
-        html = _render_html_preview(r["content"], r["title"], args.theme)
+        ptitle = r["wechat_title"] or r["title"]
+        pcontent = r["wechat_content"] or r["content"]
+        html = _render_html_preview(pcontent, ptitle, args.theme)
         tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8")
         tmp.write(html); tmp.close()
         resolved = _resolve_theme(args.theme)

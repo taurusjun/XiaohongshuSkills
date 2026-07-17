@@ -24,6 +24,8 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+from config.yahoo_conf import get_proxies as _get_proxies
+
 import sys as _sys
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
 if _scripts_dir not in _sys.path:
@@ -224,6 +226,18 @@ def _extract_instagram_shortcode(html_text: str) -> str:
     return ""
 
 
+def _extract_instagram_permalink(html_text: str) -> str:
+    """从 HTML 提取完整 IG 嵌入 URL（含 /p/ 或 /reel/ 前缀），用于区分 reel 视频和 post 图片。"""
+    import re
+    # 优先 blockquote data-instgrm-permalink
+    m = re.search(r'data-instgrm-permalink="(https://www\.instagram\.com/(?:p|reel)/[A-Za-z0-9_-]+/?)"', html_text)
+    if m:
+        return m.group(1)
+    # 兜底：任意 instagram.com/p/ 或 /reel/ URL
+    m = re.search(r'(https://www\.instagram\.com/(?:p|reel)/[A-Za-z0-9_-]+/?)', html_text)
+    return m.group(1) if m else ""
+
+
 def detect_gallery_link(article_url: str) -> str:
     """从 Yahoo 文章页找已知图集站点的外链，URL 必须含图集关键词且有实际路径"""
     if not article_url:
@@ -232,7 +246,7 @@ def detect_gallery_link(article_url: str) -> str:
         import time as _time
         for attempt in range(3):
             try:
-                resp = requests.get(article_url, headers=HEADERS, timeout=15)
+                resp = requests.get(article_url, headers=HEADERS, proxies=_get_proxies(), timeout=15)
                 break
             except Exception:
                 if attempt < 2:
@@ -242,6 +256,11 @@ def detect_gallery_link(article_url: str) -> str:
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # Instagram embed（blockquote / iframe）— 优先检测
+        # 优先用 permalink（含 /reel/ 区分视频），回退到 /p/{shortcode}/
+        permalink = _extract_instagram_permalink(resp.text)
+        if permalink:
+            print(f"  🔗 找到 Instagram 嵌入: {permalink}")
+            return permalink
         shortcode = _extract_instagram_shortcode(resp.text)
         if shortcode:
             ig_url = f"https://www.instagram.com/p/{shortcode}/"
@@ -318,7 +337,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     base = re.sub(r'/\d+$', '', clean_url)
 
     # 先取第一页获取总页数
-    resp = requests.get(f"{base}/1", headers=headers, timeout=15, **ssl_kwargs)
+    resp = requests.get(f"{base}/1", headers=headers, proxies=_get_proxies(), timeout=15, **ssl_kwargs)
     soup = BeautifulSoup(resp.text, "html.parser")
     num_el = soup.select_one(".photo-link-num")
     total = 1
@@ -333,7 +352,7 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     for page in range(1, total + 1):
         try:
             if page != 1:
-                r = requests.get(f"{base}/{page}", headers=headers, timeout=15, **ssl_kwargs)
+                r = requests.get(f"{base}/{page}", headers=headers, proxies=_get_proxies(), timeout=15, **ssl_kwargs)
                 s = BeautifulSoup(r.text, "html.parser")
             else:
                 s = soup
@@ -369,7 +388,7 @@ def _scrape_limo(gallery_url: str) -> list[str]:
 
     try:
         # 先请求第一页，获取分页数量
-        r = requests.get(base_url, headers=headers, timeout=15)
+        r = requests.get(base_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         # 找分页链接
@@ -388,7 +407,7 @@ def _scrape_limo(gallery_url: str) -> list[str]:
             else:
                 page_url = f"{base_url}?page={page}"
 
-            r = requests.get(page_url, headers=headers, timeout=15)
+            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             # 找大图（870wm 尺寸）
@@ -426,7 +445,7 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
     images = []
 
     try:
-        r = requests.get(clean_url, headers=headers, timeout=15)
+        r = requests.get(clean_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         # 找所有 data-src 包含 ismcdn.jp/img 的图片
@@ -459,7 +478,7 @@ def _scrape_smart_flash(gallery_url: str) -> list[str]:
     seen: set[str] = set()
 
     try:
-        r = requests.get(gallery_url.split("?")[0], headers=headers, timeout=15)
+        r = requests.get(gallery_url.split("?")[0], headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         # Step 1: 获取文章主页 URL（naviGroup "记事に戻る" 链接）
@@ -477,7 +496,7 @@ def _scrape_smart_flash(gallery_url: str) -> list[str]:
         img_count = 1  # 默认至少 1 张
         if art_id:
             try:
-                r_art = requests.get(art_url, headers=headers, timeout=15)
+                r_art = requests.get(art_url, headers=headers, proxies=_get_proxies(), timeout=15)
                 s_art = BeautifulSoup(r_art.text, "html.parser")
                 indices = set()
                 for a in s_art.find_all("a", href=True):
@@ -494,6 +513,8 @@ def _scrape_smart_flash(gallery_url: str) -> list[str]:
         slider = s.select_one(".imageSlider")
         if slider:
             items = slider.select("div.item")
+            if img_count <= 1:
+                img_count = len(items)
             for item in items[:img_count]:
                 # 新版：直接取 img.src
                 img_el = item.select_one("img[src]")
@@ -549,7 +570,7 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
     images: list[str] = []
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         # 新格式：优先取 .photo__photo--minh 大图，否则取 storage.mantan-web.jp
@@ -589,7 +610,7 @@ def _scrape_mantan(gallery_url: str) -> list[str]:
             for p in range(start + 1, end + 1):
                 page_url = f"{base_url}photopage/{p:03d}.html"
                 try:
-                    rp = requests.get(page_url, headers=headers, timeout=15)
+                    rp = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
                     sp = BeautifulSoup(rp.text, "html.parser")
                     large = sp.select_one(".photo__photo--minh img")
                     if large:
@@ -647,7 +668,7 @@ def _scrape_thetv(gallery_url: str) -> list[str]:
         images.append(src)
 
     # --- 第一页：提取 news_feed 主图 + 收集分页 ---
-    resp = requests.get(gallery_url, headers=headers, timeout=15)
+    resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
     if not resp.text:
         return []
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -685,7 +706,7 @@ def _scrape_thetv(gallery_url: str) -> list[str]:
         if len(images) >= MAX_IMAGES:
             break
         try:
-            r = requests.get(page_url, headers=headers, timeout=15)
+            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
             target_pat = f"/i/nw/{article_id}/{img_num}"
             for img in s.find_all("img"):
@@ -714,7 +735,7 @@ def _scrape_efight(gallery_url: str) -> list[str]:
     for pn in range(1, 6):
         p_url = f"{article_slug}/{pn}" if pn > 1 else article_slug
         try:
-            r = requests.get(p_url, headers=headers, timeout=15)
+            r = requests.get(p_url, headers=headers, proxies=_get_proxies(), timeout=15)
             sp = BeautifulSoup(r.text, "html.parser")
             for a_tag in sp.find_all("a", href=True):
                 href = a_tag["href"]
@@ -731,7 +752,7 @@ def _scrape_efight(gallery_url: str) -> list[str]:
     images: list[str] = []
     for att_url in list(attachments)[:MAX_IMAGES]:
         try:
-            r = requests.get(att_url, headers=headers, timeout=15)
+            r = requests.get(att_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
             imgs = s.select("div.attachment img") or s.select("article img, .entry img")
             for img in imgs:
@@ -769,7 +790,7 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
                       r'/picture/\1/\2_640px.\4', src)
 
     # 先取第一页
-    r = requests.get(gallery_url, headers=headers, timeout=15)
+    r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
     s = BeautifulSoup(r.text, "html.parser")
 
     # Twitter 视频嵌入检测
@@ -788,7 +809,7 @@ def _scrape_maidonanews(gallery_url: str) -> list[str]:
         for _ in range(MAX_IMAGES):
             try:
                 if url != gallery_url:
-                    r = requests.get(url, headers=headers, timeout=15)
+                    r = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=15)
                     s = BeautifulSoup(r.text, "html.parser")
                 img = s.select_one("figure.module-article-photo img")
                 if img:
@@ -838,7 +859,7 @@ def _scrape_lasisa(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://lasisa.net/"}
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
         main = s.select_one("main") or s
 
@@ -878,7 +899,7 @@ def _scrape_realsound(gallery_url: str) -> list[str]:
 
     for _ in range(MAX_IMAGES):
         try:
-            r = requests.get(url, headers=headers, timeout=15)
+            r = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             img = s.select_one("figure img")
@@ -916,6 +937,68 @@ def _scrape_encount(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+
+def _scrape_abema_tv_photo(gallery_url: str) -> list[str]:
+    """times.abema.tv /articles/photo/ 图集页：直接从 HTML 提取图片，无需 CDP。
+    URL 规则：ismcdn.jp/mwimgs/.../120w/img_xxx.jpg → 替换为 1200w 拿大图。
+    支持多页（pn=1, pn=2, ...）。
+    """
+    import re
+    from urllib.parse import urlparse, urlencode, parse_qs, urljoin
+
+    headers = {**HEADERS, "Referer": "https://times.abema.tv/"}
+
+    def _fetch_page_imgs(url: str) -> list[str]:
+        try:
+            resp = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=15)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"  ⚠️ abema photo page 请求失败: {e}")
+            return []
+        soup = BeautifulSoup(resp.text, "html.parser")
+        imgs = []
+        for img in soup.find_all("img"):
+            for attr in ("src", "data-src", "data-original"):
+                src = img.get(attr, "")
+                if "ismcdn.jp/mwimgs" in src and "common" not in src and "logo" not in src:
+                    # 替换缩略图尺寸为高清大图
+                    src = re.sub(r"/\d+w/", "/1200w/", src)
+                    if src not in imgs:
+                        imgs.append(src)
+                    break
+        return imgs
+
+    # 检测总页数
+    parsed = urlparse(gallery_url)
+    qs = parse_qs(parsed.query)
+    base_url = gallery_url.split("?")[0]
+
+    first_resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+    soup0 = BeautifulSoup(first_resp.text, "html.parser")
+    max_pn = 1
+    for a in soup0.find_all("a", href=True):
+        m = re.search(r"[?&]pn=(\d+)", a["href"])
+        if m:
+            max_pn = max(max_pn, int(m.group(1)))
+
+    if max_pn > 1:
+        print(f"  📄 发现 {max_pn} 页图集")
+
+    all_imgs: list[str] = []
+    for pn in range(1, max_pn + 1):
+        page_url = f"{base_url}?pn={pn}"
+        imgs = _fetch_page_imgs(page_url)
+        all_imgs.extend(imgs)
+
+    # 去重保序
+    seen: set[str] = set()
+    result = []
+    for u in all_imgs:
+        if u not in seen:
+            seen.add(u)
+            result.append(u)
+    return result
+
 def _scrape_abema_tv(gallery_url: str) -> list[str]:
     """times.abema.tv 分页文章：CDP 阻断 widgets.js 后提取 blockquote 中的 tweet_id，
     通过 fxtwitter API 获取推文图片。"""
@@ -932,7 +1015,7 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://times.abema.tv/"}
 
     # 先获取分页信息
-    resp = requests.get(gallery_url, headers=headers, timeout=15)
+    resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
     max_page = 1
     for a in soup.find_all("a", href=True):
@@ -1095,7 +1178,7 @@ def _scrape_chunichi(gallery_url: str) -> list[str]:
     images = []
 
     try:
-        r = requests.get(clean_url, headers=headers, timeout=15)
+        r = requests.get(clean_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         seen = set()
@@ -1140,7 +1223,7 @@ def _scrape_inside_games(gallery_url: str) -> list[str]:
     images = []
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         p = urlparse(gallery_url)
@@ -1249,7 +1332,7 @@ def _scrape_nikkansports(gallery_url: str) -> list[str]:
 
     # 访问起始页收集所有 seq 编号（从导航链接提取，比 HEAD probe 可靠）
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
         valid_seqs = {start_seq}
         for a in soup.find_all("a", href=True):
@@ -1277,7 +1360,7 @@ def _scrape_mdpr(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://mdpr.jp/"}
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         images: list[str] = []
@@ -1399,21 +1482,36 @@ def _cdp_read_instagram_iframe(post_url_fragment: str) -> list[str]:
 
 
 def _extract_instagram_images(html: str) -> list[str]:
-    """从已渲染的 HTML 中提取 scontent-*.cdninstagram.com 最大尺寸图片 URL。
-    优先取 srcset 中最大 w 的项（1080w），去重后返回。
+    """从已渲染的 HTML 中提取 scontent-*.cdninstagram.com 媒体 URL。
+    图片：从 <img> 的 srcset 取最大 w 项（1080w）。
+    视频：从 <video> 的 src / <source> 取 mp4 直链（reel）。
+    返回前缀区分：视频以 'video:' 前缀，图片原样。
     """
     import re
     soup = BeautifulSoup(html, "html.parser")
     images: list[str] = []
     seen: set[str] = set()
 
+    # 视频：reel 的 <video> 标签
+    for video in soup.find_all("video"):
+        src = video.get("src", "")
+        if src and "cdninstagram.com" in src and src not in seen:
+            seen.add(src)
+            images.append(f"video:{src}")
+            continue
+        # <source> tags inside <video>
+        for source in video.find_all("source"):
+            s = source.get("src", "")
+            if s and "cdninstagram.com" in s and s not in seen:
+                seen.add(s)
+                images.append(f"video:{s}")
+                break
+
+    # 图片：<img> 标签
     for img in soup.find_all("img"):
-        # 只取 Instagram CDN 图片
         src = img.get("src", "")
         if "cdninstagram.com" not in src:
             continue
-
-        # 从 srcset 取最大 w
         best_url, best_w = src, 0
         srcset = img.get("srcset", "")
         if srcset:
@@ -1430,8 +1528,6 @@ def _extract_instagram_images(html: str) -> list[str]:
                         pass
                 if w > best_w:
                     best_w, best_url = w, u
-
-        # 去掉会过期的 oh=/oe= 参数可能导致下载失败，保留原 URL
         if best_url not in seen:
             seen.add(best_url)
             images.append(best_url)
@@ -1460,7 +1556,7 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
     base_sns = f"{base}/news/{article_id}/attachment-sns"
     page_infos: list[tuple[str, str]] = []  # (page_url, instagram_post_id)
     try:
-        r = requests.get(f"{base_sns}/1/", headers=headers, timeout=15)
+        r = requests.get(f"{base_sns}/1/", headers=headers, proxies=_get_proxies(), timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
         max_page = 1
         for a in soup.find_all("a", href=True):
@@ -1475,7 +1571,7 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
     for i in range(1, min(max_page, MAX_IMAGES) + 1):
         page_url = f"{base_sns}/{i}/"
         try:
-            r = requests.get(page_url, headers=headers, timeout=15)
+            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
             bq = s.find("blockquote", class_="instagram-media")
             if bq:
@@ -1506,15 +1602,23 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
             print(f"    [{i}/{len(page_infos)}] Twitter: {post_frag}")
             images.append(post_frag)
             continue
-        # Instagram embed: use CDP to render and extract
+        # Instagram reel (video): 返回完整 IG URL 给上层 download_instagram
+        # 该函数已支持 yt-dlp 下载 reel 视频，无需在 scraper 内提取
+        if post_frag.startswith("/reel/"):
+            ig_full = f"https://www.instagram.com{post_frag}"
+            print(f"    [{i}/{len(page_infos)}] IG reel: {ig_full}")
+            images.append(ig_full)
+            continue
+        # Instagram post (image): use CDP to render and extract
         print(f"    [{i}/{len(page_infos)}] 导航到: {page_url}")
         _cdp_navigate(page_url, wait_seconds=6.0)
         page_imgs = _cdp_read_instagram_iframe(post_frag)
-        print(f"    找到 {len(page_imgs)} 张图片")
+        # _extract_instagram_images 现在可能返回 'video:URL' 前缀的项，剥掉前缀走 IG 直链下载
         for u in page_imgs:
-            if u not in seen:
-                seen.add(u)
-                images.append(u)
+            real = u[len("video:"):].strip() if u.startswith("video:") else u
+            if real not in seen:
+                seen.add(real)
+                images.append(real)
         if len(images) >= MAX_IMAGES:
             break
 
@@ -1560,7 +1664,7 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
         # 兜底：回文章页找图片版 attachment 入口
         try:
-            r = requests.get(article_url, headers=headers, timeout=15)
+            r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
             slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
             for a in s.find_all("a", href=True):
@@ -1579,7 +1683,7 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
     # ── 图片版路径 ────────────────────────────────────────
     try:
-        r = requests.get(article_url, headers=headers, timeout=15)
+        r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
     except Exception as e:
         print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e}")
@@ -1619,7 +1723,7 @@ def _scrape_thefirsttimes_page(page_url: str, headers: dict) -> list[str]:
     """抓取单个 thefirsttimes attachment 页的大图 URL"""
     import re
     try:
-        r = requests.get(page_url, headers=headers, timeout=15)
+        r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
         images = []
         seen: set[str] = set()
@@ -1649,7 +1753,7 @@ def _scrape_kstyle(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://kstyle.com/"}
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
 
         images: list[str] = []
@@ -1697,13 +1801,14 @@ def _scrape_yorozoonews(gallery_url: str) -> list[str]:
     visited_urls: set[str] = set()
     current_url = gallery_url
 
+
     for _ in range(MAX_IMAGES):
         if current_url in visited_urls:
             break
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, timeout=15)
+            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             large_img = ""
@@ -1791,13 +1896,16 @@ def _scrape_nikkan_spa(gallery_url: str) -> list[str]:
     # 正文容器 selector（仅从这些容器内取图）
     CONTENT_SELECTOR = "article, .entry-content, .post-content, .attachment-content, .single-content, .main-content"
 
+    # attachment_id 页是末页，需反向遍历（前へ方向）
+    reverse_traverse = "attachment_id" in gallery_url
+
     for _ in range(MAX_IMAGES):
         if current_url in visited_urls:
             break
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, timeout=15)
+            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             # 只在正文容器内找图片
@@ -1833,22 +1941,31 @@ def _scrape_nikkan_spa(gallery_url: str) -> list[str]:
                 if len(images) > len(seen) - 1:  # 本页已找到，跳出容器循环
                     pass
 
-            # 找下一个分页链接（"次へ" 文本链接）
+            # 找翻页链接
             next_url = ""
+            prev_url = ""
             for a in s.find_all("a", href=True):
                 text = a.get_text(strip=True)
-                if any(kw in text for kw in ["次へ", "次の写真", "次"]):
-                    href = a["href"]
-                    if href.startswith("/"):
-                        href = base + href
-                    elif not href.startswith("http"):
-                        continue
-                    if href != current_url:
-                        next_url = href
-                    break
-            if not next_url:
+                href = a["href"]
+                if href.startswith("/"):
+                    href = base + href
+                elif not href.startswith("http"):
+                    continue
+                if href == current_url or href in visited_urls:
+                    continue
+                if any(kw in text for kw in ["次へ", "次の写真"]) and not next_url:
+                    next_url = href
+                if any(kw in text for kw in ["前へ", "前の写真"]) and not prev_url:
+                    prev_url = href
+            # attachment_id 起始：始终沿 前へ 遍历（末页→首页方向）
+            # 普通 gallery 页：优先 次へ，无次へ 时走 前へ
+            if reverse_traverse:
+                chosen = prev_url  # attachment_id 模式：只走 前へ
+            else:
+                chosen = next_url or prev_url
+            if not chosen:
                 break
-            current_url = next_url
+            current_url = chosen
 
         except Exception as e:
             print(f"  ⚠️ nikkan-spa 分页抓取失败 {current_url}: {e}")
@@ -1867,7 +1984,7 @@ def _scrape_animeanime(gallery_url: str) -> list[str]:
     images: list[str] = []
 
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
         p = urlparse(gallery_url)
         base = f"{p.scheme}://{p.netloc}"
@@ -1937,7 +2054,7 @@ def _scrape_deview(gallery_url: str) -> list[str]:
 
     # 收集所有图片编号
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.content, "html.parser", from_encoding="shift_jis")
     except Exception as e:
         print(f"  ⚠️ deview 获取页面失败: {e}")
@@ -1963,7 +2080,7 @@ def _scrape_deview(gallery_url: str) -> list[str]:
     for img_no in sorted(img_nos)[:MAX_IMAGES]:
         try:
             page_url = f"{base}/NewsImage?am_article_id={article_id}&am_image_no={img_no}"
-            r = requests.get(page_url, headers=headers, timeout=15)
+            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.content, "html.parser", from_encoding="shift_jis")
 
             for img in s.find_all("img"):
@@ -2011,7 +2128,7 @@ def _scrape_mainichikirei(gallery_url: str) -> list[str]:
     # 从页面提取总照片数（"2 / 2" 文本）
     total = 1
     try:
-        r = requests.get(gallery_url, headers=headers, timeout=15)
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
         m_nav = re.search(r'(\d+)\s*/\s*(\d+)', s.get_text())
         if m_nav:
@@ -2060,7 +2177,7 @@ def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, timeout=15)
+            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             # 当前页大图：ogre.natalie.mu 域名，排除 thumbnail 参数
@@ -2125,7 +2242,7 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, timeout=15)
+            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             found = False
@@ -2192,7 +2309,7 @@ def _scrape_entamenext(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://entamenext.com/"}
 
     try:
-        r = requests.get(base_url, headers=headers, timeout=15)
+        r = requests.get(base_url, headers=headers, proxies=_get_proxies(), timeout=15)
         r.raise_for_status()
         html = r.text
     except Exception as e:
@@ -2231,7 +2348,7 @@ def _scrape_shueisha_online(gallery_url: str) -> list[str]:
     while True:
         try:
             r = requests.get(f"{base_url}?disp=paging&page={page}",
-                             headers=headers, timeout=15)
+                             headers=headers, proxies=_get_proxies(), timeout=15)
             if r.status_code == 404:
                 break
             r.raise_for_status()
@@ -2269,7 +2386,7 @@ def _scrape_wpb_shueisha(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": f"{base}/"}
 
     try:
-        resp = requests.get(clean_url, headers=headers, timeout=15)
+        resp = requests.get(clean_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2316,7 +2433,7 @@ def _scrape_bookbang(gallery_url: str) -> list[str]:
 
     # 先抓第1页，同时解析总页数
     try:
-        r = requests.get(base_url, headers=headers, timeout=15)
+        r = requests.get(base_url, headers=headers, proxies=_get_proxies(), timeout=15)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
     except Exception as e:
@@ -2341,7 +2458,7 @@ def _scrape_bookbang(gallery_url: str) -> list[str]:
 
     for page in range(2, max_page + 1):
         try:
-            r = requests.get(f"{base_url}?page={page}", headers=headers, timeout=15)
+            r = requests.get(f"{base_url}?page={page}", headers=headers, proxies=_get_proxies(), timeout=15)
             if r.status_code == 404:
                 break
             r.raise_for_status()
@@ -2366,7 +2483,7 @@ def _scrape_friday_kodansha(gallery_url: str) -> list[str]:
         "Referer": "https://news.yahoo.co.jp/",
     }
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', resp.text, re.S)
         if not m:
@@ -2399,7 +2516,7 @@ def _scrape_pinzuba(gallery_url: str) -> list[str]:
 
     # 收集总页数（先抓第1页）
     try:
-        resp = requests.get(base_url + "?page=1", headers=headers, timeout=15)
+        resp = requests.get(base_url + "?page=1", headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         html = resp.text
     except Exception as e:
@@ -2418,7 +2535,7 @@ def _scrape_pinzuba(gallery_url: str) -> list[str]:
             if page == 1:
                 page_html = html
             else:
-                r = requests.get(f"{base_url}?page={page}", headers=headers, timeout=15)
+                r = requests.get(f"{base_url}?page={page}", headers=headers, proxies=_get_proxies(), timeout=15)
                 r.raise_for_status()
                 page_html = r.text
             soup = BeautifulSoup(page_html, "html.parser")
@@ -2457,7 +2574,7 @@ def _scrape_daily_co_jp(gallery_url: str) -> list[str]:
     fetch_url = urlunparse((p.scheme, p.netloc, p.path, "", urlencode({k: v[0] for k, v in qs.items()}), ""))
 
     try:
-        resp = requests.get(fetch_url, headers=headers, timeout=15)
+        resp = requests.get(fetch_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2490,7 +2607,7 @@ def _scrape_postseven(gallery_url: str) -> list[str]:
     from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://www.news-postseven.com/"}
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2515,7 +2632,7 @@ def _scrape_postseven(gallery_url: str) -> list[str]:
         page_url = re.sub(r'PAGE=\d+(-\d+)?', f'PAGE={pn}', gallery_url_full)
         if pn > 1:
             try:
-                resp = requests.get(page_url, headers=headers, timeout=15)
+                resp = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
                 soup = BeautifulSoup(resp.text, "html.parser")
             except Exception:
                 continue
@@ -2575,7 +2692,7 @@ def _scrape_iza(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://www.iza.ne.jp/"}
     images, seen = [], set()
     try:
-        r = requests.get(gallery_url.split("?")[0], headers=headers, timeout=15)
+        r = requests.get(gallery_url.split("?")[0], headers=headers, proxies=_get_proxies(), timeout=15)
         s = BeautifulSoup(r.text, "html.parser")
         for img in s.find_all("img"):
             src = img.get("src", "")
@@ -2597,7 +2714,7 @@ def _scrape_pia(gallery_url: str) -> list[str]:
     from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://lp.p.pia.jp/"}
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2620,7 +2737,7 @@ def _scrape_pia(gallery_url: str) -> list[str]:
         if pn > 1:
             page_url = f"{base_url}{'&' if '?' in base_url else '?'}id={pn}"
             try:
-                resp = requests.get(page_url, headers=headers, timeout=15)
+                resp = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
                 soup = BeautifulSoup(resp.text, "html.parser")
             except Exception:
                 continue
@@ -2639,7 +2756,7 @@ def _scrape_jisin(gallery_url: str) -> list[str]:
     from urllib.parse import urljoin
     headers = {**HEADERS, "Referer": "https://www.jisin.jp/"}
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2675,7 +2792,7 @@ def _scrape_vivi_tv(gallery_url: str) -> list[str]:
 
     headers = {**HEADERS, "Referer": "https://www.vivi.tv/"}
     try:
-        resp = requests.get(gallery_url, headers=headers, timeout=15)
+        resp = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:
@@ -2874,7 +2991,11 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "times.abema.tv" in domain:
-        images = _scrape_abema_tv(gallery_url)
+        # /articles/photo/ ページは HTML に直接画像が含まれる（CDP 不要）
+        if "/articles/photo/" in gallery_url:
+            images = _scrape_abema_tv_photo(gallery_url)
+        else:
+            images = _scrape_abema_tv(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "jisin.jp" in domain:
@@ -2935,7 +3056,7 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
     use_specific_selector = any(k in domain for k in GALLERY_SITES)
 
     try:
-        resp = requests.get(gallery_url, headers={**HEADERS, "Referer": referer}, timeout=15)
+        resp = requests.get(gallery_url, headers={**HEADERS, "Referer": referer}, proxies=_get_proxies(), timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -3204,13 +3325,17 @@ def process_page(page: dict, redownload: bool = False) -> bool:
     _is_ig_url = "instagram.com/p/" in gallery_url or "instagram.com/reel/" in gallery_url
     if not _youtube_video_id and not _is_ig_url and "youtube.com" not in gallery_url and (not _is_pure_photo or _is_embed_page):
         try:
-            _page_resp = requests.get(gallery_url, headers=HEADERS, timeout=15)
+            _page_resp = requests.get(gallery_url, headers=HEADERS, proxies=_get_proxies(), timeout=15)
             # 限定在文章正文内检测，避免侧栏广告中的 IG 嵌入被误判
             _page_soup = BeautifulSoup(_page_resp.text, "html.parser")
             _article_body = _page_soup.select_one("article, .newsArticle_body, .article-body, .entry-content, .post-content, .content-main, .cont-news-embed, .single__content")
             _scan_text = str(_article_body) if (_article_body and len(_article_body.get_text(strip=True)) > 100) else _page_resp.text
+            _permalink = _extract_instagram_permalink(_scan_text)
             _shortcode = _extract_instagram_shortcode(_scan_text)
-            if _shortcode:
+            if _permalink:
+                gallery_url = _permalink
+                print(f"  📱 检测到 Instagram 嵌入，切换到: {gallery_url}")
+            elif _shortcode:
                 gallery_url = f"https://www.instagram.com/p/{_shortcode}/"
                 print(f"  📱 检测到 Instagram 嵌入，切换到: {gallery_url}")
             else:

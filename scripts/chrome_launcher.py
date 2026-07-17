@@ -336,7 +336,7 @@ def ensure_proxy_chrome(proxy_url: Optional[str] = None) -> bool:
     if is_port_open(CDP_PORT_PROXY):
         return True
     from config.yahoo_conf import PROXY_URL
-    effective_proxy = proxy_url or PROXY_URL or "http://127.0.0.1:10090"
+    effective_proxy = proxy_url or PROXY_URL
     profile_dir = os.path.join(
         os.path.expanduser("~"), "Google", "Chrome", "XiaohongshuProfiles", "proxy"
     )

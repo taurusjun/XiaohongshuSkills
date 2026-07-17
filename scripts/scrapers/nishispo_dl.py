@@ -1,3 +1,4 @@
+import sys as _sys, os as _os; _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "../..")); from config.yahoo_conf import get_proxies as _get_proxies
 #!/usr/bin/env python3
 """nishispo.nishinippon.co.jp scraper — 只取正文图，排除关联文章缩略图。
 
@@ -19,7 +20,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleW
 
 def _get(url: str) -> requests.Response | None:
     """Fetch with SSL quirk workaround (UNEXPECTED_EOF_WHILE_READING)."""
-    for kwargs in [{"verify": False}, {"verify": False, "proxies": {"http": "http://127.0.0.1:10090", "https": "http://127.0.0.1:10090"}}]:
+    for kwargs in [{"verify": False}, {"verify": False, "proxies": _get_proxies()}]:
         try:
             r = requests.get(url, headers=HEADERS, timeout=20, **kwargs)
             if r.status_code == 200:

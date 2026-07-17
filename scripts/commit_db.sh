@@ -1,14 +1,19 @@
 #!/bin/bash
-# 安全提交 news_dev.db：dump/restore 后提交推送
+# 每小时本地滚动备份：保留当前 + 上一个版本
 # 用法: bash scripts/commit_db.sh "备注信息"
 
 set -e
 
-MSG="${1:-data: 更新 news_dev.db}"
+MSG="${1:-data: 滚动备份}"
 DB="data/news_dev.db"
-TMP="/tmp/news_dev_clean_$(date +%s).db"
+BACKUP_DIR="${DB_BACKUP_DIR:-$HOME/db-backup}"
+BACKUP_FILE="$BACKUP_DIR/news_dev.db"
+PREV_FILE="$BACKUP_DIR/news_dev.db.prev"
+TMP="$BACKUP_DIR/.tmp/news_dev_clean_$(date +%s).db"
 
-echo "📦 dump/restore 中..."
+mkdir -p "$BACKUP_DIR/.tmp"
+
+echo "📦 dump/restore 优化中..."
 sqlite3 "$DB" ".dump" | sqlite3 "$TMP"
 
 echo "🔍 验证..."
@@ -21,16 +26,27 @@ if [ "$OK" != "ok" ] || [ "$ROWS" -eq 0 ]; then
     exit 1
 fi
 
-cp "$TMP" "$DB"
+# 比对内容 hash，没变化也滚动（保证 prev 不丢）
+OLD_HASH=$(sqlite3 "$DB" "SELECT * FROM news;" 2>/dev/null | shasum | cut -d' ' -f1)
+NEW_HASH=$(sqlite3 "$TMP" "SELECT * FROM news;" | shasum | cut -d' ' -f1)
+
+if [ "$OLD_HASH" = "$NEW_HASH" ]; then
+    echo "⏭️  DB 内容无变化，但仍然滚动备份保证 prev"
+else
+    # 替换 DB 文件（优化后的版本）
+    cp "$TMP" "$DB"
+fi
 rm -f "$TMP"
 
-echo "📤 提交推送..."
-git add -f "$DB"
-
-# --no-verify 跳过 pre-commit hook，避免二次 dump/restore 产生不同二进制导致每次都误判有变化
-if git commit --no-verify -m "$MSG"; then
-    git push origin HEAD
-    echo "✅ 完成"
-else
-    echo "⏭️  DB 无变化，跳过提交"
+# 滚动备份：当前 → prev，新版本 → 当前
+if [ -f "$BACKUP_FILE" ]; then
+    # 比较备份和当前是否相同，相同则不滚动（避免 prev == current）
+    if ! cmp -s "$BACKUP_FILE" "$DB"; then
+        mv "$BACKUP_FILE" "$PREV_FILE"
+    fi
 fi
+cp "$DB" "$BACKUP_FILE"
+
+echo "✅ 滚动备份完成"
+echo "  当前版本: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+[ -f "$PREV_FILE" ] && echo "  上版本:   $PREV_FILE ($(du -h "$PREV_FILE" | cut -f1))"

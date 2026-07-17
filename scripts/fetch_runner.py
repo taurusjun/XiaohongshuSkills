@@ -141,6 +141,30 @@ def main():
     # 4. 飞书通知
     notify(ok, keywords, last_log, today_before)
 
+    # 关闭抓取残留的高负载 tab（保留小红书 creator tab）
+    try:
+        import urllib.request as _ur, json as _json
+        tabs = _json.loads(_ur.urlopen("http://127.0.0.1:9222/json", timeout=5).read())
+        _KEEP = ("creator.xiaohongshu.com", "xiaohongshu.com/new", "xiaohongshu.com/publish")
+        _CLOSE = ("yimg.jp", "doubleclick", "criteo", "recaptcha",
+                  "xiaohongshu.com/explore", "xiaohongshu.com/search_result",
+                  "yahoo.co.jp", "published=true")
+        closed = 0
+        for t in tabs:
+            url = t.get("url", "")
+            if any(k in url for k in _KEEP):
+                continue
+            if any(k in url for k in _CLOSE):
+                try:
+                    _ur.urlopen(f"http://127.0.0.1:9222/json/close/{t['id']}", timeout=3)
+                    closed += 1
+                except Exception:
+                    pass
+        if closed:
+            logger.info(f"已关闭 {closed} 个残留 tab")
+    except Exception as e:
+        logger.warning(f"清理 tab 失败: {e}")
+
     if ok:
         logger.info("=== 抓取完成 ===")
     else:

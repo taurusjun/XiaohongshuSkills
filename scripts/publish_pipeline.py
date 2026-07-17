@@ -229,6 +229,39 @@ def _select_topics(
             })()
         """)
 
+    # Override visibilityState so Vue event handlers process keyboard events
+    # when Chrome window has no active display (e.g. VNC disconnected).
+    publisher._evaluate("""
+        Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
+        Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    """)
+
+    # Scroll editor into viewport so keyboard events and dropdown clicks land correctly.
+    publisher._evaluate("""
+        var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+        if (e) e.scrollIntoView({block: 'center', behavior: 'instant'});
+    """)
+    time.sleep(0.3)
+
+    # Mouse click on editor center — required to actually activate the editor
+    # for keyboard input. JS focus() alone is insufficient without VNC.
+    editor_rect = publisher._evaluate("""
+        (function(){
+            var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+            if (!e) return null;
+            var r = e.getBoundingClientRect();
+            return {x: r.x + r.width/2, y: r.y + r.height/2};
+        })()
+    """)
+    if editor_rect:
+        for ev in ("mousePressed", "mouseReleased"):
+            publisher._send("Input.dispatchMouseEvent", {
+                "type": ev, "x": editor_rect["x"], "y": editor_rect["y"],
+                "button": "left", "clickCount": 1,
+            })
+        time.sleep(0.2)
+
     _focus_editor_end()
     time.sleep(0.2)
 
@@ -253,8 +286,22 @@ def _select_topics(
         suggest_wait = _jitter_seconds(1.5, timing_jitter, minimum_seconds=1.0)
         time.sleep(suggest_wait)
 
-        # Confirm with Space — XHS converts #tag<space> to a tiptap-topic chip
-        _type_char(" ")
+        # Confirm: use JS element.click() on the first matching .item in the dropdown.
+        # dispatchMouseEvent and ArrowDown+Enter are unreliable without an active display.
+        # JS click() reliably triggers Vue's click handler regardless of visibility state.
+        tag_keyword = normalized_tag
+        clicked = publisher._evaluate(f"""
+            (function() {{
+                var items = Array.from(document.querySelectorAll('.item'));
+                for (var el of items) {{
+                    if (el.offsetParent && el.innerText && el.innerText.includes({repr(tag_keyword)})) {{
+                        el.click();
+                        return true;
+                    }}
+                }}
+                return false;
+            }})()
+        """)
         time.sleep(_jitter_seconds(0.4, timing_jitter, minimum_seconds=0.2))
 
         print(f"[pipeline] Topic selected: {tag}")
