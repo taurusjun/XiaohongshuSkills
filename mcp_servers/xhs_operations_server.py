@@ -231,3 +231,206 @@ def update_dim_weights(weights: dict) -> dict:
 
 if __name__ == "__main__":
     mcp.run()
+
+
+
+# ============ HTTP API 端点对齐工具（http://192.168.0.70:5000/） ============
+# 这些工具与 webapp API 端点一一对应，方便外部 skill 调用
+
+@mcp.tool(name="xhs_list_news")
+def xhs_list_news(
+    date_from: str = "",
+    date_to: str = "",
+    status: str = "active",
+    sort_by: str = "created_at",
+    sort_dir: str = "DESC",
+    limit: int = 50,
+    offset: int = 0,
+    category: str = "",
+    publish_xhs: str = "",
+    fmt: str = "",
+    score_min: str = "",
+    fetch_by: str = "",
+    preselected: str = "",
+    search: str = "",
+) -> dict:
+    """对应 GET /api/news — 拉取素材列表。
+
+    参数：
+      date_from/date_to: YYYY-MM-DD，留空不限
+      status: active|archived|published
+      sort_by: created_at|title_score|content_score|pub_time|title
+      sort_dir: DESC|ASC
+      limit: 1-500
+      offset: 分页偏移
+      search: 关键词
+      其他过滤：category/publish_xhs/fmt/score_min/fetch_by/preselected
+    返回：{rows: [...], total, today, pending, published}
+    """
+    try:
+        rows = query_news(
+            date_from=date_from, date_to=date_to, category=category,
+            status=status, search=search, publish_xhs=publish_xhs,
+            fmt=fmt, score_min=score_min, fetch_by=fetch_by,
+            preselected=preselected, sort_by=sort_by, sort_dir=sort_dir,
+            limit=min(limit, 500), offset=offset,
+        )
+        total = len(query_news(
+            date_from=date_from, date_to=date_to, category=category,
+            status=status, search=search, publish_xhs=publish_xhs,
+            fmt=fmt, score_min=score_min, fetch_by=fetch_by,
+            preselected=preselected, sort_by=sort_by, sort_dir=sort_dir,
+            limit=10000,
+        ))
+        return _ok({"rows": rows, "total": total})
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_get_news")
+def xhs_get_news(news_key: str) -> dict:
+    """对应 GET /api/news/<key> — 读取单条素材详情（含 score_dims）。
+
+    参数：
+      news_key: SHA1 形式的素材 key
+    返回：news 全字段 + score_dims 数组
+    """
+    try:
+        article = get_by_key(news_key)
+        if not article:
+            return _error("NOT_FOUND", f"Article {news_key} not found")
+        dims = get_score_dims(news_key)
+        result = dict(article)
+        result["score_dims"] = [dict(d) for d in dims]
+        return _ok(result)
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_update_news")
+def xhs_update_news(news_key: str, fields: dict) -> dict:
+    """对应 PUT /api/news/<key> — 更新素材字段（标题/分级/标签/状态等）。
+
+    参数：
+      news_key: 素材 key
+      fields: 要更新的字段 dict
+    常用字段：title, title_zh, content, summary, comment, tags, status,
+              publish_xhs, category, score_dims, fetch_by
+    返回：{ok: true}
+    """
+    try:
+        update_news(news_key, fields)
+        return _ok()
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_score_dim")
+def xhs_score_dim(news_key: str, dimension: str, human_value: float, override_note: str = "") -> dict:
+    """对应 PUT /api/score-dim/<key>/<dim> — 人工覆盖评分维度值。
+
+    参数：
+      news_key: 素材 key
+      dimension: 维度名（如 freshness/topic_fit/emotion/format_match）
+      human_value: 0 | 0.5 | 1
+      override_note: 说明（可选）
+    返回：{ok: true, scores: [...]} 重算后的评分
+    """
+    if human_value not in (0, 0.5, 1):
+        return _error("INVALID_VALUE", "human_value must be 0, 0.5, or 1")
+    try:
+        from scripts.sqlite_db import _connect
+        with _connect() as db:
+            existing = db.execute(
+                "SELECT value FROM score_dims WHERE news_key=? AND dimension=?",
+                (news_key, dimension),
+            ).fetchone()
+            if not existing:
+                return _error("NOT_FOUND", f"Dimension {dimension} not found for {news_key}")
+            db.execute(
+                "UPDATE score_dims SET llm_value=value, human_value=?, human_override=1, "
+                "override_note=?, value=? WHERE news_key=? AND dimension=?",
+                (human_value, override_note, human_value, news_key, dimension),
+            )
+        scores = recalculate_scores(news_key)
+        return _ok(scores)
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_metrics_history")
+def xhs_metrics_history(news_key: str) -> dict:
+    """对应 GET /api/metrics-history/<key> — 读取发布后 72 个反馈快照。
+
+    返回：{snapshots: [{collected_at, views, likes, saves, comments, impression, click_rate}], count}
+    """
+    try:
+        from scripts.sqlite_db import _connect
+        with _connect() as db:
+            rows = db.execute(
+                "SELECT collected_at, views, likes, saves, comments, impression, click_rate "
+                "FROM metrics_history WHERE news_key=? ORDER BY collected_at ASC LIMIT 72",
+                (news_key,),
+            ).fetchall()
+        return _ok({"snapshots": [dict(r) for r in rows], "count": len(rows)})
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_search_news")
+def xhs_search_news(
+    search: str,
+    date_from: str = "",
+    date_to: str = "",
+    status: str = "active",
+    sort_by: str = "created_at",
+    sort_dir: str = "DESC",
+    limit: int = 50,
+) -> dict:
+    """对应 GET /api/news?search=... — 跨时间关联搜索素材。
+
+    参数：
+      search: 关键词
+      date_from/date_to: YYYY-MM-DD 可选
+      status: active|archived|published
+      limit: 1-500
+    返回：{rows: [...], total}
+    """
+    try:
+        rows = query_news(
+            date_from=date_from, date_to=date_to,
+            status=status, search=search,
+            sort_by=sort_by, sort_dir=sort_dir, limit=min(limit, 500),
+        )
+        total = len(query_news(
+            date_from=date_from, date_to=date_to,
+            status=status, search=search,
+            sort_by=sort_by, sort_dir=sort_dir, limit=10000,
+        ))
+        return _ok({"rows": rows, "total": total})
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
+@mcp.tool(name="xhs_trigger_publish")
+def xhs_trigger_publish() -> dict:
+    """对应 POST /api/trigger-publish — 触发发布任务。
+
+    实现走 HTTP（避免 webapp 内部状态机）。返回 {ok: true, response: {...}}
+    若已有任务在跑：返回 {ok: true, response: {locked: true, msg: "..."}}
+    """
+    import os
+    base = os.environ.get("XHS_WEBAPI_BASE", "http://192.168.0.70:5000")
+    try:
+        import requests
+        r = requests.post(f"{base}/api/trigger-publish", timeout=10)
+        return _ok({"response": r.json()})
+    except Exception as e:
+        return _error("HTTP_ERROR", str(e))
+
+
+if __name__ == "__main__":
+    mcp.run()
+
+if __name__ == '__main__':
+    mcp.run()

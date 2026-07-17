@@ -2,12 +2,16 @@
   "mcpServers": {
     "xhs-operations": {
       "command": ".venv/bin/python",
-      "args": ["mcp_servers/xhs_operations_server.py"],
+      "args": [
+        "mcp_servers/xhs_operations_server.py"
+      ],
       "cwd": "/Users/user/PG/XiaohongshuSkills"
     },
     "xhs-llm": {
       "command": ".venv/bin/python",
-      "args": ["mcp_servers/xhs_llm_server.py"],
+      "args": [
+        "mcp_servers/xhs_llm_server.py"
+      ],
       "cwd": "/Users/user/PG/XiaohongshuSkills"
     }
   }
