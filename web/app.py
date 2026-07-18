@@ -3219,5 +3219,93 @@ def api_collect_metrics_batch():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+
+# ============ MCP HTTP Bridge for external LLM (function calling) ============
+# GET /mcp/tools            — 返回 OpenAI function-calling 兼容的 functions 列表
+# POST /mcp/tools/<name>    — 调用 MCP 工具，body = arguments dict
+# GET /mcp/openapi.json     — OpenAPI 3.0 spec
+
+@app.route('/mcp/tools', methods=['GET'])
+def mcp_list_tools():
+    """List all MCP tools (OpenAI function calling format)"""
+    import asyncio
+    from mcp_servers.xhs_operations_server import mcp
+    try:
+        tools = asyncio.run(mcp.list_tools())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    functions = []
+    for t in tools:
+        if t.name in ("xhs_list_news", "xhs_get_news", "xhs_update_news",
+                       "xhs_score_dim", "xhs_metrics_history", "xhs_search_news",
+                       "xhs_trigger_publish"):
+            functions.append({
+                "name": t.name,
+                "description": t.description or "",
+                "parameters": t.parameters or {"type": "object", "properties": {}},
+            })
+    return jsonify({"functions": functions, "count": len(functions)})
+
+
+@app.route('/mcp/tools/<name>', methods=['POST'])
+def mcp_call_tool(name):
+    """调用指定 MCP 工具，body = arguments dict"""
+    import asyncio
+    from mcp_servers.xhs_operations_server import mcp
+    data = request.get_json(silent=True) or {}
+    # 支持两种格式：直接 {arg1: v1, arg2: v2} 或 {"arguments": {...}}
+    arguments = data.get("arguments", data)
+    try:
+        result = asyncio.run(mcp.call_tool(name, arguments))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    # ToolResult.content 是 TextContent 列表，取第一个 .text 作为 JSON
+    try:
+        content = result.content[0].text if result.content else "{}"
+        parsed = json.loads(content)
+        return jsonify(parsed)
+    except Exception:
+        # 非 JSON，直接返回文本
+        return jsonify({"raw": content if 'content' in locals() else None})
+
+
+@app.route('/mcp/openapi.json', methods=['GET'])
+def mcp_openapi_spec():
+    """生成 OpenAPI 3.0 spec"""
+    import asyncio
+    from mcp_servers.xhs_operations_server import mcp
+    tools = asyncio.run(mcp.list_tools())
+    paths = {}
+    for t in tools:
+        if t.name not in ("xhs_list_news", "xhs_get_news", "xhs_update_news",
+                          "xhs_score_dim", "xhs_metrics_history", "xhs_search_news",
+                          "xhs_trigger_publish"):
+            continue
+        paths[f"/mcp/tools/{t.name}"] = {
+            "post": {
+                "summary": t.description or "",
+                "operationId": t.name,
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": t.parameters or {"type": "object", "properties": {}}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "工具返回值"}
+                }
+            }
+        }
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "XHS Operations MCP", "version": "1.0.0",
+                  "description": "HTTP bridge for external LLM to call MCP tools"},
+        "paths": paths,
+    }
+    return jsonify(spec)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
