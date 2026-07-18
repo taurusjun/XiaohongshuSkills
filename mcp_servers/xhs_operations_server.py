@@ -412,6 +412,26 @@ def xhs_search_news(
         return _error("DB_ERROR", str(e))
 
 
+@mcp.tool(name="xhs_set_grade")
+def xhs_set_grade(news_key: str, grade: str, reason: str = "") -> dict:
+    """设置文章分级（A/B/C/D）— 专用写入工具，只能改 grade 字段。
+
+    参数：
+      news_key: 素材 key
+      grade: 'A' | 'B' | 'C' | 'D' | '' (空字符串清除分级)
+      reason: 分级理由（可选，记录到 grade_reason 字段）
+    返回：{ok: true}
+    """
+    valid_grades = {"A", "B", "C", "D", ""}
+    if grade not in valid_grades:
+        return _error("INVALID_VALUE", f"grade must be one of {valid_grades}")
+    try:
+        update_news(news_key, {"grade": grade, "grade_reason": reason})
+        return _ok({"grade": grade, "reason": reason})
+    except Exception as e:
+        return _error("DB_ERROR", str(e))
+
+
 @mcp.tool(name="xhs_trigger_publish")
 def xhs_trigger_publish() -> dict:
     """对应 POST /api/trigger-publish — 触发发布任务。
