@@ -439,6 +439,8 @@ if _os.environ.get("XHS_DISABLE_WRITE_TOOLS") == "1":
         "override_dim_score",
         "batch_update_articles",
         "update_dim_weights",
+        "xhs_update_news",
+        "run_reflection",
     })
 
 
