@@ -229,6 +229,79 @@ def update_dim_weights(weights: dict) -> dict:
         return _error("DB_ERROR", str(e))
 
 
+@mcp.tool(name="xhs_send_review")
+def xhs_send_review(content: str, chat_id: str = "") -> dict:
+    """将每日素材 review 报告的 Markdown 内容分段发送到 Telegram。
+
+    参数：
+      content  — 完整 Markdown 内容（非文件路径）
+      chat_id  — 可选，指定 Telegram chat ID；为空时使用默认配置
+
+    返回：{"ok": true, "segments": N} 或 {"error": true, "message": "..."}
+    """
+    import re, json, os, tempfile, subprocess, sys
+    from pathlib import Path
+
+    # 读取 bot_token
+    TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not TOKEN:
+        try:
+            cfg_text = (Path.home() / ".hermes/config.yaml").read_text()
+            m = re.search(r"bot_token:\s*(\S+)", cfg_text)
+            TOKEN = m.group(1) if m else ""
+        except Exception:
+            pass
+    if not TOKEN:
+        return _error("NO_TOKEN", "TELEGRAM_BOT_TOKEN not set")
+
+    # 読取 chat_id
+    effective_chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not effective_chat_id:
+        try:
+            raw = json.loads((Path.home() / ".hermes/cron/jobs.json").read_text())
+            jobs = raw if isinstance(raw, list) else raw.get("jobs", [])
+            for j in jobs:
+                if isinstance(j, dict):
+                    o = j.get("origin")
+                    if isinstance(o, dict):
+                        cid = o.get("chat_id", "")
+                        if cid:
+                            effective_chat_id = cid
+                            break
+        except Exception:
+            pass
+    if not effective_chat_id:
+        return _error("NO_CHAT_ID", "chat_id not provided and TELEGRAM_CHAT_ID not set")
+
+    # 写临时文件，复用 segment-send.py 的完整逻辑
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(content)
+        tmp_path = f.name
+
+    try:
+        script = str(Path.home() /
+            ".hermes/skills/creative/xhs-daily-material-review/scripts/segment-send.py")
+        env = os.environ.copy()
+        env["TELEGRAM_BOT_TOKEN"] = TOKEN
+        env["TELEGRAM_CHAT_ID"] = effective_chat_id
+
+        result = subprocess.run(
+            [sys.executable, script, tmp_path, effective_chat_id],
+            capture_output=True, text=True, timeout=120, env=env
+        )
+        if result.returncode != 0:
+            return _error("SEND_FAILED", result.stderr[:500])
+
+        segments = result.stdout.count(" OK")
+        return _ok({"segments": segments, "stdout": result.stdout[-200:]})
+    except Exception as e:
+        return _error("EXCEPTION", str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     mcp.run()
 
@@ -462,6 +535,7 @@ if _os.environ.get("XHS_DISABLE_WRITE_TOOLS") == "1":
         "xhs_update_news",
         "run_reflection",
     })
+
 
 
 if __name__ == "__main__":
