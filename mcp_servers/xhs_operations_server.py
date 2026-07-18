@@ -429,8 +429,21 @@ def xhs_trigger_publish() -> dict:
         return _error("HTTP_ERROR", str(e))
 
 
-if __name__ == "__main__":
-    mcp.run()
+# 根据环境变量 XHS_DISABLE_WRITE_TOOLS=1 隐藏所有写工具
+# fastmcp 推荐用 mcp.disable(names=...) 注册 Visibility transform，模块加载时同步调用
+import os as _os
+if _os.environ.get("XHS_DISABLE_WRITE_TOOLS") == "1":
+    mcp.disable(names={
+        "update_article_status",
+        "activate_dimension_version",
+        "override_dim_score",
+        "batch_update_articles",
+        "update_dim_weights",
+        "xhs_update_news",
+        "xhs_score_dim",
+        "xhs_trigger_publish",
+    })
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     mcp.run()
