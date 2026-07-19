@@ -16,7 +16,7 @@ GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.c
 FETCH_PARALLEL = int(os.environ.get("FETCH_PARALLEL", "3"))
 
 # 代理配置
-# 代理地址统一在 scripts/.env 维护（HTTP_PROXY=http://127.0.0.1:20808）
+# 代理地址统一在 scripts/.env 维护（HTTP_PROXY=http://127.0.0.1:20809）
 # 其他脚本通过以下函数或变量获取，不要在代码里硬编码端口号
 
 def _load_env():
