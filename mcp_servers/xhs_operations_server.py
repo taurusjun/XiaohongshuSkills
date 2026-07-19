@@ -489,13 +489,6 @@ def xhs_search_news(
             status=status, search=search,
             sort_by=sort_by, sort_dir=sort_dir, limit=10000,
         ))
-        if keys:
-            key_set = set(k.strip() for k in keys.split(",") if k.strip())
-            rows = [r for r in rows if r.get("key") in key_set]
-            total = len(rows)
-        if fields:
-            keep = set(f.strip() for f in fields.split(",") if f.strip())
-            rows = [{k: v for k, v in r.items() if k in keep} for r in rows]
         return _ok({"rows": rows, "total": total})
     except Exception as e:
         return _error("DB_ERROR", str(e))
