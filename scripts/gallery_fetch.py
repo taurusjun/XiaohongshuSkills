@@ -108,6 +108,7 @@ GALLERY_SITES: dict[str, str] = {
     "bunshun.jp":          ".photo-area, article",
     "itmedia.co.jp":      ".article-thumb, article",
     "nlab.itmedia.co.jp": ".article-thumb, article",
+    "j-cast.com":         "article, .post-content",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -123,6 +124,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv",
                          "bunshun.jp", "full-count.jp",
                          "itmedia.co.jp", "nlab.itmedia.co.jp",
+                         "j-cast.com",
                          "news.ntv.co.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
@@ -2666,6 +2668,12 @@ def _scrape_itmedia(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_jcast(gallery_url: str) -> list[str]:
+    """j-cast.com 图集（独立脚本 scripts/scrapers/jcast_dl.py）"""
+    from scrapers.jcast_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_asahi(gallery_url: str) -> list[str]:
     """asahi.com 图集（独立脚本 scripts/scrapers/asahi_dl.py）"""
     from scrapers.asahi_dl import scrape
@@ -3029,6 +3037,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "itmedia.co.jp" in domain:
         images = _scrape_itmedia(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "j-cast.com" in domain:
+        images = _scrape_jcast(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "newsdig.tbs.co.jp" in domain:
