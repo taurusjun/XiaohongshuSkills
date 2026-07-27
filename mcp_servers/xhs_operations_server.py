@@ -342,6 +342,10 @@ def xhs_list_news(
       其他过滤：category/publish_xhs/fmt/score_min/fetch_by/preselected
     返回：{rows: [...], total, today, pending, published}
     """
+    # 不允许不传任何过滤条件 — status 默认值不算过滤条件。防止全表扫描。
+    if not any([date_from, date_to, publish_xhs, search, category,
+                fetch_by, preselected, keys, fmt, score_min]):
+        return _error("NO_FILTER", "xhs_list_news 不允许不传任何过滤条件。必须至少传 date_from / keys / publish_xhs / search / category / fetch_by / preselected 之一。status 默认值不算过滤条件。")
     try:
         rows = query_news(
             date_from=date_from, date_to=date_to, category=category,
