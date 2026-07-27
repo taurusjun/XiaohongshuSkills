@@ -468,6 +468,7 @@ def xhs_search_news(
     sort_by: str = "created_at",
     sort_dir: str = "DESC",
     limit: int = 50,
+    fields: str = "",
 ) -> dict:
     """对应 GET /api/news?search=... — 跨时间关联搜索素材。
 
@@ -476,6 +477,8 @@ def xhs_search_news(
       date_from/date_to: YYYY-MM-DD 可选
       status: active|archived|published
       limit: 1-500
+      fields: 逗号分隔字段列表，只返回指定字段（如 "key,title,title_score,pub_time"）。
+              留空返回全字段（含 content/content_ja 全文，体积大，慎用）。
     返回：{rows: [...], total}
     """
     try:
@@ -489,6 +492,9 @@ def xhs_search_news(
             status=status, search=search,
             sort_by=sort_by, sort_dir=sort_dir, limit=10000,
         ))
+        if fields:
+            keep = set(f.strip() for f in fields.split(",") if f.strip())
+            rows = [{k: v for k, v in r.items() if k in keep} for r in rows]
         return _ok({"rows": rows, "total": total})
     except Exception as e:
         return _error("DB_ERROR", str(e))
