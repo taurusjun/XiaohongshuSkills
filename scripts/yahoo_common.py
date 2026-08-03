@@ -1279,14 +1279,35 @@ def generate_title_only(title_ja: str, content_ja: str,
     result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9, thinking_disabled=False)
     if not result:
         return ""
+    # 占位符黑名单：prompt 模板里的示例字段值，LLM 思考过程可能原样回吐
+    placeholder_blacklist = {"生成的中文标题", "标题", ""}
+    # 思考段污染检测：result 里出现 prompt 模板示例片段，且长度异常 → 视为回吐而非生成
+    if "生成的中文标题" in result and len(result) > 200:
+        msg = f"generate_title_only 检测到 prompt 回吐（思考污染）— title_ja={title_ja[:60]} | result_len={len(result)} | preview={result[:400]!r}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return ""
     # 解析 JSON
+    title = ""
     try:
         data = _json.loads(result.strip())
-        return data.get("title", "").strip()
+        title = data.get("title", "").strip()
     except Exception:
-        pass
-    m = _re.search(r'"title"\s*:\s*"([^"]+)"', result)
-    return m.group(1).strip() if m else ""
+        m2 = _re.search(r'"title"\s*:\s*"([^"]+)"', result)
+        if m2:
+            title = m2.group(1).strip()
+    if title in placeholder_blacklist:
+        msg = f"generate_title_only 解析出的标题是 prompt 占位符 (title={title!r}) — title_ja={title_ja[:60]}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return ""
+    return title
 
 
 def _build_final_tags(raw_tags: list[str]) -> list[str]:
