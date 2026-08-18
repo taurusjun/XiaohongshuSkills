@@ -1813,8 +1813,19 @@ def _scrape_yorozoonews(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             large_img = ""
             thumb_candidates: list[str] = []
@@ -1910,8 +1921,19 @@ def _scrape_nikkan_spa(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             # 只在正文容器内找图片
             containers = s.select(CONTENT_SELECTOR) or [s]
@@ -2182,8 +2204,19 @@ def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             # 当前页大图：ogre.natalie.mu 域名，排除 thumbnail 参数
             for img in s.find_all("img"):
@@ -2247,8 +2280,19 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             found = False
             for img in s.find_all("img"):

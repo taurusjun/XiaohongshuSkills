@@ -32,22 +32,26 @@ def scrape(gallery_url: str) -> list[str]:
     p = urlparse(gallery_url)
     clean_url = f"{p.scheme}://{p.netloc}{p.path}"
 
+    html = ""
     try:
         for kwargs in [{}, {"proxies": _get_proxies()}]:
             try:
                 resp = requests.get(clean_url, headers=HEADERS, timeout=20, **kwargs)
                 resp.raise_for_status()
+                html = resp.text
                 break
             except Exception:
-                resp = None
                 if kwargs: raise
-        if resp is None:
-            return []
     except Exception as e:
         print(f"  ⚠️ j-cast 获取页面失败: {e}")
+    if not html:
+        # j-cast 拦 Python TLS 指纹，走 CDP 真实浏览器（9223 带代理）
+        from . import cdp_page_html
+        html = cdp_page_html(clean_url, port=9223, wait=20.0)
+    if not html:
         return []
 
-    s = BeautifulSoup(resp.text, "html.parser")
+    s = BeautifulSoup(html, "html.parser")
     seen: set[str] = set()
     images: list[str] = []
 

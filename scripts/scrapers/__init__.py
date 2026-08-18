@@ -52,3 +52,41 @@ def download_images(urls: list[str], out_dir: Path, referer_url: str = "") -> in
         except Exception:
             pass
     return count
+
+
+def cdp_page_html(url: str, port: int = 9222, wait: float = 8.0) -> str:
+    """用 CDP 真实 Chrome 拿渲染后的页面 HTML，用于拦截 requests 的站点（WAF 人机验证 / TLS 指纹）。
+    新开 tab 不复用已有 tab，取完关闭。失败返回空字符串。"""
+    import json as _json
+    import time as _time
+    try:
+        import websocket
+    except ImportError:
+        print("  ⚠️ 需要安装: pip install websocket-client")
+        return ""
+    try:
+        r = requests.put(f"http://127.0.0.1:{port}/json/new?{url}", timeout=10)
+        tab_id = r.json()["id"]
+        _time.sleep(wait)
+        tabs = requests.get(f"http://127.0.0.1:{port}/json", timeout=5).json()
+        tab = next((t for t in tabs if t["id"] == tab_id), None)
+        if not tab:
+            return ""
+        ws = websocket.create_connection(tab["webSocketDebuggerUrl"], timeout=15)
+        ws.send(_json.dumps({"id": 1, "method": "Runtime.evaluate",
+                             "params": {"expression": "document.documentElement.outerHTML"}}))
+        html = ""
+        while True:
+            msg = _json.loads(ws.recv())
+            if msg.get("id") == 1:
+                html = msg.get("result", {}).get("result", {}).get("value", "") or ""
+                break
+        ws.close()
+        try:
+            requests.get(f"http://127.0.0.1:{port}/json/close/{tab_id}", timeout=5)
+        except Exception:
+            pass
+        return html
+    except Exception as e:
+        print(f"  ⚠️ CDP 取页失败: {e}")
+        return ""
