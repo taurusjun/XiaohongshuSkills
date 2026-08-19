@@ -2902,6 +2902,11 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         images = _scrape_natalie_gallery(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
+    if "bezzy.jp" in domain:
+        from scrapers.bezzy_dl import scrape as _bezzy_scrape
+        images = _bezzy_scrape(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "news.ntv.co.jp" in domain:
         from scrapers.ntv_dl import scrape as _ntv_scrape
         images = _ntv_scrape(gallery_url)

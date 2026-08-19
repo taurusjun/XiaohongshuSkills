@@ -65,7 +65,8 @@ def cdp_page_html(url: str, port: int = 9222, wait: float = 8.0) -> str:
         print("  ⚠️ 需要安装: pip install websocket-client")
         return ""
     try:
-        r = requests.put(f"http://127.0.0.1:{port}/json/new?{url}", timeout=10)
+        from urllib.parse import quote as _quote
+        r = requests.put(f"http://127.0.0.1:{port}/json/new?{_quote(url, safe='')}", timeout=10)
         tab_id = r.json()["id"]
         _time.sleep(wait)
         tabs = requests.get(f"http://127.0.0.1:{port}/json", timeout=5).json()
