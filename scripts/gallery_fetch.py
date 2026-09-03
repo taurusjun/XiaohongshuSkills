@@ -66,6 +66,7 @@ GALLERY_SITES: dict[str, str] = {
     "billboard-japan.com":  ".article-photo, article",
     "iza.ne.jp":             "main, article",
     "crank-in.net":         ".photo-link-img",
+    "bezzy.jp":              "main, article",
     "limo.media":           "article, .article-body",
     "mezamashi.media":      "article, .gallery-body",
     "smart-flash.jp":       ".imageArea, article",
