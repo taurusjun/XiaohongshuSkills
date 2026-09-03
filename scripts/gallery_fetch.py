@@ -336,10 +336,15 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://www.crank-in.net/"}
     ssl_kwargs = {"verify": False}  # crank-in has SSL EOF issue with Python 3.14
 
-    # 先去掉 query string，再截掉末尾页码
+    # 先去掉 query string；URL 可能是 .../<id> 或 .../<id>/<page>
+    # 只有末尾是「短页码且前面还有数字 ID」时才截，避免把纯 ID 当页码删掉
     p = urlparse(gallery_url)
     clean_url = urlunparse(p._replace(query="", fragment="")).rstrip("/")
-    base = re.sub(r'/\d+$', '', clean_url)
+    m = re.search(r'/(\d+)/(\d{1,3})$', clean_url)
+    if m:
+        base = clean_url[:clean_url.rfind("/")]  # 截掉末尾页码，保留 /<id>
+    else:
+        base = clean_url  # 末尾就是 gallery ID，无页码
 
     # 先取第一页获取总页数
     resp = requests.get(f"{base}/1", headers=headers, proxies=_get_proxies(), timeout=15, **ssl_kwargs)
