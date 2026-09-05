@@ -455,9 +455,21 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://mezamashi.media/"}
     images = []
 
+    html = ""
     try:
         r = requests.get(clean_url, headers=headers, proxies=_get_proxies(), timeout=15)
-        s = BeautifulSoup(r.text, "html.parser")
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        print(f"  ⚠️ mezamashi requests 失败: {e}")
+    if not html:
+        # mezamashi 拦 Python TLS 指纹（SSL EOF），走 CDP 真实浏览器（9223 带代理）
+        from scrapers import cdp_page_html
+        html = cdp_page_html(clean_url, port=9223, wait=12.0)
+    if not html:
+        return images
+    try:
+        s = BeautifulSoup(html, "html.parser")
 
         # 找所有 data-src 包含 ismcdn.jp/img 的图片
         for img in s.find_all("img"):
