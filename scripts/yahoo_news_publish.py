@@ -461,16 +461,30 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
                         try:
                             import tempfile, requests as _req
                             tmp = os.path.join(tempfile.gettempdir(), 'xhs_pub_' + os.path.basename(u.split('?')[0]))
-                            if not os.path.exists(tmp):
+                            if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
                                 r = _req.get(u, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+                                r.raise_for_status()
                                 with open(tmp, 'wb') as f: f.write(r.content)
                             local_paths.append(tmp)
-                        except Exception:
-                            print(f"  ⚠️ 下载失败: {u[:60]}")
+                        except Exception as e:
+                            msg = f"图片下载失败: {u[:80]} — {e}"
+                            print(f"  ⚠️ {msg}")
+                            try:
+                                from sqlite_db import _log_db_error
+                                _log_db_error(msg)
+                            except Exception: pass
                     else:
                         local_paths.append(u)
-                cmd += ["--images"] + local_paths
-                print(f"  配图 {len(local_paths)} 张: {os.path.basename(local_paths[0])}...")
+                if local_paths:
+                    cmd += ["--images"] + local_paths
+                    print(f"  配图 {len(local_paths)} 张: {os.path.basename(local_paths[0])}...")
+                else:
+                    msg = f"全部配图下载失败（{len(effective_urls)} 张），本次发布无配图"
+                    print(f"  ⚠️ {msg}")
+                    try:
+                        from sqlite_db import _log_db_error
+                        _log_db_error(msg)
+                    except Exception: pass
             else:
                 cmd += ["--image-urls"] + effective_urls
                 print(f"  配图 {len(effective_urls)} 张(URL): {effective_urls[0][:60]}...")
