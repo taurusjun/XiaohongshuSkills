@@ -4999,6 +4999,53 @@ class XiaohongshuPublisher:
             })
             time.sleep(0.05)
 
+    def _click_publish_button_inner(self) -> bool:
+        """直接对闭合 shadow DOM 里的真按钮调 .click()。
+
+        xhs-publish-btn 的按钮位于闭合 shadow root 内，页面 JS 拿不到；但 CDP 的
+        DOM.describeNode(pierce=True) 能穿透找到它，DOM.resolveNode 拿到 JS 句柄后
+        直接调 .click()。比合成坐标鼠标事件可靠得多（后者对 shadow DOM 按钮经常
+        不被 Vue 接受）。
+        """
+        try:
+            self._send("DOM.enable")
+            doc = self._send("DOM.getDocument", {"depth": 1})
+            host_ids = self._send("DOM.querySelectorAll", {
+                "nodeId": doc["root"]["nodeId"],
+                "selector": SELECTORS["publish_button"],
+            }).get("nodeIds", [])
+            if not host_ids:
+                return False
+            desc = self._send("DOM.describeNode", {
+                "nodeId": host_ids[0], "depth": -1, "pierce": True,
+            })
+            shadow_roots = desc["node"].get("shadowRoots", [])
+            if not shadow_roots:
+                return False
+            inner_ids = self._send("DOM.querySelectorAll", {
+                "nodeId": shadow_roots[0]["nodeId"],
+                "selector": ".ce-btn.bg-red",
+            }).get("nodeIds", [])
+            if not inner_ids:
+                return False
+            resolved = self._send("DOM.resolveNode", {"nodeId": inner_ids[0]})
+            object_id = resolved.get("object", {}).get("objectId")
+            if not object_id:
+                return False
+            result = self._send("Runtime.callFunctionOn", {
+                "objectId": object_id,
+                "functionDeclaration": "function(){ this.click(); return true; }",
+                "returnByValue": True,
+            })
+            try:
+                self._send("Runtime.releaseObject", {"objectId": object_id})
+            except Exception:
+                pass
+            return bool(result and result.get("result", {}).get("value"))
+        except Exception as e:
+            print(f"[cdp_publish] inner publish click failed: {e}")
+            return False
+
     def _click_publish(self, scheduled: bool = False):
         """Click the publish button using CDP mouse events."""
         print("[cdp_publish] Clicking publish button...")
@@ -5028,28 +5075,57 @@ class XiaohongshuPublisher:
 
         cx = rect["x"] + rect["width"] / 2
         cy = rect["y"] + rect["height"] / 2
-        print(f"[cdp_publish] Clicking publish button at ({cx:.0f}, {cy:.0f})...")
-        self._click_mouse(cx, cy)
-        print("[cdp_publish] Publish button clicked.")
 
-        # Wait for publish success and get note link
-        self._sleep(5, minimum_seconds=2.0)
-        note_link = self._evaluate("""
-            (function() {
-                // Try to find note link in success message
-                var links = document.querySelectorAll('a[href*="xiaohongshu.com/explore"]');
-                if (links.length > 0) {
-                    return links[0].href;
-                }
-                // Try to find note ID in page
-                var noteId = document.body.textContent.match(/\\b[0-9a-fA-F]{24}\\b/);
-                if (noteId) {
-                    return 'https://www.xiaohongshu.com/explore/' + noteId[0];
-                }
-                return null;
-            })();
-        """)
+        # 优先直接对闭合 shadow DOM 里的真按钮调 .click()；坐标点击仅作兜底。
+        if self._click_publish_button_inner():
+            print("[cdp_publish] Publish button clicked (inner shadow DOM .click()).")
+        else:
+            print(f"[cdp_publish] Inner click unavailable; falling back to coordinate click at ({cx:.0f}, {cy:.0f})...")
+            self._click_mouse(cx, cy)
+            print("[cdp_publish] Publish button clicked (coordinate).")
 
+        # 等发布生效：抓到笔记链接 / URL 出现 published=true / 按钮进入 loading。
+        # 只以「页面是否真的有反应」为准，不再无条件认为成功。
+        note_link = None
+        reacted = False
+        deadline = time.time() + 15.0
+        while time.time() < deadline:
+            self._sleep(1.0, minimum_seconds=0.5)
+            raw = self._evaluate("""
+                (function() {
+                    var links = document.querySelectorAll('a[href*="xiaohongshu.com/explore"]');
+                    var btn = document.querySelector('xhs-publish-btn');
+                    var noteId = document.body.textContent.match(/\\b[0-9a-fA-F]{24}\\b/);
+                    return JSON.stringify({
+                        link: links.length ? links[0].href : null,
+                        noteId: noteId ? noteId[0] : null,
+                        url: location.href,
+                        loading: btn ? btn.getAttribute('submit-loading') : null
+                    });
+                })();
+            """)
+            try:
+                info = json.loads(raw) if raw else {}
+            except Exception:
+                info = {}
+            if info.get("link"):
+                note_link = info["link"]
+                reacted = True
+                break
+            if info.get("noteId"):
+                note_link = "https://www.xiaohongshu.com/explore/" + info["noteId"]
+                reacted = True
+                break
+            if "published=true" in (info.get("url") or ""):
+                reacted = True
+                break
+            if str(info.get("loading")).lower() == "true":
+                reacted = True
+
+        if reacted:
+            print("[cdp_publish] Publish action took effect (page reacted).")
+        else:
+            print("[cdp_publish] WARNING: no publish reaction detected within 15s - click may not have registered.")
         return note_link
 
     # ------------------------------------------------------------------
