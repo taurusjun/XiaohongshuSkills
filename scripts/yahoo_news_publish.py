@@ -492,7 +492,7 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
             print(f"  ⚠️ 未找到封面图，发布可能失败")
 
     print(f"  执行发布命令...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
     if result.returncode == 0:
         # 打印 cdp_publish 的关键进度行，便于追溯

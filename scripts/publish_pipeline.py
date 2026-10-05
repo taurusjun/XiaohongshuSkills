@@ -163,6 +163,10 @@ def _extract_topic_tags_from_last_line(content: str) -> tuple[str, list[str]]:
     return body, parts
 
 
+# 话题名允许的字符：字母/数字/下划线/中日韩字符 + 长音符 ー
+_SAFE_TAG_RE = re.compile(r"^[\w\u30fc]+$")
+
+
 def _verify_local_files_exist(
     file_paths: list[str],
     media_label: str,
@@ -373,8 +377,8 @@ def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
             _type_char(publisher, ch)
 
         clicked = None
-        deadline = time.time() + 6.0
-        nudge_at = time.time() + 2.0
+        deadline = time.time() + 3.0
+        nudge_at = time.time() + 1.5
         nudged = False
         while time.time() < deadline:
             try:
@@ -419,23 +423,59 @@ def _topic_from_api_response(body, name):
     return None
 
 
-def _select_topic_by_api(publisher, name, attempts=3):
+def _parse_topic_list(body):
+    """把 search/topics 响应体解析成 topic_info_dto 列表。"""
+    try:
+        return [x.get("topic_info_dto")
+                for x in (json.loads(body).get("data", {}).get("topics") or [])
+                if x.get("topic_info_dto")]
+    except Exception:
+        return []
+
+
+def _cache_recommend_topics(publisher):
+    """把发布页「推荐话题」组件里的 tagId 收进缓存。
+
+    纯 DOM 读取 —— 零键盘、零 API、零等待。已验证：推荐组件的 tagId 就是 chip 的 data.id。
+    """
+    try:
+        raw = publisher._evaluate("""JSON.stringify(Array.from(
+            document.querySelectorAll('.tag-group span.tag')).map(function(e){
+              var name = (e.innerText || '').trim().replace(/^#/, '');
+              var id = null;
+              try {
+                id = ((JSON.parse(e.getAttribute('data-impression') || '{}').tagTarget || {}).value || {}).tagId || null;
+              } catch (err) {}
+              return {name: name, id: id};
+            }).filter(function(x){ return x.name && x.id; }))""")
+        items = json.loads(raw) if raw else []
+    except Exception:
+        return 0
+    n = 0
+    for it in items:
+        if _SAFE_TAG_RE.match(it["name"]):
+            _topic_cache_put(it["name"], it["id"], "", "recommend")
+            n += 1
+    return n
+
+
+def _select_topic_by_api(publisher, name, attempts=2):
     """敲字触发页面自己发签名请求 → 抓响应拿权威 id → Tiptap 事务插入。
 
-    为什么绕这一圈：search/topics 需要小红书的 X-s / X-S-Common / X-t 签名头，
-    裸 fetch 会被 406 拒绝，只能让页面自己的 JS 去发。
-    为什么不用下拉：下拉项的 innerText 格式不固定（有时 "#名\n328万浏览"、
-    有时连成 "#名328万浏览"），靠 DOM 文字匹配天然脆弱。
+    返回 "ok" / "no_match" / "no_response"。
+    "no_match" = 联想数据里没有精确同名话题；此时敲字路径用的是同一份联想数据，
+    必然同样失败，调用方应直接放弃，不必再跑一遍敲字兜底（省一半时间）。
     """
     before = _count_topic_chips(publisher)
     if before < 0:
-        return False
+        return "no_response"
 
     try:
         publisher._send("Network.enable")
     except Exception:
         pass
 
+    saw_topics = False
     for attempt in range(1, attempts + 1):
         sink = []
         publisher._event_sink = sink
@@ -450,8 +490,14 @@ def _select_topic_by_api(publisher, name, attempts=3):
             for ch in name:
                 _type_char(publisher, ch)
 
-            # 等页面自己把签名请求发出去、响应回来
-            publisher._drain_events(4.0, sink)
+            # 等页面把签名请求发出去、响应回来；一到就停
+            drain_deadline = time.time() + 2.5
+            while time.time() < drain_deadline:
+                publisher._drain_events(0.3, sink)
+                if any(m.get("method") == "Network.responseReceived"
+                       and "search/topics" in ((m.get("params", {}).get("response", {}) or {}).get("url", ""))
+                       for m in sink):
+                    break
 
             request_ids = []
             for m in sink:
@@ -460,7 +506,7 @@ def _select_topic_by_api(publisher, name, attempts=3):
                     if "search/topics" in url:
                         request_ids.append(m["params"]["requestId"])
 
-            topic = None
+            topics = []
             for rid in request_ids:
                 try:
                     r = publisher._send("Network.getResponseBody", {"requestId": rid})
@@ -468,25 +514,28 @@ def _select_topic_by_api(publisher, name, attempts=3):
                     continue
                 body = (r or {}).get("body")
                 if body:
-                    topic = _topic_from_api_response(body, name)
-                    if topic:
+                    topics = _parse_topic_list(body)
+                    if topics:
                         break
 
             _clear_typed(publisher, name)   # 先删掉刚敲进去的 "#name"
 
-            if topic and topic.get("id"):
-                if _insert_topic_via_tiptap(publisher, name, topic["id"], topic.get("link")):
-                    _topic_cache_put(name, topic["id"], topic.get("link"))
-                    return True
-                print("[pipeline] warning: got id from API but insert failed: #%s" % name)
+            if topics:
+                saw_topics = True
+                hit = next((t for t in topics if t.get("name") == name), None)
+                if hit and hit.get("id"):
+                    if _insert_topic_via_tiptap(publisher, name, hit["id"], hit.get("link")):
+                        _topic_cache_put(name, hit["id"], hit.get("link"))
+                        return "ok"
+                    print("[pipeline] warning: got id from API but insert failed: #%s" % name)
         finally:
             publisher._event_sink = None
 
         if attempt < attempts:
             print("[pipeline] retry topic tag #%s via api (attempt %d/%d)" % (name, attempt, attempts))
-        time.sleep(0.4)
+        time.sleep(0.3)
 
-    return False
+    return "no_match" if saw_topics else "no_response"
 
 
 def _select_topics(publisher, tags, timing_jitter=0.25):
@@ -503,10 +552,21 @@ def _select_topics(publisher, tags, timing_jitter=0.25):
         print("[pipeline] warning: editor not found, skip topic tags")
         return
 
+    # 先把「推荐话题」组件里的 tagId 免费收进缓存（纯 DOM 读取，零键盘零 API）
+    n_rec = _cache_recommend_topics(publisher)
+    if n_rec:
+        print("[pipeline] cached %d topic id(s) from recommend widget" % n_rec)
+
     failed_tags = []
+    skipped_tags = []
     for tag in tags:
         name = tag.lstrip("#").strip()
         if not name:
+            continue
+        # 小红书话题名不支持符号（实测 #King&Prince / #swim? 之类必然选不中），
+        # 直接跳过，别把时间浪费在注定失败的重试上。
+        if not _SAFE_TAG_RE.match(name):
+            skipped_tags.append(name)
             continue
 
         cached = _topic_cache_get(name)
@@ -517,16 +577,23 @@ def _select_topics(publisher, tags, timing_jitter=0.25):
         if cached:
             print("[pipeline] warning: cache insert failed, falling back to typing: #%s" % name)
 
-        if _select_topic_by_api(publisher, name, attempts=3):
+        status = _select_topic_by_api(publisher, name, attempts=2)
+        if status == "ok":
             print("[pipeline] Topic selected (api): #%s" % name)
             _cache_topics_from_editor(publisher)
-        elif _select_topic_by_typing(publisher, name, timing_jitter):
+        elif status == "no_match":
+            # 联想里没有精确同名话题 —— 敲字路径用同一份数据，一样找不到，直接放弃
+            failed_tags.append(name)
+            print("[pipeline] Topic NOT selected (no exact match): #%s" % name)
+        elif _select_topic_by_typing(publisher, name, timing_jitter, attempts=2):
             print("[pipeline] Topic selected (typed): #%s" % name)
             _cache_topics_from_editor(publisher)
         else:
             failed_tags.append(name)
             print("[pipeline] Topic NOT selected: #%s" % name)
 
+    if skipped_tags:
+        print("[pipeline] Skipped tags containing symbols: " + ", ".join(skipped_tags))
     if failed_tags:
         print("[pipeline] Warning: Some topic tags were not selected: " + ", ".join(failed_tags))
 
