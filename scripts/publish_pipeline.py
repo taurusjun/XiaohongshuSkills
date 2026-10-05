@@ -856,7 +856,8 @@ def main():
         preserve_upload_paths=args.preserve_upload_paths,
     )
     try:
-        publisher.connect(reuse_existing_tab=reuse_existing_tab)
+        publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
         logged_in = publisher.check_login()
         if not logged_in:
             publisher.disconnect()
@@ -866,14 +867,16 @@ def main():
                     # Auto-fallback: restart Chrome in headed mode for QR login
                     print("[pipeline] Headless mode: not logged in. Switching to headed mode for login...")
                     restart_chrome(port=port, headless=False, account=account)
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                    publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
                     publisher.open_login_page()
                 else:
                     print(
                         "[pipeline] Headless + remote mode: cannot auto-restart remote Chrome. "
                         "Attempting to open login page on existing remote browser..."
                     )
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                    publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
                     publisher.open_login_page()
             else:
                 print("[pipeline] Headless mode: not logged in. Run without --headless to login first.")
