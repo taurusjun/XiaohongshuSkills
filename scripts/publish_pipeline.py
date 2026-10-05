@@ -186,48 +186,30 @@ def _verify_local_files_exist(
 # 话题标签写入（三层：缓存直插 / 敲字兜底 / 校验+回填）
 # ---------------------------------------------------------------------------
 
-def _topic_cache_connect():
-    import sqlite3
-    from config.yahoo_conf import DB_PATH
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS topic_cache ("
-        " name TEXT PRIMARY KEY, topic_id TEXT NOT NULL, link TEXT,"
-        " updated_at TEXT)"
-    )
-    return conn
-
-
 def _topic_cache_get(name):
     """命中返回 (topic_id, link)，未命中返回 None。"""
     try:
-        conn = _topic_cache_connect()
-        try:
-            return conn.execute(
-                "SELECT topic_id, link FROM topic_cache WHERE name=?", (name,)
-            ).fetchone()
-        finally:
-            conn.close()
+        from sqlite_db import get_topic_id
+        return get_topic_id(name)
     except Exception:
         return None
 
 
-def _topic_cache_put(name, topic_id, link):
+def _topic_cache_put(name, topic_id, link, source="publish"):
     try:
-        conn = _topic_cache_connect()
-        try:
-            conn.execute(
-                "INSERT INTO topic_cache(name, topic_id, link, updated_at)"
-                " VALUES(?,?,?,datetime('now','localtime'))"
-                " ON CONFLICT(name) DO UPDATE SET topic_id=excluded.topic_id,"
-                " link=excluded.link, updated_at=excluded.updated_at",
-                (name, topic_id, link or ""),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        from sqlite_db import upsert_topic_id
+        upsert_topic_id(name, topic_id, link or "", source)
     except Exception as e:
         print("[pipeline] warning: write topic_cache failed (ignored): %s" % e)
+
+
+def _topic_cache_hit(name):
+    """记录一次缓存命中，用于观察缓存效果。"""
+    try:
+        from sqlite_db import bump_topic_hit
+        bump_topic_hit(name)
+    except Exception:
+        pass
 
 
 def _count_topic_chips(publisher):
@@ -294,6 +276,13 @@ def _type_char(publisher, ch):
         publisher._send("Input.dispatchKeyEvent", {
             "type": "keyUp", "key": "Enter", "code": "Enter",
             "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+    elif ch == "\b":
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyDown", "key": "Backspace", "code": "Backspace",
+            "windowsVirtualKeyCode": 8, "nativeVirtualKeyCode": 8})
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "key": "Backspace", "code": "Backspace",
+            "windowsVirtualKeyCode": 8, "nativeVirtualKeyCode": 8})
     else:
         publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
         publisher._send("Input.dispatchKeyEvent", {"type": "keyUp", "key": ch})
@@ -354,16 +343,21 @@ def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
     js_pick = """(function(){
         var items = Array.from(document.querySelectorAll('.item')).filter(function(e){return e.offsetParent && e.innerText;});
         if (!items.length) return null;
+        // 下拉项文字格式不固定：可能是 "#AKB\\n328.1万浏览"，也可能连成 "#AKB328.1万浏览"，
+        // 必须把浏览量后缀剥掉才能做精确匹配。
+        var norm = function(s){
+          s = (s || "").split("\\n")[0].trim().replace(/^#/, "");
+          return s.replace(/\\d+(\\.\\d+)?(万|亿)?浏览$/, "").trim();
+        };
         var exact = null, partial = null;
         for (var el of items) {
-          var first = (el.innerText.split("\\n")[0] || "").trim().replace(/^#/, "");
-          if (first === %s) { exact = el; break; }
+          if (norm(el.innerText) === %s) { exact = el; break; }
           if (!partial && el.innerText.indexOf(%s) >= 0) partial = el;
         }
         var t = exact || partial;
         if (!t) return null;
         t.click();
-        return (t.innerText.split("\\n")[0] || "").trim();
+        return norm(t.innerText);
     })()""" % (json.dumps(name), json.dumps(name))
 
     for attempt in range(1, attempts + 1):
@@ -380,6 +374,8 @@ def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
 
         clicked = None
         deadline = time.time() + 6.0
+        nudge_at = time.time() + 2.0
+        nudged = False
         while time.time() < deadline:
             try:
                 clicked = publisher._evaluate(js_pick, timeout_seconds=15)
@@ -387,6 +383,12 @@ def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
                 clicked = None
             if clicked:
                 break
+            # 联想没弹出来：退一格再重敲最后一个字符，重新触发（实测第 1 次常不触发）
+            if not nudged and time.time() >= nudge_at and name:
+                _type_char(publisher, "\b")
+                time.sleep(0.15)
+                _type_char(publisher, name[-1])
+                nudged = True
             time.sleep(0.3)
 
         if clicked:
@@ -400,6 +402,89 @@ def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
         time.sleep(0.4)
         if attempt < attempts:
             print("[pipeline] retry topic tag #%s (attempt %d/%d)" % (name, attempt, attempts))
+
+    return False
+
+
+def _topic_from_api_response(body, name):
+    """从 search/topics 响应里取「名字完全相等」的话题。"""
+    try:
+        topics = [x.get("topic_info_dto")
+                  for x in (json.loads(body).get("data", {}).get("topics") or [])]
+    except Exception:
+        return None
+    for t in topics:
+        if t and t.get("name") == name:
+            return t
+    return None
+
+
+def _select_topic_by_api(publisher, name, attempts=3):
+    """敲字触发页面自己发签名请求 → 抓响应拿权威 id → Tiptap 事务插入。
+
+    为什么绕这一圈：search/topics 需要小红书的 X-s / X-S-Common / X-t 签名头，
+    裸 fetch 会被 406 拒绝，只能让页面自己的 JS 去发。
+    为什么不用下拉：下拉项的 innerText 格式不固定（有时 "#名\n328万浏览"、
+    有时连成 "#名328万浏览"），靠 DOM 文字匹配天然脆弱。
+    """
+    before = _count_topic_chips(publisher)
+    if before < 0:
+        return False
+
+    try:
+        publisher._send("Network.enable")
+    except Exception:
+        pass
+
+    for attempt in range(1, attempts + 1):
+        sink = []
+        publisher._event_sink = sink
+        try:
+            publisher._evaluate("""(function(){
+                var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+                if(!e)return; e.focus(); var s=window.getSelection(),r=document.createRange();
+                r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);})()""")
+            time.sleep(0.2)
+            _type_char(publisher, "\n")
+            _type_char(publisher, "#")
+            for ch in name:
+                _type_char(publisher, ch)
+
+            # 等页面自己把签名请求发出去、响应回来
+            publisher._drain_events(4.0, sink)
+
+            request_ids = []
+            for m in sink:
+                if m.get("method") == "Network.requestWillBeSent":
+                    url = (m.get("params", {}).get("request", {}) or {}).get("url", "")
+                    if "search/topics" in url:
+                        request_ids.append(m["params"]["requestId"])
+
+            topic = None
+            for rid in request_ids:
+                try:
+                    r = publisher._send("Network.getResponseBody", {"requestId": rid})
+                except Exception:
+                    continue
+                body = (r or {}).get("body")
+                if body:
+                    topic = _topic_from_api_response(body, name)
+                    if topic:
+                        break
+
+            _clear_typed(publisher, name)   # 先删掉刚敲进去的 "#name"
+
+            if topic and topic.get("id"):
+                if _insert_topic_via_tiptap(publisher, name, topic["id"], topic.get("link")):
+                    _topic_cache_put(name, topic["id"], topic.get("link"))
+                    return True
+                print("[pipeline] warning: got id from API but insert failed: #%s" % name)
+        finally:
+            publisher._event_sink = None
+
+        if attempt < attempts:
+            print("[pipeline] retry topic tag #%s via api (attempt %d/%d)" % (name, attempt, attempts))
+        time.sleep(0.4)
 
     return False
 
@@ -426,12 +511,16 @@ def _select_topics(publisher, tags, timing_jitter=0.25):
 
         cached = _topic_cache_get(name)
         if cached and _insert_topic_via_tiptap(publisher, name, cached[0], cached[1]):
+            _topic_cache_hit(name)
             print("[pipeline] Topic selected (cache): #%s" % name)
             continue
         if cached:
             print("[pipeline] warning: cache insert failed, falling back to typing: #%s" % name)
 
-        if _select_topic_by_typing(publisher, name, timing_jitter):
+        if _select_topic_by_api(publisher, name, attempts=3):
+            print("[pipeline] Topic selected (api): #%s" % name)
+            _cache_topics_from_editor(publisher)
+        elif _select_topic_by_typing(publisher, name, timing_jitter):
             print("[pipeline] Topic selected (typed): #%s" % name)
             _cache_topics_from_editor(publisher)
         else:

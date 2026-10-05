@@ -647,6 +647,96 @@ def local_image():
         return '', 404
     return send_file(path)
 
+TOPIC_CACHE_HTML = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>话题缓存 — XHS 运营管理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:13px -apple-system,"PingFang SC",sans-serif;background:#f4f4f8;color:#2a2a3c;padding:24px}
+.wrap{max-width:1150px;margin:0 auto}
+h1{font-size:16px;margin-bottom:4px}
+.sub{color:#7878a0;font-size:12px;margin-bottom:18px}
+.card{background:#fff;border:1px solid #e6e6f0;border-radius:10px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input{font:12px inherit;padding:6px 10px;border:1px solid #dcdce8;border-radius:7px;outline:none}
+input:focus{border-color:#6c63ff}
+button{font:12px inherit;padding:6px 14px;border:0;border-radius:7px;background:#6c63ff;color:#fff;cursor:pointer}
+button.gray{background:#e8e8f2;color:#4a4a66}
+button.red{background:#ef4444}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:7px 9px;text-align:left;border-bottom:1px solid #eeeef6}
+th{color:#7878a0;font-weight:600;background:#fafafd}
+code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#4a4a66}
+.msg{font-size:12px;margin-left:10px}
+.msg.ok{color:#16a34a}.msg.err{color:#ef4444}
+a{color:#6c63ff;text-decoration:none;font-size:12px}
+</style></head>
+<body><div class="wrap">
+<h1>话题缓存</h1>
+<div class="sub">话题名 → 小红书话题 id 映射。发布时命中即用事务直插 chip，免去敲字与下拉。 <a href="/">← 返回首页</a></div>
+<div class="card">
+  <div class="row">
+    <input id="f_name" placeholder="话题名（不含 #）" style="width:180px">
+    <input id="f_id" placeholder="topic_id（24位）" style="width:240px">
+    <input id="f_link" placeholder="link（可空）" style="width:280px">
+    <button onclick="save()">新增 / 更新</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</div>
+<div class="card">
+  <div class="row" style="margin-bottom:10px">
+    <input id="q" placeholder="筛选…" style="width:200px" oninput="render()">
+    <span class="sub" id="count" style="margin:0"></span>
+  </div>
+  <table>
+    <thead><tr><th>话题名</th><th>topic_id</th><th>link</th><th>来源</th><th>命中</th><th>更新时间</th><th></th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+</div>
+</div>
+<script>
+let ROWS = [];
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+function render(){
+  const q = (document.getElementById('q').value||'').trim().toLowerCase();
+  const rows = q ? ROWS.filter(function(r){ return (r.name||'').toLowerCase().indexOf(q)>=0 || (r.topic_id||'').indexOf(q)>=0; }) : ROWS;
+  document.getElementById('count').textContent = rows.length + ' / ' + ROWS.length + ' 条';
+  document.getElementById('tb').innerHTML = rows.map(function(r){
+    return '<tr><td><b>'+esc(r.name)+'</b></td>'
+      + '<td><code>'+esc(r.topic_id)+'</code></td>'
+      + '<td><code>'+esc((r.link||'').slice(0,42))+'</code></td>'
+      + '<td>'+esc(r.source||'-')+'</td>'
+      + '<td>'+esc(r.hit_count||0)+'</td>'
+      + '<td>'+esc((r.updated_at||'').slice(0,16))+'</td>'
+      + '<td><button class="gray" onclick="fill(\''+esc(r.name)+'\',\''+esc(r.topic_id)+'\',\''+esc(r.link||'')+'\')">编辑</button> '
+      + '<button class="red" onclick="del(\''+esc(r.name)+'\')">删除</button></td></tr>';
+  }).join('');
+}
+function fill(n,i,l){ document.getElementById('f_name').value=n; document.getElementById('f_id').value=i; document.getElementById('f_link').value=l; }
+function say(t, ok){ const m=document.getElementById('msg'); m.textContent=t; m.className='msg '+(ok?'ok':'err'); setTimeout(function(){ m.textContent=''; }, 3000); }
+async function load(){ const r = await fetch('/api/topic-cache'); const d = await r.json(); ROWS = d.rows||[]; render(); }
+async function save(){
+  const name=document.getElementById('f_name').value.trim().replace(/^#/,'');
+  const topic_id=document.getElementById('f_id').value.trim();
+  const link=document.getElementById('f_link').value.trim();
+  if(!name||!topic_id){ say('话题名和 topic_id 必填', false); return; }
+  const r = await fetch('/api/topic-cache', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name, topic_id:topic_id, link:link})});
+  const d = await r.json();
+  if(d.ok){ say('已保存', true); document.getElementById('f_id').value=''; document.getElementById('f_link').value=''; load(); }
+  else say(d.msg||'保存失败', false);
+}
+async function del(name){
+  if(!confirm('删除 '+name+' ？')) return;
+  const r = await fetch('/api/topic-cache/'+encodeURIComponent(name), {method:'DELETE'});
+  const d = await r.json();
+  if(d.ok){ say('已删除', true); load(); } else say('删除失败', false);
+}
+load();
+</script>
+</body></html>
+"""
+
 INDEX_HTML = r"""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -890,6 +980,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" id="wechatNavItem" onclick="switchToWechatView()">
       <span class="ni">💬</span> 公众号
       <span class="nav-badge g" id="wechatBadge" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="location.href='/topic-cache'">
+      <span class="ni">#️⃣</span> 话题缓存
     </div>
   </div>
 
@@ -3058,6 +3151,36 @@ async function openStoryPreview(){
   </div>
 </div></div>
 </body></html>"""
+
+@app.route('/api/topic-cache', methods=['GET'])
+def api_topic_cache_list():
+    from sqlite_db import list_topic_ids
+    return jsonify({"rows": list_topic_ids()})
+
+
+@app.route('/api/topic-cache', methods=['POST'])
+def api_topic_cache_upsert():
+    from sqlite_db import upsert_topic_id
+    d = request.get_json(silent=True) or {}
+    name = (d.get("name") or "").strip().lstrip("#")
+    topic_id = (d.get("topic_id") or "").strip()
+    link = (d.get("link") or "").strip()
+    if not name or not topic_id:
+        return jsonify({"ok": False, "msg": "话题名和 topic_id 必填"})
+    upsert_topic_id(name, topic_id, link, "manual")
+    return jsonify({"ok": True})
+
+
+@app.route('/api/topic-cache/<path:name>', methods=['DELETE'])
+def api_topic_cache_delete(name):
+    from sqlite_db import delete_topic_id
+    return jsonify({"ok": delete_topic_id(name)})
+
+
+@app.route('/topic-cache')
+def topic_cache_page():
+    return render_template_string(TOPIC_CACHE_HTML)
+
 
 @app.route('/')
 def index():

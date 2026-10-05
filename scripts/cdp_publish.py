@@ -690,7 +690,32 @@ class XiaohongshuPublisher:
                         raise _PromiseCollectedError(f"CDP error: {err}")
                     raise CDPError(f"CDP error: {err}")
                 return data.get("result", {})
-            # else: it's an event, skip it
+            # else: 它是事件。需要抓 Network 响应时收集到 _event_sink
+            sink = getattr(self, "_event_sink", None)
+            if sink is not None:
+                sink.append(data)
+
+    def _drain_events(self, seconds, sink=None):
+        """持续读取 websocket 并把事件收集到 sink（用于抓 Network 响应）。
+
+        与 _send 的区别：_send 只等自己那条命令的响应、其余事件丢弃；
+        这里专门用来在「页面自己发请求」时把 responseReceived 等事件收下来。
+        """
+        if sink is None:
+            sink = getattr(self, "_event_sink", None)
+        end = time.time() + float(seconds)
+        while time.time() < end:
+            try:
+                raw = self.ws.recv(timeout=0.4)
+            except Exception:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            if "id" not in data and sink is not None:
+                sink.append(data)
+        return sink
 
     def _build_content_data_result(
         self,
