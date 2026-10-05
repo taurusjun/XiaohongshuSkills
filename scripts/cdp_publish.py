@@ -976,6 +976,8 @@ class XiaohongshuPublisher:
         except Exception:
             pass
         self.ws = ws_client.connect(self._tab_ws_url, max_size=None)
+        # 新会话会丢掉 Emulation/生命周期 override，重新激活一次
+        self._ensure_page_active()
 
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
@@ -991,6 +993,8 @@ class XiaohongshuPublisher:
             self._reconnect()
             # After reconnect the page may still be loading; give it extra time.
             self._sleep(2, minimum_seconds=1.5)
+        # 导航后重新激活：无显示器时新页面会回到被节流状态
+        self._ensure_page_active()
 
     # ------------------------------------------------------------------
     # Login check
