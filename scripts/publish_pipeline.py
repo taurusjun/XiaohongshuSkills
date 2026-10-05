@@ -459,23 +459,23 @@ def _cache_recommend_topics(publisher):
     return n
 
 
-def _select_topic_by_api(publisher, name, attempts=2):
-    """敲字触发页面自己发签名请求 → 抓响应拿权威 id → Tiptap 事务插入。
+TAG_TIMEOUT_SECONDS = 20.0
 
-    返回 "ok" / "no_match" / "no_response"。
-    "no_match" = 联想数据里没有精确同名话题；此时敲字路径用的是同一份联想数据，
-    必然同样失败，调用方应直接放弃，不必再跑一遍敲字兜底（省一半时间）。
+
+def _capture_topic_signature(publisher, seed_name, attempts=3):
+    """敲一次触发页面发 search/topics 签名请求，截获可复用的请求头。
+
+    实测（2026-10-05）：同一套 X-s / X-S-Common / X-t 头可用于不同关键词
+    （签名按时间戳+会话算，与关键词无关），所以整批标签只需采集一次。
+
+    注意：不清空编辑器（正文已在里面），只在末尾换行后敲标签。
+    返回 (url, headers, body_template) 或 None。
     """
-    before = _count_topic_chips(publisher)
-    if before < 0:
-        return "no_response"
-
     try:
         publisher._send("Network.enable")
     except Exception:
         pass
 
-    saw_topics = False
     for attempt in range(1, attempts + 1):
         sink = []
         publisher._event_sink = sink
@@ -484,65 +484,88 @@ def _select_topic_by_api(publisher, name, attempts=2):
                 var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
                 if(!e)return; e.focus(); var s=window.getSelection(),r=document.createRange();
                 r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);})()""")
-            time.sleep(0.2)
+            time.sleep(0.25)
             _type_char(publisher, "\n")
             _type_char(publisher, "#")
-            for ch in name:
+            for ch in seed_name:
                 _type_char(publisher, ch)
 
-            # 等页面把签名请求发出去、响应回来；一到就停
-            drain_deadline = time.time() + 2.5
-            while time.time() < drain_deadline:
+            deadline = time.time() + 4.0
+            while time.time() < deadline:
                 publisher._drain_events(0.3, sink)
-                if any(m.get("method") == "Network.responseReceived"
-                       and "search/topics" in ((m.get("params", {}).get("response", {}) or {}).get("url", ""))
+                if any(m.get("method") == "Network.requestWillBeSent"
+                       and "search/topics" in ((m.get("params", {}).get("request", {}) or {}).get("url", ""))
                        for m in sink):
                     break
 
-            request_ids = []
+            req = None
             for m in sink:
                 if m.get("method") == "Network.requestWillBeSent":
-                    url = (m.get("params", {}).get("request", {}) or {}).get("url", "")
-                    if "search/topics" in url:
-                        request_ids.append(m["params"]["requestId"])
-
-            topics = []
-            for rid in request_ids:
+                    r = m["params"]["request"]
+                    if "search/topics" in r.get("url", ""):
+                        req = r
+            _clear_typed(publisher, seed_name)
+            if req:
+                headers = {k: v for k, v in req["headers"].items()
+                           if k.lower() in ("content-type", "x-s", "x-s-common", "x-t",
+                                            "x-b3-traceid", "x-xray-traceid")}
                 try:
-                    r = publisher._send("Network.getResponseBody", {"requestId": rid})
+                    body_tpl = json.loads(req.get("postData") or "{}")
                 except Exception:
-                    continue
-                body = (r or {}).get("body")
-                if body:
-                    topics = _parse_topic_list(body)
-                    if topics:
-                        break
-
-            _clear_typed(publisher, name)   # 先删掉刚敲进去的 "#name"
-
-            if topics:
-                saw_topics = True
-                hit = next((t for t in topics if t.get("name") == name), None)
-                if hit and hit.get("id"):
-                    if _insert_topic_via_tiptap(publisher, name, hit["id"], hit.get("link")):
-                        _topic_cache_put(name, hit["id"], hit.get("link"))
-                        return "ok"
-                    print("[pipeline] warning: got id from API but insert failed: #%s" % name)
+                    body_tpl = {}
+                print("[pipeline] captured topic signature (X-t=%s)" % headers.get("X-t"))
+                return (req["url"], headers, body_tpl)
         finally:
             publisher._event_sink = None
+        time.sleep(0.4)
 
-        if attempt < attempts:
-            print("[pipeline] retry topic tag #%s via api (attempt %d/%d)" % (name, attempt, attempts))
-        time.sleep(0.3)
+    print("[pipeline] warning: could not capture topic signature")
+    return None
 
-    return "no_match" if saw_topics else "no_response"
+
+def _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=8.0):
+    """用截获的签名头直接调 API（零键盘）。
+
+    返回 (topic_or_None, status)，status ∈ ok / no_match / expired / error
+    """
+    url, headers, body_tpl = sig
+    body = dict(body_tpl)
+    body["keyword"] = name
+    js = """(async () => {
+      try {
+        const r = await fetch(%s, {method:'POST', credentials:'include',
+          headers: %s, body: JSON.stringify(%s)});
+        const t = await r.text();
+        return JSON.stringify({status: r.status, body: t});
+      } catch (e) { return JSON.stringify({error: String(e)}); }
+    })()""" % (json.dumps(url), json.dumps(headers), json.dumps(body, ensure_ascii=False))
+    try:
+        raw = publisher._evaluate(js, timeout_seconds=timeout_seconds)
+    except Exception:
+        return (None, "error")
+    try:
+        res = json.loads(raw) if raw else {}
+    except Exception:
+        return (None, "error")
+    if res.get("error"):
+        return (None, "error")
+    if int(res.get("status") or 0) != 200:
+        return (None, "expired")
+    topics = _parse_topic_list(res.get("body") or "")
+    if not topics:
+        return (None, "no_match")
+    hit = next((t for t in topics if t.get("name") == name), None)
+    return (hit, "ok" if hit else "no_match")
 
 
 def _select_topics(publisher, tags, timing_jitter=0.25):
     """写入话题标签。
 
-    优先缓存直插（Tiptap 事务，零键盘零下拉）；未命中才敲字+下拉，
-    成功后把 chip 的真实 id 回填缓存，下次同标签即走快路径。
+    1) 缓存命中 → Tiptap 事务直插（零键盘零 API）
+    2) 未命中 → 用一次采集到的签名头直接调 API（整批复用，不逐个敲字）
+    3) 签名失效 → 重新采集一次
+    4) 兜底 → 敲字 + 下拉
+    每个标签有独立超时，超时直接跳过，不拖垮整批。
     """
     if not tags:
         return
@@ -552,52 +575,80 @@ def _select_topics(publisher, tags, timing_jitter=0.25):
         print("[pipeline] warning: editor not found, skip topic tags")
         return
 
-    # 先把「推荐话题」组件里的 tagId 免费收进缓存（纯 DOM 读取，零键盘零 API）
     n_rec = _cache_recommend_topics(publisher)
     if n_rec:
         print("[pipeline] cached %d topic id(s) from recommend widget" % n_rec)
 
+    sig = None
     failed_tags = []
     skipped_tags = []
+    timeout_tags = []
+
     for tag in tags:
         name = tag.lstrip("#").strip()
         if not name:
             continue
-        # 小红书话题名不支持符号（实测 #King&Prince / #swim? 之类必然选不中），
-        # 直接跳过，别把时间浪费在注定失败的重试上。
         if not _SAFE_TAG_RE.match(name):
             skipped_tags.append(name)
             continue
 
+        tag_deadline = time.time() + TAG_TIMEOUT_SECONDS
+
+        # --- Tier 1: 缓存直插 ---
         cached = _topic_cache_get(name)
         if cached and _insert_topic_via_tiptap(publisher, name, cached[0], cached[1]):
             _topic_cache_hit(name)
             print("[pipeline] Topic selected (cache): #%s" % name)
             continue
         if cached:
-            print("[pipeline] warning: cache insert failed, falling back to typing: #%s" % name)
+            print("[pipeline] warning: cache insert failed: #%s" % name)
 
-        status = _select_topic_by_api(publisher, name, attempts=2)
-        if status == "ok":
-            print("[pipeline] Topic selected (api): #%s" % name)
-            _cache_topics_from_editor(publisher)
-        elif status == "no_match":
-            # 联想里没有精确同名话题 —— 敲字路径用同一份数据，一样找不到，直接放弃
+        # --- Tier 2: 签名直调 ---
+        topic, status = (None, "error")
+        if sig is None:
+            sig = _capture_topic_signature(publisher, name)
+        if sig:
+            remaining = max(3.0, tag_deadline - time.time())
+            topic, status = _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=min(remaining, 8.0))
+            if status == "expired":
+                sig = _capture_topic_signature(publisher, name)
+                if sig:
+                    remaining = max(3.0, tag_deadline - time.time())
+                    topic, status = _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=min(remaining, 8.0))
+
+        if status == "ok" and topic and topic.get("id"):
+            if _insert_topic_via_tiptap(publisher, name, topic["id"], topic.get("link")):
+                _topic_cache_put(name, topic["id"], topic.get("link"))
+                print("[pipeline] Topic selected (api): #%s" % name)
+                continue
+
+        if status == "no_match":
             failed_tags.append(name)
             print("[pipeline] Topic NOT selected (no exact match): #%s" % name)
-        elif _select_topic_by_typing(publisher, name, timing_jitter, attempts=2):
+            continue
+
+        if time.time() > tag_deadline:
+            timeout_tags.append(name)
+            print("[pipeline] Topic TIMEOUT, skipped: #%s" % name)
+            continue
+
+        # --- Tier 3: 敲字 + 下拉兜底 ---
+        if _select_topic_by_typing(publisher, name, timing_jitter, attempts=1):
             print("[pipeline] Topic selected (typed): #%s" % name)
             _cache_topics_from_editor(publisher)
+        elif time.time() > tag_deadline:
+            timeout_tags.append(name)
+            print("[pipeline] Topic TIMEOUT, skipped: #%s" % name)
         else:
             failed_tags.append(name)
             print("[pipeline] Topic NOT selected: #%s" % name)
 
     if skipped_tags:
         print("[pipeline] Skipped tags containing symbols: " + ", ".join(skipped_tags))
+    if timeout_tags:
+        print("[pipeline] Skipped tags due to timeout: " + ", ".join(timeout_tags))
     if failed_tags:
         print("[pipeline] Warning: Some topic tags were not selected: " + ", ".join(failed_tags))
-
-
 
 
 def main():
