@@ -624,6 +624,24 @@ class XiaohongshuPublisher:
         self._tab_ws_url = ws_url  # saved for reconnect after page navigation
         self.ws = ws_client.connect(ws_url, max_size=None)
         print("[cdp_publish] Connected to Chrome tab.")
+        self._ensure_page_active()
+
+    def _ensure_page_active(self):
+        """让页面在「无显示器 / VNC 关闭」时也保持渲染活跃。
+
+        Chrome 在窗口没有显示器时会节流渲染，导致小红书的话题联想插件不发起请求
+        —— 这就是「必须开 VNC 才能输入标签」的根因。
+        实测：下面两个调用组合可以把渲染唤醒（rAF 由 0 恢复到 ~20-30fps），
+        联想请求随之恢复正常（VNC 关闭状态下连续多次验证通过）。
+        """
+        for method, params in (
+            ("Page.setWebLifecycleState", {"state": "active"}),
+            ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
+        ):
+            try:
+                self._send(method, params)
+            except Exception:
+                pass
 
     def disconnect(self):
         """Close the WebSocket connection."""
