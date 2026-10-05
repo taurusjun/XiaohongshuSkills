@@ -30,6 +30,25 @@ from config.yahoo_conf import DB_PATH
 from sqlite_db import upsert_topic_id, get_topic_id
 
 LOG = "/tmp/bulk_harvest.log"
+# 断点位置（data/logs/ 已被 gitignore，不会污染工作区）
+STATE = os.path.join(os.getcwd(), "data", "logs", "harvest_progress.json")
+
+
+def load_progress():
+    try:
+        with open(STATE, encoding="utf-8") as f:
+            return json.load(f).get("last_name")
+    except Exception:
+        return None
+
+
+def save_progress(name):
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, "w", encoding="utf-8") as f:
+            json.dump({"last_name": name, "ts": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
+    except Exception:
+        pass
 
 
 def log(msg):
@@ -58,6 +77,7 @@ def main():
     ap.add_argument("--delay-min", type=float, default=3.0)
     ap.add_argument("--delay-max", type=float, default=5.0)
     ap.add_argument("--limit", type=int, default=0, help="最多处理 N 个（0 = 全部）")
+    ap.add_argument("--restart", action="store_true", help="忽略断点，从头开始")
     args = ap.parse_args()
 
     raw, safe = load_all_tags()
@@ -75,7 +95,19 @@ def main():
     processed = 0
     start = time.time()
 
+    resume_after = None if args.restart else load_progress()
+    if resume_after and resume_after not in set(safe):
+        log("断点 %s 已不在标签列表中，从头开始" % resume_after)
+        resume_after = None
+    skipping = bool(resume_after)
+    if skipping:
+        log("从断点续跑（跳过 %s 之前的标签）" % resume_after)
+
     for i, name in enumerate(safe, 1):
+        if skipping:
+            if name == resume_after:
+                skipping = False
+            continue
         if get_topic_id(name):
             continue
         if args.limit and processed >= args.limit:
@@ -117,6 +149,7 @@ def main():
                 log("!! 连续失败 30 次，疑似被限流，暂停 5 分钟后继续")
                 time.sleep(300)
                 consec_fail = 0
+        save_progress(name)
         if processed % 50 == 0:
             log("进度 已处理 %d（遍历到 %d/%d）| 命中 %d 无匹配 %d 失败 %d | 已用 %.0f 分"
                 % (processed, i, len(safe), hit, miss, fail, (time.time() - start) / 60))
