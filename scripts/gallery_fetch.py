@@ -2202,78 +2202,73 @@ def _scrape_mainichikirei(gallery_url: str) -> list[str]:
 
 
 def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
-    """natalie.mu /gallery/news/ 图集：ogre.natalie.mu CDN 大图（imwidth=1460）。
-    每页一张大图，沿着 "次へ" 链接遍历所有分页收集图片。"""
+    """natalie.mu /gallery/news/<galleryId>/<photoId> 图集（Vue SPA 相册网格）。
+    页面一次性列出本图集所有照片，每张挂在 /gallery/news/<galleryId>/<photoId> 锚点下。
+    按 galleryId 锁定本图集照片（避免误抓同目录其他文章的图），取各自 ogre 大图
+    （去掉 ?impolicy=thumb... 缩略参数即原图）。
+    natalie 有 AWS WAF，requests 会被 405 拦，兜底走 9222 CDP 真实浏览器
+    （需保持已通过人机验证；验证过期时需人工在该 Chrome 里重新通过一次）。"""
     import re
+    import html as _htmlmod
     from urllib.parse import urlparse
+    from sqlite_db import _log_db_error
 
     headers = {**HEADERS, "Referer": "https://natalie.mu/"}
     p = urlparse(gallery_url)
-    base = f"{p.scheme}://{p.netloc}"
 
+    m_gid = re.search(r'/gallery/news/(\d+)', p.path)
+    if not m_gid:
+        print(f"  ⚠️ natalie 无法从 URL 解析 galleryId: {gallery_url}")
+        _log_db_error(f"natalie 无法解析 galleryId: {gallery_url}")
+        return []
+    gid = m_gid.group(1)
+
+    def _is_waf(h: str) -> bool:
+        return (not h) or ("Human Verification" in h) or ("awsWafCookieDomainList" in h)
+
+    # 取页面：requests 会被 AWS WAF 405 拦，兜底走 CDP（9222 带验证 cookie）
+    html_text = ""
+    try:
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        html_text = r.text if r.status_code == 200 else ""
+    except Exception as e:
+        print(f"  ⚠️ natalie requests 失败: {e}")
+        _log_db_error(f"natalie requests 失败: {gallery_url}: {e}")
+        html_text = ""
+    if _is_waf(html_text):
+        from scrapers import cdp_page_html
+        html_text = cdp_page_html(gallery_url, port=9222, wait=8.0)
+    if _is_waf(html_text):
+        print(f"  ⚠️ natalie 被 AWS WAF 拦截，9222 Chrome 需人工通过验证: {gallery_url}")
+        _log_db_error(f"natalie WAF 未通过（需人工验证 9222 Chrome）: {gallery_url}")
+        return []
+
+    s = BeautifulSoup(html_text, "html.parser")
     images: list[str] = []
-    seen: set[str] = set()
-    visited_urls: set[str] = set()
-    current_url = gallery_url
+    seen_pid: set[str] = set()
+    # 按 /gallery/news/<gid>/<pid> 锚点锁定本图集照片，取其 img 大图
+    for a in s.find_all("a", href=True):
+        m = re.search(rf'/gallery/news/{gid}/(\d+)', a["href"])
+        if not m:
+            continue
+        pid = m.group(1)
+        if pid in seen_pid:
+            continue
+        img = a.find("img")
+        if not img:
+            continue
+        src = _htmlmod.unescape(img.get("data-src") or img.get("src") or "")
+        if src.startswith("//"):
+            src = "https:" + src
+        if "ogre.natalie.mu/media" not in src:
+            continue
+        full = src.split("?")[0]  # 去缩略参数 = 原图
+        seen_pid.add(pid)
+        images.append(full)
 
-    for _ in range(MAX_IMAGES):
-        if current_url in visited_urls:
-            break
-        visited_urls.add(current_url)
-
-        try:
-            try:
-                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-                html = r.text if r.status_code == 200 else ""
-            except Exception as e:
-                print(f"  ⚠️ natalie requests 失败: {e}")
-                html = ""
-            if not html:
-                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
-                from scrapers import cdp_page_html
-                html = cdp_page_html(current_url, port=9222, wait=8.0)
-            if not html:
-                break
-            s = BeautifulSoup(html, "html.parser")
-
-            # 当前页大图：ogre.natalie.mu 域名，排除 thumbnail 参数
-            for img in s.find_all("img"):
-                src = (img.get("data-src") or img.get("src") or "")
-                if "ogre.natalie.mu" not in src:
-                    continue
-                # 排除缩略图（thumbnail 尺寸参数）
-                if "width=200" in src.lower() or "w=200" in src.lower():
-                    continue
-                if "impolicy=thumb" in src.lower():
-                    continue
-                if src.startswith("//"):
-                    src = "https:" + src
-                if src in seen:
-                    continue
-                seen.add(src)
-                images.append(src)
-                break
-
-            # 找 "次へ" 分页链接
-            next_url = ""
-            for a in s.find_all("a", href=True):
-                text = a.get_text(strip=True)
-                if text == "次へ" or "次へ" in text:
-                    href = a["href"]
-                    if href.startswith("/"):
-                        href = base + href
-                    elif not href.startswith("http"):
-                        continue
-                    next_url = href
-                    break
-            if not next_url:
-                break
-            current_url = next_url
-
-        except Exception as e:
-            print(f"  ⚠️ natalie gallery {current_url} 失败: {e}")
-            break
-
+    if not images:
+        print(f"  ⚠️ natalie 未提取到图片（页面结构可能变化）: {gallery_url}")
+        _log_db_error(f"natalie 未提取到图片: {gallery_url}")
     return images
 
 
