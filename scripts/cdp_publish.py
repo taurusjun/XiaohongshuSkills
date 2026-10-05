@@ -352,10 +352,17 @@ class XiaohongshuPublisher:
         self.login_cache_file = LOGIN_CACHE_FILE
 
     def _prepare_upload_file_path(self, file_path: str) -> str:
-        """Return the file path to send to DOM.setFileInputFiles."""
+        """Return the file path to send to DOM.setFileInputFiles.
+
+        DOM.setFileInputFiles 必须收到绝对路径：传相对路径会让渲染进程主线程卡死
+        （Runtime.evaluate / Page.enable 全部超时，且不可恢复）。
+        """
         if self._should_preserve_upload_path(file_path):
             return file_path
-        return file_path.replace("\\", "/")
+        normalized = file_path.replace("\\", "/")
+        if _is_local_host(self.host) and not os.path.isabs(normalized):
+            normalized = os.path.abspath(normalized)
+        return normalized
 
     def _looks_like_windows_drive_path(self, file_path: str) -> bool:
         """Return True when the path looks like a Windows drive-letter path."""
@@ -4540,6 +4547,15 @@ class XiaohongshuPublisher:
 
         preserve_flags = [self._should_preserve_upload_path(path) for path in image_paths]
         prepared_paths = [self._prepare_upload_file_path(path) for path in image_paths]
+
+        # 本地模式下先校验文件存在：把不存在的路径交给 setFileInputFiles 会卡死渲染进程
+        if _is_local_host(self.host):
+            missing = [path for path in prepared_paths if not os.path.isfile(path)]
+            if missing:
+                raise CDPError(
+                    "Image file(s) not found; refusing to call setFileInputFiles "
+                    "(it would hang the renderer): " + ", ".join(missing)
+                )
 
         print(f"[cdp_publish] Uploading {len(image_paths)} image(s)...")
         if self.preserve_upload_paths:
