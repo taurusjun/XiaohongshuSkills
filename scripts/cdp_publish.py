@@ -5076,6 +5076,15 @@ class XiaohongshuPublisher:
         cx = rect["x"] + rect["width"] / 2
         cy = rect["y"] + rect["height"] / 2
 
+        # 点击前记录页面已有的 24 位 hex（用于识别"点击后新出现"的笔记 id，
+        # 避免把页面上本来就存在的其他笔记 id 误当成本次发布成功）
+        baseline_ids = set()
+        try:
+            raw0 = self._evaluate("(function(){var m=(document.body.innerText||'').match(/\\b[0-9a-fA-F]{24}\\b/g)||[];return JSON.stringify(m);})()")
+            baseline_ids = set(json.loads(raw0) or [])
+        except Exception:
+            pass
+
         # 优先直接对闭合 shadow DOM 里的真按钮调 .click()；坐标点击仅作兜底。
         if self._click_publish_button_inner():
             print("[cdp_publish] Publish button clicked (inner shadow DOM .click()).")
@@ -5084,23 +5093,30 @@ class XiaohongshuPublisher:
             self._click_mouse(cx, cy)
             print("[cdp_publish] Publish button clicked (coordinate).")
 
-        # 等发布生效：抓到笔记链接 / URL 出现 published=true / 按钮进入 loading。
-        # 只以「页面是否真的有反应」为准，不再无条件认为成功。
+        # 等发布确认：只认强信号。确认不了就抛错 —— 让上层不写库、稿子留在待发队列。
         note_link = None
-        reacted = False
-        deadline = time.time() + 15.0
+        confirmed = False
+        deadline = time.time() + 20.0
         while time.time() < deadline:
             self._sleep(1.0, minimum_seconds=0.5)
             raw = self._evaluate("""
                 (function() {
                     var links = document.querySelectorAll('a[href*="xiaohongshu.com/explore"]');
                     var btn = document.querySelector('xhs-publish-btn');
-                    var noteId = document.body.textContent.match(/\\b[0-9a-fA-F]{24}\\b/);
+                    var titleEl = document.querySelector('div.d-input input');
+                    var previews = document.querySelectorAll('.img-preview-area .pr').length;
+                    var chips = document.querySelectorAll('div.ProseMirror a.tiptap-topic').length;
+                    var text = document.body.innerText || '';
+                    var ids = text.match(/\\b[0-9a-fA-F]{24}\\b/g) || [];
                     return JSON.stringify({
+                        ids: ids,
                         link: links.length ? links[0].href : null,
-                        noteId: noteId ? noteId[0] : null,
                         url: location.href,
-                        loading: btn ? btn.getAttribute('submit-loading') : null
+                        loading: btn ? btn.getAttribute('submit-loading') : null,
+                        titleEmpty: !titleEl || !titleEl.value,
+                        previews: previews,
+                        chips: chips,
+                        successText: /发布成功|定时发布成功|已提交|发布完成/.test(text)
                     });
                 })();
             """)
@@ -5110,23 +5126,35 @@ class XiaohongshuPublisher:
                 info = {}
             if info.get("link"):
                 note_link = info["link"]
-                reacted = True
+                confirmed = True
                 break
-            if info.get("noteId"):
-                note_link = "https://www.xiaohongshu.com/explore/" + info["noteId"]
-                reacted = True
+            new_ids = [i for i in (info.get("ids") or []) if i not in baseline_ids]
+            if new_ids:
+                note_link = "https://www.xiaohongshu.com/explore/" + new_ids[0]
+                confirmed = True
                 break
             if "published=true" in (info.get("url") or ""):
-                reacted = True
+                confirmed = True
                 break
-            if str(info.get("loading")).lower() == "true":
-                reacted = True
+            if "/new/home" in (info.get("url") or ""):
+                confirmed = True
+                break
+            if info.get("successText"):
+                confirmed = True
+                break
+            if info.get("titleEmpty") and info.get("previews") == 0 and info.get("chips") == 0:
+                confirmed = True
+                break
 
-        if reacted:
-            print("[cdp_publish] Publish action took effect (page reacted).")
-        else:
-            print("[cdp_publish] WARNING: no publish reaction detected within 15s - click may not have registered.")
-        return note_link
+        if confirmed:
+            print("[cdp_publish] Publish confirmed.")
+            return note_link
+
+        raise CDPError(
+            "Publish NOT confirmed within 20s "
+            "(no published=true / note link / success text / form reset). "
+            "Leaving article unmarked so it stays in the pending queue."
+        )
 
     # ------------------------------------------------------------------
     # Main publish workflow
