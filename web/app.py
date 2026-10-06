@@ -1837,7 +1837,8 @@ function renderWechatItems(items){
   var pageItems=items.slice(start,end);
   var html='';
   pageItems.forEach(function(n){
-    var imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
+    var _c=n.wechat_image_url||n.image_url;
+    var imgSrc=_c?(_c.startsWith('/')?'/local-image?path='+encodeURIComponent(_c):_c):'';
     var thumb=imgSrc?('<img src="'+imgSrc+'" class="thumb-img" onerror="this.className=\'thumb-empty\';this.removeAttribute(\'src\');this.removeAttribute(\'onerror\')">'):'<div class="thumb-empty">&#128240;</div>';
     var wt=esc(n.wechat_title||n.title||'');
     var sub=n.title&&n.wechat_title&&n.title!==n.wechat_title?esc(n.title):'';

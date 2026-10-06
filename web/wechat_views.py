@@ -166,7 +166,8 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
     </div>
     <div class="sb-sec"><div class="sb-lbl">封面图</div>
       <div class="sb-cover" onclick="document.getElementById('cvFile').click()">
-        {% if news.image_url %}<img id="sbCvImg" src="{{'/local-image?path='+news.image_url if news.image_url.startswith('/') else news.image_url}}">
+        {% set _cv = news.wechat_image_url or news.image_url %}
+        {% if _cv %}<img id="sbCvImg" src="{{'/local-image?path='+_cv if _cv.startswith('/') else _cv}}">
         {% else %}<div class="sb-cover-ph"><span style="font-size:22px">🖼</span><span>点击选择封面</span></div><img id="sbCvImg" src="" style="display:none">{% endif %}
         <div class="sb-cover-ov">更换封面</div>
       </div>
@@ -285,7 +286,7 @@ async function setCover(path){
     var r=await fetch('/api/wechat/'+WK+'/cover',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path})});
     var d=await r.json();
-    if(d.ok){_showCover(d.image_url);_toast('已设为封面','ok');}
+    if(d.ok){_showCover(d.wechat_image_url);_toast('已设为封面','ok');}
     else _toast(d.msg||'设置失败','err');
   }catch(e){_toast('网络错误','err');}
 }
@@ -301,7 +302,7 @@ async function onCvChange(inp){
     _toast('上传封面中…');
     var r=await fetch('/api/wechat/'+WK+'/cover',{method:'POST',body:fd});
     var d=await r.json();
-    if(d.ok){_showCover(d.image_url);_toast('封面已更新','ok');}
+    if(d.ok){_showCover(d.wechat_image_url);_toast('封面已更新','ok');}
     else _toast(d.msg||'上传失败','err');
   }catch(e){_toast('上传失败','err');}
   inp.value='';
@@ -650,7 +651,7 @@ def api_wechat_list():
     from sqlite_db import _connect
     with _connect() as db:
         rows = [dict(r) for r in db.execute(
-            "SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,updated_at,created_at,image_url "
+            "SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,updated_at,created_at,image_url,wechat_image_url "
             "FROM news WHERE status='active' AND (wechat_content!='' OR wechat_publish=1 OR wechat_draft_id!='') "
             "ORDER BY updated_at DESC LIMIT 200"
         ).fetchall()]
@@ -865,12 +866,13 @@ def wechat_editor(key):
     except Exception:
         pass
 
-    # 2. Cover image from news.image_url
+    # 2. 公众号封面：优先 wechat_image_url（公众号页 setCover 写的就是它），回退 image_url。
     #    只收本地路径：素材库用于往正文插图，正文图必须本地（发布时 uploadimg 上传）；
-    #    远程 URL 写进正文微信显示不出来。未换过封面时 image_url 仍是 Yahoo 远程地址，
+    #    远程 URL 写进正文微信显示不出来。未换过封面时回退值仍是 Yahoo 远程地址，
     #    收录它既与侧栏封面重复，又会往正文塞远程图。
-    if (news.get('image_url') or '').startswith('/'):
-        _add_imgs([news['image_url']], '封面')
+    _wx_cover = (news.get('wechat_image_url') or '').strip() or (news.get('image_url') or '').strip()
+    if _wx_cover.startswith('/'):
+        _add_imgs([_wx_cover], '封面')
 
     # 3. Related keys
     related_articles = []   # [{'key','title','count'}] 供「下载全部」按钮并行抓图
@@ -919,7 +921,7 @@ def api_wechat_preview(key):
 
 @wechat_bp.route('/api/wechat/<key>/cover', methods=['POST'])
 def api_wechat_cover(key):
-    """设置封面并落库（写 news.image_url）。
+    """设置公众号封面并落库（写 news.wechat_image_url）。
 
     两种入参：
       - JSON {"path": "/本地路径"}   ← 从图片素材库选
@@ -948,9 +950,9 @@ def api_wechat_cover(key):
         except Exception as e:
             return jsonify({"ok": False, "msg": "封面上传失败: %s" % e}), 500
 
-    if not update_news(key, {'image_url': path}):
+    if not update_news(key, {'wechat_image_url': path}):
         return jsonify({"ok": False, "msg": "写库失败"}), 500
-    return jsonify({"ok": True, "image_url": path})
+    return jsonify({"ok": True, "wechat_image_url": path})
 
 
 @wechat_bp.route('/api/wechat/<key>', methods=['PUT'])

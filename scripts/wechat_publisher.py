@@ -328,10 +328,12 @@ def _download_cover(url: str) -> str:
 def _resolve_cover_path(row, gallery: list) -> str:
     """决定用哪张图当公众号封面。
 
-    优先级：image_url → original_image_url → 图集里带 article_/cover 的 → 图集第一张。
+    优先级：wechat_image_url → image_url → original_image_url
+            → 图集里带 article_/cover 的 → 图集第一张。
 
-    image_url 就是公众号页面 #sbCvImg 显示的封面，也是 setCover()
-    （POST /api/wechat/<key>/cover）写入的字段 —— 必须以它为准。
+    wechat_image_url 是公众号页 setCover()（POST /api/wechat/<key>/cover）
+    写入的字段，也是 #sbCvImg 显示的封面 —— 必须以它为准。
+    image_url 是小红书封面（/detail 页写它），作为回退，存量文章行为不变。
 
     这里原先把 gallery_images 排在最前：用户在公众号页选了封面，推送时却被图集里的
     article_00.jpg 顶掉，推出去的封面和页面显示的不是同一张。
@@ -341,7 +343,8 @@ def _resolve_cover_path(row, gallery: list) -> str:
 
     远程 URL 先经 _download_cover() 落到本地临时文件（素材接口只收本地路径）。
     """
-    for cand in ((row["image_url"] or "").strip(),
+    for cand in ((row["wechat_image_url"] or "").strip(),
+                 (row["image_url"] or "").strip(),
                  (row["original_image_url"] or "").strip()):
         if not cand:
             continue
@@ -363,7 +366,7 @@ def publish_article(article_key: str, publish: bool = False,
 
     with _connect() as db:
         r = db.execute(
-            "SELECT title, content, wechat_title, wechat_content, channel, image_url, original_image_url, gallery_images FROM news WHERE key=?",
+            "SELECT title, content, wechat_title, wechat_content, wechat_image_url, channel, image_url, original_image_url, gallery_images FROM news WHERE key=?",
             (article_key,)
         ).fetchone()
 

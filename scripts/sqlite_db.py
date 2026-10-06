@@ -255,6 +255,7 @@ def init_db():
             ("wechat_publish", "INTEGER DEFAULT 0"),
             ("wechat_draft_id", "TEXT DEFAULT ''"),
             ("wechat_pub_time", "TEXT DEFAULT ''"),
+            ("wechat_image_url", "TEXT DEFAULT ''"),
             ("grade", "TEXT DEFAULT ''"),
             ("grade_reason", "TEXT DEFAULT ''"),
         ]
@@ -529,6 +530,7 @@ def update_news(key: str, fields: dict) -> bool:
                'publish_mode','publish_free_text','rewritten_content','rewritten_title',
                'related_keys','publish_method',
                'wechat_title','wechat_content','wechat_publish','wechat_draft_id','wechat_pub_time',
+               'wechat_image_url',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
