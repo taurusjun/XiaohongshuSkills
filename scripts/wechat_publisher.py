@@ -269,6 +269,7 @@ def _render_html(content: str, img_url_map: dict,
         output_dir=Path("/tmp/wechat-format"),
         vault_root=Path.home(),
         output_format="wechat",
+        inject_title=False,   # 公众号平台已显示标题，正文里不再重复一遍
     )
 
     html = result["html"]
@@ -385,9 +386,10 @@ def publish_article(article_key: str, publish: bool = False,
 
     # ── 创建草稿 ──────────────────────────────────────────────
     print(f"\n[4] 创建微信草稿...")
-    # 微信草稿标题上限约 10 个汉字，超出截断
-    if len(title) > 10:
-        title = title[:9] + "…"
+    # 微信图文消息标题上限 64 字符（原写「约 10 个汉字」是错的，
+    # 把 19 字的正常标题砍成了 9 字）
+    if len(title) > 64:
+        title = title[:63] + "…"
         print(f"  标题截断为: {title}")
     article = {
         "title": title,

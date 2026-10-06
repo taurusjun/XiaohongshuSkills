@@ -2720,7 +2720,8 @@ def generate_gallery(rendered_map: dict, theme_map: dict,
 
 def format_for_output(content: str, input_path: Path, theme: dict,
                       output_dir: Path, vault_root: Path,
-                      output_format: str = "wechat") -> dict:
+                      output_format: str = "wechat",
+                      inject_title: bool = True) -> dict:
     """统一格式化入口，支持多种输出格式
 
     Args:
@@ -2731,7 +2732,10 @@ def format_for_output(content: str, input_path: Path, theme: dict,
     Returns:
         dict with keys: html, footnote_html, title, word_count
     """
-    title = extract_title(content, input_path)
+    # inject_title=False 时完全不提取标题：extract_title 在内容里找不到标题会退回
+    # 「文件名」，调用方若传占位路径（如 /dev/stdin）就会注入字面量 <h1>stdin</h1>。
+    # 微信公众号平台自身已显示标题，正文里不应重复，故该路径传 False。
+    title = extract_title(content, input_path) if inject_title else ""
     word_count = count_words(content)
 
     # 通用预处理
