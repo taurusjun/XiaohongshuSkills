@@ -181,6 +181,10 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
       </div>
     </div>
     <div class="sb-sec" style="flex:1"><div class="sb-lbl">图片素材</div>
+      <button class="btn btn-ghost btn-sm" id="btnDlAll" onclick="dlAllGalleries()"
+              style="width:100%;justify-content:center;margin-bottom:8px"
+              title="抓取本篇 + 关联文章的图集（与详情页「重新下载」同一机制）">📥 下载全部</button>
+      <div id="dlAllLog" style="display:none;font-size:10px;color:var(--t3);padding:0 0 8px;white-space:pre-wrap;font-family:Menlo,monospace;line-height:1.5"></div>
       <div class="sb-imgs" id="sbImgs">
         {% for img in all_images %}
         <div class="sb-img" onclick="insImg('{{img.path}}')" title="{{img.source}}">
@@ -239,6 +243,8 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 var WK="{{news.key}}";
 var _th='newspaper',_ed=null,_dirty=false,_stimer=null;
 var _allImgs={{all_images|map(attribute='path')|list|tojson}};
+var RELATED_KEYS={{related_articles|map(attribute='key')|list|tojson}};
+var HAS_ANY_IMG={{1 if all_images else 0}};
 function _S(id){return document.getElementById(id);}
 function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
 function _setSave(s){var e=_S('tbSaved');if(!e)return;if(s==='saving'){e.textContent='保存中…';e.className='tb-saved saving';}else if(s==='saved'){e.textContent='已保存';e.className='tb-saved saved';}else{e.textContent='未保存';e.className='tb-saved';}}
@@ -300,6 +306,58 @@ async function onCvChange(inp){
   }catch(e){_toast('上传失败','err');}
   inp.value='';
 }
+// 一键抓取本篇 + 关联文章的图集（复用详情页「重新下载」的两个端点）
+async function dlAllGalleries(){
+  var keys=[WK].concat(RELATED_KEYS||[]);
+  var btn=_S('btnDlAll'), log=_S('dlAllLog');
+  if(btn){btn.disabled=true;btn.textContent='⏳ 抓取中…';}
+  if(log){log.style.display='block';}
+  var st={};
+  keys.forEach(function(k,i){st[k]={label:(i===0?'本篇 ':'关联'+i+' ')+k.slice(0,8)+'…',status:'pending',images:0};});
+  function render(){
+    if(!log)return;
+    log.textContent=keys.map(function(k){
+      var s=st[k];
+      var mark={pending:'⏳',running:'⏳',done:'✅',locked:'🔒',timeout:'⏰'}[s.status]||'❌';
+      var tail=s.status==='done'?' '+s.images+' 张'
+             :s.status==='locked'?' 已在下载中，跳过'
+             :(s.status==='pending'||s.status==='running')?'':' '+s.status;
+      return mark+' '+s.label+tail;
+    }).join('\n');
+  }
+  // ① 并行触发：所有 key 同时 POST，不等任何一篇下完
+  await Promise.all(keys.map(async function(k){
+    try{
+      var r=await fetch('/api/gallery-download/'+k,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({gallery_url:''})});
+      var d=await r.json();
+      st[k].status=d.locked?'locked':'running';
+    }catch(e){st[k].status='error: '+e;}
+  }));
+  render();
+  // ② 并行轮询：每篇独立循环，互不阻塞；总耗时 ≈ 最慢那篇
+  await Promise.all(keys.map(async function(k){
+    if(st[k].status==='locked'||st[k].status.indexOf('error')===0)return;
+    for(var n=0;n<120;n++){                      // 与详情页同款：2s x 120 = 240s/篇
+      await new Promise(function(z){setTimeout(z,2000)});
+      try{
+        var sd=await (await fetch('/api/gallery-status/'+k)).json();
+        var s=String(sd.status||'');
+        if(s==='done'){st[k].status='done';st[k].images=(sd.images||[]).length;break;}
+        if(s.indexOf('error')===0){st[k].status=s;break;}
+      }catch(e){/* 单次轮询失败不算失败，下一轮继续 */}
+    }
+    if(st[k].status==='running')st[k].status='timeout';
+    render();
+  }));
+  var ok=keys.filter(function(k){return st[k].status==='done'}).length;
+  var bad=keys.length-ok;
+  if(btn){btn.disabled=false;btn.textContent='🔄 重新下载';}
+  _toast('抓取完成：成功 '+ok+' / 共 '+keys.length+(bad?'，'+bad+' 篇未成功':''),bad?'err':'ok');
+  await doSave(true);        // 先落盘编辑器内容，避免刷新丢改动
+  location.reload();         // 素材库是服务端渲染的，刷新才看得到新图
+}
+(function initDlAll(){if(HAS_ANY_IMG){var b=_S('btnDlAll');if(b)b.textContent='🔄 重新下载';}})();
 function insImg(path){
   if(!_ed)return;
   var src=path.startsWith('/')?'/local-image?path='+encodeURIComponent(path):path;
@@ -815,12 +873,14 @@ def wechat_editor(key):
         _add_imgs([news['image_url']], '封面')
 
     # 3. Related keys
+    related_articles = []   # [{'key','title','count'}] 供「下载全部」按钮并行抓图
     for rk in rk_raw.split(','):
         rk = rk.strip()
         if not rk: continue
         rr = get_by_key(rk)
         if not rr: continue
         title_short = (rr.get('title', '') or rk)[:12]
+        _n_before = len(all_images)
         gi2 = rr.get('gallery_images', '')
         gi2_list = _json.loads(gi2) if isinstance(gi2, str) and gi2 else (gi2 or [])
         _add_imgs(gi2_list, title_short)
@@ -834,8 +894,10 @@ def wechat_editor(key):
                     _add_imgs([f], title_short)
         except Exception:
             pass
+        related_articles.append({'key': rk, 'title': title_short,
+                                 'count': len(all_images) - _n_before})
 
-    return rts(WECHAT_HTML, news=news, all_images=all_images)
+    return rts(WECHAT_HTML, news=news, all_images=all_images, related_articles=related_articles)
 
 @wechat_bp.route('/api/wechat/<key>/preview')
 def api_wechat_preview(key):
