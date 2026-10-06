@@ -416,6 +416,39 @@ def list_topic_ids() -> list:
         return [dict(r) for r in rows]
 
 
+_TOPIC_SORTABLE = {"name", "topic_id", "source", "hit_count", "created_at", "updated_at"}
+
+
+def list_topic_ids_paged(page: int = 1, page_size: int = 50,
+                         sort_by: str = "name", sort_dir: str = "asc",
+                         q: str = "") -> dict:
+    """分页 + 排序 + 关键字查询 topic_cache。
+
+    sort_by 走白名单，避免 SQL 注入。
+    """
+    if sort_by not in _TOPIC_SORTABLE:
+        sort_by = "name"
+    direction = "DESC" if str(sort_dir).lower() == "desc" else "ASC"
+    page = max(1, int(page))
+    page_size = min(500, max(1, int(page_size)))
+
+    where, params = "", []
+    if q:
+        where = " WHERE name LIKE ? OR topic_id LIKE ?"
+        params = ["%" + q + "%", "%" + q + "%"]
+
+    with _connect() as db:
+        total = db.execute("SELECT COUNT(*) AS c FROM topic_cache" + where, params).fetchone()["c"]
+        rows = db.execute(
+            "SELECT name, topic_id, link, source, hit_count, created_at, updated_at"
+            " FROM topic_cache" + where +
+            " ORDER BY " + sort_by + " " + direction + ", name ASC LIMIT ? OFFSET ?",
+            params + [page_size, (page - 1) * page_size],
+        ).fetchall()
+    return {"rows": [dict(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
+
+
 def delete_topic_id(name: str) -> bool:
     with _connect() as db:
         cur = db.execute("DELETE FROM topic_cache WHERE name=?", (name,))

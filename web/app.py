@@ -659,77 +659,137 @@ h1{font-size:16px;margin-bottom:4px}
 .sub{color:#7878a0;font-size:12px;margin-bottom:18px}
 .card{background:#fff;border:1px solid #e6e6f0;border-radius:10px;padding:16px;margin-bottom:16px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-input{font:12px inherit;padding:6px 10px;border:1px solid #dcdce8;border-radius:7px;outline:none}
-input:focus{border-color:#6c63ff}
+input,select{font:12px inherit;padding:6px 10px;border:1px solid #dcdce8;border-radius:7px;outline:none;background:#fff}
+input:focus,select:focus{border-color:#6c63ff}
 button{font:12px inherit;padding:6px 14px;border:0;border-radius:7px;background:#6c63ff;color:#fff;cursor:pointer}
 button.gray{background:#e8e8f2;color:#4a4a66}
 button.red{background:#ef4444}
+button:disabled{opacity:.45;cursor:default}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{padding:7px 9px;text-align:left;border-bottom:1px solid #eeeef6}
-th{color:#7878a0;font-weight:600;background:#fafafd}
-code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#4a4a66}
+th{color:#7878a0;font-weight:600;background:#fafafd;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:#6c63ff}
+th .arw{color:#6c63ff;font-size:10px}
+td code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#4a4a66}
 .msg{font-size:12px;margin-left:10px}
 .msg.ok{color:#16a34a}.msg.err{color:#ef4444}
 a{color:#6c63ff;text-decoration:none;font-size:12px}
+.pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:12px;color:#7878a0}
+.pager .pinfo{margin:0 8px}
 </style></head>
 <body><div class="wrap">
 <h1>话题缓存</h1>
 <div class="sub">话题名 → 小红书话题 id 映射。发布时命中即用事务直插 chip，免去敲字与下拉。 <a href="/">← 返回首页</a></div>
+
 <div class="card">
   <div class="row">
-    <input id="f_name" placeholder="话题名（不含 #）" style="width:180px">
-    <input id="f_id" placeholder="topic_id（24位）" style="width:240px">
-    <input id="f_link" placeholder="link（可空）" style="width:280px">
+    <input id="f_name" placeholder="话题名（不含 #）" style="width:170px">
+    <input id="f_id" placeholder="topic_id（24位）" style="width:230px">
+    <input id="f_link" placeholder="link（可空）" style="width:260px">
     <button onclick="save()">新增 / 更新</button>
     <span class="msg" id="msg"></span>
   </div>
 </div>
+
 <div class="card">
   <div class="row" style="margin-bottom:10px">
-    <input id="q" placeholder="筛选…" style="width:200px" oninput="render()">
+    <input id="q" placeholder="搜索话题名 / topic_id…" style="width:240px">
+    <button class="gray" onclick="doSearch()">搜索</button>
+    <button class="gray" onclick="clearSearch()">清空</button>
     <span class="sub" id="count" style="margin:0"></span>
   </div>
   <table>
-    <thead><tr><th>话题名</th><th>topic_id</th><th>link</th><th>来源</th><th>命中</th><th>更新时间</th><th></th></tr></thead>
+    <thead><tr>
+      <th onclick="sortBy('name')">话题名 <span class="arw" id="s_name"></span></th>
+      <th>topic_id</th>
+      <th onclick="sortBy('source')">来源 <span class="arw" id="s_source"></span></th>
+      <th onclick="sortBy('hit_count')">命中 <span class="arw" id="s_hit_count"></span></th>
+      <th onclick="sortBy('updated_at')">更新时间 <span class="arw" id="s_updated_at"></span></th>
+      <th></th>
+    </tr></thead>
     <tbody id="tb"></tbody>
   </table>
+  <div class="pager">
+    <button class="gray" id="b_first" onclick="go(1)">« 首页</button>
+    <button class="gray" id="b_prev" onclick="go(state.page-1)">‹ 上一页</button>
+    <span class="pinfo" id="pinfo"></span>
+    <button class="gray" id="b_next" onclick="go(state.page+1)">下一页 ›</button>
+    <button class="gray" id="b_last" onclick="go(lastPage())">末页 »</button>
+    <select id="psize" onchange="setSize(this.value)">
+      <option value="50">50 / 页</option>
+      <option value="100">100 / 页</option>
+      <option value="200">200 / 页</option>
+      <option value="500">500 / 页</option>
+    </select>
+  </div>
 </div>
 </div>
 <script>
-let ROWS = [];
+const state = {page:1, size:50, sort_by:'name', sort_dir:'asc', q:''};
+let TOTAL = 0;
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
-function render(){
-  const q = (document.getElementById('q').value||'').trim().toLowerCase();
-  const rows = q ? ROWS.filter(function(r){ return (r.name||'').toLowerCase().indexOf(q)>=0 || (r.topic_id||'').indexOf(q)>=0; }) : ROWS;
-  document.getElementById('count').textContent = rows.length + ' / ' + ROWS.length + ' 条';
+function lastPage(){ return Math.max(1, Math.ceil(TOTAL / state.size)); }
+function renderSort(){
+  ['name','source','hit_count','updated_at'].forEach(function(c){
+    const el = document.getElementById('s_'+c);
+    if (el) el.textContent = (state.sort_by === c) ? (state.sort_dir === 'asc' ? '▲' : '▼') : '';
+  });
+}
+function renderRows(rows){
   document.getElementById('tb').innerHTML = rows.map(function(r){
     return '<tr><td><b>'+esc(r.name)+'</b></td>'
       + '<td><code>'+esc(r.topic_id)+'</code></td>'
-      + '<td><code>'+esc((r.link||'').slice(0,42))+'</code></td>'
       + '<td>'+esc(r.source||'-')+'</td>'
       + '<td>'+esc(r.hit_count||0)+'</td>'
       + '<td>'+esc((r.updated_at||'').slice(0,16))+'</td>'
       + '<td><button class="gray" onclick="fill(\''+esc(r.name)+'\',\''+esc(r.topic_id)+'\',\''+esc(r.link||'')+'\')">编辑</button> '
       + '<button class="red" onclick="del(\''+esc(r.name)+'\')">删除</button></td></tr>';
-  }).join('');
+  }).join('') || '<tr><td colspan="6" style="color:#aaa;padding:16px">没有数据</td></tr>';
 }
+function renderPager(){
+  const lp = lastPage();
+  document.getElementById('pinfo').textContent = '第 ' + state.page + ' / ' + lp + ' 页 · 共 ' + TOTAL + ' 条';
+  document.getElementById('count').textContent = TOTAL + ' 条';
+  document.getElementById('b_first').disabled = state.page <= 1;
+  document.getElementById('b_prev').disabled  = state.page <= 1;
+  document.getElementById('b_next').disabled  = state.page >= lp;
+  document.getElementById('b_last').disabled  = state.page >= lp;
+  renderSort();
+}
+async function load(){
+  const p = new URLSearchParams({page:state.page, page_size:state.size,
+                                sort_by:state.sort_by, sort_dir:state.sort_dir, q:state.q});
+  const d = await (await fetch('/api/topic-cache?' + p.toString())).json();
+  TOTAL = d.total || 0;
+  if (state.page > lastPage()) { state.page = lastPage(); return load(); }
+  renderRows(d.rows || []);
+  renderPager();
+}
+function go(p){ const lp = lastPage(); state.page = Math.min(Math.max(1, p), lp); load(); }
+function setSize(s){ state.size = parseInt(s,10); state.page = 1; load(); }
+function sortBy(col){
+  if (state.sort_by === col) state.sort_dir = (state.sort_dir === 'asc' ? 'desc' : 'asc');
+  else { state.sort_by = col; state.sort_dir = 'asc'; }
+  state.page = 1; load();
+}
+function doSearch(){ state.q = document.getElementById('q').value.trim(); state.page = 1; load(); }
+function clearSearch(){ document.getElementById('q').value=''; state.q=''; state.page=1; load(); }
+document.getElementById('q').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(); });
 function fill(n,i,l){ document.getElementById('f_name').value=n; document.getElementById('f_id').value=i; document.getElementById('f_link').value=l; }
 function say(t, ok){ const m=document.getElementById('msg'); m.textContent=t; m.className='msg '+(ok?'ok':'err'); setTimeout(function(){ m.textContent=''; }, 3000); }
-async function load(){ const r = await fetch('/api/topic-cache'); const d = await r.json(); ROWS = d.rows||[]; render(); }
 async function save(){
   const name=document.getElementById('f_name').value.trim().replace(/^#/,'');
   const topic_id=document.getElementById('f_id').value.trim();
   const link=document.getElementById('f_link').value.trim();
   if(!name||!topic_id){ say('话题名和 topic_id 必填', false); return; }
-  const r = await fetch('/api/topic-cache', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name, topic_id:topic_id, link:link})});
-  const d = await r.json();
+  const d = await (await fetch('/api/topic-cache', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name:name, topic_id:topic_id, link:link})})).json();
   if(d.ok){ say('已保存', true); document.getElementById('f_id').value=''; document.getElementById('f_link').value=''; load(); }
   else say(d.msg||'保存失败', false);
 }
 async function del(name){
   if(!confirm('删除 '+name+' ？')) return;
-  const r = await fetch('/api/topic-cache/'+encodeURIComponent(name), {method:'DELETE'});
-  const d = await r.json();
+  const d = await (await fetch('/api/topic-cache/'+encodeURIComponent(name), {method:'DELETE'})).json();
   if(d.ok){ say('已删除', true); load(); } else say('删除失败', false);
 }
 load();
@@ -3154,8 +3214,14 @@ async function openStoryPreview(){
 
 @app.route('/api/topic-cache', methods=['GET'])
 def api_topic_cache_list():
-    from sqlite_db import list_topic_ids
-    return jsonify({"rows": list_topic_ids()})
+    from sqlite_db import list_topic_ids_paged
+    return jsonify(list_topic_ids_paged(
+        page=request.args.get('page', 1),
+        page_size=request.args.get('page_size', 50),
+        sort_by=request.args.get('sort_by', 'name'),
+        sort_dir=request.args.get('sort_dir', 'asc'),
+        q=(request.args.get('q') or '').strip(),
+    ))
 
 
 @app.route('/api/topic-cache', methods=['POST'])
