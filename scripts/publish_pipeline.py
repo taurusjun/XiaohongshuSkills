@@ -163,6 +163,10 @@ def _extract_topic_tags_from_last_line(content: str) -> tuple[str, list[str]]:
     return body, parts
 
 
+# 话题名允许的字符：字母/数字/下划线/中日韩字符 + 长音符 ー
+_SAFE_TAG_RE = re.compile(r"^[\w\u30fc]+$")
+
+
 def _verify_local_files_exist(
     file_paths: list[str],
     media_label: str,
@@ -182,133 +186,467 @@ def _verify_local_files_exist(
             sys.exit(2)
 
 
-def _select_topics(
-    publisher: XiaohongshuPublisher,
-    tags: list[str],
-    timing_jitter: float = 0.25,
-):
-    """Select XHS topic tags by simulating real keyboard input.
+# ---------------------------------------------------------------------------
+# 话题标签写入（三层：缓存直插 / 敲字兜底 / 校验+回填）
+# ---------------------------------------------------------------------------
 
-    Uses Input.dispatchKeyEvent (keyDown+text per char) so XHS Vue/ProseMirror
-    processes the input natively and converts #tag<space> into a proper tiptap-topic
-    chip with a real XHS topic ID.  execCommand/insertText bypasses XHS event
-    handlers and never creates topic chips.
+def _topic_cache_get(name):
+    """命中返回 (topic_id, link)，未命中返回 None。"""
+    try:
+        from sqlite_db import get_topic_id
+        return get_topic_id(name)
+    except Exception:
+        return None
+
+
+def _topic_cache_put(name, topic_id, link, source="publish"):
+    try:
+        from sqlite_db import upsert_topic_id
+        upsert_topic_id(name, topic_id, link or "", source)
+    except Exception as e:
+        print("[pipeline] warning: write topic_cache failed (ignored): %s" % e)
+
+
+def _topic_cache_hit(name):
+    """记录一次缓存命中，用于观察缓存效果。"""
+    try:
+        from sqlite_db import bump_topic_hit
+        bump_topic_hit(name)
+    except Exception:
+        pass
+
+
+def _count_topic_chips(publisher):
+    """编辑器内真实话题 chip 数。必须限定在编辑器内 —— 推荐话题组件里也有 a.tiptap-topic。"""
+    try:
+        v = publisher._evaluate(
+            "document.querySelectorAll('div.ProseMirror a.tiptap-topic').length"
+        )
+        return int(v or 0)
+    except Exception:
+        return -1
+
+
+def _read_editor_topics(publisher):
+    try:
+        raw = publisher._evaluate(
+            "JSON.stringify(Array.from(document.querySelectorAll("
+            "'div.ProseMirror a.tiptap-topic')).map(function(e){"
+            "try{return JSON.parse(e.getAttribute('data-topic'))}catch(err){return null}})"
+            ".filter(Boolean))"
+        )
+        return json.loads(raw) if raw else []
+    except Exception:
+        return []
+
+
+def _cache_topics_from_editor(publisher):
+    """把编辑器里 chip 的真实 id 回填缓存，下次同标签即走快路径。"""
+    for t in _read_editor_topics(publisher):
+        d = (t or {}).get("data") or {}
+        if d.get("id") and d.get("name"):
+            _topic_cache_put(d["name"], d["id"], d.get("link"))
+
+
+def _insert_topic_via_tiptap(publisher, name, topic_id, link):
+    """用 Tiptap 事务直接插 chip：零键盘、零下拉、零 API。"""
+    data = {"id": topic_id, "name": name}
+    if link:
+        data["link"] = link
+    js = (
+        "(() => {"
+        " var el = document.querySelector('div.ProseMirror');"
+        " if (!el || !el.editor) return {ok:false, reason:'NO_EDITOR'};"
+        " var cnt = function(){ return document.querySelectorAll('div.ProseMirror a.tiptap-topic').length; };"
+        " var before = cnt();"
+        " el.editor.chain().focus('end').insertContent({type:'topic', attrs:{data: "
+        + json.dumps(data, ensure_ascii=False) +
+        "}}).run();"
+        " return {ok: cnt() > before, chips: before + '->' + cnt()};"
+        "})()"
+    )
+    try:
+        r = publisher._evaluate(js, timeout_seconds=20)
+        return bool(r and r.get("ok"))
+    except Exception:
+        return False
+
+
+def _type_char(publisher, ch):
+    if ch in ("\n", "\r"):
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyDown", "key": "Enter", "code": "Enter",
+            "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "key": "Enter", "code": "Enter",
+            "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+    elif ch == "\b":
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyDown", "key": "Backspace", "code": "Backspace",
+            "windowsVirtualKeyCode": 8, "nativeVirtualKeyCode": 8})
+        publisher._send("Input.dispatchKeyEvent", {
+            "type": "keyUp", "key": "Backspace", "code": "Backspace",
+            "windowsVirtualKeyCode": 8, "nativeVirtualKeyCode": 8})
+    else:
+        publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
+        publisher._send("Input.dispatchKeyEvent", {"type": "keyUp", "key": ch})
+    time.sleep(0.06)
+
+
+def _clear_typed(publisher, name):
+    """删掉刚敲进去的字符，避免残留在正文里。"""
+    try:
+        r = publisher._evaluate("""(function(){
+            var ed = document.querySelector('div.ProseMirror').editor;
+            if (!ed) return {ok:false, reason:'NO_EDITOR'};
+            var s = ed.state, to = s.selection.to;
+            var expected = %s;
+            var from = Math.max(0, to - expected.length);
+            var actual = s.doc.textBetween(from, to, "");
+            if (actual !== expected) return {ok:false, actual: actual};
+            ed.chain().focus().deleteRange({from: from, to: to}).run();
+            return {ok:true};
+        })()""" % json.dumps("#" + name))
+        return bool(r and r.get("ok"))
+    except Exception:
+        return False
+
+
+def _activate_editor(publisher):
+    """无 VNC 时纯 JS focus() 不足以让编辑器接收键盘输入，必须先发真实鼠标点击。"""
+    publisher._evaluate("""
+        Object.defineProperty(document,'visibilityState',{get:()=>'visible',configurable:true});
+        Object.defineProperty(document,'hidden',{get:()=>false,configurable:true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    """)
+    rect = publisher._evaluate("""(function(){
+        var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+        if(!e)return null; var r=e.getBoundingClientRect();
+        return {x:r.x+r.width/2, y:r.y+r.height/2};})()""")
+    if not rect:
+        return False
+    for evt in ("mousePressed", "mouseReleased"):
+        publisher._send("Input.dispatchMouseEvent", {
+            "type": evt, "x": rect["x"], "y": rect["y"], "button": "left", "clickCount": 1})
+        time.sleep(0.05)
+    time.sleep(0.3)
+    return True
+
+
+def _select_topic_by_typing(publisher, name, timing_jitter=0.25, attempts=3):
+    """敲 #name 触发下拉 → 轮询等它渲染 → 点精确匹配项 → 以 chip 数校验成败。
+
+    - 轮询代替固定等待（下拉实测需 ~2s，固定 1.5s 会误判失败）
+    - 以「编辑器内 chip 是否真的增加」为成败依据
+    - 失败重试：实测页面联想常在第 1 次不出、第 2 次才出
+    """
+    before = _count_topic_chips(publisher)
+    if before < 0:
+        return False
+
+    js_pick = """(function(){
+        var items = Array.from(document.querySelectorAll('.item')).filter(function(e){return e.offsetParent && e.innerText;});
+        if (!items.length) return null;
+        // 下拉项文字格式不固定：可能是 "#AKB\\n328.1万浏览"，也可能连成 "#AKB328.1万浏览"，
+        // 必须把浏览量后缀剥掉才能做精确匹配。
+        var norm = function(s){
+          s = (s || "").split("\\n")[0].trim().replace(/^#/, "");
+          return s.replace(/\\d+(\\.\\d+)?(万|亿)?浏览$/, "").trim();
+        };
+        var exact = null, partial = null;
+        for (var el of items) {
+          if (norm(el.innerText) === %s) { exact = el; break; }
+          if (!partial && el.innerText.indexOf(%s) >= 0) partial = el;
+        }
+        var t = exact || partial;
+        if (!t) return null;
+        t.click();
+        return norm(t.innerText);
+    })()""" % (json.dumps(name), json.dumps(name))
+
+    for attempt in range(1, attempts + 1):
+        publisher._evaluate("""(function(){
+            var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+            if(!e)return; e.focus(); var s=window.getSelection(),r=document.createRange();
+            r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);})()""")
+        time.sleep(0.2)
+
+        _type_char(publisher, "\n")
+        _type_char(publisher, "#")
+        for ch in name:
+            _type_char(publisher, ch)
+
+        clicked = None
+        deadline = time.time() + 3.0
+        nudge_at = time.time() + 1.5
+        nudged = False
+        while time.time() < deadline:
+            try:
+                clicked = publisher._evaluate(js_pick, timeout_seconds=15)
+            except Exception:
+                clicked = None
+            if clicked:
+                break
+            # 联想没弹出来：退一格再重敲最后一个字符，重新触发（实测第 1 次常不触发）
+            if not nudged and time.time() >= nudge_at and name:
+                _type_char(publisher, "\b")
+                time.sleep(0.15)
+                _type_char(publisher, name[-1])
+                nudged = True
+            time.sleep(0.3)
+
+        if clicked:
+            time.sleep(0.6)
+            if _count_topic_chips(publisher) > before:
+                if clicked.lstrip("#") != name:
+                    print("[pipeline] warning: topic name mismatch: want #%s, picked %s" % (name, clicked))
+                return True
+
+        _clear_typed(publisher, name)   # 只在确认真的敲进去过时才删，避免误删 chip
+        time.sleep(0.4)
+        if attempt < attempts:
+            print("[pipeline] retry topic tag #%s (attempt %d/%d)" % (name, attempt, attempts))
+
+    return False
+
+
+def _topic_from_api_response(body, name):
+    """从 search/topics 响应里取「名字完全相等」的话题。"""
+    try:
+        topics = [x.get("topic_info_dto")
+                  for x in (json.loads(body).get("data", {}).get("topics") or [])]
+    except Exception:
+        return None
+    for t in topics:
+        if t and t.get("name") == name:
+            return t
+    return None
+
+
+def _parse_topic_list(body):
+    """把 search/topics 响应体解析成 topic_info_dto 列表。"""
+    try:
+        return [x.get("topic_info_dto")
+                for x in (json.loads(body).get("data", {}).get("topics") or [])
+                if x.get("topic_info_dto")]
+    except Exception:
+        return []
+
+
+def _cache_recommend_topics(publisher):
+    """把发布页「推荐话题」组件里的 tagId 收进缓存。
+
+    纯 DOM 读取 —— 零键盘、零 API、零等待。已验证：推荐组件的 tagId 就是 chip 的 data.id。
+    """
+    try:
+        raw = publisher._evaluate("""JSON.stringify(Array.from(
+            document.querySelectorAll('.tag-group span.tag')).map(function(e){
+              var name = (e.innerText || '').trim().replace(/^#/, '');
+              var id = null;
+              try {
+                id = ((JSON.parse(e.getAttribute('data-impression') || '{}').tagTarget || {}).value || {}).tagId || null;
+              } catch (err) {}
+              return {name: name, id: id};
+            }).filter(function(x){ return x.name && x.id; }))""")
+        items = json.loads(raw) if raw else []
+    except Exception:
+        return 0
+    n = 0
+    for it in items:
+        if _SAFE_TAG_RE.match(it["name"]):
+            _topic_cache_put(it["name"], it["id"], "", "recommend")
+            n += 1
+    return n
+
+
+TAG_TIMEOUT_SECONDS = 20.0
+
+
+def _capture_topic_signature(publisher, seed_name, attempts=3):
+    """敲一次触发页面发 search/topics 签名请求，截获可复用的请求头。
+
+    实测（2026-10-05）：同一套 X-s / X-S-Common / X-t 头可用于不同关键词
+    （签名按时间戳+会话算，与关键词无关），所以整批标签只需采集一次。
+
+    注意：不清空编辑器（正文已在里面），只在末尾换行后敲标签。
+    返回 (url, headers, body_template) 或 None。
+    """
+    try:
+        publisher._send("Network.enable")
+    except Exception:
+        pass
+
+    for attempt in range(1, attempts + 1):
+        sink = []
+        publisher._event_sink = sink
+        try:
+            publisher._evaluate("""(function(){
+                var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
+                if(!e)return; e.focus(); var s=window.getSelection(),r=document.createRange();
+                r.selectNodeContents(e); r.collapse(false); s.removeAllRanges(); s.addRange(r);})()""")
+            time.sleep(0.25)
+            _type_char(publisher, "\n")
+            _type_char(publisher, "#")
+            for ch in seed_name:
+                _type_char(publisher, ch)
+
+            deadline = time.time() + 4.0
+            while time.time() < deadline:
+                publisher._drain_events(0.3, sink)
+                if any(m.get("method") == "Network.requestWillBeSent"
+                       and "search/topics" in ((m.get("params", {}).get("request", {}) or {}).get("url", ""))
+                       for m in sink):
+                    break
+
+            req = None
+            for m in sink:
+                if m.get("method") == "Network.requestWillBeSent":
+                    r = m["params"]["request"]
+                    if "search/topics" in r.get("url", ""):
+                        req = r
+            _clear_typed(publisher, seed_name)
+            if req:
+                headers = {k: v for k, v in req["headers"].items()
+                           if k.lower() in ("content-type", "x-s", "x-s-common", "x-t",
+                                            "x-b3-traceid", "x-xray-traceid")}
+                try:
+                    body_tpl = json.loads(req.get("postData") or "{}")
+                except Exception:
+                    body_tpl = {}
+                print("[pipeline] captured topic signature (X-t=%s)" % headers.get("X-t"))
+                return (req["url"], headers, body_tpl)
+        finally:
+            publisher._event_sink = None
+        time.sleep(0.4)
+
+    print("[pipeline] warning: could not capture topic signature")
+    return None
+
+
+def _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=8.0):
+    """用截获的签名头直接调 API（零键盘）。
+
+    返回 (topic_or_None, status)，status ∈ ok / no_match / expired / error
+    """
+    url, headers, body_tpl = sig
+    body = dict(body_tpl)
+    body["keyword"] = name
+    js = """(async () => {
+      try {
+        const r = await fetch(%s, {method:'POST', credentials:'include',
+          headers: %s, body: JSON.stringify(%s)});
+        const t = await r.text();
+        return JSON.stringify({status: r.status, body: t});
+      } catch (e) { return JSON.stringify({error: String(e)}); }
+    })()""" % (json.dumps(url), json.dumps(headers), json.dumps(body, ensure_ascii=False))
+    try:
+        raw = publisher._evaluate(js, timeout_seconds=timeout_seconds)
+    except Exception:
+        return (None, "error")
+    try:
+        res = json.loads(raw) if raw else {}
+    except Exception:
+        return (None, "error")
+    if res.get("error"):
+        return (None, "error")
+    if int(res.get("status") or 0) != 200:
+        return (None, "expired")
+    topics = _parse_topic_list(res.get("body") or "")
+    if not topics:
+        return (None, "no_match")
+    hit = next((t for t in topics if t.get("name") == name), None)
+    return (hit, "ok" if hit else "no_match")
+
+
+def _select_topics(publisher, tags, timing_jitter=0.25):
+    """写入话题标签。
+
+    1) 缓存命中 → Tiptap 事务直插（零键盘零 API）
+    2) 未命中 → 用一次采集到的签名头直接调 API（整批复用，不逐个敲字）
+    3) 签名失效 → 重新采集一次
+    4) 兜底 → 敲字 + 下拉
+    每个标签有独立超时，超时直接跳过，不拖垮整批。
     """
     if not tags:
         return
 
-    print(f"[pipeline] Step 4.1: Selecting {len(tags)} topic tag(s)...")
+    print("[pipeline] Step 4.1: Selecting %d topic tag(s)..." % len(tags))
+    if not _activate_editor(publisher):
+        print("[pipeline] warning: editor not found, skip topic tags")
+        return
+
+    n_rec = _cache_recommend_topics(publisher)
+    if n_rec:
+        print("[pipeline] cached %d topic id(s) from recommend widget" % n_rec)
+
+    sig = None
     failed_tags = []
+    skipped_tags = []
+    timeout_tags = []
 
-    def _type_char(ch: str):
-        """Send a single character via keyDown+keyUp (keyDown carries the text)."""
-        if ch in ("\n", "\r"):
-            # ProseMirror needs a real Enter key event to create a new paragraph
-            publisher._send("Input.dispatchKeyEvent", {
-                "type": "keyDown", "key": "Enter", "code": "Enter",
-                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
-            })
-            publisher._send("Input.dispatchKeyEvent", {
-                "type": "keyUp", "key": "Enter", "code": "Enter",
-                "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
-            })
-        else:
-            publisher._send("Input.dispatchKeyEvent", {"type": "keyDown", "key": ch, "text": ch})
-            publisher._send("Input.dispatchKeyEvent", {"type": "keyUp",   "key": ch})
-        time.sleep(0.06)
-
-    def _focus_editor_end():
-        publisher._evaluate("""
-            (function(){
-                var e=document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
-                if(!e)return;
-                e.focus();
-                var s=window.getSelection(),r=document.createRange();
-                r.selectNodeContents(e);r.collapse(false);
-                s.removeAllRanges();s.addRange(r);
-            })()
-        """)
-
-    # Override visibilityState so Vue event handlers process keyboard events
-    # when Chrome window has no active display (e.g. VNC disconnected).
-    publisher._evaluate("""
-        Object.defineProperty(document, 'visibilityState', {get: () => 'visible', configurable: true});
-        Object.defineProperty(document, 'hidden', {get: () => false, configurable: true});
-        document.dispatchEvent(new Event('visibilitychange'));
-    """)
-
-    # Scroll editor into viewport so keyboard events and dropdown clicks land correctly.
-    publisher._evaluate("""
-        var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
-        if (e) e.scrollIntoView({block: 'center', behavior: 'instant'});
-    """)
-    time.sleep(0.3)
-
-    # Mouse click on editor center — required to actually activate the editor
-    # for keyboard input. JS focus() alone is insufficient without VNC.
-    editor_rect = publisher._evaluate("""
-        (function(){
-            var e = document.querySelector('div.tiptap.ProseMirror,div.ProseMirror[contenteditable]');
-            if (!e) return null;
-            var r = e.getBoundingClientRect();
-            return {x: r.x + r.width/2, y: r.y + r.height/2};
-        })()
-    """)
-    if editor_rect:
-        for ev in ("mousePressed", "mouseReleased"):
-            publisher._send("Input.dispatchMouseEvent", {
-                "type": ev, "x": editor_rect["x"], "y": editor_rect["y"],
-                "button": "left", "clickCount": 1,
-            })
-        time.sleep(0.2)
-
-    _focus_editor_end()
-    time.sleep(0.2)
-
-    for index, tag in enumerate(tags):
-        normalized_tag = tag.lstrip("#").strip()
-        if not normalized_tag:
+    for tag in tags:
+        name = tag.lstrip("#").strip()
+        if not name:
+            continue
+        if not _SAFE_TAG_RE.match(name):
+            skipped_tags.append(name)
             continue
 
-        # Two newlines before first tag: one empty line + one for the tag line
-        if index == 0:
-            _type_char("\n")
-            _type_char("\n")
-            time.sleep(0.2)
+        tag_deadline = time.time() + TAG_TIMEOUT_SECONDS
 
-        # Type # + each character of the tag name
-        _type_char("#")
-        time.sleep(0.1)
-        for ch in normalized_tag:
-            _type_char(ch)
+        # --- Tier 1: 缓存直插 ---
+        cached = _topic_cache_get(name)
+        if cached and _insert_topic_via_tiptap(publisher, name, cached[0], cached[1]):
+            _topic_cache_hit(name)
+            print("[pipeline] Topic selected (cache): #%s" % name)
+            continue
+        if cached:
+            print("[pipeline] warning: cache insert failed: #%s" % name)
 
-        # Wait for XHS to show the topic suggestion dropdown
-        suggest_wait = _jitter_seconds(1.5, timing_jitter, minimum_seconds=1.0)
-        time.sleep(suggest_wait)
+        # --- Tier 2: 签名直调 ---
+        topic, status = (None, "error")
+        if sig is None:
+            sig = _capture_topic_signature(publisher, name)
+        if sig:
+            remaining = max(3.0, tag_deadline - time.time())
+            topic, status = _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=min(remaining, 8.0))
+            if status == "expired":
+                sig = _capture_topic_signature(publisher, name)
+                if sig:
+                    remaining = max(3.0, tag_deadline - time.time())
+                    topic, status = _fetch_topic_with_signature(publisher, sig, name, timeout_seconds=min(remaining, 8.0))
 
-        # Confirm: use JS element.click() on the first matching .item in the dropdown.
-        # dispatchMouseEvent and ArrowDown+Enter are unreliable without an active display.
-        # JS click() reliably triggers Vue's click handler regardless of visibility state.
-        tag_keyword = normalized_tag
-        clicked = publisher._evaluate(f"""
-            (function() {{
-                var items = Array.from(document.querySelectorAll('.item'));
-                for (var el of items) {{
-                    if (el.offsetParent && el.innerText && el.innerText.includes({repr(tag_keyword)})) {{
-                        el.click();
-                        return true;
-                    }}
-                }}
-                return false;
-            }})()
-        """)
-        time.sleep(_jitter_seconds(0.4, timing_jitter, minimum_seconds=0.2))
+        if status == "ok" and topic and topic.get("id"):
+            if _insert_topic_via_tiptap(publisher, name, topic["id"], topic.get("link")):
+                _topic_cache_put(name, topic["id"], topic.get("link"))
+                print("[pipeline] Topic selected (api): #%s" % name)
+                continue
 
-        print(f"[pipeline] Topic selected: {tag}")
+        if status == "no_match":
+            failed_tags.append(name)
+            print("[pipeline] Topic NOT selected (no exact match): #%s" % name)
+            continue
 
-        if index < len(tags) - 1:
-            time.sleep(_jitter_seconds(0.3, timing_jitter, minimum_seconds=0.15))
+        if time.time() > tag_deadline:
+            timeout_tags.append(name)
+            print("[pipeline] Topic TIMEOUT, skipped: #%s" % name)
+            continue
 
+        # --- Tier 3: 敲字 + 下拉兜底 ---
+        if _select_topic_by_typing(publisher, name, timing_jitter, attempts=1):
+            print("[pipeline] Topic selected (typed): #%s" % name)
+            _cache_topics_from_editor(publisher)
+        elif time.time() > tag_deadline:
+            timeout_tags.append(name)
+            print("[pipeline] Topic TIMEOUT, skipped: #%s" % name)
+        else:
+            failed_tags.append(name)
+            print("[pipeline] Topic NOT selected: #%s" % name)
+
+    if skipped_tags:
+        print("[pipeline] Skipped tags containing symbols: " + ", ".join(skipped_tags))
+    if timeout_tags:
+        print("[pipeline] Skipped tags due to timeout: " + ", ".join(timeout_tags))
     if failed_tags:
         print("[pipeline] Warning: Some topic tags were not selected: " + ", ".join(failed_tags))
 
@@ -518,7 +856,8 @@ def main():
         preserve_upload_paths=args.preserve_upload_paths,
     )
     try:
-        publisher.connect(reuse_existing_tab=reuse_existing_tab)
+        publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
         logged_in = publisher.check_login()
         if not logged_in:
             publisher.disconnect()
@@ -528,14 +867,16 @@ def main():
                     # Auto-fallback: restart Chrome in headed mode for QR login
                     print("[pipeline] Headless mode: not logged in. Switching to headed mode for login...")
                     restart_chrome(port=port, headless=False, account=account)
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                    publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
                     publisher.open_login_page()
                 else:
                     print(
                         "[pipeline] Headless + remote mode: cannot auto-restart remote Chrome. "
                         "Attempting to open login page on existing remote browser..."
                     )
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                    publisher.connect(target_url_prefix="https://creator.xiaohongshu.com",
+                         reuse_existing_tab=reuse_existing_tab)
                     publisher.open_login_page()
             else:
                 print("[pipeline] Headless mode: not logged in. Run without --headless to login first.")

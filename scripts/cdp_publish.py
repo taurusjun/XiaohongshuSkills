@@ -352,10 +352,17 @@ class XiaohongshuPublisher:
         self.login_cache_file = LOGIN_CACHE_FILE
 
     def _prepare_upload_file_path(self, file_path: str) -> str:
-        """Return the file path to send to DOM.setFileInputFiles."""
+        """Return the file path to send to DOM.setFileInputFiles.
+
+        DOM.setFileInputFiles 必须收到绝对路径：传相对路径会让渲染进程主线程卡死
+        （Runtime.evaluate / Page.enable 全部超时，且不可恢复）。
+        """
         if self._should_preserve_upload_path(file_path):
             return file_path
-        return file_path.replace("\\", "/")
+        normalized = file_path.replace("\\", "/")
+        if _is_local_host(self.host) and not os.path.isabs(normalized):
+            normalized = os.path.abspath(normalized)
+        return normalized
 
     def _looks_like_windows_drive_path(self, file_path: str) -> bool:
         """Return True when the path looks like a Windows drive-letter path."""
@@ -617,6 +624,24 @@ class XiaohongshuPublisher:
         self._tab_ws_url = ws_url  # saved for reconnect after page navigation
         self.ws = ws_client.connect(ws_url, max_size=None)
         print("[cdp_publish] Connected to Chrome tab.")
+        self._ensure_page_active()
+
+    def _ensure_page_active(self):
+        """让页面在「无显示器 / VNC 关闭」时也保持渲染活跃。
+
+        Chrome 在窗口没有显示器时会节流渲染，导致小红书的话题联想插件不发起请求
+        —— 这就是「必须开 VNC 才能输入标签」的根因。
+        实测：下面两个调用组合可以把渲染唤醒（rAF 由 0 恢复到 ~20-30fps），
+        联想请求随之恢复正常（VNC 关闭状态下连续多次验证通过）。
+        """
+        for method, params in (
+            ("Page.setWebLifecycleState", {"state": "active"}),
+            ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
+        ):
+            try:
+                self._send(method, params)
+            except Exception:
+                pass
 
     def disconnect(self):
         """Close the WebSocket connection."""
@@ -683,7 +708,32 @@ class XiaohongshuPublisher:
                         raise _PromiseCollectedError(f"CDP error: {err}")
                     raise CDPError(f"CDP error: {err}")
                 return data.get("result", {})
-            # else: it's an event, skip it
+            # else: 它是事件。需要抓 Network 响应时收集到 _event_sink
+            sink = getattr(self, "_event_sink", None)
+            if sink is not None:
+                sink.append(data)
+
+    def _drain_events(self, seconds, sink=None):
+        """持续读取 websocket 并把事件收集到 sink（用于抓 Network 响应）。
+
+        与 _send 的区别：_send 只等自己那条命令的响应、其余事件丢弃；
+        这里专门用来在「页面自己发请求」时把 responseReceived 等事件收下来。
+        """
+        if sink is None:
+            sink = getattr(self, "_event_sink", None)
+        end = time.time() + float(seconds)
+        while time.time() < end:
+            try:
+                raw = self.ws.recv(timeout=0.4)
+            except Exception:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            if "id" not in data and sink is not None:
+                sink.append(data)
+        return sink
 
     def _build_content_data_result(
         self,
@@ -926,6 +976,8 @@ class XiaohongshuPublisher:
         except Exception:
             pass
         self.ws = ws_client.connect(self._tab_ws_url, max_size=None)
+        # 新会话会丢掉 Emulation/生命周期 override，重新激活一次
+        self._ensure_page_active()
 
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
@@ -941,6 +993,8 @@ class XiaohongshuPublisher:
             self._reconnect()
             # After reconnect the page may still be loading; give it extra time.
             self._sleep(2, minimum_seconds=1.5)
+        # 导航后重新激活：无显示器时新页面会回到被节流状态
+        self._ensure_page_active()
 
     # ------------------------------------------------------------------
     # Login check
@@ -4541,6 +4595,15 @@ class XiaohongshuPublisher:
         preserve_flags = [self._should_preserve_upload_path(path) for path in image_paths]
         prepared_paths = [self._prepare_upload_file_path(path) for path in image_paths]
 
+        # 本地模式下先校验文件存在：把不存在的路径交给 setFileInputFiles 会卡死渲染进程
+        if _is_local_host(self.host):
+            missing = [path for path in prepared_paths if not os.path.isfile(path)]
+            if missing:
+                raise CDPError(
+                    "Image file(s) not found; refusing to call setFileInputFiles "
+                    "(it would hang the renderer): " + ", ".join(missing)
+                )
+
         print(f"[cdp_publish] Uploading {len(image_paths)} image(s)...")
         if self.preserve_upload_paths:
             print("[cdp_publish] Upload path normalization disabled; preserving original paths.")
@@ -4958,6 +5021,53 @@ class XiaohongshuPublisher:
             })
             time.sleep(0.05)
 
+    def _click_publish_button_inner(self) -> bool:
+        """直接对闭合 shadow DOM 里的真按钮调 .click()。
+
+        xhs-publish-btn 的按钮位于闭合 shadow root 内，页面 JS 拿不到；但 CDP 的
+        DOM.describeNode(pierce=True) 能穿透找到它，DOM.resolveNode 拿到 JS 句柄后
+        直接调 .click()。比合成坐标鼠标事件可靠得多（后者对 shadow DOM 按钮经常
+        不被 Vue 接受）。
+        """
+        try:
+            self._send("DOM.enable")
+            doc = self._send("DOM.getDocument", {"depth": 1})
+            host_ids = self._send("DOM.querySelectorAll", {
+                "nodeId": doc["root"]["nodeId"],
+                "selector": SELECTORS["publish_button"],
+            }).get("nodeIds", [])
+            if not host_ids:
+                return False
+            desc = self._send("DOM.describeNode", {
+                "nodeId": host_ids[0], "depth": -1, "pierce": True,
+            })
+            shadow_roots = desc["node"].get("shadowRoots", [])
+            if not shadow_roots:
+                return False
+            inner_ids = self._send("DOM.querySelectorAll", {
+                "nodeId": shadow_roots[0]["nodeId"],
+                "selector": ".ce-btn.bg-red",
+            }).get("nodeIds", [])
+            if not inner_ids:
+                return False
+            resolved = self._send("DOM.resolveNode", {"nodeId": inner_ids[0]})
+            object_id = resolved.get("object", {}).get("objectId")
+            if not object_id:
+                return False
+            result = self._send("Runtime.callFunctionOn", {
+                "objectId": object_id,
+                "functionDeclaration": "function(){ this.click(); return true; }",
+                "returnByValue": True,
+            })
+            try:
+                self._send("Runtime.releaseObject", {"objectId": object_id})
+            except Exception:
+                pass
+            return bool(result and result.get("result", {}).get("value"))
+        except Exception as e:
+            print(f"[cdp_publish] inner publish click failed: {e}")
+            return False
+
     def _click_publish(self, scheduled: bool = False):
         """Click the publish button using CDP mouse events."""
         print("[cdp_publish] Clicking publish button...")
@@ -4987,29 +5097,86 @@ class XiaohongshuPublisher:
 
         cx = rect["x"] + rect["width"] / 2
         cy = rect["y"] + rect["height"] / 2
-        print(f"[cdp_publish] Clicking publish button at ({cx:.0f}, {cy:.0f})...")
-        self._click_mouse(cx, cy)
-        print("[cdp_publish] Publish button clicked.")
 
-        # Wait for publish success and get note link
-        self._sleep(5, minimum_seconds=2.0)
-        note_link = self._evaluate("""
-            (function() {
-                // Try to find note link in success message
-                var links = document.querySelectorAll('a[href*="xiaohongshu.com/explore"]');
-                if (links.length > 0) {
-                    return links[0].href;
-                }
-                // Try to find note ID in page
-                var noteId = document.body.textContent.match(/\\b[0-9a-fA-F]{24}\\b/);
-                if (noteId) {
-                    return 'https://www.xiaohongshu.com/explore/' + noteId[0];
-                }
-                return null;
-            })();
-        """)
+        # 点击前记录页面已有的 24 位 hex（用于识别"点击后新出现"的笔记 id，
+        # 避免把页面上本来就存在的其他笔记 id 误当成本次发布成功）
+        baseline_ids = set()
+        try:
+            raw0 = self._evaluate("(function(){var m=(document.body.innerText||'').match(/\\b[0-9a-fA-F]{24}\\b/g)||[];return JSON.stringify(m);})()")
+            baseline_ids = set(json.loads(raw0) or [])
+        except Exception:
+            pass
 
-        return note_link
+        # 优先直接对闭合 shadow DOM 里的真按钮调 .click()；坐标点击仅作兜底。
+        if self._click_publish_button_inner():
+            print("[cdp_publish] Publish button clicked (inner shadow DOM .click()).")
+        else:
+            print(f"[cdp_publish] Inner click unavailable; falling back to coordinate click at ({cx:.0f}, {cy:.0f})...")
+            self._click_mouse(cx, cy)
+            print("[cdp_publish] Publish button clicked (coordinate).")
+
+        # 等发布确认：只认强信号。确认不了就抛错 —— 让上层不写库、稿子留在待发队列。
+        note_link = None
+        confirmed = False
+        deadline = time.time() + 20.0
+        while time.time() < deadline:
+            self._sleep(1.0, minimum_seconds=0.5)
+            raw = self._evaluate("""
+                (function() {
+                    var links = document.querySelectorAll('a[href*="xiaohongshu.com/explore"]');
+                    var btn = document.querySelector('xhs-publish-btn');
+                    var titleEl = document.querySelector('div.d-input input');
+                    var previews = document.querySelectorAll('.img-preview-area .pr').length;
+                    var chips = document.querySelectorAll('div.ProseMirror a.tiptap-topic').length;
+                    var text = document.body.innerText || '';
+                    var ids = text.match(/\\b[0-9a-fA-F]{24}\\b/g) || [];
+                    return JSON.stringify({
+                        ids: ids,
+                        link: links.length ? links[0].href : null,
+                        url: location.href,
+                        loading: btn ? btn.getAttribute('submit-loading') : null,
+                        titleEmpty: !titleEl || !titleEl.value,
+                        previews: previews,
+                        chips: chips,
+                        successText: /发布成功|定时发布成功|已提交|发布完成/.test(text)
+                    });
+                })();
+            """)
+            try:
+                info = json.loads(raw) if raw else {}
+            except Exception:
+                info = {}
+            if info.get("link"):
+                note_link = info["link"]
+                confirmed = True
+                break
+            new_ids = [i for i in (info.get("ids") or []) if i not in baseline_ids]
+            if new_ids:
+                note_link = "https://www.xiaohongshu.com/explore/" + new_ids[0]
+                confirmed = True
+                break
+            if "published=true" in (info.get("url") or ""):
+                confirmed = True
+                break
+            if "/new/home" in (info.get("url") or ""):
+                confirmed = True
+                break
+            if info.get("successText"):
+                confirmed = True
+                break
+            if info.get("titleEmpty") and info.get("previews") == 0 and info.get("chips") == 0:
+                confirmed = True
+                break
+
+        if confirmed:
+            print("[cdp_publish] Publish confirmed.")
+            return note_link
+
+        raise CDPError(
+            "Publish NOT confirmed within 20s "
+            "(no published=true / note link / success text / form reset). "
+            "Leaving article unmarked so it stays in the pending queue."
+        )
 
     # ------------------------------------------------------------------
     # Main publish workflow

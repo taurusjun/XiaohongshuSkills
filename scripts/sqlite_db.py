@@ -206,6 +206,17 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_mh_key ON metrics_history(news_key);
             CREATE INDEX IF NOT EXISTS idx_mh_time ON metrics_history(collected_at);
+
+            -- 话题名 → 小红书话题 id 映射（发布时用于直接插入话题 chip，免去敲字+下拉）
+            CREATE TABLE IF NOT EXISTS topic_cache (
+                name        TEXT PRIMARY KEY,   -- 话题名（不含 #）
+                topic_id    TEXT NOT NULL,      -- 权威话题 id（chip 的 data.id）
+                link        TEXT DEFAULT '',    -- xhsdiscover://topic/v2/...
+                source      TEXT DEFAULT '',    -- harvest | api | publish | manual
+                hit_count   INTEGER DEFAULT 0,  -- 走缓存直插的次数
+                created_at  TEXT,
+                updated_at  TEXT
+            );
         """)
         # Compat: add columns to existing DBs
         _news_compat = [
@@ -244,9 +255,20 @@ def init_db():
             ("wechat_publish", "INTEGER DEFAULT 0"),
             ("wechat_draft_id", "TEXT DEFAULT ''"),
             ("wechat_pub_time", "TEXT DEFAULT ''"),
+            ("grade", "TEXT DEFAULT ''"),
+            ("grade_reason", "TEXT DEFAULT ''"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError: pass  # column already exists
+
+        # topic_cache 兼容：早期版本只有 name/topic_id/link/updated_at
+        for col, col_type in [
+            ("source", "TEXT DEFAULT ''"),
+            ("hit_count", "INTEGER DEFAULT 0"),
+            ("created_at", "TEXT"),
+        ]:
+            try: db.execute(f"ALTER TABLE topic_cache ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError: pass  # column already exists
 
         # 存量数据迁移：format_suitability JSON 数组 → format 单值字符串
@@ -349,6 +371,90 @@ def load_today_keys(date_str: str = "") -> set[str]:
         ).fetchall()
     return {r['key'] for r in rows}
 
+# ---------------------------------------------------------------------------
+# topic_cache：话题名 → 小红书话题 id 映射
+# ---------------------------------------------------------------------------
+
+def get_topic_id(name: str):
+    """命中返回 (topic_id, link)，未命中返回 None。"""
+    with _connect() as db:
+        row = db.execute(
+            "SELECT topic_id, link FROM topic_cache WHERE name=?", (name,)
+        ).fetchone()
+        if not row:
+            return None
+        return (row["topic_id"], row["link"] or "")
+
+
+def upsert_topic_id(name: str, topic_id: str, link: str = "", source: str = "") -> None:
+    with _connect() as db:
+        db.execute(
+            "INSERT INTO topic_cache(name, topic_id, link, source, hit_count, created_at, updated_at)"
+            " VALUES(?,?,?,?,0,datetime('now','localtime'),datetime('now','localtime'))"
+            " ON CONFLICT(name) DO UPDATE SET topic_id=excluded.topic_id,"
+            " link=excluded.link, source=excluded.source, updated_at=excluded.updated_at",
+            (name, topic_id, link or "", source or ""),
+        )
+
+
+def bump_topic_hit(name: str) -> None:
+    """记录一次缓存命中（用于观察缓存效果）。"""
+    with _connect() as db:
+        db.execute(
+            "UPDATE topic_cache SET hit_count=COALESCE(hit_count,0)+1,"
+            " updated_at=datetime('now','localtime') WHERE name=?",
+            (name,),
+        )
+
+
+def list_topic_ids() -> list:
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT name, topic_id, link, source, hit_count, created_at, updated_at"
+            " FROM topic_cache ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+_TOPIC_SORTABLE = {"name", "topic_id", "source", "hit_count", "created_at", "updated_at"}
+
+
+def list_topic_ids_paged(page: int = 1, page_size: int = 50,
+                         sort_by: str = "name", sort_dir: str = "asc",
+                         q: str = "") -> dict:
+    """分页 + 排序 + 关键字查询 topic_cache。
+
+    sort_by 走白名单，避免 SQL 注入。
+    """
+    if sort_by not in _TOPIC_SORTABLE:
+        sort_by = "name"
+    direction = "DESC" if str(sort_dir).lower() == "desc" else "ASC"
+    page = max(1, int(page))
+    page_size = min(500, max(1, int(page_size)))
+
+    where, params = "", []
+    if q:
+        where = " WHERE name LIKE ? OR topic_id LIKE ?"
+        params = ["%" + q + "%", "%" + q + "%"]
+
+    with _connect() as db:
+        total = db.execute("SELECT COUNT(*) AS c FROM topic_cache" + where, params).fetchone()["c"]
+        rows = db.execute(
+            "SELECT name, topic_id, link, source, hit_count, created_at, updated_at"
+            " FROM topic_cache" + where +
+            " ORDER BY " + sort_by + " " + direction + ", name ASC LIMIT ? OFFSET ?",
+            params + [page_size, (page - 1) * page_size],
+        ).fetchall()
+    return {"rows": [dict(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
+
+
+def delete_topic_id(name: str) -> bool:
+    with _connect() as db:
+        cur = db.execute("DELETE FROM topic_cache WHERE name=?", (name,))
+        return cur.rowcount > 0
+
+
 def get_by_key(key: str) -> dict | None:
     with _connect() as db:
         row = db.execute("SELECT * FROM news WHERE key=?", (key,)).fetchone()
@@ -426,7 +532,8 @@ def update_news(key: str, fields: dict) -> bool:
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
-               'channel'}
+               'channel',
+               'grade','grade_reason'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

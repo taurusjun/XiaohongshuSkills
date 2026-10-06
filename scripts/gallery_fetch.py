@@ -66,6 +66,7 @@ GALLERY_SITES: dict[str, str] = {
     "billboard-japan.com":  ".article-photo, article",
     "iza.ne.jp":             "main, article",
     "crank-in.net":         ".photo-link-img",
+    "bezzy.jp":              "main, article",
     "limo.media":           "article, .article-body",
     "mezamashi.media":      "article, .gallery-body",
     "smart-flash.jp":       ".imageArea, article",
@@ -106,6 +107,9 @@ GALLERY_SITES: dict[str, str] = {
     "newsdig.tbs.co.jp":  "article",
     "asahi.com":          "main[role=main]",
     "bunshun.jp":          ".photo-area, article",
+    "itmedia.co.jp":      ".article-thumb, article",
+    "nlab.itmedia.co.jp": ".article-thumb, article",
+    "j-cast.com":         "article, .post-content",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -120,6 +124,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "friday.kodansha.co.jp", "shueisha.online", "entamenext.com",
                          "musicvoice.jp", "daily.co.jp", "vivi.tv", "times.abema.tv",
                          "bunshun.jp", "full-count.jp",
+                         "itmedia.co.jp", "nlab.itmedia.co.jp",
+                         "j-cast.com",
                          "news.ntv.co.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
@@ -331,10 +337,15 @@ def _scrape_crank_in(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://www.crank-in.net/"}
     ssl_kwargs = {"verify": False}  # crank-in has SSL EOF issue with Python 3.14
 
-    # 先去掉 query string，再截掉末尾页码
+    # 先去掉 query string；URL 可能是 .../<id> 或 .../<id>/<page>
+    # 只有末尾是「短页码且前面还有数字 ID」时才截，避免把纯 ID 当页码删掉
     p = urlparse(gallery_url)
     clean_url = urlunparse(p._replace(query="", fragment="")).rstrip("/")
-    base = re.sub(r'/\d+$', '', clean_url)
+    m = re.search(r'/(\d+)/(\d{1,3})$', clean_url)
+    if m:
+        base = clean_url[:clean_url.rfind("/")]  # 截掉末尾页码，保留 /<id>
+    else:
+        base = clean_url  # 末尾就是 gallery ID，无页码
 
     # 先取第一页获取总页数
     resp = requests.get(f"{base}/1", headers=headers, proxies=_get_proxies(), timeout=15, **ssl_kwargs)
@@ -444,9 +455,21 @@ def _scrape_mezamashi(gallery_url: str) -> list[str]:
     headers = {**HEADERS, "Referer": "https://mezamashi.media/"}
     images = []
 
+    html = ""
     try:
         r = requests.get(clean_url, headers=headers, proxies=_get_proxies(), timeout=15)
-        s = BeautifulSoup(r.text, "html.parser")
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        print(f"  ⚠️ mezamashi requests 失败: {e}")
+    if not html:
+        # mezamashi 拦 Python TLS 指纹（SSL EOF），走 CDP 真实浏览器（9223 带代理）
+        from scrapers import cdp_page_html
+        html = cdp_page_html(clean_url, port=9223, wait=12.0)
+    if not html:
+        return images
+    try:
+        s = BeautifulSoup(html, "html.parser")
 
         # 找所有 data-src 包含 ismcdn.jp/img 的图片
         for img in s.find_all("img"):
@@ -1808,8 +1831,19 @@ def _scrape_yorozoonews(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             large_img = ""
             thumb_candidates: list[str] = []
@@ -1905,8 +1939,19 @@ def _scrape_nikkan_spa(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             # 只在正文容器内找图片
             containers = s.select(CONTENT_SELECTOR) or [s]
@@ -2157,67 +2202,73 @@ def _scrape_mainichikirei(gallery_url: str) -> list[str]:
 
 
 def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
-    """natalie.mu /gallery/news/ 图集：ogre.natalie.mu CDN 大图（imwidth=1460）。
-    每页一张大图，沿着 "次へ" 链接遍历所有分页收集图片。"""
+    """natalie.mu /gallery/news/<galleryId>/<photoId> 图集（Vue SPA 相册网格）。
+    页面一次性列出本图集所有照片，每张挂在 /gallery/news/<galleryId>/<photoId> 锚点下。
+    按 galleryId 锁定本图集照片（避免误抓同目录其他文章的图），取各自 ogre 大图
+    （去掉 ?impolicy=thumb... 缩略参数即原图）。
+    natalie 有 AWS WAF，requests 会被 405 拦，兜底走 9222 CDP 真实浏览器
+    （需保持已通过人机验证；验证过期时需人工在该 Chrome 里重新通过一次）。"""
     import re
+    import html as _htmlmod
     from urllib.parse import urlparse
+    from sqlite_db import _log_db_error
 
     headers = {**HEADERS, "Referer": "https://natalie.mu/"}
     p = urlparse(gallery_url)
-    base = f"{p.scheme}://{p.netloc}"
 
+    m_gid = re.search(r'/gallery/news/(\d+)', p.path)
+    if not m_gid:
+        print(f"  ⚠️ natalie 无法从 URL 解析 galleryId: {gallery_url}")
+        _log_db_error(f"natalie 无法解析 galleryId: {gallery_url}")
+        return []
+    gid = m_gid.group(1)
+
+    def _is_waf(h: str) -> bool:
+        return (not h) or ("Human Verification" in h) or ("awsWafCookieDomainList" in h)
+
+    # 取页面：requests 会被 AWS WAF 405 拦，兜底走 CDP（9222 带验证 cookie）
+    html_text = ""
+    try:
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        html_text = r.text if r.status_code == 200 else ""
+    except Exception as e:
+        print(f"  ⚠️ natalie requests 失败: {e}")
+        _log_db_error(f"natalie requests 失败: {gallery_url}: {e}")
+        html_text = ""
+    if _is_waf(html_text):
+        from scrapers import cdp_page_html
+        html_text = cdp_page_html(gallery_url, port=9222, wait=8.0)
+    if _is_waf(html_text):
+        print(f"  ⚠️ natalie 被 AWS WAF 拦截，9222 Chrome 需人工通过验证: {gallery_url}")
+        _log_db_error(f"natalie WAF 未通过（需人工验证 9222 Chrome）: {gallery_url}")
+        return []
+
+    s = BeautifulSoup(html_text, "html.parser")
     images: list[str] = []
-    seen: set[str] = set()
-    visited_urls: set[str] = set()
-    current_url = gallery_url
+    seen_pid: set[str] = set()
+    # 按 /gallery/news/<gid>/<pid> 锚点锁定本图集照片，取其 img 大图
+    for a in s.find_all("a", href=True):
+        m = re.search(rf'/gallery/news/{gid}/(\d+)', a["href"])
+        if not m:
+            continue
+        pid = m.group(1)
+        if pid in seen_pid:
+            continue
+        img = a.find("img")
+        if not img:
+            continue
+        src = _htmlmod.unescape(img.get("data-src") or img.get("src") or "")
+        if src.startswith("//"):
+            src = "https:" + src
+        if "ogre.natalie.mu/media" not in src:
+            continue
+        full = src.split("?")[0]  # 去缩略参数 = 原图
+        seen_pid.add(pid)
+        images.append(full)
 
-    for _ in range(MAX_IMAGES):
-        if current_url in visited_urls:
-            break
-        visited_urls.add(current_url)
-
-        try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
-
-            # 当前页大图：ogre.natalie.mu 域名，排除 thumbnail 参数
-            for img in s.find_all("img"):
-                src = (img.get("data-src") or img.get("src") or "")
-                if "ogre.natalie.mu" not in src:
-                    continue
-                # 排除缩略图（thumbnail 尺寸参数）
-                if "width=200" in src.lower() or "w=200" in src.lower():
-                    continue
-                if "impolicy=thumb" in src.lower():
-                    continue
-                if src.startswith("//"):
-                    src = "https:" + src
-                if src in seen:
-                    continue
-                seen.add(src)
-                images.append(src)
-                break
-
-            # 找 "次へ" 分页链接
-            next_url = ""
-            for a in s.find_all("a", href=True):
-                text = a.get_text(strip=True)
-                if text == "次へ" or "次へ" in text:
-                    href = a["href"]
-                    if href.startswith("/"):
-                        href = base + href
-                    elif not href.startswith("http"):
-                        continue
-                    next_url = href
-                    break
-            if not next_url:
-                break
-            current_url = next_url
-
-        except Exception as e:
-            print(f"  ⚠️ natalie gallery {current_url} 失败: {e}")
-            break
-
+    if not images:
+        print(f"  ⚠️ natalie 未提取到图片（页面结构可能变化）: {gallery_url}")
+        _log_db_error(f"natalie 未提取到图片: {gallery_url}")
     return images
 
 
@@ -2242,8 +2293,19 @@ def _scrape_qjweb(gallery_url: str) -> list[str]:
         visited_urls.add(current_url)
 
         try:
-            r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
-            s = BeautifulSoup(r.text, "html.parser")
+            try:
+                r = requests.get(current_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                html = r.text if r.status_code == 200 else ""
+            except Exception as e:
+                print(f"  ⚠️ natalie requests 失败: {e}")
+                html = ""
+            if not html:
+                # AWS WAF 人机验证拦 requests，走 CDP 真实浏览器（9222 带验证 cookie）
+                from scrapers import cdp_page_html
+                html = cdp_page_html(current_url, port=9222, wait=8.0)
+            if not html:
+                break
+            s = BeautifulSoup(html, "html.parser")
 
             found = False
             for img in s.find_all("img"):
@@ -2657,6 +2719,18 @@ def _scrape_bunshun(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_itmedia(gallery_url: str) -> list[str]:
+    """itmedia.co.jp / nlab.itmedia.co.jp 图集（独立脚本 scripts/scrapers/itmedia_dl.py）"""
+    from scrapers.itmedia_dl import scrape
+    return scrape(gallery_url)
+
+
+def _scrape_jcast(gallery_url: str) -> list[str]:
+    """j-cast.com 图集（独立脚本 scripts/scrapers/jcast_dl.py）"""
+    from scrapers.jcast_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_asahi(gallery_url: str) -> list[str]:
     """asahi.com 图集（独立脚本 scripts/scrapers/asahi_dl.py）"""
     from scrapers.asahi_dl import scrape
@@ -2841,6 +2915,11 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         images = _scrape_natalie_gallery(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
+    if "bezzy.jp" in domain:
+        from scrapers.bezzy_dl import scrape as _bezzy_scrape
+        images = _bezzy_scrape(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
     if "news.ntv.co.jp" in domain:
         from scrapers.ntv_dl import scrape as _ntv_scrape
         images = _ntv_scrape(gallery_url)
@@ -3016,6 +3095,14 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "bunshun.jp" in domain:
         images = _scrape_bunshun(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "itmedia.co.jp" in domain:
+        images = _scrape_itmedia(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "j-cast.com" in domain:
+        images = _scrape_jcast(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "newsdig.tbs.co.jp" in domain:

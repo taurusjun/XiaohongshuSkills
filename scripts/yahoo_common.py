@@ -531,9 +531,24 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 禁止使用：#看新闻学日语 #日语学习（这是偶像内容账号，非语言学习账号）
 再根据文章中的具体人名/团体名补充精准标签）"""
 
-    result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000))
+    result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000), thinking_disabled=True)
     if not result:
         return None  # LLM 调用失败，由调用方决定是否跳过
+
+    # 兜底校验：核心 4 字段（标题/引流摘要/新闻要点/我的解读）必须齐全，话题标签可缺
+    required_fields = ["标题", "引流摘要", "新闻要点", "我的解读"]
+    found = [f for f in required_fields if f"【{f}】" in result]
+    if len(found) < 4:
+        missing = [f for f in required_fields if f not in found]
+        msg = f"generate_content_and_comment 输出格式失败 (缺核心字段 {missing}) — title_ja={title_ja[:60]} | result_len={len(result)} | preview={result[:500]!r}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return None  # 不写脏数据进 DB，由调用方决定是否跳过/重试
+    # last_section split first line skips LLM thinking injected into field values
+    # No prompt-echo check: would falsely reject usable output
 
     seo_title = title_zh
     summary = content = comment = ""
@@ -1175,6 +1190,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
         max_tokens=6000,
         temperature=0.4,
         response_format={"type": "json_object"},
+        thinking_disabled=True,
     )
     if not result:
         print(f"    ⚠️ 故事体 LLM 调用返回空")
@@ -1265,14 +1281,47 @@ def generate_title_only(title_ja: str, content_ja: str,
     result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9, thinking_disabled=False)
     if not result:
         return ""
+    # 占位符黑名单：prompt 模板示例值 + LLM 思考时常见垃圾占位符
+    placeholder_blacklist = {"生成的中文标题", "标题", "", "...", "。。。", "…"}
+    # 思考段污染检测：result 里出现 prompt 模板示例片段，且长度异常 → 视为回吐而非生成
+    if "生成的中文标题" in result and len(result) > 200:
+        msg = f"generate_title_only 检测到 prompt 回吐（思考污染）— title_ja={title_ja[:60]} | result_len={len(result)} | preview={result[:400]!r}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return ""
     # 解析 JSON
+    title = ""
     try:
         data = _json.loads(result.strip())
-        return data.get("title", "").strip()
+        title = data.get("title", "").strip()
     except Exception:
-        pass
-    m = _re.search(r'"title"\s*:\s*"([^"]+)"', result)
-    return m.group(1).strip() if m else ""
+        m2 = _re.search(r'"title"\s*:\s*"([^"]+)"', result)
+        if m2:
+            title = m2.group(1).strip()
+    if title in placeholder_blacklist:
+        msg = f"generate_title_only 解析出的标题是 prompt 占位符 (title={title!r}) — title_ja={title_ja[:60]}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return ""
+    # 垃圾标题检测：纯标点/省略号/太短（去掉标点空白后 <4 个有效字符）→ 不像真实标题
+    stripped = _re.sub(r"[\s\u3000\u00a0]", "", title)
+    eff_len = len(_re.sub(r"[^\u4e00-\u9fff\u3040-\u30ffA-Za-z0-9]", "", title))
+    is_pure_punct = bool(_re.fullmatch(r"[\.。，,\?\!！:：；;\"\"\'\'(（）\[\]【】《》—\-…·]+", stripped))
+    if stripped and (is_pure_punct or eff_len < 4):
+        msg = f"generate_title_only 解析出的标题是垃圾占位 (title={title!r}, eff_len={eff_len}) — title_ja={title_ja[:60]}"
+        print(f"    ⚠️ {msg}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(msg)
+        except Exception: pass
+        return ""
+    return title
 
 
 def _build_final_tags(raw_tags: list[str]) -> list[str]:
