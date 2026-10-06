@@ -2032,12 +2032,31 @@ def process_news_item(news: dict, no_translate: bool = False,
                     ext = cover_url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
                     if ext not in ('jpg','jpeg','png','webp'): ext = 'jpg'
                     cover_path = cover_dir / f'cover.{ext}'
-                    cover_path.write_bytes(resp.content)
-                    from sqlite_db import update_news as _sql_update
-                    _sql_update(news_key, {'image_url': str(cover_path)})
-                    print(f"    封面图本地: {cover_path}")
+                    # 校验状态码与大小：Yahoo 图片 URL 失效时返回 404 + 几百字节错误页。
+                    # 原实现不检查就直接写入，并把 image_url 指向这个坏文件 —— 比保留原 URL
+                    # 更糟（保留原 URL 至少发布时还能重试下载）。大小门槛与正文图一致（20KB）。
+                    if resp.status_code != 200 or len(resp.content) < 20_000:
+                        msg = (f"封面下载不合格，保留原 URL: key={news_key} "
+                               f"http={resp.status_code} size={len(resp.content)} "
+                               f"url={cover_url[:80]}")
+                        print(f"    ⚠️ {msg}")
+                        try:
+                            from sqlite_db import _log_db_error
+                            _log_db_error(msg)
+                        except Exception:
+                            pass
+                    else:
+                        cover_path.write_bytes(resp.content)
+                        from sqlite_db import update_news as _sql_update
+                        _sql_update(news_key, {'image_url': str(cover_path)})
+                        print(f"    封面图本地: {cover_path}")
                 except Exception as e:
                     print(f"    ⚠️ 封面本地下载失败: {e}")
+                    try:
+                        from sqlite_db import _log_db_error
+                        _log_db_error(f"封面本地下载失败: key={news_key}, {e}")
+                    except Exception:
+                        pass
             # 写入评分维度（需在 insert_news 之后，满足外键约束）
             quality_scores = news.get('_quality', {}).get('scores')
             if quality_scores:
