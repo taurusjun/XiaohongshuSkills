@@ -98,6 +98,12 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 #wxEditorjs{min-height:360px;font-family:var(--f);color:#1a1a1a}
 #wxEditorjs .ce-block__content{max-width:none}
 #wxEditorjs .codex-editor__redactor{padding-bottom:40px!important}
+/* image 块：换图 / 删除控件（沿用官方 ImageTool，仅补 UI） */
+#wxEditorjs .image-tool__image{position:relative}
+#wxEditorjs .wx-img-ctl{display:none;position:absolute;top:6px;right:6px;gap:6px;z-index:6}
+#wxEditorjs .image-tool--filled .wx-img-ctl{display:flex}
+#wxEditorjs .wx-img-ctl button{font-size:11px;padding:3px 10px;border:0;border-radius:12px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;line-height:1.4}
+#wxEditorjs .wx-img-ctl button:hover{background:rgba(0,0,0,.78)}
 
 /* preview drawer */
 .preview-drawer{position:fixed;top:48px;right:-520px;width:520px;bottom:0;background:#fff;border-left:1px solid #e5e7eb;z-index:300;transition:right .25s ease;display:flex;flex-direction:column;overflow:hidden;box-shadow:-4px 0 20px rgba(0,0,0,.1)}
@@ -419,7 +425,58 @@ class GalleryImageBlock {
   save(){return{paths:this.data.paths,caption:this.data.caption};}
 }
 function _initEd(){
-  if(typeof EditorJS==='undefined')return;
+  if(typeof EditorJS==='undefined'||typeof ImageTool==='undefined')return;
+  // 必须在这里定义：ImageTool 由 CDN 异步加载，页面解析时还不存在，
+  // 在顶层写 `class X extends ImageTool` 会抛 ReferenceError 并中断整段脚本。
+  class WechatImageTool extends ImageTool {
+    render(){
+      const wrapper=super.render();
+      if(!wrapper||wrapper.querySelector('.wx-img-ctl'))return wrapper;
+      const ctl=document.createElement('div');
+      ctl.className='wx-img-ctl';
+      const swap=document.createElement('button');
+      swap.textContent='🔄 换图';swap.title='从图库换一张';
+      swap.onclick=(e)=>{e.preventDefault();e.stopPropagation();openImgPicker(p=>this._swap(p));};
+      const del=document.createElement('button');
+      del.textContent='✕';del.title='删除这张图';
+      del.onclick=(e)=>{e.preventDefault();e.stopPropagation();this._del();};
+      ctl.appendChild(swap);ctl.appendChild(del);
+      const box=(this.ui&&this.ui.nodes&&this.ui.nodes.imageContainer)||wrapper;
+      box.appendChild(ctl);
+      return wrapper;
+    }
+    _index(){
+      const id=this.block&&this.block.id;
+      try{
+        if(id!==undefined&&typeof this.api.blocks.getBlockIndex==='function'){
+          const i=this.api.blocks.getBlockIndex(id);
+          if(typeof i==='number'&&i>=0)return i;
+        }
+      }catch(e){}
+      try{
+        const bs=this.api.blocks.getBlocks();
+        const w=this.ui&&this.ui.nodes&&this.ui.nodes.wrapper;
+        for(let i=0;i<bs.length;i++){
+          if(id!==undefined&&bs[i].id===id)return i;
+          if(w&&bs[i].holder&&bs[i].holder.contains(w))return i;
+        }
+      }catch(e){}
+      return -1;
+    }
+    _del(){
+      const i=this._index();
+      if(i>=0)this.api.blocks.delete(i);
+    }
+    _swap(path){
+      const i=this._index();
+      if(i<0)return;
+      const cap=(this.data&&this.data.caption)||'';
+      const data={file:{url:_imgUrl(path)},caption:cap,withBorder:false,stretched:false,withBackground:false};
+      const go=()=>this.api.blocks.insert('image',data,{},i,true);
+      const r=this.api.blocks.delete(i);
+      if(r&&typeof r.then==='function')r.then(go);else go();
+    }
+  }
   var raw=(_S('wxHidden')||{}).value||'';
   var blocks=_txt2blocks(raw);
   _ed=new EditorJS({
@@ -428,7 +485,7 @@ function _initEd(){
     tools:{
       header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
       quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'引用内容',captionPlaceholder:'出处（可选）'}},
-      image:{class:ImageTool,config:{uploader:{uploadByFile:function(file){
+      image:{class:WechatImageTool,config:{uploader:{uploadByFile:function(file){
         return new Promise(function(res){
           openImgPicker(function(p){res({success:1,file:{url:_imgUrl(p),name:p.split('/').pop()}});},
                         function(){res({success:0,message:'已取消选图'});});
