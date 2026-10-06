@@ -30,12 +30,13 @@
       "letter_spacing": "1px"
     },
     "h2": {
-      "display": "flex",
-      "align_items": "center",
-      "border_bottom": "3px solid #0F4C81",
-      "padding": "0 0 8px 0",
-      "margin": "36px 0 14px",
-      "line_height": "1.3"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h2_prefix": {
       "display": "inline-block",

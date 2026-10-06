@@ -31,14 +31,12 @@
     },
     "h2": {
       "font_size": "20px",
-      "font_weight": "600",
-      "color": "#1d1d1f",
-      "line_height": "1.4",
-      "padding": "6px 0 8px 12px",
-      "border_left": "3px solid #007AFF",
-      "border_image": "linear-gradient(to bottom, #007AFF, #5856D6) 1",
-      "margin_top": "28px",
-      "margin_bottom": "16px"
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "18px",

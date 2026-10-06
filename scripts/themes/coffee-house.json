@@ -30,17 +30,13 @@
       "border": "1px solid rgba(161,136,127,0.3)"
     },
     "h2": {
-      "font_size": "22px",
-      "font_weight": "700",
-      "color": "#5d4037",
-      "line_height": "1.45",
-      "margin_top": "34px",
-      "margin_bottom": "18px",
-      "padding": "0 0 8px",
-      "border_left": "none",
-      "border_radius": "0",
-      "border_bottom": "1px solid rgba(161,136,127,0.36)",
-      "background": "none"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "20px",

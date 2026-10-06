@@ -31,16 +31,13 @@
       "box_shadow": "0 6px 16px rgba(166,102,56,0.06)"
     },
     "h2": {
-      "font_size": "22px",
-      "font_weight": "700",
-      "color": "#a45a33",
-      "line_height": "1.4",
-      "margin_top": "34px",
-      "margin_bottom": "18px",
-      "padding": "10px 14px",
-      "border_left": "3px solid #d78a54",
-      "border_radius": "12px",
-      "background": "linear-gradient(90deg, rgba(236,191,132,0.24) 0%, rgba(236,191,132,0.08) 72%, rgba(236,191,132,0) 100%)"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "21px",

@@ -30,15 +30,13 @@
       "margin_bottom": "18px"
     },
     "h2": {
-      "font_size": "22px",
-      "font_weight": "700",
-      "color": "#1f2328",
-      "line_height": "1.35",
-      "padding": "0 0 10px 0",
-      "border_bottom": "2px solid #d8dee4",
-      "box_shadow": "inset 0 -2px 0 #0969da",
-      "margin_top": "34px",
-      "margin_bottom": "18px"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "21px",

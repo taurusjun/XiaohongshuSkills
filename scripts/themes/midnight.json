@@ -31,14 +31,10 @@
     },
     "h2": {
       "font_size": "20px",
-      "font_weight": "600",
-      "color": "#1d1d1f",
-      "line_height": "1.2",
-      "padding": "8px 8px 8px 15px",
-      "border_bottom": "1px dashed #8B5CF6",
-      "border_radius": "4px",
-      "background": "radial-gradient(80.23% 80.23% at 50% 88.37%, rgba(174,78,245,0.22) 0%, rgba(174,78,245,0) 100%)",
-      "box_shadow": "0 0 15px rgba(174,78,245,0.15), inset 3px 0 0 0 #F472B6, inset 2px 0 0 0 #8B5CF6, inset 1px 0 0 0 #60A5FA",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
       "margin_top": "32px",
       "margin_bottom": "12px"
     },

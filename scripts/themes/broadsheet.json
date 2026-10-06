@@ -28,15 +28,13 @@
       "letter_spacing": "-0.01em"
     },
     "h2": {
-      "font_size": "22px",
-      "font_weight": "700",
-      "color": "#121212",
-      "line_height": "1.35",
-      "margin_top": "28px",
-      "margin_bottom": "12px",
-      "padding_bottom": "6px",
-      "border_bottom": "1px solid #121212",
-      "letter_spacing": "1px"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "19px",

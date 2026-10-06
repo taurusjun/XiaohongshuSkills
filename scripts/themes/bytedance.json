@@ -32,17 +32,12 @@
     },
     "h2": {
       "font_size": "20px",
-      "font_weight": "600",
-      "color": "#ffffff",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
       "text_align": "center",
-      "letter_spacing": "0.1em",
-      "line_height": "1.4",
-      "padding": "6px 22px",
-      "background": "linear-gradient(135deg, #1677FF, #05D4CD)",
-      "border_radius": "8px 24px 8px 24px",
-      "box_shadow": "0 4px 12px rgba(5,212,205,0.15)",
-      "margin_top": "48px",
-      "margin_bottom": "24px"
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "18px",

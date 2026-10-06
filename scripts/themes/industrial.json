@@ -33,16 +33,12 @@
     },
     "h2": {
       "font_size": "20px",
-      "font_weight": "900",
-      "color": "#FF6B00",
-      "line_height": "1.3",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
       "margin_top": "32px",
-      "margin_bottom": "16px",
-      "padding": "6px 0 6px 18px",
-      "border_left": "6px solid #FF6B00",
-      "letter_spacing": "2px",
-      "text_transform": "uppercase",
-      "background": "linear-gradient(135deg,#FFD700 0 12px,transparent 12px)"
+      "margin_bottom": "12px"
     },
     "h3": {
       "font_size": "17px",

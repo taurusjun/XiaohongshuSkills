@@ -35,10 +35,13 @@
       "box_shadow": "0 8px 24px rgba(99,102,241,0.14)"
     },
     "h2": {
-      "display": "flex",
-      "align_items": "center",
-      "margin": "36px 0 14px",
-      "line_height": "1.4"
+      "font_size": "20px",
+      "font_weight": "500",
+      "color": "#2B77BF",
+      "line_height": "1.8",
+      "text_align": "center",
+      "margin_top": "32px",
+      "margin_bottom": "12px"
     },
     "h2_prefix": {
       "display": "inline-block",
