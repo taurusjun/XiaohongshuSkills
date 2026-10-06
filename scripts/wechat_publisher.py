@@ -280,6 +280,28 @@ def _render_html(content: str, img_url_map: dict,
     return html
 
 
+def _download_cover(url: str) -> str:
+    """把远程封面图下载到临时文件。
+
+    微信素材上传接口只接受本地文件路径，而 news.image_url 多数是 http URL。
+    """
+    import tempfile
+    try:
+        resp = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Referer": url,
+        }, timeout=20)
+        resp.raise_for_status()
+        suffix = Path(url.split("?")[0]).suffix or ".jpg"
+        fd, path = tempfile.mkstemp(suffix=suffix, prefix="wx_cover_")
+        with os.fdopen(fd, "wb") as f:
+            f.write(resp.content)
+        return path
+    except Exception as e:
+        print(f"  ⚠️ 封面图下载失败（{url[:60]}）: {e}")
+        return ""
+
+
 def publish_article(article_key: str, publish: bool = False,
                     theme_name: str = DEFAULT_THEME):
     """完整流程：读取文章 → 上传图片 → 用 format_engine 渲染 → 创建草稿。"""
@@ -314,10 +336,17 @@ def publish_article(article_key: str, publish: bool = False,
     print(f"access_token: {token[:12]}...")
 
     # ── 上传封面图 ────────────────────────────────────────────
+    # 封面候选：图集里带 article_/cover 的 → 图集第一张 → 回退到 image_url（封面字段）。
+    # 编辑器页面显示的封面用的就是 image_url，而这里原先只看 gallery_images，
+    # 导致「页面上明明有封面、发布器却说无封面」→ thumb_media_id 缺失 → draft/add 报 40007。
     cover_path = next(
         (p for p in gallery if "article_" in Path(p).name or "cover" in Path(p).name),
         gallery[0] if gallery else None
     )
+    if not cover_path:
+        cover_path = (r["image_url"] or "").strip() or (r["original_image_url"] or "").strip()
+    if cover_path and cover_path.startswith("http"):
+        cover_path = _download_cover(cover_path)
     thumb_media_id = None
     if cover_path and os.path.exists(cover_path):
         print(f"\n[1] 上传封面图: {Path(cover_path).name}")
@@ -378,7 +407,9 @@ def publish_article(article_key: str, publish: bool = False,
 
     if resp.get("errcode", 0) != 0:
         print(f"  ❌ 创建草稿失败: {resp}")
-        return None
+        # 必须抛异常：原先 return None 时进程退出码仍是 0，
+        # 上层 HTTP 会误报 {"ok": true}，前端弹"推送成功"而实际什么都没建。
+        raise RuntimeError(f"创建微信草稿失败: {resp}")
 
     media_id = resp.get("media_id", "")
     print(f"  ✅ 草稿创建成功！media_id = {media_id}")

@@ -763,8 +763,13 @@ def api_wechat_update(key):
 def api_wechat_publish(key):
     import subprocess, os
     scripts_dir = os.path.join(os.path.dirname(__file__), '..', 'scripts')
+    # 页面选的主题原来被忽略（服务端不读 ?theme=），导致永远用默认 sports 主题
+    theme = (request.args.get('theme') or '').strip()
+    cmd = [sys.executable, 'wechat_publisher.py', '--key', key]
+    if theme:
+        cmd += ['--theme', theme]
     result = subprocess.run(
-        [sys.executable, 'wechat_publisher.py', '--key', key],
+        cmd,
         capture_output=True, text=True, timeout=120,
         cwd=scripts_dir,
         env={**os.environ, 'PYTHONPATH': scripts_dir}
