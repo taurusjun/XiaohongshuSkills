@@ -368,9 +368,9 @@ function openImgPicker(cb,onCancel){
       if(_wxImgPickerCb){_wxImgPickerCb(p);return;}
     };
     const img=document.createElement('img');
-    img.src='/local-image?path='+encodeURIComponent(p);
+    img.src=_imgUrl(p);
     img.style.cssText='width:88px;height:88px;object-fit:cover;display:block';
-    img.title=p.split('/').pop();
+    img.title=p.split('/').pop().split('?')[0];
     d.appendChild(img);grid.appendChild(d);
   });
   document.getElementById('wxImgPicker').style.display='block';
@@ -394,7 +394,7 @@ class GalleryImageBlock {
         const cell=document.createElement('div');
         cell.style.cssText='position:relative;flex:'+(paths.length===1?'0 0 auto':'1 1 0')+';max-width:'+(paths.length===1?'100%':'50%');
         const img=document.createElement('img');
-        img.src='/local-image?path='+encodeURIComponent(p);
+        img.src=_imgUrl(p);
         img.style.cssText='width:100%;max-height:320px;object-fit:contain;border-radius:4px;display:block';
         const del=document.createElement('button');
         del.textContent='✕';del.title='移除此图';
@@ -808,7 +808,10 @@ def wechat_editor(key):
         pass
 
     # 2. Cover image from news.image_url
-    if news.get('image_url'):
+    #    只收本地路径：素材库用于往正文插图，正文图必须本地（发布时 uploadimg 上传）；
+    #    远程 URL 写进正文微信显示不出来。未换过封面时 image_url 仍是 Yahoo 远程地址，
+    #    收录它既与侧栏封面重复，又会往正文塞远程图。
+    if (news.get('image_url') or '').startswith('/'):
         _add_imgs([news['image_url']], '封面')
 
     # 3. Related keys
