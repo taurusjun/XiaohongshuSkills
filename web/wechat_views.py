@@ -99,7 +99,10 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 #wxEditorjs .ce-block__content{max-width:none}
 #wxEditorjs .codex-editor__redactor{padding-bottom:40px!important}
 /* image 块：换图 / 删除控件（沿用官方 ImageTool，仅补 UI） */
-#wxEditorjs .image-tool__image{position:relative}
+#wxEditorjs .image-tool__image{position:relative;max-width:320px;margin:0 auto}
+/* 官方 image 块的 <img> 没有任何尺寸约束，竖图会撑满正文宽度（实测 997x1329）。
+   按 GalleryImageBlock 的同样标准限高，object-fit:contain 保证不变形。 */
+#wxEditorjs .image-tool__image-picture{max-width:100%;max-height:320px;object-fit:contain;display:block;margin:0 auto}
 #wxEditorjs .wx-img-ctl{display:none;position:absolute;top:6px;right:6px;gap:6px;z-index:6}
 #wxEditorjs .image-tool--filled .wx-img-ctl{display:flex}
 #wxEditorjs .wx-img-ctl button{font-size:11px;padding:3px 10px;border:0;border-radius:12px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;line-height:1.4}
