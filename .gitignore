@@ -78,3 +78,4 @@ data/multi_source.db-wal
 
 data/custom_keywords.json
 xhs-visual-director-skill.bak/
+config/.wechat_token_cache.json
