@@ -301,13 +301,20 @@ function insImg(path){
   _ed.blocks.insert('image',{file:{url:src},caption:'',withBorder:false,stretched:false,withBackground:false},{},idx+1,true);
 }
 function _markDirty(){_dirty=true;_setSave('unsaved');clearTimeout(_stimer);_stimer=setTimeout(function(){if(_dirty)doSave(true);},4000);}
+// 图片 URL 双向转换：编辑器里要能显示（走服务器代理），正文里要存真实路径
+function _imgUrl(p){return (p&&p.indexOf('/')===0)?'/local-image?path='+encodeURIComponent(p):p;}
+function _imgPath(u){
+  var P='/local-image?path=';
+  if(u&&u.indexOf(P)===0){try{return decodeURIComponent(u.slice(P.length));}catch(e){return u;}}
+  return u;
+}
 function _blocks2txt(blocks){
   var parts=[],n=1;
   (blocks||[]).forEach(function(b){
     if(b.type==='paragraph'&&b.data&&b.data.text)parts.push(b.data.text.replace(/<[^>]+>/g,''));
     else if(b.type==='header'&&b.data&&b.data.text)parts.push((b.data.level===3?'### ':'## ')+b.data.text.replace(/<[^>]+>/g,''));
     else if(b.type==='quote'&&b.data&&b.data.text)parts.push('> '+b.data.text.replace(/<[^>]+>/g,''));
-    else if(b.type==='image'&&b.data&&b.data.file&&b.data.file.url){parts.push('【图片'+n+'：'+b.data.file.url+'】');n++;}
+    else if(b.type==='image'&&b.data&&b.data.file&&b.data.file.url){parts.push('【图片'+n+'：'+_imgPath(b.data.file.url)+'】');n++;}
     else if(b.type==='galleryImage'&&b.data){var ps=(b.data.paths||[]).filter(function(p){return !!p;});if(ps.length){parts.push('【图片'+n+'：'+ps.join('|')+'】');n++;}}
   });
   return parts.filter(function(s){return s&&s.trim();}).join('\n\n');
@@ -331,7 +338,7 @@ function _txt2blocks(txt){
     addText(txt.slice(last,m.index));
     var ps=m[1].split('|').filter(function(p){return p.trim();});
     if(ps.length===1&&(ps[0].indexOf('http')===0||ps[0].indexOf('/')===0))
-      blocks.push({type:'image',data:{file:{url:ps[0]},caption:'',withBorder:false,stretched:false,withBackground:false}});
+      blocks.push({type:'image',data:{file:{url:_imgUrl(ps[0])},caption:'',withBorder:false,stretched:false,withBackground:false}});
     else if(ps.length>0)blocks.push({type:'galleryImage',data:{paths:ps,caption:m[0]}});
     last=m.index+m[0].length;n++;
   }
@@ -339,9 +346,9 @@ function _txt2blocks(txt){
   if(!blocks.length)blocks.push({type:'paragraph',data:{text:txt}});
   return blocks;
 }
-let _wxImgPickerCb=null;
-function openImgPicker(cb){
-  _wxImgPickerCb=cb||null;
+let _wxImgPickerCb=null,_wxImgPickerCancel=null;
+function openImgPicker(cb,onCancel){
+  _wxImgPickerCb=cb||null;_wxImgPickerCancel=onCancel||null;
   const grid=document.getElementById('wxImgPickerGrid');
   grid.innerHTML='';
   (_allImgs||[]).forEach(function(p){
@@ -350,6 +357,7 @@ function openImgPicker(cb){
     d.onmouseenter=function(){d.style.borderColor='#7c3aed';};
     d.onmouseleave=function(){d.style.borderColor='transparent';};
     d.onclick=function(){
+      _wxImgPickerCancel=null;
       closeImgPicker();
       if(_wxImgPickerCb){_wxImgPickerCb(p);return;}
     };
@@ -361,7 +369,7 @@ function openImgPicker(cb){
   });
   document.getElementById('wxImgPicker').style.display='block';
 }
-function closeImgPicker(){document.getElementById('wxImgPicker').style.display='none';}
+function closeImgPicker(){document.getElementById('wxImgPicker').style.display='none';var f=_wxImgPickerCancel;_wxImgPickerCancel=null;if(f)f();}
 
 class GalleryImageBlock {
   static get toolbox(){return{title:'图片',icon:'<svg xmlns="http://www.w3.org/2000/svg" width="17" height="15" viewBox="0 0 336 276"><path d="M291 150V79c0-19-15-34-34-34H79c-19 0-34 15-34 34v42l67-44 81 72 56-29 42 30zm0 52l-43-30-56 30-81-72-66 44v30c0 19 15 34 34 34h178c17 0 31-13 34-29zM79 0h178c44 0 79 35 79 79v118c0 44-35 79-79 79H79c-44 0-79-35-79-79V79C0 35 35 0 79 0z"/></svg>'};}
@@ -420,6 +428,12 @@ function _initEd(){
     tools:{
       header:{class:Header,config:{levels:[2,3],defaultLevel:2},inlineToolbar:true},
       quote:{class:Quote,inlineToolbar:true,config:{quotePlaceholder:'引用内容',captionPlaceholder:'出处（可选）'}},
+      image:{class:ImageTool,config:{uploader:{uploadByFile:function(file){
+        return new Promise(function(res){
+          openImgPicker(function(p){res({success:1,file:{url:_imgUrl(p),name:p.split('/').pop()}});},
+                        function(){res({success:0,message:'已取消选图'});});
+        });
+      }}}},
       galleryImage:{class:GalleryImageBlock}
     },
     data:{blocks:blocks},
