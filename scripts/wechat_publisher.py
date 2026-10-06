@@ -33,6 +33,18 @@ _TOKEN_CACHE = Path(__file__).parent.parent / "config" / ".wechat_token_cache.js
 
 WX_API = "https://api.weixin.qq.com/cgi-bin"
 
+
+def _log_err(msg: str):
+    """规则 6：print ⚠️/❌ 必须同步写 data/logs/error-YYYY-MM-DD.log。
+
+    _log_db_error 内部自带 try/except，日志写失败不会掩盖真正的错误。
+    """
+    try:
+        from scripts.sqlite_db import _log_db_error
+        _log_db_error(msg)
+    except Exception:
+        pass
+
 # ── format_engine（85 主题排版引擎）────────────────────────────
 _SCRIPTS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
@@ -309,7 +321,37 @@ def _download_cover(url: str) -> str:
         return path
     except Exception as e:
         print(f"  ⚠️ 封面图下载失败（{url[:60]}）: {e}")
+        _log_err(f"封面图下载失败 {url[:120]}: {e}")
         return ""
+
+
+def _resolve_cover_path(row, gallery: list) -> str:
+    """决定用哪张图当公众号封面。
+
+    优先级：image_url → original_image_url → 图集里带 article_/cover 的 → 图集第一张。
+
+    image_url 就是公众号页面 #sbCvImg 显示的封面，也是 setCover()
+    （POST /api/wechat/<key>/cover）写入的字段 —— 必须以它为准。
+
+    这里原先把 gallery_images 排在最前：用户在公众号页选了封面，推送时却被图集里的
+    article_00.jpg 顶掉，推出去的封面和页面显示的不是同一张。
+    但反过来「只看 image_url」也不行：它为空、或指向已被清理的文件时会缺
+    thumb_media_id，draft/add 报 40007。所以按序取第一个「确实存在」的候选，
+    图集只作为兜底。
+
+    远程 URL 先经 _download_cover() 落到本地临时文件（素材接口只收本地路径）。
+    """
+    for cand in ((row["image_url"] or "").strip(),
+                 (row["original_image_url"] or "").strip()):
+        if not cand:
+            continue
+        p = _download_cover(cand) if cand.startswith("http") else cand
+        if p and os.path.exists(p):
+            return p
+    return next(
+        (p for p in gallery if "article_" in Path(p).name or "cover" in Path(p).name),
+        gallery[0] if gallery else None
+    )
 
 
 def publish_article(article_key: str, publish: bool = False,
@@ -346,17 +388,7 @@ def publish_article(article_key: str, publish: bool = False,
     print(f"access_token: {token[:12]}...")
 
     # ── 上传封面图 ────────────────────────────────────────────
-    # 封面候选：图集里带 article_/cover 的 → 图集第一张 → 回退到 image_url（封面字段）。
-    # 编辑器页面显示的封面用的就是 image_url，而这里原先只看 gallery_images，
-    # 导致「页面上明明有封面、发布器却说无封面」→ thumb_media_id 缺失 → draft/add 报 40007。
-    cover_path = next(
-        (p for p in gallery if "article_" in Path(p).name or "cover" in Path(p).name),
-        gallery[0] if gallery else None
-    )
-    if not cover_path:
-        cover_path = (r["image_url"] or "").strip() or (r["original_image_url"] or "").strip()
-    if cover_path and cover_path.startswith("http"):
-        cover_path = _download_cover(cover_path)
+    cover_path = _resolve_cover_path(r, gallery)
     thumb_media_id = None
     if cover_path and os.path.exists(cover_path):
         print(f"\n[1] 上传封面图: {Path(cover_path).name}")
@@ -385,6 +417,7 @@ def publish_article(article_key: str, publish: bool = False,
                 time.sleep(0.3)  # 防频率限制
             except Exception as e:
                 print(f"    ⚠️ {Path(p).name} 上传失败: {e}")
+                _log_err(f"正文图上传失败 {p}: {e}")
 
     print(f"  已上传 {len(img_url_map)} / {len(used_paths)} 张图片")
 
@@ -418,6 +451,7 @@ def publish_article(article_key: str, publish: bool = False,
 
     if resp.get("errcode", 0) != 0:
         print(f"  ❌ 创建草稿失败: {resp}")
+        _log_err(f"创建微信草稿失败 key={article_key}: {resp}")
         # 必须抛异常：原先 return None 时进程退出码仍是 0，
         # 上层 HTTP 会误报 {"ok": true}，前端弹"推送成功"而实际什么都没建。
         raise RuntimeError(f"创建微信草稿失败: {resp}")
