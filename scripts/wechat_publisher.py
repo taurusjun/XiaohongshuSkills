@@ -176,15 +176,24 @@ def _theme_card_html(theme_name: str) -> str:
 _IMG_RE = re.compile(r'【(?:图片|推文)\d+：([^】]*)】')
 
 
-def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THEME) -> str:
-    """用本地图片路径渲染 HTML 预览页面（不上传微信，用于本地浏览器预览）。"""
+def _render_html_preview(content: str, title: str, theme_name: str = DEFAULT_THEME,
+                         img_base: str = "file://") -> str:
+    """用本地图片路径渲染 HTML 预览页面（不上传微信，用于本地浏览器预览）。
+
+    img_base 决定正文图片的 URL 前缀，两条预览路径要求相反：
+      - "file://"             → CLI 预览：HTML 写成本地文件后用浏览器打开
+      - "/local-image?path="  → Web 预览：经服务器代理读文件。
+        （原来一律用 file://，而 Web 预览是给另一台机器的浏览器看的，
+          file:// 指向的是服务器路径且被浏览器跨协议拦截 → 图片全部显示不出来）
+    """
+    from urllib.parse import quote
     img_url_map = {}
     for m in _IMG_RE.finditer(content):
         inner = m.group(1)
         if inner.startswith("/"):
             for p in inner.split("|"):
                 if p.startswith("/") and p not in img_url_map:
-                    img_url_map[p] = f"file://{p}"
+                    img_url_map[p] = (img_base + quote(p, safe="")) if img_base.startswith("/") else (img_base + p)
 
     body = _render_html(content, img_url_map, theme_name)
     theme = load_theme(theme_name) if _theme_exists(theme_name) else {}

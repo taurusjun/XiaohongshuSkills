@@ -774,7 +774,9 @@ def api_wechat_preview(key):
         from wechat_publisher import _render_html_preview
         content = news.get('wechat_content') or news.get('content') or ''
         title   = news.get('wechat_title')  or news.get('title', '')
-        html = _render_html_preview(content, title, theme)
+        # Web 预览：图片走服务器代理，否则另一台机器上的浏览器加载不了 file://
+        html = _render_html_preview(content, title, theme,
+                                    img_base="/local-image?path=")
         return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
     except Exception as e:
         return f'<pre>预览渲染失败: {e}</pre>', 500
