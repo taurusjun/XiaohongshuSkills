@@ -81,6 +81,8 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
 .sb-img img{width:100%;height:100%;object-fit:cover;display:block}
 .sb-img-ov{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;opacity:0;transition:opacity .12s}
 .sb-img:hover .sb-img-ov{opacity:1}
+.sb-img-cv{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:10px;text-align:center;padding:3px 0;opacity:0;transition:opacity .12s}
+.sb-img:hover .sb-img-cv{opacity:1}
 .sb-bottom{margin-top:auto;padding:14px 16px 20px;border-top:1px solid var(--br);display:flex;flex-direction:column;gap:8px}
 .sb-meta{font-size:10px;color:var(--t3);line-height:1.5}
 
@@ -178,6 +180,7 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
         <div class="sb-img" onclick="insImg('{{img.path}}')" title="{{img.source}}">
           <img src="{{'/local-image?path='+img.path if img.path.startswith('/') else img.path}}" loading="lazy" onerror="this.parentElement.style.display='none'">
           <div class="sb-img-ov">＋</div>
+          <div class="sb-img-cv" onclick="event.stopPropagation();setCover('{{img.path}}')" title="设为封面">设为封面</div>
         </div>
         {% else %}<div style="font-size:11px;color:var(--t3);padding:8px 0">暂无素材</div>{% endfor %}
       </div>
@@ -259,11 +262,37 @@ function selTheme(name){
   _th=name;
   document.querySelectorAll('#sbThemes .sb-theme').forEach(function(e){e.classList.toggle('on',e.getAttribute('data-t')===name);});
 }
-function onCvChange(inp){
+function _showCover(path){
+  var i=_S('sbCvImg');
+  if(!i)return;
+  i.src=path.indexOf('/')===0?'/local-image?path='+encodeURIComponent(path):path;
+  i.style.display='block';
+}
+async function setCover(path){
+  try{
+    var r=await fetch('/api/wechat/'+WK+'/cover',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path})});
+    var d=await r.json();
+    if(d.ok){_showCover(d.image_url);_toast('已设为封面','ok');}
+    else _toast(d.msg||'设置失败','err');
+  }catch(e){_toast('网络错误','err');}
+}
+async function onCvChange(inp){
   if(!inp.files||!inp.files[0])return;
-  var r=new FileReader();
-  r.onload=function(e){var i=_S('sbCvImg');if(i){i.src=e.target.result;i.style.display='block';}};
-  r.readAsDataURL(inp.files[0]);_markDirty();
+  var f=inp.files[0];
+  // 先本地预览，再真正上传落库（原来只预览、从不保存）
+  var r0=new FileReader();
+  r0.onload=function(e){var i=_S('sbCvImg');if(i){i.src=e.target.result;i.style.display='block';}};
+  r0.readAsDataURL(f);
+  try{
+    var fd=new FormData();fd.append('file',f);
+    _toast('上传封面中…');
+    var r=await fetch('/api/wechat/'+WK+'/cover',{method:'POST',body:fd});
+    var d=await r.json();
+    if(d.ok){_showCover(d.image_url);_toast('封面已更新','ok');}
+    else _toast(d.msg||'上传失败','err');
+  }catch(e){_toast('上传失败','err');}
+  inp.value='';
 }
 function insImg(path){
   if(!_ed)return;
@@ -749,6 +778,42 @@ def api_wechat_preview(key):
         return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
     except Exception as e:
         return f'<pre>预览渲染失败: {e}</pre>', 500
+
+@wechat_bp.route('/api/wechat/<key>/cover', methods=['POST'])
+def api_wechat_cover(key):
+    """设置封面并落库（写 news.image_url）。
+
+    两种入参：
+      - JSON {"path": "/本地路径"}   ← 从图片素材库选
+      - multipart 字段 file          ← 选本地文件（真正上传并保存）
+    原来「换封面」只在前端用 FileReader 预览，从不落库，发布时用的还是旧封面。
+    """
+    import time as _time
+    from pathlib import Path as _P
+    from sqlite_db import update_news
+
+    data = request.get_json(silent=True) or {}
+    path = (data.get('path') or '').strip()
+
+    if not path:
+        f = request.files.get('file')
+        if not f:
+            return jsonify({"ok": False, "msg": "缺少 path 或 file"}), 400
+        try:
+            from config.yahoo_conf import GALLERY_CACHE_DIR
+            d = _P(GALLERY_CACHE_DIR).expanduser() / key
+            d.mkdir(parents=True, exist_ok=True)
+            ext = _P(f.filename or '').suffix or '.jpg'
+            dest = d / ("cover_%d%s" % (int(_time.time()), ext))
+            f.save(str(dest))
+            path = str(dest)
+        except Exception as e:
+            return jsonify({"ok": False, "msg": "封面上传失败: %s" % e}), 500
+
+    if not update_news(key, {'image_url': path}):
+        return jsonify({"ok": False, "msg": "写库失败"}), 500
+    return jsonify({"ok": True, "image_url": path})
+
 
 @wechat_bp.route('/api/wechat/<key>', methods=['PUT'])
 def api_wechat_update(key):
