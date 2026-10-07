@@ -433,7 +433,7 @@ def _submit_draft(token: str, article: dict, draft_id: str = "", key: str = "") 
     return resp.get("media_id", ""), "created"
 
 
-def publish_article(article_key: str, publish: bool = False,
+def publish_article(article_key: str,
                     theme_name: str = DEFAULT_THEME, new_draft: bool = False):
     """完整流程：读取文章 → 上传图片 → 用 format_engine 渲染 → 创建草稿。"""
     from scripts.sqlite_db import _connect
@@ -583,7 +583,6 @@ if __name__ == "__main__":
     p.add_argument("--theme", default=DEFAULT_THEME,
                    help=f"排版主题 ID（默认 {DEFAULT_THEME}）。可用: --list-themes")
     p.add_argument("--preview", action="store_true", help="本地 HTML 预览（不发布，用浏览器打开）")
-    p.add_argument("--publish", action="store_true", help="直接发布（默认只创建草稿）")
     p.add_argument("--delete-drafts", action="store_true", help="清空草稿箱")
     p.add_argument("--new-draft", action="store_true",
                    help="强制新建草稿（默认：该文章已有 draft_id 时就地更新）")
@@ -621,7 +620,7 @@ if __name__ == "__main__":
         print(f"✅ 已在浏览器打开，确认后运行：")
         print(f"   python scripts/wechat_publisher.py --key {args.key} --theme {resolved}")
     elif args.key:
-        publish_article(args.key, publish=args.publish, theme_name=args.theme,
+        publish_article(args.key, theme_name=args.theme,
                         new_draft=args.new_draft)
     else:
         p.print_help()
