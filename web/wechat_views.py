@@ -167,6 +167,26 @@ body{font:13px/1.5 var(--f);background:var(--bg);color:var(--t);display:flex;fle
       {% if news.wechat_pub_time %}<div style="font-size:10px;color:var(--t3);margin-top:6px">发布: {{news.wechat_pub_time[:16]}}</div>{% endif %}
       {% if news.wechat_draft_id %}<div style="font-size:10px;color:var(--t3);margin-top:3px;word-break:break-all">ID: {{news.wechat_draft_id[:24]}}…</div>{% endif %}
     </div>
+    <div class="sb-sec"><div class="sb-lbl">数据表现</div>
+      {% if news.wechat_collected_at %}
+      <div style="display:flex;gap:18px">
+        <div><div style="font-size:17px;font-weight:700;line-height:1.1">{{news.wechat_reads}}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">阅读</div></div>
+        <div><div style="font-size:17px;font-weight:700;line-height:1.1">{{news.wechat_likes}}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">点赞</div></div>
+      </div>
+      <div style="font-size:10px;color:var(--t3);margin-top:9px;line-height:1.7">
+        在看 {{news.wechat_old_likes}} · 分享 {{news.wechat_shares}}<br>
+        收藏 {{news.wechat_collects}} · 评论 {{news.wechat_comments}}
+      </div>
+      <div style="font-size:10px;color:var(--t3);margin-top:6px">采集于 {{news.wechat_collected_at}}</div>
+      {% else %}
+      <div style="font-size:12px;color:var(--t3)">— 尚未采集</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:5px;line-height:1.6">
+        需账号有数据接口权限（datacube）且文章已发布
+      </div>
+      {% endif %}
+    </div>
     <div class="sb-sec"><div class="sb-lbl">封面图</div>
       <div class="sb-cover" onclick="document.getElementById('cvFile').click()">
         {% set _cv = news.wechat_image_url or news.image_url %}
