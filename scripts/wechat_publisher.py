@@ -391,8 +391,50 @@ def _resolve_cover_path(row, gallery: list) -> str:
     )
 
 
+def _submit_draft(token: str, article: dict, draft_id: str = "", key: str = "") -> tuple:
+    """把文章写进草稿箱，返回 (media_id, action)，action ∈ {'updated','created'}。
+
+    有 draft_id 就调 draft/update 就地覆盖，不再每次新建 —— 否则重复推送会在
+    草稿箱里堆一串内容几乎相同的草稿。
+
+    两个接口的 payload 形状不同，别混：
+      draft/add    → {"articles": [ {...} ]}      （数组）
+      draft/update → {"media_id": X, "index": 0, "articles": {...}}  （对象）
+
+    draft_id 失效必须兜住并回退新建：草稿被手动删掉、或已经发表（不再是草稿）
+    时 update 会报错，此时不能整条推送失败。
+    """
+    if draft_id:
+        url = f"{WX_API}/draft/update?access_token={token}"
+        payload = {"media_id": draft_id, "index": 0, "articles": article}
+        try:
+            resp = requests.post(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                                 headers={"Content-Type": "application/json; charset=utf-8"},
+                                 timeout=30).json()
+        except Exception as e:
+            resp = {"errcode": -1, "errmsg": f"请求异常: {e}"}
+        if resp.get("errcode", 0) == 0:
+            print(f"  ✅ 已就地更新草稿 media_id={draft_id[:20]}...")
+            return draft_id, "updated"
+        print(f"  ⚠️ 更新草稿失败（{resp.get('errcode')} {resp.get('errmsg')}），改为新建草稿")
+        _log_err(f"更新草稿失败，回退新建 key={key} media_id={draft_id}: {resp}")
+
+    url = f"{WX_API}/draft/add?access_token={token}"
+    payload = {"articles": [article]}
+    resp = requests.post(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                         headers={"Content-Type": "application/json; charset=utf-8"},
+                         timeout=30).json()
+    if resp.get("errcode", 0) != 0:
+        print(f"  ❌ 创建草稿失败: {resp}")
+        _log_err(f"创建微信草稿失败 key={key}: {resp}")
+        # 必须抛异常：原先 return None 时进程退出码仍是 0，
+        # 上层 HTTP 会误报 {"ok": true}，前端弹"推送成功"而实际什么都没建。
+        raise RuntimeError(f"创建微信草稿失败: {resp}")
+    return resp.get("media_id", ""), "created"
+
+
 def publish_article(article_key: str, publish: bool = False,
-                    theme_name: str = DEFAULT_THEME):
+                    theme_name: str = DEFAULT_THEME, new_draft: bool = False):
     """完整流程：读取文章 → 上传图片 → 用 format_engine 渲染 → 创建草稿。"""
     from scripts.sqlite_db import _connect
 
@@ -400,7 +442,7 @@ def publish_article(article_key: str, publish: bool = False,
 
     with _connect() as db:
         r = db.execute(
-            "SELECT title, content, wechat_title, wechat_content, wechat_image_url, channel, image_url, original_image_url, gallery_images FROM news WHERE key=?",
+            "SELECT title, content, wechat_title, wechat_content, wechat_image_url, wechat_draft_id, channel, image_url, original_image_url, gallery_images FROM news WHERE key=?",
             (article_key,)
         ).fetchone()
 
@@ -479,8 +521,8 @@ def publish_article(article_key: str, publish: bool = False,
     html_content = _render_html(content, img_url_map, resolved_theme)
     print(f"  HTML 长度: {len(html_content)} 字符")
 
-    # ── 创建草稿 ──────────────────────────────────────────────
-    print(f"\n[4] 创建微信草稿...")
+    # ── 写入草稿箱（有 draft_id 就就地更新，否则新建）──────────
+    print(f"\n[4] 写入微信草稿箱...")
     # 微信图文消息标题上限 64 字符（原写「约 10 个汉字」是错的，
     # 把 19 字的正常标题砍成了 9 字）
     if len(title) > 64:
@@ -495,22 +537,13 @@ def publish_article(article_key: str, publish: bool = False,
     if thumb_media_id:
         article["thumb_media_id"] = thumb_media_id
 
-    url = f"{WX_API}/draft/add?access_token={token}"
-    payload = {"articles": [article]}
-    # ensure_ascii=False 保留中文，避免微信后台显示 \uXXXX 乱码
-    resp = requests.post(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                         headers={"Content-Type": "application/json; charset=utf-8"},
-                         timeout=30).json()
-
-    if resp.get("errcode", 0) != 0:
-        print(f"  ❌ 创建草稿失败: {resp}")
-        _log_err(f"创建微信草稿失败 key={article_key}: {resp}")
-        # 必须抛异常：原先 return None 时进程退出码仍是 0，
-        # 上层 HTTP 会误报 {"ok": true}，前端弹"推送成功"而实际什么都没建。
-        raise RuntimeError(f"创建微信草稿失败: {resp}")
-
-    media_id = resp.get("media_id", "")
-    print(f"  ✅ 草稿创建成功！media_id = {media_id}")
+    # --new-draft 可强制新建（例如想保留旧草稿）
+    draft_id = "" if new_draft else (r["wechat_draft_id"] or "").strip()
+    media_id, action = _submit_draft(token, article, draft_id, article_key)
+    print(f"  ✅ 草稿{'更新' if action == 'updated' else '创建'}成功！media_id = {media_id}")
+    # 哨兵行：上层按它取 draft id。不能用 media_id= 通配匹配 —— 封面上传那行也含
+    # "media_id="，且是截断过的封面素材 id，会被先匹配到（历史 bug 的成因）。
+    print(f"DRAFT_MEDIA_ID: {media_id}")
     print(f"  👉 在微信公众平台草稿箱查看: https://mp.weixin.qq.com")
     return media_id
 
@@ -521,9 +554,16 @@ def delete_all_drafts():
     token = _get_access_token(conf)
     deleted = 0
     while True:
-        r = requests.get(f"{WX_API}/draft/batchget?access_token={token}",
-                         params={"offset": 0, "count": 20, "no_content": 1}, timeout=15).json()
-        items = r.get("item", [])
+        # 必须 POST：用 GET 会返回 {"errcode":43002,"errmsg":"require POST method"}，
+        # 读 r.get("item", []) 得 [] 就 break —— 这个函数曾经因此一直是空操作。
+        r = requests.post(f"{WX_API}/draft/batchget?access_token={token}",
+                          data=json.dumps({"offset": 0, "count": 20, "no_content": 1}),
+                          headers={"Content-Type": "application/json"}, timeout=15).json()
+        if r.get("errcode", 0) != 0:
+            print(f"  ❌ 拉取草稿列表失败: {r}")
+            _log_err(f"draft/batchget 失败: {r}")
+            return
+        items = r.get("item") or []
         if not items:
             break
         for item in items:
@@ -545,6 +585,8 @@ if __name__ == "__main__":
     p.add_argument("--preview", action="store_true", help="本地 HTML 预览（不发布，用浏览器打开）")
     p.add_argument("--publish", action="store_true", help="直接发布（默认只创建草稿）")
     p.add_argument("--delete-drafts", action="store_true", help="清空草稿箱")
+    p.add_argument("--new-draft", action="store_true",
+                   help="强制新建草稿（默认：该文章已有 draft_id 时就地更新）")
     p.add_argument("--list-themes", action="store_true", help="列出所有可用主题")
     args = p.parse_args()
 
@@ -579,6 +621,7 @@ if __name__ == "__main__":
         print(f"✅ 已在浏览器打开，确认后运行：")
         print(f"   python scripts/wechat_publisher.py --key {args.key} --theme {resolved}")
     elif args.key:
-        publish_article(args.key, publish=args.publish, theme_name=args.theme)
+        publish_article(args.key, publish=args.publish, theme_name=args.theme,
+                        new_draft=args.new_draft)
     else:
         p.print_help()

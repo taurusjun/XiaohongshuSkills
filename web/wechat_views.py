@@ -991,8 +991,9 @@ def api_wechat_publish(key):
     import re
     from sqlite_db import _log_db_error
     if result.returncode == 0:
-        # Extract media_id from output
-        m = re.search(r'media_id\s*=\s*(\S+)', result.stdout)
+        # 只认哨兵行：原先用 media_id\s*=\s*(\S+) 会先匹配到封面上传那行的
+        # 截断 id（media_id={cover[:12]}...），导致 DB 里存的 draft_id 一直是错的
+        m = re.search(r'DRAFT_MEDIA_ID:\s*(\S+)', result.stdout)
         if not m:
             # 退出码 0 却没拿到 media_id —— 不能报成功（本项目反复出现的误报反模式）
             _log_db_error(f"发布器未返回 media_id key={key}")
