@@ -616,8 +616,14 @@ async function doPush(){
     await doSave(true);
     var r=await fetch('/api/wechat/'+WK+'/publish?theme='+_th,{method:'POST'});
     var d=await r.json();
-    if(r.ok&&d.ok){_toast('已推送到草稿箱','ok');}
-    else{_toast((d.error||'推送失败'),'err');}
+    var meta=_S('sbMeta');
+    if(r.ok&&d.ok){_toast('已推送到草稿箱','ok');if(meta)meta.textContent='✅ 已推送（刷新可见草稿 ID）';}
+    else{
+      var msg=d.error||'推送失败';
+      _toast(msg,'err');
+      // toast 只显示 2.2s，长错误看不完 —— 同时写进侧栏底部常驻显示
+      if(meta)meta.textContent='❌ '+msg;
+    }
   }catch(e){_toast('推送失败','err');}
   ['btnPush','btnPush2'].forEach(function(id){var b=_S(id);if(b){b.disabled=false;b.textContent=id==='btnPush'?'推送草稿':'推送草稿到公众号';}});
 }
@@ -982,12 +988,25 @@ def api_wechat_publish(key):
         cwd=scripts_dir,
         env={**os.environ, 'PYTHONPATH': scripts_dir}
     )
+    import re
+    from sqlite_db import _log_db_error
     if result.returncode == 0:
         # Extract media_id from output
-        import re
         m = re.search(r'media_id\s*=\s*(\S+)', result.stdout)
-        if m:
-            update_news(key, {'wechat_draft_id': m.group(1)})
+        if not m:
+            # 退出码 0 却没拿到 media_id —— 不能报成功（本项目反复出现的误报反模式）
+            _log_db_error(f"发布器未返回 media_id key={key}")
+            return jsonify({"ok": False,
+                            "error": "发布器未返回 media_id，草稿可能未创建",
+                            "output": result.stdout[-800:]}), 500
+        update_news(key, {'wechat_draft_id': m.group(1)})
         return jsonify({"ok": True, "output": result.stdout[-500:]})
-    return jsonify({"ok": False, "error": result.stderr[-500:]})
+    # 失败：优先把 stdout 里的 ❌/⚠️ 行挑出来，比一坨 traceback 好读
+    lines = [ln.strip() for ln in result.stdout.splitlines()
+             if ln.strip().startswith(("❌", "⚠️"))]
+    if not lines and result.stderr.strip():
+        lines = [result.stderr.strip().splitlines()[-1]]
+    msg = "；".join(lines[-3:]) or "推送失败（无输出）"
+    _log_db_error(f"推送公众号失败 key={key}: {msg}")
+    return jsonify({"ok": False, "error": msg, "output": result.stdout[-800:]})
 

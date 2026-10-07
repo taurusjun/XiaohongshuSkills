@@ -165,6 +165,10 @@ def _prepare_image_for_wechat(img_path: str) -> tuple:
 
 
 def _upload_image(token: str, img_path: str) -> str:
+    """上传图片到微信永久素材库（封面图），返回 media_id。"""
+    url = f"{WX_API}/material/add_material?access_token={token}&type=image"
+    name, mime, payload = _prepare_image_for_wechat(img_path)
+    resp = requests.post(url, files={"media": (name, payload, mime)}, timeout=30).json()
     if "media_id" not in resp:
         raise RuntimeError(f"上传封面图失败 {img_path}: {resp}")
     print(f"    ✅ 封面上传: {Path(img_path).name} → media_id={resp['media_id'][:12]}...")
@@ -442,17 +446,33 @@ def publish_article(article_key: str, publish: bool = False,
                 if p.startswith("/"):
                     used_paths.add(p)
 
+    failed = []          # [(path, 原因)]
     for p in sorted(used_paths):
-        if os.path.exists(p):
-            try:
-                wx_url = _upload_image_for_content(token, p)
-                img_url_map[p] = wx_url
-                time.sleep(0.3)  # 防频率限制
-            except Exception as e:
-                print(f"    ⚠️ {Path(p).name} 上传失败: {e}")
-                _log_err(f"正文图上传失败 {p}: {e}")
+        if not os.path.exists(p):
+            failed.append((p, "文件不存在"))
+            print(f"    ⚠️ 正文图不存在: {p}")
+            _log_err(f"正文图不存在 {p}")
+            continue
+        try:
+            wx_url = _upload_image_for_content(token, p)
+            img_url_map[p] = wx_url
+            time.sleep(0.3)  # 防频率限制
+        except Exception as e:
+            failed.append((p, str(e)))
+            print(f"    ⚠️ {Path(p).name} 上传失败: {e}")
+            _log_err(f"正文图上传失败 {p}: {e}")
 
     print(f"  已上传 {len(img_url_map)} / {len(used_paths)} 张图片")
+
+    # 有图传不上去就中止：img_url_map 缺项时 xhs_img_to_markdown 会把**本地路径**
+    # 当成图片 URL 写进正文，微信显示不出来 —— 表现就是「前几张有、某张没有」。
+    # 宁可推不出去，也不要推出一篇带裂图的草稿。
+    if failed:
+        detail = "；".join(f"{Path(p).name}（{why}）" for p, why in failed)
+        msg = f"{len(failed)} 张正文图未能上传，已中止推送：{detail}"
+        print(f"  ❌ {msg}")
+        _log_err(f"中止推送 key={article_key}: {msg}")
+        raise RuntimeError(msg)
 
     # ── format_engine 渲染 ────────────────────────────────────
     print(f"\n[3] 渲染文章 HTML（format_engine · {theme_data.get('name', resolved_theme)}）...")
