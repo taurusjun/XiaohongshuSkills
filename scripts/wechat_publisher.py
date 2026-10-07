@@ -124,15 +124,47 @@ def _get_access_token(conf: dict) -> str:
     return token
 
 
-def _upload_image(token: str, img_path: str) -> str:
-    """上传图片到微信永久素材库（封面图），返回 media_id。"""
-    url = f"{WX_API}/material/add_material?access_token={token}&type=image"
-    with open(img_path, "rb") as f:
-        ext = Path(img_path).suffix.lower().lstrip(".")
-        mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "png": "image/png", "gif": "image/gif"}.get(ext, "image/jpeg")
-        resp = requests.post(url, files={"media": (Path(img_path).name, f, mime)}, timeout=30).json()
+def _sniff_image_format(data: bytes) -> str:
+    """按魔数判断图片真实格式 —— 不能信扩展名（缓存里有 .jpg 其实是 WebP 的）。"""
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[4:12] in (b"ftypavif", b"ftypavis"):
+        return "avif"
+    return "unknown"
 
+
+def _prepare_image_for_wechat(img_path: str) -> tuple:
+    """读图并保证是微信接受的格式，返回 (上传文件名, mime, bytes)。
+
+    微信只收 jpg/png，且按内容判定：扩展名 .jpg 但内容是 WebP 会被拒
+    （errcode 40137 invalid image format）。所以先嗅探真实格式，非 jpg/png 的
+    转成 JPEG。转码失败就抛异常 —— 宁可明确失败，也不要传个微信认不出的字节。
+    """
+    import io
+    raw = Path(img_path).read_bytes()
+    fmt = _sniff_image_format(raw)
+    if fmt == "jpeg":
+        return Path(img_path).name, "image/jpeg", raw
+    if fmt == "png":
+        return Path(img_path).name, "image/png", raw
+    from PIL import Image
+    im = Image.open(io.BytesIO(raw))
+    if im.mode not in ("RGB", "L"):
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=92)
+    new_name = Path(img_path).stem + ".jpg"
+    print(f"    🔄 {Path(img_path).name} 实为 {fmt}，已转 JPEG 后上传")
+    return new_name, "image/jpeg", buf.getvalue()
+
+
+def _upload_image(token: str, img_path: str) -> str:
     if "media_id" not in resp:
         raise RuntimeError(f"上传封面图失败 {img_path}: {resp}")
     print(f"    ✅ 封面上传: {Path(img_path).name} → media_id={resp['media_id'][:12]}...")
@@ -142,10 +174,8 @@ def _upload_image(token: str, img_path: str) -> str:
 def _upload_image_for_content(token: str, img_path: str) -> str:
     """上传正文图片（新增素材接口），返回 URL。"""
     url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}"
-    with open(img_path, "rb") as f:
-        ext = Path(img_path).suffix.lower().lstrip(".")
-        mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext, "image/jpeg")
-        resp = requests.post(url, files={"media": (Path(img_path).name, f, mime)}, timeout=30).json()
+    name, mime, payload = _prepare_image_for_wechat(img_path)
+    resp = requests.post(url, files={"media": (name, payload, mime)}, timeout=30).json()
 
     if "url" not in resp:
         raise RuntimeError(f"上传正文图片失败 {img_path}: {resp}")

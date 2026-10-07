@@ -17,6 +17,25 @@ from unified_media_downloader import download_twitter as _dl_tw
 
 CACHE_DIR = Path(GALLERY_CACHE_DIR).expanduser()
 
+
+def _sniff_ext(data: bytes, url: str = "") -> str:
+    """按魔数判断扩展名 —— 别信 URL 后缀。
+
+    站点常在 .jpg 的 URL 上返回 WebP，存成 .jpg 的 WebP 微信上传会被拒
+    （errcode 40137 invalid image format）。认不出来的（含视频）回退到 URL 后缀，
+    保持原行为不变。
+    """
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    ext = (url.rsplit(".", 1)[-1].split("?")[0] if url else "").lower()
+    return ext if ext in ("jpg", "jpeg", "png", "webp", "gif", "mp4") else "jpg"
+
 # Task tracking {key: {'status': 'running'|'done'|'error:...', 'log': str, 'images': [str]}}
 _tasks = {}
 
@@ -144,10 +163,8 @@ def _download(key: str, gallery_url: str = ""):
                 try:
                     _proxies = _proxies_all if ("twimg.com" in url and _proxies_all) else None
                     resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
-                    ext = url.rsplit('.', 1)[-1].split('?')[0] or 'jpg'
-                    if ext not in ('jpg','jpeg','png','webp','gif','mp4'):
-                        ext = 'jpg'
-                    fname = f'{i+1:03d}.{ext}'
+                    # 按内容定扩展名，别信 URL 后缀（站点常在 .jpg 上返回 WebP）
+                    fname = f'{i+1:03d}.{_sniff_ext(resp.content, url)}'
                     (d / fname).write_bytes(resp.content)
                     log.append(f'    ✓ {fname}')
                 except Exception as e2:
