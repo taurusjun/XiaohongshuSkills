@@ -733,6 +733,25 @@ def wechat_list_query(args) -> tuple:
     return sql, params, meta
 
 
+def _wechat_stats() -> dict:
+    """公众号文章的**全量**统计 —— 不受筛选影响（统计卡片始终显示全量）。
+
+    分桶口径与 _WECHAT_STATUS 完全一致，这样点某个状态筛选时，
+    卡片上的数字与列表条数对得上。
+    """
+    from sqlite_db import _connect
+    with _connect() as db:
+        row = db.execute(
+            "SELECT COUNT(*) AS total,"
+            " SUM(wechat_pub_time != '') AS published,"
+            " SUM(wechat_draft_id != '' AND wechat_pub_time = '') AS draft,"
+            " SUM(wechat_publish = 1 AND wechat_draft_id = '' AND wechat_pub_time = '') AS pending,"
+            " SUM(wechat_publish = 0 AND wechat_draft_id = '' AND wechat_pub_time = '') AS none"
+            " FROM news WHERE " + _WECHAT_BASE_WHERE
+        ).fetchone()
+    return {k: int(row[k] or 0) for k in ("total", "published", "draft", "pending", "none")}
+
+
 def _wechat_sources() -> list:
     """公众号文章出现过的来源（给筛选下拉用）。"""
     from sqlite_db import _connect
@@ -751,6 +770,7 @@ def api_wechat_list():
     with _connect() as db:
         rows = [dict(r) for r in db.execute(sql, params).fetchall()]
     return jsonify({"items": rows, "sources": _wechat_sources(),
+                    "stats": _wechat_stats(),          # 全量，不受筛选影响
                     "meta": meta, "count": len(rows)})
 
 @wechat_bp.route('/wechat-list')
@@ -761,6 +781,7 @@ def wechat_list():
     with _connect() as db:
         rows = [dict(r) for r in db.execute(sql, params).fetchall()]
     return rts(WECHAT_LIST_HTML, rows=rows, meta=meta,
+               stats=_wechat_stats(),              # 全量，不受筛选影响
                sources=_wechat_sources(),
                status_labels=_WECHAT_STATUS_LABEL,
                sort_labels=_WECHAT_SORT_LABEL)
@@ -861,19 +882,19 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
     <div class="stats-row">
       <div class="stat-card">
         <div class="stat-icon" style="background:#f0fdf4">📄</div>
-        <div><div class="stat-num">{{rows|length}}</div><div class="stat-label">文章总数</div></div>
+        <div><div class="stat-num">{{stats.total}}</div><div class="stat-label">文章总数</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#fef3c7">📝</div>
-        <div><div class="stat-num">{{rows|selectattr('wechat_draft_id')|list|length}}</div><div class="stat-label">草稿箱</div></div>
+        <div><div class="stat-num">{{stats.draft}}</div><div class="stat-label">草稿箱</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#dbeafe">⏳</div>
-        <div><div class="stat-num">{{rows|selectattr('wechat_publish')|rejectattr('wechat_draft_id')|list|length}}</div><div class="stat-label">待发布</div></div>
+        <div><div class="stat-num">{{stats.pending}}</div><div class="stat-label">待发布</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#d1fae5">✅</div>
-        <div><div class="stat-num">{{rows|selectattr('wechat_pub_time')|list|length}}</div><div class="stat-label">已发布</div></div>
+        <div><div class="stat-num">{{stats.published}}</div><div class="stat-label">已发布</div></div>
       </div>
     </div>
 
@@ -901,7 +922,7 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
         title="切换升/降序">{{'↓ 降序' if meta.dir=='desc' else '↑ 升序'}}</button>
       <a class="flt-btn" href="/wechat-list" title="清空全部筛选">重置</a>
       <span style="flex:1"></span>
-      <span style="font-size:11px;color:var(--text3)">共 {{rows|length}} 篇</span>
+      <span style="font-size:11px;color:var(--text3)">筛选出 {{rows|length}} 篇</span>
     </div>
 
     <!-- table -->

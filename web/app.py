@@ -1848,10 +1848,11 @@ function loadWechatList(){
     // 日期列表头跟着排序字段走，避免「按入库时间排、表头却写日期」的歧义
     var lab={created_at:'入库时间',updated_at:'编辑时间',pub_time:'发布时间'};
     var th=document.getElementById('wdDateTh'); if(th)th.textContent=lab[_wdVal('wdSort')||'created_at']||'日期';
-    var tot=_wdAllItems.length,dr=0,pe=0,pu=0;
-    _wdAllItems.forEach(function(n){if(n.wechat_pub_time)pu++;else if(n.wechat_draft_id)dr++;else if(n.wechat_publish)pe++;});
+    // 统计卡片走服务端返回的**全量**统计，不随筛选变化（列表才跟着筛）
+    var _st=d.stats||{};
+    var tot=_st.total||0;
     function se(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
-    se('wdTotal',tot);se('wdDraft',dr);se('wdPending',pe);se('wdPublished',pu);
+    se('wdTotal',tot);se('wdDraft',_st.draft||0);se('wdPending',_st.pending||0);se('wdPublished',_st.published||0);
     var badge=document.getElementById('wechatBadge');
     if(badge&&tot){badge.textContent=tot;badge.style.display='';}
     _wdPage=0;_wdFiltered=_wdAllItems;renderWechatItems(_wdFiltered);
