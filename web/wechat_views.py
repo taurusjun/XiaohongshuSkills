@@ -672,13 +672,11 @@ _WECHAT_SORT = {
     "created_at": "created_at",        # 入库时间（默认）
     "updated_at": "updated_at",        # 编辑时间
     "pub_time":   "wechat_pub_time",   # 发布时间
-    "reads":      "wechat_reads",      # 阅读次数（采集器待补，见 §指标）
 }
 _WECHAT_SORT_LABEL = {
     "created_at": "入库时间",
     "updated_at": "编辑时间",
     "pub_time":   "发布时间",
-    "reads":      "阅读/点赞",
 }
 # 状态筛选（键为 URL 参数值）
 _WECHAT_STATUS = {
@@ -719,8 +717,7 @@ def wechat_list_query(args) -> tuple:
     direction = "ASC" if direction == "asc" else "DESC"
 
     sql = ("SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,"
-           "updated_at,created_at,image_url,wechat_image_url,source,channel,"
-           "wechat_reads,wechat_likes,wechat_collected_at "
+           "updated_at,created_at,image_url,wechat_image_url,source,channel "
            "FROM news WHERE " + _WECHAT_BASE_WHERE)
     params = []
     if search:
@@ -854,9 +851,9 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
 
 /* table */
 .table-card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
-.table-header{display:grid;grid-template-columns:1fr 76px 86px 86px 86px 84px 56px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid var(--border)}
+.table-header{display:grid;grid-template-columns:1fr 78px 86px 86px 86px 60px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid var(--border)}
 .table-header span{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
-.table-row{display:grid;grid-template-columns:1fr 76px 86px 86px 86px 84px 56px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;transition:background .1s}
+.table-row{display:grid;grid-template-columns:1fr 78px 86px 86px 86px 60px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;transition:background .1s}
 .table-row:last-child{border-bottom:none}
 .table-row:hover{background:#f9fafb}
 .row-title{font-size:12.5px;font-weight:500;color:var(--text);text-decoration:none;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -946,7 +943,6 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
         <span class="th-sort" onclick="sortBy('created_at')" title="点此按入库时间排序">入库时间 {{meta.arrows.created_at}}</span>
         <span class="th-sort" onclick="sortBy('updated_at')" title="点此按编辑时间排序">编辑时间 {{meta.arrows.updated_at}}</span>
         <span class="th-sort" onclick="sortBy('pub_time')" title="点此按发布时间排序">发布时间 {{meta.arrows.pub_time}}</span>
-        <span class="th-sort" onclick="sortBy('reads')" title="点此按阅读次数排序">阅读/点赞 {{meta.arrows.reads}}</span>
         <span></span>
       </div>
       {% for r in rows %}
@@ -961,8 +957,6 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
         <span class="row-date">{{(r.created_at or '')[:10]}}</span>
         <span class="row-date">{{(r.updated_at or '')[:10]}}</span>
         <span class="row-date">{{(r.wechat_pub_time or '')[:10] or '—'}}</span>
-        {% if r.wechat_collected_at %}<span class="row-date" title="采集于 {{r.wechat_collected_at}}">{{r.wechat_reads}} / {{r.wechat_likes}}</span>
-        {% else %}<span class="row-date" title="尚未采集（需账号有 datacube 权限且文章已发布）">—</span>{% endif %}
         <a href="/wechat/{{r.key}}" class="act-btn">编辑 →</a>
       </div>
       {% endfor %}
