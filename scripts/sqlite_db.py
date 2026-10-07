@@ -256,6 +256,14 @@ def init_db():
             ("wechat_draft_id", "TEXT DEFAULT ''"),
             ("wechat_pub_time", "TEXT DEFAULT ''"),
             ("wechat_image_url", "TEXT DEFAULT ''"),
+            # 公众号指标（采集器待补：datacube 接口本号无权限 48001）
+            ("wechat_reads", "INTEGER DEFAULT 0"),
+            ("wechat_likes", "INTEGER DEFAULT 0"),
+            ("wechat_old_likes", "INTEGER DEFAULT 0"),
+            ("wechat_shares", "INTEGER DEFAULT 0"),
+            ("wechat_collects", "INTEGER DEFAULT 0"),
+            ("wechat_comments", "INTEGER DEFAULT 0"),
+            ("wechat_collected_at", "TEXT DEFAULT ''"),
             ("grade", "TEXT DEFAULT ''"),
             ("grade_reason", "TEXT DEFAULT ''"),
         ]
@@ -531,6 +539,8 @@ def update_news(key: str, fields: dict) -> bool:
                'related_keys','publish_method',
                'wechat_title','wechat_content','wechat_publish','wechat_draft_id','wechat_pub_time',
                'wechat_image_url',
+               'wechat_reads','wechat_likes','wechat_old_likes','wechat_shares',
+               'wechat_collects','wechat_comments','wechat_collected_at',
                'xhs_note_id','xhs_title',
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
