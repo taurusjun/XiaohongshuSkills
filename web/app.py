@@ -1806,10 +1806,22 @@ function switchToNewsView(){
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
   if(!wv||wv.querySelector('.wx-topbar')) return;
-  wv.innerHTML='<div class="wx-topbar"><span class="wx-title">公众号</span><div class="wx-search"><span style="color:var(--text3);font-size:12px">&#128269;</span><input id="wdSearch" placeholder="搜索标题..." oninput="_wdDebounce()"></div><select id="wdSt" class="wx-sel" onchange="loadWechatList()" title="状态筛选"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿箱</option><option value="pending">待发布</option><option value="none">未配置</option></select><select id="wdSrc" class="wx-sel" onchange="loadWechatList()" title="来源筛选"><option value="">全部来源</option></select><input type="date" id="wdDf" class="wx-date-in" onchange="loadWechatList()" title="入库起始日期"><span style="color:var(--text3);font-size:11px">~</span><input type="date" id="wdDt" class="wx-date-in" onchange="loadWechatList()" title="入库结束日期"><select id="wdSort" class="wx-sel" onchange="loadWechatList()" title="排序字段"><option value="created_at">入库时间</option><option value="updated_at">编辑时间</option><option value="pub_time">发布时间</option></select><button class="wx-btn" id="wdDir" onclick="_wdToggleDir()" title="切换升/降序">↓ 降序</button><button class="wx-btn" onclick="_wdReset()" title="清空全部筛选">重置</button><div class="wx-stats"><b id="wdTotal">—</b> 总数 &nbsp;|&nbsp; <b id="wdDraft" style="color:var(--orange)">—</b> 草稿 <b id="wdPending" style="color:var(--blue)">—</b> 待发 <b id="wdPublished" style="color:var(--green)">—</b> 已发</div></div><div class="wx-wrap"><div class="wx-card"><div class="wx-thead"><div class="wx-th"></div><div class="wx-th" style="padding-left:12px">标题</div><div class="wx-th">状态</div><div class="wx-th" id="wdDateTh">入库时间</div><div class="wx-th"></div></div><div class="wx-scroll" id="wdBody"><div class="wx-empty">加载中…</div></div></div></div>';
+  wv.innerHTML='<div class="wx-topbar"><span class="wx-title">公众号</span><div class="wx-search"><span style="color:var(--text3);font-size:12px">&#128269;</span><input id="wdSearch" placeholder="搜索标题..." oninput="_wdDebounce()"></div><select id="wdSt" class="wx-sel" onchange="loadWechatList()" title="状态筛选"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿箱</option><option value="pending">待发布</option><option value="none">未配置</option></select><select id="wdSrc" class="wx-sel" onchange="loadWechatList()" title="来源筛选"><option value="">全部来源</option></select><input type="date" id="wdDf" class="wx-date-in" onchange="loadWechatList()" title="入库起始日期"><span style="color:var(--text3);font-size:11px">~</span><input type="date" id="wdDt" class="wx-date-in" onchange="loadWechatList()" title="入库结束日期"><button class="wx-btn" onclick="_wdReset()" title="清空全部筛选">重置</button><div class="wx-stats"><b id="wdTotal">—</b> 总数 &nbsp;|&nbsp; <b id="wdDraft" style="color:var(--orange)">—</b> 草稿 <b id="wdPending" style="color:var(--blue)">—</b> 待发 <b id="wdPublished" style="color:var(--green)">—</b> 已发</div></div><div class="wx-wrap"><div class="wx-card"><div class="wx-thead"><div class="wx-th"></div><div class="wx-th" style="padding-left:12px">标题</div><div class="wx-th">状态</div><div class="wx-th wx-ths" data-k="created_at">入库时间 ↕</div><div class="wx-th wx-ths" data-k="updated_at">编辑时间 ↕</div><div class="wx-th wx-ths" data-k="pub_time">发布时间 ↕</div><div class="wx-th"></div></div><div class="wx-scroll" id="wdBody"><div class="wx-empty">加载中…</div></div></div></div>';
+  // 表头点击排序。不用内联 onclick —— 这段 HTML 在 wv.innerHTML='...' 的单引号
+  // JS 字符串里，内联的 'created_at' 会把字符串截断（SyntaxError，整段脚本挂掉）。
+  Array.prototype.forEach.call(wv.querySelectorAll('.wx-ths'),function(el){
+    el.onclick=function(){_wdSortBy(el.getAttribute('data-k'));};
+  });
 }
 var _wdPage=0,_wdPageSize=50,_wdFiltered=[];
-var _wdDir='desc',_wdTimer=null;
+var _wdDir='desc',_wdSort='created_at',_wdTimer=null;
+// 点表头排序：同一列再点一次切升/降序
+function _wdSortBy(col){
+  if(_wdSort===col){_wdDir=(_wdDir==='desc')?'asc':'desc';}
+  else{_wdSort=col;_wdDir='desc';}
+  loadWechatList();
+}
+function _wdToggleDir(){_wdSortBy(_wdSort);}
 function _wdVal(id){var e=document.getElementById(id);return e?e.value:'';}
 function _wdParams(){
   var p=new URLSearchParams();
@@ -1818,7 +1830,7 @@ function _wdParams(){
   var src=_wdVal('wdSrc');   if(src)p.set('src',src);
   var df=_wdVal('wdDf');     if(df)p.set('df',df);
   var dt=_wdVal('wdDt');     if(dt)p.set('dt',dt);
-  var so=_wdVal('wdSort');   if(so)p.set('sort',so);
+  p.set('sort',_wdSort);
   p.set('dir',_wdDir);
   return p;
 }
@@ -1830,8 +1842,8 @@ function _wdToggleDir(){
 }
 function _wdReset(){
   ['wdSearch','wdDf','wdDt'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
-  ['wdSt','wdSrc','wdSort'].forEach(function(id){var e=document.getElementById(id);if(e)e.selectedIndex=0;});
-  _wdDir='desc';var b=document.getElementById('wdDir');if(b)b.textContent='↓ 降序';
+  ['wdSt','wdSrc'].forEach(function(id){var e=document.getElementById(id);if(e)e.selectedIndex=0;});
+  _wdSort='created_at';_wdDir='desc';
   loadWechatList();
 }
 function loadWechatList(){
@@ -1845,9 +1857,12 @@ function loadWechatList(){
       d.sources.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=s;srcSel.appendChild(o);});
       srcSel.value=_wdVal('wdSrc');
     }
-    // 日期列表头跟着排序字段走，避免「按入库时间排、表头却写日期」的歧义
-    var lab={created_at:'入库时间',updated_at:'编辑时间',pub_time:'发布时间'};
-    var th=document.getElementById('wdDateTh'); if(th)th.textContent=lab[_wdVal('wdSort')||'created_at']||'日期';
+    // 三个日期表头各自显示箭头：当前排序列 ▲/▼，其余 ↕
+    var _lab={created_at:'入库时间',updated_at:'编辑时间',pub_time:'发布时间'};
+    Array.prototype.forEach.call(document.querySelectorAll('#wechatView .wx-ths'),function(el){
+      var k=el.getAttribute('data-k');
+      el.textContent=(_lab[k]||k)+' '+(_wdSort===k?(_wdDir==='asc'?'▲':'▼'):'↕');
+    });
     // 统计卡片走服务端返回的**全量**统计，不随筛选变化（列表才跟着筛）
     var _st=d.stats||{};
     var tot=_st.total||0;
@@ -1873,9 +1888,6 @@ function renderWechatItems(items){
     var thumb=imgSrc?('<img src="'+imgSrc+'" class="thumb-img" onerror="this.className=\'thumb-empty\';this.removeAttribute(\'src\');this.removeAttribute(\'onerror\')">'):'<div class="thumb-empty">&#128240;</div>';
     var wt=esc(n.wechat_title||n.title||'');
     var sub=n.title&&n.wechat_title&&n.title!==n.wechat_title?esc(n.title):'';
-    var _sf=_wdVal('wdSort')||'created_at';
-    var _fld=(_sf==='pub_time')?'wechat_pub_time':_sf;
-    var date=(n[_fld]||n.created_at||'').slice(0,10);
     var bc='wx-bm',bl='未配置';
     if(n.wechat_pub_time){bc='wx-bg';bl='已发布';}
     else if(n.wechat_draft_id){bc='wx-by';bl='草稿';}
@@ -1886,7 +1898,9 @@ function renderWechatItems(items){
     if(sub)html+='<span class="wx-sub">'+sub+'</span>';
     html+='</div>';
     html+='<div><span class="wx-b '+bc+'">'+bl+'</span></div>';
-    html+='<span class="wx-date">'+date+'</span>';
+    html+='<span class="wx-date">'+((n.created_at||'').slice(0,10))+'</span>';
+    html+='<span class="wx-date">'+((n.updated_at||'').slice(0,10))+'</span>';
+    html+='<span class="wx-date">'+(((n.wechat_pub_time||'').slice(0,10))||'—')+'</span>';
     html+='<div><a class="wx-btn" href="/wechat/'+n.key+'" onclick="event.stopPropagation()">编辑</a></div>';
     html+='</div>';
   });
@@ -1914,12 +1928,14 @@ function renderWechatItems(items){
 #wechatView .wx-stats b{font-weight:600;color:var(--text)}
 #wechatView .wx-wrap{flex:1;overflow:hidden;padding:10px 20px 16px;display:flex;flex-direction:column}
 #wechatView .wx-card{flex:1;background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-#wechatView .wx-thead{display:grid;grid-template-columns:42px 1fr 90px 100px 80px;padding:8px 14px;border-bottom:1px solid var(--border);background:#f9fafb;flex-shrink:0}
+#wechatView .wx-thead{display:grid;grid-template-columns:42px 1fr 70px 78px 78px 78px 58px;padding:8px 14px;border-bottom:1px solid var(--border);background:#f9fafb;flex-shrink:0}
 #wechatView .wx-th{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center}
+#wechatView .wx-ths{cursor:pointer;user-select:none}
+#wechatView .wx-ths:hover{color:#07c160}
 #wechatView .wx-scroll{flex:1;overflow-y:auto}
 #wechatView .wx-scroll::-webkit-scrollbar{width:4px}
 #wechatView .wx-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-#wechatView .wx-row{display:grid;grid-template-columns:42px 1fr 90px 100px 80px;padding:9px 14px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;transition:background .08s}
+#wechatView .wx-row{display:grid;grid-template-columns:42px 1fr 70px 78px 78px 78px 58px;padding:9px 14px;border-bottom:1px solid var(--border);align-items:center;cursor:pointer;transition:background .08s}
 #wechatView .wx-row:last-child{border-bottom:none}
 #wechatView .wx-row:hover{background:#f9fafb}
 #wechatView .wx-col-title{padding:0 12px;min-width:0}

@@ -250,6 +250,15 @@ var _allImgs={{all_images|map(attribute='path')|list|tojson}};
 var RELATED_KEYS={{related_articles|map(attribute='key')|list|tojson}};
 var HAS_ANY_IMG={{1 if all_images else 0}};
 // 筛选/排序统一走 URL 参数（服务端渲染），空值则删掉该参数
+// 点表头排序：同一列再点一次切升/降序（与主新闻列表 setSort 同一套行为）
+function sortBy(col){
+  const u=new URL(location);
+  const cur=u.searchParams.get('sort')||'created_at';
+  const curDir=u.searchParams.get('dir')||'desc';
+  u.searchParams.set('sort',col);
+  u.searchParams.set('dir',(cur===col&&curDir==='desc')?'asc':'desc');
+  location=u.toString();
+}
 function flt(k,v){const u=new URL(location);if(v)u.searchParams.set(k,v);else u.searchParams.delete(k);location=u.toString();}
 function _S(id){return document.getElementById(id);}
 function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
@@ -726,8 +735,11 @@ def wechat_list_query(args) -> tuple:
         params.append(dt)
     sql += f"ORDER BY {_WECHAT_SORT[sort]} {direction} LIMIT 200"
 
+    # 表头箭头：当前排序列显示 ▲/▼，其余显示 ↕（可点提示）
+    arrows = {k: ("▲" if direction == "ASC" else "▼") if k == sort else "↕"
+              for k in _WECHAT_SORT}
     meta = {"search": search, "st": st, "src": src, "df": df, "dt": dt,
-            "sort": sort, "dir": direction.lower(),
+            "sort": sort, "dir": direction.lower(), "arrows": arrows,
             "sort_label": _WECHAT_SORT_LABEL[sort],
             "sort_col": _WECHAT_SORT[sort]}
     return sql, params, meta
@@ -839,14 +851,16 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
 
 /* table */
 .table-card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
-.table-header{display:grid;grid-template-columns:1fr 90px 100px 80px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid var(--border)}
+.table-header{display:grid;grid-template-columns:1fr 78px 86px 86px 86px 60px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid var(--border)}
 .table-header span{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
-.table-row{display:grid;grid-template-columns:1fr 90px 100px 80px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;transition:background .1s}
+.table-row{display:grid;grid-template-columns:1fr 78px 86px 86px 86px 60px;padding:10px 16px;border-bottom:1px solid var(--border);align-items:center;transition:background .1s}
 .table-row:last-child{border-bottom:none}
 .table-row:hover{background:#f9fafb}
 .row-title{font-size:12.5px;font-weight:500;color:var(--text);text-decoration:none;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row-title:hover{color:var(--wx)}
 .row-date{font-size:11px;color:var(--text3)}
+.th-sort{cursor:pointer;user-select:none}
+.th-sort:hover{color:var(--wx)}
 .badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:500;white-space:nowrap}
 .badge-draft{background:#fef3c7;color:#92400e}
 .badge-published{background:#d1fae5;color:#065f46}
@@ -915,11 +929,6 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
       <input type="date" class="flt-date" value="{{meta.df}}" onchange="flt('df',this.value)" title="入库起始日期">
       <span style="color:var(--text3);font-size:11px">~</span>
       <input type="date" class="flt-date" value="{{meta.dt}}" onchange="flt('dt',this.value)" title="入库结束日期">
-      <select class="flt-sel" onchange="flt('sort',this.value)" title="排序字段">
-        {% for k,v in sort_labels.items() %}<option value="{{k}}" {{'selected' if meta.sort==k else ''}}>{{v}}</option>{% endfor %}
-      </select>
-      <button class="flt-btn" onclick="flt('dir','{{'asc' if meta.dir=='desc' else 'desc'}}')"
-        title="切换升/降序">{{'↓ 降序' if meta.dir=='desc' else '↑ 升序'}}</button>
       <a class="flt-btn" href="/wechat-list" title="清空全部筛选">重置</a>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text3)">筛选出 {{rows|length}} 篇</span>
@@ -931,7 +940,9 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
       <div class="table-header">
         <span>标题</span>
         <span>状态</span>
-        <span>{{meta.sort_label}}</span>
+        <span class="th-sort" onclick="sortBy('created_at')" title="点此按入库时间排序">入库时间 {{meta.arrows.created_at}}</span>
+        <span class="th-sort" onclick="sortBy('updated_at')" title="点此按编辑时间排序">编辑时间 {{meta.arrows.updated_at}}</span>
+        <span class="th-sort" onclick="sortBy('pub_time')" title="点此按发布时间排序">发布时间 {{meta.arrows.pub_time}}</span>
         <span></span>
       </div>
       {% for r in rows %}
@@ -943,7 +954,9 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
           {% elif r.wechat_publish %}<span class="badge badge-pending">⏳ 待发布</span>
           {% else %}<span class="badge badge-none">— 未配置</span>{% endif %}
         </div>
-        <span class="row-date">{{(r[meta.sort_col] or r.created_at or '')[:10]}}</span>
+        <span class="row-date">{{(r.created_at or '')[:10]}}</span>
+        <span class="row-date">{{(r.updated_at or '')[:10]}}</span>
+        <span class="row-date">{{(r.wechat_pub_time or '')[:10] or '—'}}</span>
         <a href="/wechat/{{r.key}}" class="act-btn">编辑 →</a>
       </div>
       {% endfor %}
