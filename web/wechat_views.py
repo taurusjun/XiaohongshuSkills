@@ -249,6 +249,8 @@ var _th='newspaper',_ed=null,_dirty=false,_stimer=null;
 var _allImgs={{all_images|map(attribute='path')|list|tojson}};
 var RELATED_KEYS={{related_articles|map(attribute='key')|list|tojson}};
 var HAS_ANY_IMG={{1 if all_images else 0}};
+// 筛选/排序统一走 URL 参数（服务端渲染），空值则删掉该参数
+function flt(k,v){const u=new URL(location);if(v)u.searchParams.set(k,v);else u.searchParams.delete(k);location=u.toString();}
 function _S(id){return document.getElementById(id);}
 function _toast(msg,type){var e=_S('wxToast');e.textContent=msg;e.className='wx-toast show '+(type||'ok');clearTimeout(e._t);e._t=setTimeout(function(){e.className='wx-toast';},2200);}
 function _setSave(s){var e=_S('tbSaved');if(!e)return;if(s==='saving'){e.textContent='保存中…';e.className='tb-saved saving';}else if(s==='saved'){e.textContent='已保存';e.className='tb-saved saved';}else{e.textContent='未保存';e.className='tb-saved';}}
@@ -655,31 +657,113 @@ document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key
 
 
 
+# ── 公众号列表：筛选 / 排序（独立页 /wechat-list 与 /api/wechat-list 共用）──
+# 排序字段白名单：URL 参数值 -> SQL 列名。绝不把用户输入拼进 ORDER BY。
+_WECHAT_SORT = {
+    "created_at": "created_at",        # 入库时间（默认）
+    "updated_at": "updated_at",        # 编辑时间
+    "pub_time":   "wechat_pub_time",   # 发布时间
+}
+_WECHAT_SORT_LABEL = {
+    "created_at": "入库时间",
+    "updated_at": "编辑时间",
+    "pub_time":   "发布时间",
+}
+# 状态筛选（键为 URL 参数值）
+_WECHAT_STATUS = {
+    "all":       "",
+    "published": "AND wechat_pub_time != '' ",
+    "draft":     "AND wechat_draft_id != '' AND wechat_pub_time = '' ",
+    "pending":   "AND wechat_publish = 1 AND wechat_draft_id = '' AND wechat_pub_time = '' ",
+    "none":      "AND wechat_publish = 0 AND wechat_draft_id = '' AND wechat_pub_time = '' ",
+}
+_WECHAT_STATUS_LABEL = {
+    "all": "全部状态", "published": "已发布", "draft": "草稿箱",
+    "pending": "待发布", "none": "未配置",
+}
+_WECHAT_BASE_WHERE = ("status='active' AND (wechat_content!='' OR wechat_publish=1 "
+                      "OR wechat_draft_id!='') ")
+
+
+def wechat_list_query(args) -> tuple:
+    """构造公众号列表的 SQL，返回 (sql, params, meta)。
+
+    meta 带回解析后的筛选值，供模板/前端回填控件状态。
+
+    日期范围按**入库时间**（created_at）过滤 —— 与默认排序轴一致，避免
+    「按 A 排、按 B 筛」造成的困惑。
+    """
+    search = (args.get("search") or "").strip()
+    st = args.get("st") or "all"
+    src = (args.get("src") or "").strip()
+    df = (args.get("df") or "").strip()
+    dt = (args.get("dt") or "").strip()
+    sort = args.get("sort") or "created_at"
+    direction = (args.get("dir") or "desc").lower()
+
+    if sort not in _WECHAT_SORT:
+        sort = "created_at"
+    if st not in _WECHAT_STATUS:
+        st = "all"
+    direction = "ASC" if direction == "asc" else "DESC"
+
+    sql = ("SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,"
+           "updated_at,created_at,image_url,wechat_image_url,source,channel "
+           "FROM news WHERE " + _WECHAT_BASE_WHERE)
+    params = []
+    if search:
+        sql += "AND (wechat_title LIKE ? OR title LIKE ?) "
+        params += [f"%{search}%", f"%{search}%"]
+    sql += _WECHAT_STATUS[st]
+    if src:
+        sql += "AND source = ? "
+        params.append(src)
+    if df:
+        sql += "AND date(created_at) >= date(?) "
+        params.append(df)
+    if dt:
+        sql += "AND date(created_at) <= date(?) "
+        params.append(dt)
+    sql += f"ORDER BY {_WECHAT_SORT[sort]} {direction} LIMIT 200"
+
+    meta = {"search": search, "st": st, "src": src, "df": df, "dt": dt,
+            "sort": sort, "dir": direction.lower(),
+            "sort_label": _WECHAT_SORT_LABEL[sort],
+            "sort_col": _WECHAT_SORT[sort]}
+    return sql, params, meta
+
+
+def _wechat_sources() -> list:
+    """公众号文章出现过的来源（给筛选下拉用）。"""
+    from sqlite_db import _connect
+    with _connect() as db:
+        rows = db.execute(
+            "SELECT DISTINCT source FROM news WHERE " + _WECHAT_BASE_WHERE +
+            "AND source IS NOT NULL AND source != '' ORDER BY source"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 @wechat_bp.route('/api/wechat-list')
 def api_wechat_list():
     from sqlite_db import _connect
+    sql, params, meta = wechat_list_query(request.args)
     with _connect() as db:
-        rows = [dict(r) for r in db.execute(
-            "SELECT key,title,wechat_title,wechat_publish,wechat_draft_id,wechat_pub_time,updated_at,created_at,image_url,wechat_image_url "
-            "FROM news WHERE status='active' AND (wechat_content!='' OR wechat_publish=1 OR wechat_draft_id!='') "
-            "ORDER BY updated_at DESC LIMIT 200"
-        ).fetchall()]
-    return jsonify({"items": rows})
+        rows = [dict(r) for r in db.execute(sql, params).fetchall()]
+    return jsonify({"items": rows, "sources": _wechat_sources(),
+                    "meta": meta, "count": len(rows)})
 
 @wechat_bp.route('/wechat-list')
 def wechat_list():
     from flask import render_template_string as rts
     from sqlite_db import _connect
-    search = request.args.get('search', '')
+    sql, params, meta = wechat_list_query(request.args)
     with _connect() as db:
-        sql = "SELECT * FROM news WHERE status='active' AND (wechat_content!='' OR wechat_publish=1 OR wechat_draft_id!='')"
-        params = []
-        if search:
-            sql += " AND (wechat_title LIKE ? OR title LIKE ?)"
-            params.extend([f'%{search}%', f'%{search}%'])
-        sql += " ORDER BY created_at DESC LIMIT 200"
         rows = [dict(r) for r in db.execute(sql, params).fetchall()]
-    return rts(WECHAT_LIST_HTML, rows=rows, search=search)
+    return rts(WECHAT_LIST_HTML, rows=rows, meta=meta,
+               sources=_wechat_sources(),
+               status_labels=_WECHAT_STATUS_LABEL,
+               sort_labels=_WECHAT_SORT_LABEL)
 
 WECHAT_LIST_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -724,6 +808,10 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .search-box{display:flex;align-items:center;gap:7px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:5px 11px;width:220px}
 .search-box input{border:none;background:none;font-size:12px;color:var(--text);outline:none;width:100%}
+.flt-sel,.flt-date,.flt-btn{font-size:11.5px;color:var(--text2);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:5px 8px;outline:none}
+.flt-sel{cursor:pointer;max-width:150px}
+.flt-btn{cursor:pointer;padding:5px 11px;text-decoration:none;white-space:nowrap}
+.flt-btn:hover{border-color:var(--wx);color:var(--wx)}
 .btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border:none;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;white-space:nowrap;transition:all .12s;border:1px solid transparent}
 .btn-wx{background:var(--wx);color:#fff}
 .btn-gray{background:#f3f4f6;color:var(--text2);border-color:var(--border)}
@@ -793,9 +881,25 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
     <div class="toolbar">
       <div class="search-box">
         <span style="color:var(--text3);font-size:13px">🔍</span>
-        <input id="searchInput" placeholder="搜索文章..." value="{{search or ''}}"
-          oninput="clearTimeout(_t);_t=setTimeout(()=>{const u=new URL(location);u.searchParams.set('search',this.value);location=u.toString()},400)">
+        <input id="searchInput" placeholder="搜索标题..." value="{{meta.search}}"
+          oninput="clearTimeout(_t);_t=setTimeout(()=>flt('search',this.value),400)">
       </div>
+      <select class="flt-sel" onchange="flt('st',this.value)" title="状态筛选">
+        {% for k,v in status_labels.items() %}<option value="{{k}}" {{'selected' if meta.st==k else ''}}>{{v}}</option>{% endfor %}
+      </select>
+      <select class="flt-sel" onchange="flt('src',this.value)" title="来源筛选">
+        <option value="">全部来源</option>
+        {% for s in sources %}<option value="{{s}}" {{'selected' if meta.src==s else ''}}>{{s}}</option>{% endfor %}
+      </select>
+      <input type="date" class="flt-date" value="{{meta.df}}" onchange="flt('df',this.value)" title="入库起始日期">
+      <span style="color:var(--text3);font-size:11px">~</span>
+      <input type="date" class="flt-date" value="{{meta.dt}}" onchange="flt('dt',this.value)" title="入库结束日期">
+      <select class="flt-sel" onchange="flt('sort',this.value)" title="排序字段">
+        {% for k,v in sort_labels.items() %}<option value="{{k}}" {{'selected' if meta.sort==k else ''}}>{{v}}</option>{% endfor %}
+      </select>
+      <button class="flt-btn" onclick="flt('dir','{{'asc' if meta.dir=='desc' else 'desc'}}')"
+        title="切换升/降序">{{'↓ 降序' if meta.dir=='desc' else '↑ 升序'}}</button>
+      <a class="flt-btn" href="/wechat-list" title="清空全部筛选">重置</a>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text3)">共 {{rows|length}} 篇</span>
     </div>
@@ -806,7 +910,7 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
       <div class="table-header">
         <span>标题</span>
         <span>状态</span>
-        <span>更新时间</span>
+        <span>{{meta.sort_label}}</span>
         <span></span>
       </div>
       {% for r in rows %}
@@ -818,7 +922,7 @@ body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--b
           {% elif r.wechat_publish %}<span class="badge badge-pending">⏳ 待发布</span>
           {% else %}<span class="badge badge-none">— 未配置</span>{% endif %}
         </div>
-        <span class="row-date">{{(r.updated_at or r.created_at or '')[:10]}}</span>
+        <span class="row-date">{{(r[meta.sort_col] or r.created_at or '')[:10]}}</span>
         <a href="/wechat/{{r.key}}" class="act-btn">编辑 →</a>
       </div>
       {% endfor %}
