@@ -15,7 +15,7 @@ def _dist(rows):
     return Counter((r.get("fetch_by") or "?").strip() or "?" for r in rows)
 
 
-def build_archive(date: str, rows=None) -> str:
+def build_archive(date: str, rows=None, single_table: bool = True) -> str:
     if rows is None:
         rows = _news.query_news(date_from=date, date_to=date, status="active", limit=500)
     n = len(rows)
@@ -36,17 +36,25 @@ def build_archive(date: str, rows=None) -> str:
         f"## 一、全量素材一览（按来源分组，{n}条）",
         "",
     ]
-    for fb, cnt in dist.most_common():
-        lines.append(f"### fetch_by = {fb}（{cnt}条）")
+    if single_table:
+        lines.append(f"## 一、全量素材一览（单张合并表，{n}条）")
         lines.append("")
-        lines.append("| key (40) | ts | cs | cj_len | title |")
-        lines.append("|---|---|---|---|---|")
-        for r in sorted((x for x in rows if (x.get("fetch_by") or "?").strip() == fb),
-                        key=lambda x: -(x.get("title_score") or 0)):
-            cj = len(r.get("content_ja") or "")
-            lines.append(f"| `{r.get('key','')}` | {r.get('title_score','-')} | "
-                         f"{r.get('content_score','-')} | {cj} | {r.get('title','')} |")
-        lines.append("")
+        lines.append("| 来源 | key | ts | cs | cj_len | title |")
+        lines.append("|---|---|---|---|---|---|")
+        for r in sorted(rows, key=lambda x: ((x.get("fetch_by") or "?"), -(x.get("title_score") or 0))):
+            lines.append(f"| {r.get('fetch_by') or '?'} | `{r.get('key','')}` | {r.get('title_score','-')} | "
+                         f"{r.get('content_score','-')} | {len(r.get('content_ja') or '')} | {r.get('title','')} |")
+    else:
+        for fb, cnt in dist.most_common():
+            lines.append(f"### fetch_by = {fb}（{cnt}条）")
+            lines.append("")
+            lines.append("| key (40) | ts | cs | cj_len | title |")
+            lines.append("|---|---|---|---|---|")
+            for r in sorted((x for x in rows if (x.get("fetch_by") or "?").strip() == fb),
+                            key=lambda x: -(x.get("title_score") or 0)):
+                lines.append(f"| `{r.get('key','')}` | {r.get('title_score','-')} | "
+                             f"{r.get('content_score','-')} | {len(r.get('content_ja') or '')} | {r.get('title','')} |")
+            lines.append("")
     return "\n".join(lines)
 
 

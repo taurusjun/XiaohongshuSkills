@@ -35,17 +35,18 @@ def build_messages(date, rows):
               "不要输出任何解释文字、不要输出 JSON、不要输出工具调用语法。\n\n" + skills)
     user = (f"日期：{date}（东京时间）。当日全量素材（JSON；判断以 title 为准）：\n"
             f"{json.dumps(rows, ensure_ascii=False)}\n\n"
-            "输出完整存档，章节：\n"
-            f"# 每日素材 Review — {date}（东京时间）\n"
-            "（元信息块：数据范围/查询/fetch_by 分布/完成度/巡检）\n"
-            "## 一、全量素材一览（单张合并表：列=来源|key|ts|cs|cj_len|title）\n## 二、前一天日期陷阱检查\n## 三、跨来源聚类分析\n"
+            "**只输出下面 5 个章节**（不要 H1、不要元信息块、不要「一、全量素材一览」——它已由系统生成）：\n"
+            "## 二、前一天日期陷阱检查\n## 三、跨来源聚类分析\n"
             "## 四、分级结果\n## 五、第2层价值建议 + 第3层跨时间关联\n## 六、第4层发布数据回顾")
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 def run(date, deliver=False, name=None, max_tokens=20000):
+    from services.review_archive import build_archive
     rows = compact_rows(date)
-    md = llm.chat(build_messages(date, rows), max_tokens=max_tokens)
+    part1 = build_archive(date, single_table=True)          # 一、单张合并表
+    rest = llm.chat(build_messages(date, rows), max_tokens=max_tokens)  # 二~六
+    md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     if deliver:
         from services.delivery import deliver as _d
         print("[delivery]", _d(md, name=name or f"{date}-review-full.md"))
