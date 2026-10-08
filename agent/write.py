@@ -12,7 +12,7 @@ import sys
 from agent import llm
 from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
                       format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
-                      references as _refs)
+                      references as _refs, related as _rel)
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
@@ -83,11 +83,19 @@ def compose(cand, prev=None, retry_ctx=None, max_tokens=16000):
             f"lf={cand.get('is_long_form')}；长度要求：{tgt}。\n"
             "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
             "全中文（假名≤5），行内「、」≤1，标题≤20字。related 放同事件其它素材 key 前缀。\n\n"
-            f"=== content_ja ===\n{cj[:3500]}")
+            f"=== content_ja（原文全文）===\n{cj[:9000]}")
     try:
         rel = _refs.relevant(cand.get("title") or "")
         if rel:
             user += "\n\n=== 相关规范/案例（节选）===\n" + rel
+    except Exception:
+        pass
+    try:
+        sibs = _rel.find_related(cand["key"], cand.get("title") or "")
+        if sibs:
+            user += "\n\n=== 同事件关联素材（可合并，key 前缀放 related）===\n" + "\n".join(
+                f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:400]}"
+                for s in sibs)
     except Exception:
         pass
     msgs.append({"role": "user", "content": user})
