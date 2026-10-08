@@ -349,3 +349,16 @@ docker run --rm hello-world     # EXIT=0 ✓
 **测试**：**94 passed**（services 单测 + CLI/REST/MCP 契约 + 现有套件）；`requirements-dev.txt`(pytest)。
 
 **待确认/后续**：见对话末尾。
+
+### 2026-10-08 · 后续增量（按用户指示继续推进）
+
+- **#2 交付澄清**：`services/delivery.py` 现在**始终本地落盘** `data/reviews/`，`channel=feishu` 时**额外**推送飞书；`web` 渠道仅本地。不会丢本地数据。
+- **#3 写路径收敛**：新增 `services/news.py`（news 访问唯一入口，底层 scripts.sqlite_db + busy_timeout）。`mcp_servers/xhs_operations_server.py` 的 `scripts.sqlite_db` 引用**全部改为 `services.news`（0 处直连）**；契约测试锁定 `srv.update_news is services.news.update_news`。
+- **P5 编排器骨架**：`agent/llm.py`（LiteLLM OpenAI 兼容）+ `agent/orchestrator.py`（加载 `skills/**/SKILL.md` + 任务指令 + 可选交付）；`--dry-run` 已可组装 prompt。
+- **测试**：**100 passed**。
+
+### 待做：P6 重构（cdp_publish 拆分）
+
+`scripts/cdp_publish.py` 6002 行，按职责切分（用户已同意按此建议）：
+1. `xhs_selectors.py`（常量/选择器）→ 2. `cdp_login.py`（登录/二维码/cookie 缓存，mixin）→ 3. `cdp_feed.py`（搜索/详情/评论）→ 4. `cdp_publish_flow.py`（填表/发布）。
+先加行为特征化测试护栏，再逐块移动；每步跑 parity。
