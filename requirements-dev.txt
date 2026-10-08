@@ -1,0 +1,2 @@
+# 测试依赖（容器内跑测试需要；entrypoint 只装 requirements-docker.txt）
+pytest>=8.0

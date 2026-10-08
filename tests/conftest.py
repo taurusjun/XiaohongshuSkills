@@ -25,3 +25,13 @@ def client():
     from app import app
     app.config["TESTING"] = True
     return app.test_client()
+
+
+# --- 追加：迁移后 skill scripts 的测试需要把相关目录加入 sys.path ---
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parent.parent
+_SKILL_SCRIPTS = _ROOT / "skills" / "creative" / "xhs-write-publish-flow" / "scripts"
+for _p in (_ROOT, _ROOT / "scripts", _SKILL_SCRIPTS):
+    if str(_p) not in _sys.path:
+        _sys.path.insert(0, str(_p))
