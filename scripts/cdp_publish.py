@@ -1000,6 +1000,26 @@ class XiaohongshuPublisher:
     # Login check
     # ------------------------------------------------------------------
 
+    def probe_login_state(self) -> bool:
+        """零导航登录探测：直接查 .xiaohongshu.com 的 web_session cookie。
+
+        用于展示二维码期间的高频轮询（~50ms），不会导航，因此不会让用户
+        正在扫的二维码失效。check_login() 会导航，不能用于此场景。
+        """
+        if not self.ws:
+            raise CDPError("Not connected. Call connect() first.")
+        self._send("Network.enable")
+        result = self._send(
+            "Network.getCookies",
+            {"urls": ["https://creator.xiaohongshu.com", "https://www.xiaohongshu.com"]},
+        )
+        cookies = result.get("cookies", []) if isinstance(result, dict) else []
+        ok = any(c.get("name") == "web_session" and c.get("value") for c in cookies)
+        if ok:
+            self._set_login_cache("creator", True)
+            self._set_login_cache("home", True)
+        return ok
+
     def check_login(self) -> bool:
         """
         Navigate to Xiaohongshu creator center and check if the user is logged in.
@@ -5349,10 +5369,18 @@ def main():
             "Windows/UNC paths are auto-detected by default."
         ),
     )
+    parser.add_argument(
+        "--no-login-cache",
+        action="store_true",
+        help="Disable the 12h login-status cache for this run (always re-check).",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # check-login
     sub.add_parser("check-login", help="Check login status (exit 0=logged in, 1=not)")
+
+    # login-probe - 零导航探针（查 web_session cookie），用于扫码期间高频轮询
+    sub.add_parser("login-probe", help="Zero-navigation login probe (no page reload)")
 
     p_qrcode = sub.add_parser(
         "get-login-qrcode",
@@ -5695,6 +5723,10 @@ def main():
         account_name=cache_account_name,
         preserve_upload_paths=args.preserve_upload_paths,
     )
+    if getattr(args, "no_login_cache", False):
+        publisher.login_cache_ttl_seconds = 0
+        print("[cdp_publish] Login cache disabled (--no-login-cache).")
+
     try:
         if args.command == "check-login":
             publisher.connect(reuse_existing_tab=reuse_existing_tab)
@@ -5705,6 +5737,12 @@ def main():
                     "  Run with 'login' command or without --headless to log in."
                 )
             sys.exit(0 if logged_in else 1)
+
+        elif args.command == "login-probe":
+            publisher.connect(reuse_existing_tab=reuse_existing_tab)
+            logged = publisher.probe_login_state()
+            print("LOGIN_PROBE: " + json.dumps({"logged_in": bool(logged)}))
+            sys.exit(0 if logged else 1)
 
         elif args.command in ("get-login-qrcode", "get_login_qrcode"):
             publisher.connect(reuse_existing_tab=reuse_existing_tab)

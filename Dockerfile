@@ -3,6 +3,13 @@
 # 可移植契约：宿主差异只允许出现在 compose override / .env，绝不进本文件
 FROM python:3.14-slim-trixie
 
+# 可选 APT 镜像（默认官方，保持可移植；境内构建由 compose override 传入，如 mirrors.cloud.tencent.com）
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+        /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+    fi
+
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \

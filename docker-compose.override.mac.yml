@@ -4,6 +4,9 @@
 services:
   xhs:
     platform: linux/amd64
+    build:
+      args:
+        APT_MIRROR: mirrors.cloud.tencent.com   # 境内构建加速；Linux 云可留空用官方源
     volumes:
       - xhs-venv:/home/user/PG/XiaohongshuSkills/.venv
       - xhs-data:/home/user/PG/XiaohongshuSkills/data
