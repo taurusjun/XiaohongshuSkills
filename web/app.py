@@ -48,6 +48,8 @@ from web.wechat_views import wechat_bp
 app.register_blueprint(wechat_bp)
 from web.login_views import login_bp
 app.register_blueprint(login_bp)
+from web.services_views import services_bp
+app.register_blueprint(services_bp)
 init_db()
 
 @app.before_request
