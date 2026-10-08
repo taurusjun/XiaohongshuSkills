@@ -2,7 +2,7 @@
 import sys
 
 from services import (word_count, precheck, schedule, dunhao, density,
-                      validate_tables, import_drafts, review_archive, kana)
+                      validate_tables, import_drafts, review_archive, kana, references)
 from agent import review as _review_full
 from agent import write as _write_full
 
@@ -19,6 +19,7 @@ SUBCOMMANDS = {
     "review-full": _review_full.main,
     "write-full": _write_full.main,
     "kana": kana.main,
+    "references": references.main,
 }
 
 

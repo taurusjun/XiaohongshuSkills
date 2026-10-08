@@ -29,10 +29,7 @@ def compact_rows(date, limit=500):
 
 
 def build_messages(date, rows):
-    skills = "\n\n".join(f"===== {f} =====\n" + _read(f) for f in SKILL_FILES)
-    system = ("你是小红书「每日素材 review」的执行者。严格按 SKILL 的四层流程执行。"
-              "最终**只输出一份完整的 Markdown 存档**（一~六节），格式严格对齐历史存档；"
-              "不要输出任何解释文字、不要输出 JSON、不要输出工具调用语法。\n\n" + skills)
+    system = _read("agent/prompts/review.md")
     user = (f"日期：{date}（东京时间）。当日全量素材（JSON；判断以 title 为准）：\n"
             f"{json.dumps(rows, ensure_ascii=False)}\n\n"
             "**只输出下面 5 个章节**（不要 H1、不要元信息块、不要「一、全量素材一览」——它已由系统生成）：\n"
