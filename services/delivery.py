@@ -69,24 +69,6 @@ def _feishu_card(title: str, lark_md: str) -> dict:
     }
 
 
-def feishu_send(text: str) -> bool:
-    """发到运营者：Markdown → lark_md 交互卡片（飞书才能正确渲染）。"""
-    sys.path.insert(0, str(paths.REPO_ROOT / "scripts"))
-    try:
-        import feishu_bot  # type: ignore
-    except Exception as e:  # noqa: BLE001
-        print(f"[delivery] feishu_bot 不可用: {e}", file=sys.stderr)
-        return False
-    open_id = getattr(feishu_bot, "FEISHU_OPERATOR_OPEN_ID", "") or ""
-    if not open_id:
-        return bool(feishu_bot.send_alert(text))
-    lark = feishu_md_to_lark(text)
-    chunks = chunk_markdown(lark, 3200)
-    ok = True
-    for idx, c in enumerate(chunks):
-        title = c.lstrip("*").split("\n", 1)[0][:50] or "交付"
-        ok = bool(feishu_bot.send_card(open_id, _feishu_card(title, c))) and ok
-    return ok
 
 
 def web_save(text: str, name: str = "latest.md") -> bool:
@@ -134,3 +116,74 @@ def main_legacy(argv=None) -> int:
     r = deliver(text, channel=args.channel, name=Path(args.file_path).name, max_chars=args.max_chars)
     print(f"[delivery] {r}")
     return 0 if r["ok"] else 1
+
+def _split_blocks(md: str):
+    """把 Markdown 拆成 ('md', text) 与 ('table', header, rows) 块。"""
+    lines, blocks, buf, i = md.split("\n"), [], [], 0
+    def flush():
+        if buf:
+            blocks.append(("md", "\n".join(buf))); buf.clear()
+    while i < len(lines):
+        ln = lines[i]
+        if (ln.strip().startswith("|") and i + 1 < len(lines)
+                and set(lines[i + 1].strip().replace("|", "").replace(" ", "")) <= set("-:")):
+            flush()
+            header = [c.strip() for c in ln.strip().strip("|").split("|")]
+            i += 2
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                i += 1
+            blocks.append(("table", header, rows))
+            continue
+        buf.append(ln); i += 1
+    flush()
+    return blocks
+
+
+def feishu_build_card(md: str, title: str = "交付") -> dict:
+    """飞书 card 2.0：表格用 table 组件（真表格），其余用 lark_md。"""
+    elements = []
+    for b in _split_blocks(md):
+        if b[0] == "md":
+            txt = feishu_md_to_lark(b[1]).strip()
+            if txt:
+                elements.append({"tag": "div", "text": {"tag": "lark_md", "content": txt}})
+        else:
+            _, header, rows = b
+            cols = [{"name": f"c{j}", "display_name": (header[j] if j < len(header) else f"col{j}"),
+                     "data_type": "text", "width": "auto"} for j in range(len(header))]
+            trows = [{f"c{j}": (r[j] if j < len(r) else "") for j in range(len(header))} for r in rows]
+            if cols and trows:
+                elements.append({
+                    "tag": "table", "columns": cols, "rows": trows,
+                    "row_height": "low", "page_size": 10,
+                    "header_style": {"text_align": "left", "text_size": "normal",
+                                     "background_color": "grey", "bold": True, "lines": 1},
+                    "row_style": {"text_align": "left", "text_size": "normal", "lines": 1},
+                })
+    return {"config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": title[:60]}, "template": "blue"},
+            "elements": elements or [{"tag": "div", "text": {"tag": "lark_md", "content": "(空)"}}]}
+
+
+def feishu_send(text: str) -> bool:
+    """发到运营者：优先 card 2.0 表格卡片；失败回落 lark_md 列表卡片。"""
+    sys.path.insert(0, str(paths.REPO_ROOT / "scripts"))
+    try:
+        import feishu_bot  # type: ignore
+    except Exception as e:  # noqa: BLE001
+        print(f"[delivery] feishu_bot 不可用: {e}", file=sys.stderr)
+        return False
+    open_id = getattr(feishu_bot, "FEISHU_OPERATOR_OPEN_ID", "") or ""
+    if not open_id:
+        return bool(feishu_bot.send_alert(text))
+    title = next((l.lstrip("#").strip() for l in text.split("\n") if l.startswith("#")), "交付")
+    if feishu_bot.send_card(open_id, feishu_build_card(text, title)):
+        return True
+    # 回落：lark_md 列表
+    ok = True
+    for c in chunk_markdown(feishu_md_to_lark(text), 3200):
+        ok = bool(feishu_bot.send_card(open_id, _feishu_card(title, c))) and ok
+    return ok
+
