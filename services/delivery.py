@@ -31,8 +31,46 @@ def chunk_markdown(text: str, max_chars: int = DEFAULT_MAX):
     return chunks
 
 
+def feishu_md_to_lark(md: str) -> str:
+    """把 Markdown 转成飞书 lark_md：标题加粗；**表格转成条目列表**（lark_md 不支持表格）。"""
+    lines = md.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        ln = lines[i]
+        # GFM 表格：表头 + 分隔行 + 数据行
+        if (ln.strip().startswith("|") and i + 1 < len(lines)
+                and set(lines[i + 1].strip().replace("|", "").replace(" ", "")) <= set("-:")):
+            header = [c.strip() for c in ln.strip().strip("|").split("|")]
+            i += 2
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if cells:
+                    title = cells[-1]
+                    meta = " ".join(f"{header[j]}={cells[j]}" for j in range(len(cells) - 1)
+                                    if j < len(header) and header[j] not in ("title", "标题"))
+                    out.append(f"- **{title}**" + (f"  ({meta})" if meta else ""))
+                i += 1
+            continue
+        if ln.startswith("#"):
+            out.append("**" + ln.lstrip("#").strip() + "**")
+        elif ln.strip() == "---":
+            out.append("———————")
+        else:
+            out.append(ln)
+        i += 1
+    return "\n".join(out)
+
+
+def _feishu_card(title: str, lark_md: str) -> dict:
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"title": {"tag": "plain_text", "content": title[:60]}, "template": "blue"},
+        "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": lark_md}}],
+    }
+
+
 def feishu_send(text: str) -> bool:
-    """用项目现有 feishu_bot 发文本到运营者。"""
+    """发到运营者：Markdown → lark_md 交互卡片（飞书才能正确渲染）。"""
     sys.path.insert(0, str(paths.REPO_ROOT / "scripts"))
     try:
         import feishu_bot  # type: ignore
@@ -40,9 +78,15 @@ def feishu_send(text: str) -> bool:
         print(f"[delivery] feishu_bot 不可用: {e}", file=sys.stderr)
         return False
     open_id = getattr(feishu_bot, "FEISHU_OPERATOR_OPEN_ID", "") or ""
-    if open_id:
-        return bool(feishu_bot.send_text(open_id, text))
-    return bool(feishu_bot.send_alert(text))
+    if not open_id:
+        return bool(feishu_bot.send_alert(text))
+    lark = feishu_md_to_lark(text)
+    chunks = chunk_markdown(lark, 3200)
+    ok = True
+    for idx, c in enumerate(chunks):
+        title = c.lstrip("*").split("\n", 1)[0][:50] or "交付"
+        ok = bool(feishu_bot.send_card(open_id, _feishu_card(title, c))) and ok
+    return ok
 
 
 def web_save(text: str, name: str = "latest.md") -> bool:
