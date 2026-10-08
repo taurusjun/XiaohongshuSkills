@@ -4,6 +4,8 @@
 services:
   xhs:
     platform: linux/amd64
+    environment:
+      PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple   # 境内加速 venv 引导
     build:
       args:
         APT_MIRROR: mirrors.cloud.tencent.com   # 境内构建加速；Linux 云可留空用官方源
