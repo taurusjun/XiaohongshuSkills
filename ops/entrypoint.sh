@@ -6,6 +6,8 @@ cd /home/user/PG/XiaohongshuSkills
 mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 mkdir -p /data/chrome-profiles /backup
 chown -R user:user /data/chrome-profiles /backup 2>/dev/null || true
+# 清 Chrome 陈旧单例锁（容器重建后 hostname 变化会让 Chrome 拒绝启动）
+rm -f /data/chrome-profiles/*/Singleton* 2>/dev/null || true
 
 mkdir -p data data/logs tmp logs
 chown -R user:user data tmp logs .venv 2>/dev/null || true
