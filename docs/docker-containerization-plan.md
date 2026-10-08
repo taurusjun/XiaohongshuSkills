@@ -333,3 +333,19 @@ docker run --rm hello-world     # EXIT=0 ✓
 - 教训：`ops/*` 改完**必须重建镜像**（entrypoint 等烘焙在镜像里），否则重建容器仍用旧配置。
 
 **隔离现状**：生产 `dev2` 未动；工作分支 `docker-containerization`（worktree `~/PG/xhs-docker-src`）；宿主端口映射 15000/15001/19222（避开生产的 5000/5001/9222）；DB 用快照命名卷。
+
+### 2026-10-08 · P4 能力服务化（核心）+ P5 交付（已启动）
+
+**目录结构**：`services/`（唯一实现）· `cli/`（CLI 皮）· `web/services_views.py`（REST 皮）· `mcp_servers/xhs_services_server.py`（MCP 皮）· `skills/**`（提示词+薄壳）· `tests/{services,contracts,e2e,llm_eval}`。
+
+**已迁入 services（芯）**：`word_count` · `precheck`（去 subprocess 耦合）· `schedule` · `dunhao`（合并两脚本）· `draft_io`（dump_ja/write-api，路径 env 化）· `density`（去 subprocess）· `validate_tables` · `import_drafts`（模板参数化）· `paths`（路径统一）。
+
+**三张皮**：`cli/__main__`（subcommand 分发）· `/api/services/{word-count,schedule,precheck}` · MCP `xhs_word_count/xhs_schedule_plan/xhs_precheck`。**契约测试保证三皮==芯**。
+
+**迁移保真**：`skills/` 228 文件逐目录 `diff -r` 一致；`precheck`/`pub_time_plan`/`dunhao`/`validate_tables` 原-迁移 **输出 parity 一致**。
+
+**P5 交付**：`services/delivery.py` 支持 `feishu`/`web`（默认 `XHS_DELIVERY_CHANNEL`）；`segment-send.py` 改薄壳，Telegram 移除。
+
+**测试**：**94 passed**（services 单测 + CLI/REST/MCP 契约 + 现有套件）；`requirements-dev.txt`(pytest)。
+
+**待确认/后续**：见对话末尾。
