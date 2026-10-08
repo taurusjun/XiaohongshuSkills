@@ -14,10 +14,22 @@ from services import paths
 
 TASKS = {
     "daily-material-review": {
-        "skill": "skills/creative/xhs-daily-material-review/SKILL.md",
+        "skills": [
+            "skills/creative/xhs-daily-material-review/SKILL.md",
+            "skills/creative/xhs-daily-material-review-layer1/SKILL.md",
+            "skills/xhs-daily-material-review-layer23/SKILL.md",
+            "skills/xhs-daily-material-review-layer4/SKILL.md",
+        ],
         "instruction": (
-            "执行每日素材 review：按 SKILL.md 的 4 层流程产出分级/价值建议/跨时间关联/"
-            "发布回顾，最后输出 Markdown 存档（表格需符合表格铁律）。"
+            "执行每日素材 review。最终**只输出一份完整的 Markdown 存档**，格式严格如下（对齐历史存档）：\n"
+            "# 每日素材 Review — <YYYY-MM-DD>（东京时间）\n"
+            "（元信息块：データ範囲 / 查询 / fetch_by 分布 / 完成度 / 巡检）\n"
+            "---\n"
+            "## 一、全量素材一览（按来源分组）  … 用 Markdown 表格（表头前 ## 且表前空行、列数一致）\n"
+            "## 二、分级（S/A/AKB大TOP/B/C）\n## 三、价值建议与跨时间关联\n## 四、发布数据回顾\n\n"
+            "硬要求：① 最终消息**必须以 `# 每日素材 Review` 开头**，**绝不能是 JSON**；"
+            "调用工具（news_list/news_get 等）拿到的 JSON 只是中间数据，不要原样输出。"
+            "② 所有表格符合表格铁律。③ 全中文。"
         ),
     },
     "write": {
@@ -37,13 +49,19 @@ def load_skill_text(rel_path: str) -> str:
     return p.read_text(encoding="utf-8") if p.exists() else f"(缺 {rel_path})"
 
 
+def _skill_paths(spec: dict):
+    if spec.get("skills"):
+        return spec["skills"]
+    return [spec["skill"]]
+
+
 def build_messages(task: str, context: str = "") -> list[dict]:
     spec = TASKS.get(task)
     if not spec:
         raise ValueError(f"未知任务: {task}（可选: {', '.join(TASKS)}）")
+    blocks = "\n\n".join(f"=== SKILL: {sp} ===\n" + load_skill_text(sp) for sp in _skill_paths(spec))
     system = ("你是小红书内容流水线的编排器。严格遵守下面的 skill 规范，"
-              "不确定就按规范里的默认处理，不要臆造。\n\n=== SKILL ===\n"
-              + load_skill_text(spec["skill"]))
+              "不确定就按规范里的默认处理，不要臆造。\n\n" + blocks)
     user = spec["instruction"]
     if context:
         user += "\n\n=== 上下文 ===\n" + context
@@ -80,6 +98,13 @@ def run_agent(task: str, context: str = "", chat_raw_fn=None, max_iters: int = 8
             result = _tools.dispatch(name, args)
             messages.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                              "content": json.dumps(result, ensure_ascii=False)})
+    # 达到上限仍在调工具：禁用工具强制要一次文本终稿
+    try:
+        final = chat_raw_fn(messages, tools=None)
+        if isinstance(final, dict):
+            return final.get("content", "") or ""
+    except Exception:
+        pass
     return messages[-1].get("content", "") or ""
 
 
@@ -109,6 +134,9 @@ def main(argv=None) -> int:
     out = run_agent(args.task, context) if args.agent else run_task(args.task, context)
     print(out)
     if args.deliver:
+        if out.strip().startswith(("{", "[")):
+            print("[delivery] 拒发：输出疑似 JSON（非 Markdown 存档）", file=sys.stderr)
+            return 3
         from services.delivery import deliver
         print("[delivery]", deliver(out, name=args.name))
     return 0

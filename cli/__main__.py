@@ -2,7 +2,7 @@
 import sys
 
 from services import (word_count, precheck, schedule, dunhao, density,
-                      validate_tables, import_drafts)
+                      validate_tables, import_drafts, review_archive)
 
 SUBCOMMANDS = {
     "word-count": word_count.main,
@@ -13,6 +13,7 @@ SUBCOMMANDS = {
     "density": density.main,
     "validate-tables": validate_tables.main,
     "import-drafts": import_drafts.main,
+    "review-archive": review_archive.main,
 }
 
 
