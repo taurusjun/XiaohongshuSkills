@@ -326,4 +326,10 @@ docker run --rm hello-world     # EXIT=0 ✓
 - 容器装了 `websockets 17.2`（requirements 原写 `>=12.0`），其 sync 客户端非 legacy 行为会让 `cdp_publish._send` 的 `recv` 挂起 → `Page.navigate` 超时。**已钉 `websockets==16.0`**（与生产 venv 一致）。
 - 容器只有 IPv4 路由，但 DNS 返回 AAAA → pip `Network is unreachable`。已在 `override.mac.yml` 加 `net.ipv6.conf.all.disable_ipv6=1`。
 
+**P3 补充（实测）**：
+
+- 登录后**没有 `web_session` cookie**；会话标识为 `access-token-creator.xiaohongshu.com` / `x-user-id-creator.xiaohongshu.com` / `customer-sso-sid`。`probe_login_state` 已按此集合判定（零导航）。
+- **扫码登录成功并持久化**：手机扫码后 `login-probe → true`；**整容器重建（新 hostname）后仍为 true**（Chrome profile 命名卷有效）。
+- 教训：`ops/*` 改完**必须重建镜像**（entrypoint 等烘焙在镜像里），否则重建容器仍用旧配置。
+
 **隔离现状**：生产 `dev2` 未动；工作分支 `docker-containerization`（worktree `~/PG/xhs-docker-src`）；宿主端口映射 15000/15001/19222（避开生产的 5000/5001/9222）；DB 用快照命名卷。
