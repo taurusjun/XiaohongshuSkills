@@ -124,18 +124,26 @@ def _card(title: str, elements: list) -> dict:
             "elements": elements or [{"tag": "div", "text": {"tag": "lark_md", "content": "(空)"}}]}
 
 
+MAX_TABLES_PER_CARD = 5   # 飞书单卡表格上限=5
+
+
+def _pack(els, max_chars):
+    cards, cur, cur_size, ntab = [], [], 0, 0
+    for el, size in els:
+        is_table = el.get("tag") == "table"
+        if cur and (cur_size + size > max_chars or (is_table and ntab >= MAX_TABLES_PER_CARD)):
+            cards.append(cur); cur, cur_size, ntab = [], 0, 0
+        cur.append(el); cur_size += size
+        if is_table:
+            ntab += 1
+    if cur:
+        cards.append(cur)
+    return cards or [[]]
+
+
 def feishu_build_cards(md: str, title: str = "交付", max_chars: int = DEFAULT_MAX):
     """按块打包成多张卡片；**绝不把表格拆开**（表格超限则独占一张）。"""
-    els = _md_to_elements(md)
-    cards, cur, cur_size = [], [], 0
-    for el, size in els:
-        if cur and cur_size + size > max_chars:
-            cards.append(_card(title, cur))
-            cur, cur_size = [], 0
-        cur.append(el)
-        cur_size += size
-    if cur:
-        cards.append(_card(title, cur))
+    cards = [_card(title, els_i) for els_i in _pack(_md_to_elements(md), max_chars)]
     cards = cards or [_card(title, [])]
     n = len(cards)
     if n > 1:                                    # 多段时标注 (i/N)
@@ -254,15 +262,7 @@ def _md_to_elements_v2(md: str):
 
 
 def feishu_build_cards_v2(md: str, title: str = "交付", max_chars: int = DEFAULT_MAX):
-    els = _md_to_elements_v2(md)
-    cards, cur, cur_size = [], [], 0
-    for el, size in els:
-        if cur and cur_size + size > max_chars:
-            cards.append(cur); cur, cur_size = [], 0
-        cur.append(el); cur_size += size
-    if cur:
-        cards.append(cur)
-    cards = cards or [[]]
+    cards = _pack(_md_to_elements_v2(md), max_chars)
     n = len(cards)
     out = []
     for i, els_i in enumerate(cards, 1):
