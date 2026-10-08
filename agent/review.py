@@ -28,21 +28,37 @@ def compact_rows(date, limit=500):
              "pub": r.get("publish_xhs")} for r in rows]
 
 
-def build_messages(date, rows):
+def prepare_package(date):
+    """review 阶段1 写前准备（机械）：当日全量 + 前一天 + 机械聚类线索。"""
+    import datetime as dt
+    from services import cluster as _cl
+    rows = compact_rows(date)
+    try:
+        prev_date = (dt.date.fromisoformat(date) - dt.timedelta(days=1)).isoformat()
+        prev = compact_rows(prev_date)
+    except Exception:
+        prev = []
+    groups = _cl.cluster([{"key": r["key"], "title": r["title"]} for r in rows if r.get("title")])
+    ctxt = "\n".join(f"- 组{i+1}: " + " / ".join(x["key"][:12] for x in g)
+                     for i, g in enumerate(groups)) or "（无）"
+    return {"rows": rows, "prev": prev, "clusters": ctxt}
+
+
+def build_messages(date, pkg):
     system = _read("agent/prompts/review.md")
-    user = (f"日期：{date}（东京时间）。当日全量素材（JSON；判断以 title 为准）：\n"
-            f"{json.dumps(rows, ensure_ascii=False)}\n\n"
-            "**只输出下面 5 个章节**（不要 H1、不要元信息块、不要「一、全量素材一览」——它已由系统生成）：\n"
-            "## 二、前一天日期陷阱检查\n## 三、跨来源聚类分析\n"
-            "## 四、分级结果\n## 五、第2层价值建议 + 第3层跨时间关联\n## 六、第4层发布数据回顾")
+    user = (f"日期：{date}（东京时间）。\n\n"
+            f"=== 当日全量素材（JSON）===\n{json.dumps(pkg['rows'], ensure_ascii=False)}\n\n"
+            f"=== 前一天素材（JSON，用于日期陷阱）===\n{json.dumps(pkg['prev'], ensure_ascii=False)}\n\n"
+            f"=== 机械聚类候选（token 重叠，供第三节参考，可修正）===\n{pkg['clusters']}")
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
 
 
 def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
-    rows = compact_rows(date)
+    pkg = prepare_package(date)
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
-    rest = llm.chat(build_messages(date, rows), max_tokens=max_tokens)  # 二~六
+    rest = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)  # 二~六
     # 裁掉 LLM 可能多输出的 H1/元信息/「一、」（已由系统生成），只保留从「## 二、」起
     idx = rest.find("## 二、")
     if idx > 0:
