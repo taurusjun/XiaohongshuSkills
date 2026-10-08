@@ -87,7 +87,7 @@ def prepare_package(cand):
     try:
         sibs = _rel.find_related(cand["key"], cand.get("title") or "")
         related_text = "\n".join(
-            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:400]}" for s in sibs)
+            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1500]}" for s in sibs)
     except Exception:
         pass
     return {"content_ja": cj[:9000], "target": target, "refs": refs,
@@ -106,7 +106,7 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
     if pkg["related_text"]:
-        user += "\n\n=== 同事件关联素材（可合并）===\n" + pkg["related_text"]
+        user += "\n\n=== 同事件关联素材（可合并；如需合并，把这些素材的角度并入并标 related）===\n" + pkg["related_text"]
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
