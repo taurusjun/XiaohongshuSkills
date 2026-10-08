@@ -3,7 +3,7 @@
 # 验证稿件入库是否合规：标题是否混入正文、preselected/publish_xhs/publish_mode是否设好、related_keys是否写入
 # 用法: bash scripts/verify_rewrite.sh <完整40位key>
 
-API="http://127.0.0.1:5000"
+API="${XHS_API_BASE:-${XHS_WEBAPI_BASE:-http://127.0.0.1:5000}}"
 
 if [ -z "$1" ]; then
   echo "用法: $0 <完整40位key>"

@@ -13,7 +13,7 @@ if [ -z "$KEYWORD" ]; then
   exit 1
 fi
 
-DB=~/PG/XiaohongshuSkills/data/news_dev.db
+DB="${SQLITE_PATH:-$HOME/PG/XiaohongshuSkills/data/news_dev.db}"
 LIMIT=20
 
 if [ "$KEYWORD" = "全部" ]; then
