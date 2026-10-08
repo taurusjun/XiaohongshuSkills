@@ -1014,7 +1014,14 @@ class XiaohongshuPublisher:
             {"urls": ["https://creator.xiaohongshu.com", "https://www.xiaohongshu.com"]},
         )
         cookies = result.get("cookies", []) if isinstance(result, dict) else []
-        ok = any(c.get("name") == "web_session" and c.get("value") for c in cookies)
+        # 登录后不一定有 web_session；创作平台会话标识见实测集合
+        session_names = {
+            "access-token-creator.xiaohongshu.com",
+            "x-user-id-creator.xiaohongshu.com",
+            "web_session",
+            "customer-sso-sid",
+        }
+        ok = any(c.get("name") in session_names and c.get("value") for c in cookies)
         if ok:
             self._set_login_cache("creator", True)
             self._set_login_cache("home", True)
