@@ -4,7 +4,7 @@ import sys
 
 from services import paths
 
-__all__ = ["roots", "list_refs", "read_ref", "search_refs", "main"]
+__all__ = ["roots", "list_refs", "read_ref", "search_refs", "relevant", "main"]
 
 SKILL_DIRS = [
     "skills/creative/xhs-write-publish-flow",
@@ -58,6 +58,23 @@ def search_refs(query, limit=12):
             except Exception:
                 pass
     return hits
+
+
+def relevant(query, k=3, chars=700):
+    """给一段文本（标题/关键词）→ 相关 references 摘录（RAG-lite），供 agent 按需参考。"""
+    import re
+    terms = [t for t in re.split(r"[\s，。/]+", query or "") if len(t) >= 2][:3]
+    hits, seen, out = [], [], []
+    for t in terms:
+        hits += search_refs(t, limit=30)
+    for h in hits:
+        if h["ref"] in seen:
+            continue
+        seen.append(h["ref"])
+        out.append(f"[{h['ref']}]\n" + read_ref(h["ref"])[:chars])
+        if len(out) >= k:
+            break
+    return "\n\n".join(out)
 
 
 def main(argv=None):

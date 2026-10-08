@@ -10,7 +10,9 @@ import re
 import sys
 
 from agent import llm
-from services import news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana, format_route as _fr, routing as _route
+from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
+                      format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
+                      references as _refs)
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
@@ -82,6 +84,12 @@ def compose(cand, retry_ctx=None, max_tokens=16000):
             "粉丝向爆料/日常/综艺花絮→xhs）。\n"
             "全中文（假名≤5），行内「、」≤1，标题≤20字。给出 related（同事件其它素材key前缀，可空）。\n\n"
             f"=== content_ja ===\n{cj[:3500]}")
+    try:
+        rel = _refs.relevant(cand.get("title") or "")
+        if rel:
+            user += "\n\n=== 相关规范/案例（节选，供参考）===\n" + rel
+    except Exception:
+        pass
     msgs.append({"role": "user", "content": user})
     if retry_ctx:
         msgs.append({"role": "user", "content": retry_ctx})
@@ -103,6 +111,17 @@ def score_content(title, body, max_tokens=4000):
 
 
 # ---------------- 工具 ----------------
+def score_gzh(title, body, max_tokens=4000):
+    sysd = '你是公众号内容评审。只输出 JSON：{"标题吸引力":n,"叙事质量":n,"公众号适配度":n,"total":n}（各1-10，合格线7）。'
+    usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？\n\n"
+           f"标题：{title}\n\n{body[:4000]}")
+    try:
+        raw = llm.chat([{"role": "system", "content": sysd}, {"role": "user", "content": usr}], max_tokens=max_tokens)
+        return json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "total": 0}
+
+
 def _resolve_keys(prefixes):
     import sqlite3
     out = []
