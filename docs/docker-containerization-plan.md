@@ -302,3 +302,28 @@ docker run --rm hello-world     # EXIT=0 ✓
 **Hermes 侧新增**：`ops/Dockerfile.hermes`（上游镜像 + python3.14 + sqlite3 薄封装）· 上游 `docker-compose.yml` 增加项目挂载
 
 **删除/不迁移**：`~/gateway-watchdog.sh` · `~/cdp-keeper.sh`（被 `ops/cdp_keeper.py` 取代）· `com.xhs.caffeinate.plist`
+
+---
+
+## 12. 实施进展（滚动更新）
+
+### 2026-10-08 · P0–P3 完成
+
+- **P0 环境** ✅ colima v0.10.3 + lima 2.2.1 + docker 29.8.2 + compose v5.6.0（绕开 Homebrew Tier 3；`colima start --vm-type vz` 免 QEMU）。VM：Ubuntu 24.04 / 4C8G。
+- **P1 容器化** ✅ Dockerfile / compose(base+mac override) / requirements-docker.txt / .dockerignore / ops/*；可移植改造已应用；镜像 `xhs:dev`。
+- **P2 Xvfb+Chrome** ✅ 容器内 headed Chrome（UA `X11; Linux x86_64`），profile 持久化 `/data/chrome-profiles`。
+- **P3 扫码出码** ✅ webapp `/api/login/qrcode` 端到端返回真实二维码（128×128）。
+
+**P3 关键发现（小红书创作平台登录页已改版）**：
+
+1. `creator.xiaohongshu.com/login` **默认短信登录**；页面里唯一的 img 是 64×64 的**切换图标**（`img.css-wemwzq`）。
+2. **必须点击 `.css-wemwzq`** 才切到二维码视图；切换后新增一张 ~160×160、`src=data:image/png;base64` 的 img（真实二维码，native 128×128）。
+3. 故 `get_login_qrcode` 已改：`_ensure_qrcode_login_mode()` 点切换 → `_locate_login_qrcode()` 取**面积最大**的 img/canvas → 直接复用其 base64 src（不再截屏）。
+4. `customer.xiaohongshu.com/api/cas/customer/web/qr-code?service=https://creator.xiaohongshu.com` 是 CAS 接口，但需 `qr_code_id`（先创建再轮询）；当前 DOM 方案即可，无需该接口。
+
+**环境坑（已修）**：
+
+- 容器装了 `websockets 17.2`（requirements 原写 `>=12.0`），其 sync 客户端非 legacy 行为会让 `cdp_publish._send` 的 `recv` 挂起 → `Page.navigate` 超时。**已钉 `websockets==16.0`**（与生产 venv 一致）。
+- 容器只有 IPv4 路由，但 DNS 返回 AAAA → pip `Network is unreachable`。已在 `override.mac.yml` 加 `net.ipv6.conf.all.disable_ipv6=1`。
+
+**隔离现状**：生产 `dev2` 未动；工作分支 `docker-containerization`（worktree `~/PG/xhs-docker-src`）；宿主端口映射 15000/15001/19222（避开生产的 5000/5001/9222）；DB 用快照命名卷。
