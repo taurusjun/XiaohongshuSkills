@@ -81,11 +81,27 @@ def _md_to_elements(md: str):
     els = []
     for b in _split_blocks(md):
         if b[0] == "md":
-            # 文本按行拆元素：可跨卡片，且不影响表格整块
+            meta = []
+
+            def flush_meta():
+                if meta:
+                    els.append(({"tag": "note", "elements": [
+                        {"tag": "lark_md", "content": "\n".join(meta)}]},
+                        sum(len(m) for m in meta)))
+                    meta.clear()
+
             for ln in b[1].split("\n"):
-                txt = feishu_md_to_lark(ln).strip() if ln.strip() else ""
+                st = ln.strip()
+                if st.startswith("# "):
+                    continue                    # H1 → 已在卡片 header，正文不重复
+                if st.startswith("**") and "：**" in st:
+                    meta.append(feishu_md_to_lark(ln).strip())   # 元信息 → note
+                    continue
+                flush_meta()
+                txt = feishu_md_to_lark(ln).strip() if st else ""
                 if txt:
                     els.append(({"tag": "div", "text": {"tag": "lark_md", "content": txt}}, len(txt)))
+            flush_meta()
         else:
             _, header, rows = b
             cols = [{"name": f"c{j}", "display_name": (header[j] if j < len(header) else f"col{j}"),
