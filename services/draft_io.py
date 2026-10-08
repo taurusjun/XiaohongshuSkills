@@ -76,6 +76,19 @@ def write_draft(key: str, title: str, body: str, api_base: str | None = None) ->
             return {"ok": True}
 
 
+def _put_news_raw(key: str, title: str, body: str, api_base: str | None = None) -> str:
+    """PUT 入库并返回**原始响应文本**（与原 write-api.py 打印一致）。"""
+    base = api_base or paths.api_base()
+    data = json.dumps({
+        "publish_mode": "rewritten", "rewritten_title": title,
+        "rewritten_content": body, "preselected": 1, "publish_xhs": 0,
+    }).encode("utf-8")
+    req = urllib.request.Request(f"{base}/api/news/{key}", data=data,
+                                 headers={"Content-Type": "application/json"}, method="PUT")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return resp.read().decode()
+
+
 def get_news(key: str, api_base: str | None = None) -> dict:
     base = api_base or paths.api_base()
     with urllib.request.urlopen(f"{base}/api/news/{key}", timeout=10) as resp:
@@ -93,7 +106,7 @@ def main_write(argv=None) -> int:
     lines = full_text.strip().split("\n")
     title_line = strip_md_title(lines[0])
     body = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
-    print("Response:", write_draft(key, title_line, body))
+    print("Response:", _put_news_raw(key, title_line, body))
     print(f"Title: {title_line}")
     print(f"Body length: {len(body)} chars")
     print(f"Key: {key}")

@@ -6,6 +6,12 @@ services:
     platform: linux/amd64
     environment:
       PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple   # 境内加速 venv 引导
+      # 容器内代理指向 VM 网关(宿主 Mac 的 127.0.0.1:20809)；主链路/境内服务走直连
+      HTTP_PROXY: http://192.168.5.2:20809
+      HTTPS_PROXY: http://192.168.5.2:20809
+      ALL_PROXY: socks5://192.168.5.2:20809
+      NO_PROXY: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
+      no_proxy: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
     sysctls:
       net.ipv6.conf.all.disable_ipv6: "1"   # 容器只有 IPv4 路由；否则 pip 走 IPv6 会 Network unreachable
     build:
