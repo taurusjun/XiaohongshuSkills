@@ -91,7 +91,7 @@ def _resolve_keys(prefixes):
 
 
 def _extract_related_json(text):
-    """取输末 ```json {"related":{...}}``` → (mapping, 去块文本)。兼容 same_event 旧格式。"""
+    """取输末 ```json {"related":{...}}``` → (mapping, 去块文本)。"""
     if not text:
         return None, text
     for mm in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
@@ -102,11 +102,6 @@ def _extract_related_json(text):
         if not isinstance(d, dict):
             continue
         mp = d.get("related")
-        if mp is None and ("same_event" in d or "timeline" in d):     # 兼容旧格式
-            mp = {}
-            for k, v in (d.get("same_event") or {}).items():
-                mp.setdefault(k, [])
-                mp[k] += v
         if isinstance(mp, dict):
             return mp, text[:mm.start()] + text[mm.end():]
     return None, text
