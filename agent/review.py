@@ -1,11 +1,11 @@
 """完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）+ 关联写库。
 
-关联模型（对齐原 skill）：
-- **无时间窗口**（全历史）；候选由 services.related 按相关性检索。
-- LLM 判定分两类：same_event(同事件·可合并) / timeline(跨时间·续篇/时间线)。
-- 只写/清「当日」行；历史行不重判（历史由各自那天的 review 负责）。
+关联（对齐原 skill）：
+- 先按**实体名**（人物/团体/作品/系列）检索**全历史**候选（无时间窗口，非 n-gram）；
+- LLM 判定 → 写入**当日行**的 `related_keys`（历史行不碰）。
 """
 import json
+import re
 import sys
 
 from agent import llm
@@ -18,8 +18,12 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-__all__ = ["compact_rows", "prepare_package", "persist_related_mapping",
-           "persist_related_mechanical", "run", "main"]
+ENT_SYS = ("你是日娱实体抽取器。给每条素材(title=中文标题, title_ja=日文原标题)，抽取**用于检索的实体**："
+           "人物名/团体名/作品名/系列名，用**日文原始写法**（title_ja 中的），以避开简繁差异；"
+           "不要把“古民家/剪去长发/唱的是/移籍/写真/演唱会/评论区/自拍”等描述性词当实体。"
+           '只输出严格 JSON：{"<key前12位>": ["实体1","实体2", ...]}。')
+
+__all__ = ["compact_rows", "prepare_package", "extract_entities", "persist_related", "run", "main"]
 
 
 def _read(rel):
@@ -29,34 +33,47 @@ def _read(rel):
 
 def compact_rows(date, limit=500):
     rows = _news.query_news(date_from=date, date_to=date, status="active", limit=limit)
-    return [{"key": r["key"][:12], "title": r.get("title"), "fmt": r.get("format"),
-             "lf": r.get("is_long_form"), "ts": r.get("title_score"), "cs": r.get("content_score"),
-             "cj": len(r.get("content_ja") or ""), "src": r.get("fetch_by"),
-             "pub": r.get("publish_xhs")} for r in rows]
+    return [{"key": r["key"][:12], "title": r.get("title"), "ja": (r.get("title_ja") or "")[:40],
+             "fmt": r.get("format"), "lf": r.get("is_long_form"), "ts": r.get("title_score"),
+             "cs": r.get("content_score"), "cj": len(r.get("content_ja") or ""),
+             "src": r.get("fetch_by"), "pub": r.get("publish_xhs")} for r in rows]
+
+
+def extract_entities(items, max_tokens=4000):
+    """items:[{key,title,ja}] → {key12: [实体,...]}（LLM 抽取，日文原始写法优先）。"""
+    if not items:
+        return {}
+    try:
+        raw = llm.chat([{"role": "system", "content": ENT_SYS},
+                        {"role": "user", "content": json.dumps(items, ensure_ascii=False)}],
+                       max_tokens=max_tokens)
+        m = re.search(r"\{.*\}", raw, re.S)
+        return json.loads(m.group(0)) if m else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def prepare_package(date, hist_k=6):
-    """review 阶段1 写前准备（机械）：当日全量 + 前一天(日期陷阱)
-    + 当日同事件机械候选 + 每个当日稿的**全历史**关联候选（无窗口，按相关性）。"""
+    """review 阶段1：当日全量 + 前一天(日期陷阱) + 每个当日稿的**全历史实体候选**。"""
     import datetime as dt
-    from services import cluster as _cl
     rows = compact_rows(date)
     try:
         prev = compact_rows((dt.date.fromisoformat(date) - dt.timedelta(days=1)).isoformat())
     except Exception:  # noqa: BLE001
         prev = []
-    groups = _cl.cluster([{"key": r["key"], "title": r["title"]} for r in rows if r.get("title")])
-    ctxt = "\n".join(f"- 组{i+1}: " + " / ".join(x["key"] for x in g)
-                     for i, g in enumerate(groups)) or "（无）"
+    full = _news.query_news(date_from=date, date_to=date, status="active", limit=500)
+    ent = extract_entities([{"key": r["key"][:12], "title": r.get("title") or "",
+                             "ja": (r.get("title_ja") or "")[:60]}
+                            for r in full if (r.get("title") or "").strip()])
     hist = {}
-    for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500):
+    for r in full:
         if not (r.get("title") or "").strip():
             continue
-        cs = _rel.find_related(r["key"], r["title"], limit=hist_k)
+        cs = _rel.find_related(r["key"], ent.get(r["key"][:12]) or [], limit=hist_k)
         if cs:
-            hist[r["key"][:12]] = [{"k": c["key"][:12], "day": c["day"],
-                                    "t": (c["title"] or "")[:26]} for c in cs]
-    return {"rows": rows, "prev": prev, "clusters": ctxt, "hist": hist}
+            hist[r["key"][:12]] = [{"k": c["key"][:12], "day": c["day"], "t": (c["title"] or "")[:26]}
+                                   for c in cs]
+    return {"rows": rows, "prev": prev, "hist": hist, "ent": ent}
 
 
 def _resolve_keys(prefixes):
@@ -74,24 +91,25 @@ def _resolve_keys(prefixes):
 
 
 def _extract_related_json(text):
-    """取 ```json {"same_event":{...},"timeline":{...}}``` → (same_event, timeline, 去块文本)。"""
-    import re
+    """取输末 ```json {"related":{...}}``` → (mapping, 去块文本)。兼容 same_event 旧格式。"""
     if not text:
-        return None, None, text
+        return None, text
     for mm in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
         try:
             d = json.loads(mm.group(1))
         except Exception:  # noqa: BLE001
             continue
-        if isinstance(d, dict) and ("same_event" in d or "timeline" in d or "related" in d):
-            se = d.get("same_event") or d.get("related") or {}
-            tl = d.get("timeline") or {}
-            return se, tl, text[:mm.start()] + text[mm.end():]
-    return None, None, text
-
-
-def _title_of(key):
-    return ((_news.get_by_key(key) or {}).get("title") or "")
+        if not isinstance(d, dict):
+            continue
+        mp = d.get("related")
+        if mp is None and ("same_event" in d or "timeline" in d):     # 兼容旧格式
+            mp = {}
+            for k, v in (d.get("same_event") or {}).items():
+                mp.setdefault(k, [])
+                mp[k] += v
+        if isinstance(mp, dict):
+            return mp, text[:mm.start()] + text[mm.end():]
+    return None, text
 
 
 def _normalize_mapping(mapping):
@@ -105,7 +123,7 @@ def _normalize_mapping(mapping):
         adj.setdefault(a, set())
         for sp in sibs or []:
             b = _resolve_keys([sp])
-            if b and b[0] != a and _rel.link_ok(_title_of(a), _title_of(b[0])):
+            if b and b[0] != a:
                 adj[a].add(b[0])
                 adj.setdefault(b[0], set()).add(a)
     seen, comps = set(), []
@@ -128,62 +146,21 @@ def _normalize_mapping(mapping):
     return out
 
 
-def persist_related_mapping(same_event, timeline=None, day_keys=None):
-    """**只写/清当日行**（历史行不碰）。
-
-    - same_event → related_keys（规范化互指；可含历史 key，即当日稿指向前作）；
-    - timeline   → timeline_keys（单向即可，不做合并）；
-    - 当日行未被列入 → 清空对应字段。
-    返回 (same_event 规范化 dict, related 写入篇数, related 清空篇数, timeline 写入篇数)。
-    """
-    norm = _normalize_mapping(same_event or {})
+def persist_related(mapping, day_keys=None):
+    """**只写/清当日行**（历史行不碰）。返回 (规范化映射, 写入篇数, 清空篇数)。"""
+    norm = _normalize_mapping(mapping or {})
     dayset = set(day_keys) if day_keys is not None else None
-    wrote = tlw = cleared = 0
+    wrote = cleared = 0
     for k, v in norm.items():
         if dayset is not None and k not in dayset:
             continue
         _news.update_news(k, {"related_keys": v})
         wrote += 1
-    tlnorm = {}
-    for kp, sibs in (timeline or {}).items():
-        kf = _resolve_keys([kp])
-        if not kf:
-            continue
-        if dayset is not None and kf[0] not in dayset:
-            continue
-        anchor = _title_of(kf[0])
-        sib = list(dict.fromkeys(x for x in _resolve_keys(sibs)
-                                 if x and x != kf[0] and _rel.link_ok(anchor, _title_of(x))))
-        if sib:
-            tlnorm[kf[0]] = ",".join(sib)
-    for k, v in tlnorm.items():
-        _news.update_news(k, {"timeline_keys": v})
-        tlw += 1
     for k in (day_keys or []):
-        cur = _news.get_by_key(k) or {}
-        if k not in norm and (cur.get("related_keys") or ""):
+        if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
             _news.update_news(k, {"related_keys": ""})
             cleared += 1
-        if k not in tlnorm and (cur.get("timeline_keys") or ""):
-            _news.update_news(k, {"timeline_keys": ""})
-    return norm, wrote, cleared, tlw
-
-
-def persist_related_mechanical(date):
-    """机械兜底：LLM 未给关联 JSON 时，用**当日**同事件聚类写入 related_keys。"""
-    from services import cluster as _cl
-    rows = _news.query_news(date_from=date, date_to=date, status="active", limit=500)
-    items = [{"key": r["key"], "title": r.get("title") or ""} for r in rows if (r.get("title") or "").strip()]
-    groups = _cl.cluster(items)
-    changed = 0
-    for g in groups:
-        ids = [x["key"] for x in g]
-        for x in g:
-            sib = [k for k in ids if k != x["key"]]
-            if sib:
-                _news.update_news(x["key"], {"related_keys": ",".join(sib)})
-                changed += 1
-    return len(groups), changed
+    return norm, wrote, cleared
 
 
 def build_messages(date, pkg):
@@ -191,8 +168,7 @@ def build_messages(date, pkg):
     user = (f"日期：{date}（东京时间）。\n\n"
             f"=== 当日全量素材（JSON）===\n{json.dumps(pkg['rows'], ensure_ascii=False)}\n\n"
             f"=== 前一天素材（JSON，用于日期陷阱）===\n{json.dumps(pkg['prev'], ensure_ascii=False)}\n\n"
-            f"=== 当日同事件机械候选（同日；供第三节参考，可修正）===\n{pkg['clusters']}\n\n"
-            f"=== 当日稿的全历史关联候选（无时间窗口，按相关性排序；供关联判定）===\n"
+            f"=== 当日稿的关联候选（按**实体名**检索的全历史，无时间窗口）===\n"
             f"{json.dumps(pkg['hist'], ensure_ascii=False)}")
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -202,19 +178,17 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
     out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 关联JSON
-    se, tl, out = _extract_related_json(out)
+    mapping, out = _extract_related_json(out)
     try:
-        if se or tl:
+        if mapping:
             day_keys = [r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)]
-            _norm, nc, nclr, ntl = persist_related_mapping(se or {}, tl or {}, day_keys=day_keys)
-            print(f"[related] 当日写入：同事件 {nc} 篇 / 时间线 {ntl} 篇 / 清空 {nclr} 篇（历史不动）")
+            _norm, nc, nclr = persist_related(mapping, day_keys=day_keys)
+            print(f"[related] 当日写入 {nc} 篇 / 清空 {nclr} 篇（历史不动；实体检索候选）")
         else:
-            ng, nc = persist_related_mechanical(date)
-            print(f"[related] 无 LLM 关联JSON，机械兜底 {ng} 组 → 写入 {nc} 篇")
+            print("[related] 无 LLM 关联 JSON，跳过写库")
     except Exception as e:  # noqa: BLE001
         print(f"[related] 跳过: {e}")
     rest = out
-    # 裁掉 LLM 可能多输出的 H1/元信息/「一、」（已由系统生成），只保留从「## 二、」起
     idx = rest.find("## 二、")
     if idx > 0:
         rest = rest[idx:]
