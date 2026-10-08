@@ -114,20 +114,28 @@ def _normalize_mapping(mapping):
     return out
 
 
-def persist_related_mapping(mapping, clear_keys=None):
-    """review 前置（LLM 确认版）：规范化(→互指)后覆盖写入；clear_keys 内未列入的行清空（反旧误连）。
+def persist_related_mapping(mapping, day_keys=None):
+    """review 前置（LLM 确认版）：**只写/清当日行**（历史行不碰）。
 
+    - 当日行：规范化分组后写 related_keys（可含"历史关联"key，即当日稿指向前作）；
+    - 当日行未被 LLM 列入 → 清空；
+    - 非当日行：一律不动。
     返回 (规范化映射 dict, 写入篇数, 清空篇数)。
     """
     norm = _normalize_mapping(mapping)
+    dayset = set(day_keys) if day_keys is not None else None
+    wrote = 0
     for k, v in norm.items():
+        if dayset is not None and k not in dayset:
+            continue                                  # 历史行：不管
         _news.update_news(k, {"related_keys": v})
+        wrote += 1
     cleared = 0
-    for k in (clear_keys or []):
+    for k in (day_keys or []):
         if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
             _news.update_news(k, {"related_keys": ""})
             cleared += 1
-    return norm, len(norm), cleared
+    return norm, wrote, cleared
 
 
 def clear_related_pointing_to(involved, keep=()):
@@ -184,10 +192,13 @@ def persist_related_mechanical(date, gap=3):
     items = [{"key": r["key"], "title": r.get("title") or "",
               "day": (r.get("created_at") or "")[:10]} for r in rows if (r.get("title") or "").strip()]
     groups = _cl.cluster(items, date_field="day", max_gap_days=gap)
+    day = {it["key"] for it in items if (it.get("day") or "")[:10] == date}
     changed = 0
     for g in groups:
         ids = [x["key"] for x in g]
         for x in g:
+            if x["key"] not in day:               # 只写当日
+                continue
             sib = [k for k in ids if k != x["key"]]
             if sib:
                 _news.update_news(x["key"], {"related_keys": ",".join(sib)})
@@ -214,17 +225,10 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     mapping, out = _extract_related_json(out)
     try:
         if mapping:
-            import datetime as dt
-            lo = (dt.date.fromisoformat(date) - dt.timedelta(days=pkg.get("gap", 3))).isoformat()
-            scope = [r["key"] for r in _news.query_news(date_from=lo, date_to=date, status="active", limit=1000)]
-            norm, nc, nclr = persist_related_mapping(mapping, clear_keys=scope)
-            involved = set(scope) | set(norm)
-            for _kp, _sibs in (mapping or {}).items():
-                involved.update(_resolve_keys([_kp]))
-                involved.update(_resolve_keys(_sibs))
-            npt = clear_related_pointing_to(involved, keep=set(norm))
-            nfix = enforce_symmetric_related()
-            print(f"[related] LLM 确认 {nc} 篇 → 窗口清空 {nclr} / 指向清空 {npt} / 互指校正 {nfix}")
+            # 只写/清"当日"行；历史行不碰（历史由各自那天的 review 负责）
+            day_keys = [r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)]
+            _norm, nc, nclr = persist_related_mapping(mapping, day_keys=day_keys)
+            print(f"[related] LLM 确认 → 当日写入 {nc} 篇 / 当日清空 {nclr} 篇（历史不动）")
         else:
             ng, nc = persist_related_mechanical(date)
             print(f"[related] 无 LLM 关联JSON，机械兜底 {ng} 组 → 写入 {nc} 篇")
