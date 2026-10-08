@@ -72,8 +72,8 @@ def run(n=3, deliver=False, dry_run=False):
             _news.update_news(c["key"], {"rewritten_title": title, "rewritten_content": body,
                                          "publish_mode": "rewritten", "preselected": 1, "publish_xhs": 0})
         results.append({"key": c["key"][:12], "ok": ok, "attempts": attempts,
-                        "body": res["body_len"], "h2": res["h2"], "kana": res["kana"],
-                        "problems": res["problems"]})
+                        "title": title, "text": body, "body": res["body_len"],
+                        "h2": res["h2"], "kana": res["kana"], "problems": res["problems"]})
         print(f"{'PASS' if ok else 'FAIL'} {c['key'][:12]} attempts={attempts} "
               f"body={res['body_len']} ##={res['h2']} kana={res['kana']}"
               + ("" if ok else " | " + "; ".join(res["problems"])))
@@ -81,10 +81,20 @@ def run(n=3, deliver=False, dry_run=False):
     print(f"\n写稿门禁通过 {passed}/{len(results)}（{'dry-run，未入库' if dry_run else '已入库'}）")
     if deliver:
         from services.delivery import deliver as _d
-        md = "# 写稿结果\n\n" + "\n".join(
-            f"- {'✅' if r['ok'] else '❌'} `{r['key']}` body={r['body']} problems={r['problems']}"
-            for r in results)
-        print("[delivery]", _d(md, name="write-result.md"))
+        lines = [f"# 写稿结果 —（{passed}/{len(results)} 通过）", ""]
+        for r in results:
+            lines.append(f"## {r['title']}")
+            lines.append(f"`{r['key']}`  {'✅ 已入库' if r['ok'] else '❌ 未过门禁'}"
+                         f"（attempts={r['attempts']}，正文{r['body']}字）")
+            lines.append("")
+            if r["ok"]:
+                lines.append(r["text"])
+            else:
+                lines.append("未过门禁：\n- " + "\n- ".join(r["problems"]))
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+        print("[delivery]", _d("\n".join(lines), name="write-result.md"))
     return results
 
 
