@@ -12,7 +12,7 @@ import sys
 from agent import llm
 from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
                       format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
-                      references as _refs, related as _rel)
+                      references as _refs)
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
@@ -84,8 +84,10 @@ def prepare_package(cand):
         refs = _refs.relevant(cand.get("title") or "")
     except Exception:
         pass
+    # 关联素材来自 review 前置阶段写入 DB 的 related_keys（write 只读不重算）
     try:
-        sibs = _rel.find_related(cand["key"], cand.get("title") or "")
+        _rk = [k.strip() for k in (cand.get("related_keys") or "").split(",") if k.strip()]
+        sibs = [x for x in (_news.get_by_key(k) for k in _rk[:8]) if x]
         related_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1500]}" for s in sibs)
     except Exception:
@@ -101,7 +103,7 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n"
             "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。related 放同事件其它素材 key 前缀。\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。（关联素材由 review 前置给定，无需你判断。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
@@ -204,7 +206,7 @@ def write_one(cand, dry_run=True):
     except Exception:
         pass
     ok = not mech["problems"] and (score.get("total") or 0) >= need
-    rk = _resolve_keys(related)
+    rk = cand.get("related_keys") or ""     # review 前置已写库，write 直接沿用
     if ok and not dry_run:
         if channel == "gzh":
             _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,

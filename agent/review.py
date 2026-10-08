@@ -12,7 +12,7 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-__all__ = ["compact_rows", "run", "main"]
+__all__ = ["compact_rows", "prepare_package", "persist_related", "run", "main"]
 
 
 def _read(rel):
@@ -44,6 +44,30 @@ def prepare_package(date):
     return {"rows": rows, "prev": prev, "clusters": ctxt}
 
 
+def persist_related(date, gap=3):
+    """review 前置：把「同事件聚类」（含前 gap 日、带日期窗口）写入每篇的 related_keys。"""
+    import datetime as dt
+    from services import cluster as _cl
+    try:
+        lo = (dt.date.fromisoformat(date) - dt.timedelta(days=gap)).isoformat()
+    except Exception:  # noqa: BLE001
+        lo = date
+    rows = _news.query_news(date_from=lo, date_to=date, status="active", limit=800)
+    items = [{"key": r["key"], "title": r.get("title") or "",
+              "day": (r.get("created_at") or "")[:10]} for r in rows if (r.get("title") or "").strip()]
+    groups = _cl.cluster(items, date_field="day", max_gap_days=gap)
+    changed = 0
+    for g in groups:
+        ids = [x["key"] for x in g]
+        for x in g:
+            sib = [k for k in ids if k != x["key"]]
+            if sib:
+                # review 是关联的权威来源：覆盖写入（write 阶段只读沿用）
+                _news.update_news(x["key"], {"related_keys": ",".join(sib)})
+                changed += 1
+    return len(groups), changed
+
+
 def build_messages(date, pkg):
     system = _read("agent/prompts/review.md")
     user = (f"日期：{date}（东京时间）。\n\n"
@@ -57,6 +81,11 @@ def build_messages(date, pkg):
 def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
+    try:
+        ng, nc = persist_related(date)
+        print(f"[related] 同事件聚类 {ng} 组 → related_keys 写入 {nc} 篇")
+    except Exception as e:  # noqa: BLE001
+        print(f"[related] 跳过: {e}")
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
     rest = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)  # 二~六
     # 裁掉 LLM 可能多输出的 H1/元信息/「一、」（已由系统生成），只保留从「## 二、」起
