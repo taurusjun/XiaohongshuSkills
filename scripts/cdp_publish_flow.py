@@ -8,10 +8,10 @@ from typing import Any
 
 from xhs_errors import CDPError
 from xhs_constants import (
-    SELECTORS, PAGE_LOAD_WAIT, TAB_CLICK_WAIT, UPLOAD_WAIT,
+    SELECTORS, XHS_CREATOR_URL, PAGE_LOAD_WAIT, TAB_CLICK_WAIT, UPLOAD_WAIT,
     VIDEO_PROCESS_TIMEOUT, VIDEO_PROCESS_POLL, ACTION_INTERVAL,
 )
-from xhs_util import validate_schedule_post_time
+from xhs_util import validate_schedule_post_time, _is_local_host
 
 
 class PublishFlowMixin:

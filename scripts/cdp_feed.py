@@ -11,7 +11,7 @@ from feed_explorer import (
 )
 from xhs_errors import CDPError
 from xhs_constants import (
-    XHS_HOME_URL, XHS_CREATOR_URL, XHS_FEED_INACCESSIBLE_KEYWORDS, SELECTORS,
+    XHS_HOME_URL, XHS_CREATOR_URL, PAGE_LOAD_WAIT, XHS_FEED_INACCESSIBLE_KEYWORDS, SELECTORS,
     XHS_SEARCH_RECOMMEND_API_PATH,
 )
 from xhs_util import (
