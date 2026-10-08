@@ -155,7 +155,7 @@ def feishu_send(text: str) -> bool:
     if not open_id:
         return bool(feishu_bot.send_alert(text))
     title = next((l.lstrip("#").strip() for l in text.split("\n") if l.startswith("#")), "交付")
-    schema = os.environ.get("XHS_FEISHU_SCHEMA", "1.0")
+    schema = os.environ.get("XHS_FEISHU_SCHEMA", "2.0")
     cards = feishu_build_cards_v2(text, title) if schema.startswith("2") else feishu_build_cards(text, title)
     ok = True
     for card in cards:
@@ -205,7 +205,7 @@ def deliver(text: str, channel: str | None = None, name: str = "latest.md",
         result["feishu_sent"] = all(bool(send_fn(c)) for c in chunks)
     else:
         _cards = (feishu_build_cards_v2(text, name)
-                  if os.environ.get("XHS_FEISHU_SCHEMA", "1.0").startswith("2")
+                  if os.environ.get("XHS_FEISHU_SCHEMA", "2.0").startswith("2")
                   else feishu_build_cards(text, name))
         result["chunks"] = len(_cards)
         try:
@@ -268,7 +268,7 @@ def feishu_build_cards_v2(md: str, title: str = "交付", max_chars: int = DEFAU
     for i, els_i in enumerate(cards, 1):
         t = title[:50] + (f"（{i}/{n}）" if n > 1 else "")
         out.append({"schema": "2.0", "config": {"wide_screen_mode": True},
-                    "header": {"title": {"tag": "plain_text", "content": t}},
+                    "header": {"title": {"tag": "plain_text", "content": t}, "template": "blue"},
                     "body": {"elements": els_i or [{"tag": "markdown", "content": "(空)"}]}})
     return out
 
