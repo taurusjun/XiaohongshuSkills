@@ -19,4 +19,4 @@ numpy>=1.26
 openpyxl>=3.1
 tweepy>=4.14
 urllib3>=2.0
-websockets>=12.0
+websockets==16.0   # 与生产 venv 一致；17.x sync 客户端非 legacy 行为会让 cdp_publish 的 recv 挂起

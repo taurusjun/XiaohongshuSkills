@@ -1208,8 +1208,43 @@ class XiaohongshuPublisher:
             raise CDPError("Failed to capture QR code screenshot.")
         return image_base64
 
+    def _ensure_qrcode_login_mode(self) -> bool:
+        """创作平台登录页默认短信登录；点切换图标 .css-wemwzq 切到二维码视图。
+
+        切到二维码后页面会新增一张 ~160x160、src 为 data:image/png;base64 的 img。
+        """
+        result = self._evaluate(r"""
+            (() => {
+                const bodyText = (document.body && document.body.innerText) || "";
+                if (bodyText.includes("扫一扫") || bodyText.includes("二维码")) {
+                    return { ok: true, already: true };
+                }
+                const toggle = document.querySelector(".css-wemwzq")
+                    || document.querySelector(".login-container img");
+                if (!toggle) {
+                    return { ok: false, reason: "toggle_not_found" };
+                }
+                const r = toggle.getBoundingClientRect();
+                const opts = {
+                    bubbles: true, cancelable: true,
+                    clientX: r.x + r.width / 2, clientY: r.y + r.height / 2,
+                };
+                toggle.dispatchEvent(new MouseEvent("click", opts));
+                if (toggle.parentElement) {
+                    toggle.parentElement.dispatchEvent(new MouseEvent("click", opts));
+                }
+                return { ok: true, clicked: true };
+            })()
+        """)
+        return bool(result and result.get("ok"))
+
     def _locate_login_qrcode(self) -> dict[str, Any]:
-        """Return visible QR code metadata from current login page when possible."""
+        """返回当前登录页里二维码的元数据。
+
+        创作平台登录页默认短信登录；二维码视图里那张 img 是页面里**面积最大**的
+        img/canvas（~160x160，自带 data:image/png;base64 src），切换图标只有 64x64。
+        因此：优先二维码专属选择器，否则取面积最大的可见 img/canvas。
+        """
         result = self._evaluate(r"""
             (() => {
                 const normalize = (text) => (text || "").replace(/\s+/g, " ").trim();
@@ -1219,46 +1254,44 @@ class XiaohongshuPublisher:
                     node.getBoundingClientRect().width >= 24 &&
                     node.getBoundingClientRect().height >= 24
                 );
-                const selectors = [
+                const preferred = [
                     ".login-container .qrcode-img",
-                    ".login-container img",
                     "img.qrcode-img",
                     "img[src*='qrcode']",
                     "[class*='qrcode'] img",
                     "[class*='qr'] img",
                     "[class*='qrcode'] canvas",
                     "[class*='qr'] canvas",
-                    ".login-container canvas",
                 ];
-
-                for (const selector of selectors) {
-                    const nodes = document.querySelectorAll(selector);
-                    for (const node of nodes) {
-                        if (!visible(node)) {
-                            continue;
-                        }
-                        const rect = node.getBoundingClientRect();
-                        const src = node instanceof HTMLImageElement ? (node.currentSrc || node.src || "") : "";
-                        const dataUrl = node instanceof HTMLCanvasElement ? node.toDataURL("image/png") : "";
-                        const parentText = normalize(
-                            node.parentElement ? (node.parentElement.innerText || node.parentElement.textContent) : ""
-                        );
-                        return {
-                            ok: true,
-                            tag_name: String(node.tagName || "").toLowerCase(),
-                            selector,
-                            src,
-                            data_url: dataUrl,
-                            rect: {
-                                x: rect.x,
-                                y: rect.y,
-                                width: rect.width,
-                                height: rect.height,
-                            },
-                            hint_text: parentText,
-                        };
-                    }
+                const nodes = Array.from(document.querySelectorAll("img,canvas")).filter(visible);
+                const build = (node, selector) => {
+                    const rect = node.getBoundingClientRect();
+                    const src = node instanceof HTMLImageElement ? (node.currentSrc || node.src || "") : "";
+                    const dataUrl = node instanceof HTMLCanvasElement ? node.toDataURL("image/png") : "";
+                    const parentText = normalize(
+                        node.parentElement ? (node.parentElement.innerText || node.parentElement.textContent) : ""
+                    );
+                    return {
+                        ok: true,
+                        tag_name: String(node.tagName || "").toLowerCase(),
+                        selector,
+                        src,
+                        data_url: dataUrl,
+                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                        hint_text: parentText,
+                    };
+                };
+                for (const selector of preferred) {
+                    const node = nodes.find((n) => n.matches && n.matches(selector));
+                    if (node) return build(node, selector);
                 }
+                let pick = null, area = 0;
+                for (const node of nodes) {
+                    const r = node.getBoundingClientRect();
+                    const a = r.width * r.height;
+                    if (a > area) { area = a; pick = node; }
+                }
+                if (pick) return build(pick, "largest");
                 return { ok: false, reason: "qrcode_not_found" };
             })()
         """)
@@ -1287,6 +1320,10 @@ class XiaohongshuPublisher:
                 "message": "Already logged in.",
             }
 
+        # 创作平台登录页默认短信登录：先点击切换图标进入二维码视图
+        self._ensure_qrcode_login_mode()
+        self._sleep(2.0, minimum_seconds=1.0)
+
         deadline = time.time() + max(3.0, float(wait_seconds))
         qrcode_meta: dict[str, Any] | None = None
         while time.time() < deadline:
@@ -1300,11 +1337,15 @@ class XiaohongshuPublisher:
             raise CDPError(f"Failed to locate login QR code: {reason}")
 
         data_url = qrcode_meta.get("data_url")
-        if isinstance(data_url, str) and data_url.startswith("data:image/"):
-            header, _, encoded = data_url.partition(",")
+        src = qrcode_meta.get("src")
+        # 二维码可能是 canvas(toDataURL) 或 img(自带 base64 src)；img 直接用，最清晰
+        inline = data_url if (isinstance(data_url, str) and data_url.startswith("data:image/")) else (
+            src if (isinstance(src, str) and src.startswith("data:image/")) else "")
+        if inline:
+            header, _, encoded = inline.partition(",")
             mime_type = header[5:].split(";", 1)[0] if header.startswith("data:") else "image/png"
             image_base64 = encoded
-            qrcode_data_url = data_url
+            qrcode_data_url = inline
         else:
             rect = qrcode_meta.get("rect")
             if not isinstance(rect, dict):

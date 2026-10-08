@@ -6,6 +6,8 @@ services:
     platform: linux/amd64
     environment:
       PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple   # 境内加速 venv 引导
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"   # 容器只有 IPv4 路由；否则 pip 走 IPv6 会 Network unreachable
     build:
       args:
         APT_MIRROR: mirrors.cloud.tencent.com   # 境内构建加速；Linux 云可留空用官方源
