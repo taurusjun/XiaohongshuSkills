@@ -1,7 +1,8 @@
 """统一 CLI：python -m cli <cmd> [args...]  → 分发到 services。"""
 import sys
 
-from services import word_count, precheck, schedule, dunhao, density, validate_tables
+from services import (word_count, precheck, schedule, dunhao, density,
+                      validate_tables, import_drafts)
 
 SUBCOMMANDS = {
     "word-count": word_count.main,
@@ -11,6 +12,7 @@ SUBCOMMANDS = {
     "dunhao-normalize": dunhao.main_normalize,
     "density": density.main,
     "validate-tables": validate_tables.main,
+    "import-drafts": import_drafts.main,
 }
 
 
