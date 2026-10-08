@@ -24,7 +24,7 @@ def build_archive(date: str, rows=None) -> str:
     lines = [
         f"# 每日素材 Review — {date}（东京时间）",
         "",
-        f"**データ範囲：** {date}（当日のみ・total={n}件）",
+        f"**数据范围：** {date}（当日のみ・total={n}件）",
         f"**查询：** `GET /api/news?date_from={date}&date_to={date}&limit=200` → total={n} / rows={n}",
         f"**fetch_by 分布：** {dist_str} = **{n}**（== total {n} ✅ 无漏组）"
         if dist_str else f"**fetch_by 分布：** （空）",

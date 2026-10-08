@@ -81,9 +81,11 @@ def _md_to_elements(md: str):
     els = []
     for b in _split_blocks(md):
         if b[0] == "md":
-            txt = feishu_md_to_lark(b[1]).strip()
-            if txt:
-                els.append(({"tag": "div", "text": {"tag": "lark_md", "content": txt}}, len(txt)))
+            # 文本按行拆元素：可跨卡片，且不影响表格整块
+            for ln in b[1].split("\n"):
+                txt = feishu_md_to_lark(ln).strip() if ln.strip() else ""
+                if txt:
+                    els.append(({"tag": "div", "text": {"tag": "lark_md", "content": txt}}, len(txt)))
         else:
             _, header, rows = b
             cols = [{"name": f"c{j}", "display_name": (header[j] if j < len(header) else f"col{j}"),
@@ -118,7 +120,12 @@ def feishu_build_cards(md: str, title: str = "交付", max_chars: int = DEFAULT_
         cur_size += size
     if cur:
         cards.append(_card(title, cur))
-    return cards or [_card(title, [])]
+    cards = cards or [_card(title, [])]
+    n = len(cards)
+    if n > 1:                                    # 多段时标注 (i/N)
+        for i, c in enumerate(cards, 1):
+            c["header"]["title"]["content"] = f"{title[:50]}（{i}/{n}）"
+    return cards
 
 
 def feishu_send(text: str) -> bool:

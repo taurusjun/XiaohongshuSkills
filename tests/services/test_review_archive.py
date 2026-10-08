@@ -15,3 +15,9 @@ def test_archive_template():
     assert "### fetch_by = 乃木坂（1条）" in md
     assert "| key (40) | ts | cs | cj_len | title |" in md
     assert "| `" + "k" * 40 + "` | 4.2 | 1.1 | 30 | 标题A |" in md
+
+
+def test_no_japanese_label():
+    from services.review_archive import build_archive
+    md = build_archive("2026-10-08", [])
+    assert "データ範囲" not in md and "数据范围" in md
