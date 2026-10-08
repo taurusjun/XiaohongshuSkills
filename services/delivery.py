@@ -155,9 +155,14 @@ def feishu_send(text: str) -> bool:
     if not open_id:
         return bool(feishu_bot.send_alert(text))
     title = next((l.lstrip("#").strip() for l in text.split("\n") if l.startswith("#")), "交付")
+    schema = os.environ.get("XHS_FEISHU_SCHEMA", "2.0")
+    cards = feishu_build_cards_v2(text, title) if schema.startswith("2") else feishu_build_cards(text, title)
     ok = True
-    for card in feishu_build_cards(text, title):
+    for card in cards:
         ok = bool(feishu_bot.send_card(open_id, card)) and ok
+    if not ok and schema.startswith("2"):        # 2.0 发送失败 → 回落 1.0
+        for card in feishu_build_cards(text, title):
+            ok = bool(feishu_bot.send_card(open_id, card)) and ok
     return ok
 
 
@@ -199,7 +204,10 @@ def deliver(text: str, channel: str | None = None, name: str = "latest.md",
         result["chunks"] = len(chunks)
         result["feishu_sent"] = all(bool(send_fn(c)) for c in chunks)
     else:
-        result["chunks"] = len(feishu_build_cards(text, name))
+        _cards = (feishu_build_cards_v2(text, name)
+                  if os.environ.get("XHS_FEISHU_SCHEMA", "2.0").startswith("2")
+                  else feishu_build_cards(text, name))
+        result["chunks"] = len(_cards)
         try:
             result["feishu_sent"] = bool(feishu_send(text))
         except Exception as e:  # noqa: BLE001
@@ -221,3 +229,46 @@ def main_legacy(argv=None) -> int:
     r = deliver(text, channel=args.channel, name=Path(args.file_path).name, max_chars=args.max_chars)
     print(f"[delivery] {r}")
     return 0 if r["ok"] else 1
+
+# ---------------------------------------------------------------------------
+# card 2.0（markdown 组件：真标题层级/列表）；1.0 为兜底
+# ---------------------------------------------------------------------------
+def _md_to_elements_v2(md: str):
+    els = []
+    for b in _split_blocks(md):
+        if b[0] == "md":
+            # H1 已在卡片 header，正文去掉重复；其余原样交给 markdown 组件（真 ## / 列表）
+            txt = "\n".join(l for l in b[1].split("\n") if not l.strip().startswith("# ")).strip()
+            if txt:
+                els.append(({"tag": "markdown", "content": txt}, len(txt)))
+        else:
+            _, header, rows = b
+            cols = [{"name": f"c{j}", "display_name": (header[j] if j < len(header) else f"col{j}"),
+                     "data_type": "text", "width": "auto"} for j in range(len(header))]
+            trows = [{f"c{j}": (r[j] if j < len(r) else "") for j in range(len(header))} for r in rows]
+            if cols and trows:
+                size = sum(len(v) for row in trows for v in row.values())
+                els.append(({"tag": "table", "columns": cols, "rows": trows,
+                             "row_height": "low"}, size))
+    return els
+
+
+def feishu_build_cards_v2(md: str, title: str = "交付", max_chars: int = DEFAULT_MAX):
+    els = _md_to_elements_v2(md)
+    cards, cur, cur_size = [], [], 0
+    for el, size in els:
+        if cur and cur_size + size > max_chars:
+            cards.append(cur); cur, cur_size = [], 0
+        cur.append(el); cur_size += size
+    if cur:
+        cards.append(cur)
+    cards = cards or [[]]
+    n = len(cards)
+    out = []
+    for i, els_i in enumerate(cards, 1):
+        t = title[:50] + (f"（{i}/{n}）" if n > 1 else "")
+        out.append({"schema": "2.0", "config": {"wide_screen_mode": True},
+                    "header": {"title": {"tag": "plain_text", "content": t}},
+                    "body": {"elements": els_i or [{"tag": "markdown", "content": "(空)"}]}})
+    return out
+

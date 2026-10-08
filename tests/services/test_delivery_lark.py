@@ -21,3 +21,16 @@ def test_multicard_page_label():
     titles = [c["header"]["title"]["content"] for c in cards]
     assert titles[0].endswith(f"（1/{len(cards)}）")
     assert titles[-1].endswith(f"（{len(cards)}/{len(cards)}）")
+
+
+def test_card_v2_markdown_and_table():
+    from services.delivery import feishu_build_cards_v2
+    md = "# 每日素材 Review\n\n**数据范围：** 今天\n\n## 一、列表\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+    cards = feishu_build_cards_v2(md, "每日素材 Review")
+    assert cards[0]["schema"] == "2.0"
+    tags = [e["tag"] for e in cards[0]["body"]["elements"]]
+    assert "markdown" in tags and "table" in tags
+    # H1 不在正文（在 header）
+    for e in cards[0]["body"]["elements"]:
+        if e["tag"] == "markdown":
+            assert not e["content"].startswith("# 每日素材 Review")
