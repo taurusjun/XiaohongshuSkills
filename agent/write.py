@@ -10,7 +10,7 @@ import re
 import sys
 
 from agent import llm
-from services import news as _news, paths, precheck as _pc, dunhao as _dh
+from services import news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana, format_route as _fr, routing as _route
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
@@ -72,12 +72,10 @@ def pick_candidates(n=3):
 
 # ---------------- 阶段3：编写（体裁+字数路由） ----------------
 def compose(cand, retry_ctx=None, max_tokens=16000):
-    msgs = [{"role": "system", "content": SYS + "\n\n=== SKILL ===\n" + _read(SKILL_FILE)}]
+    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
     cj = cand.get("content_ja") or ""
-    need_export = len(cj) > 3000          # 长文 export
-    tgt = f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文, pMethod=export)" if need_export \
-        else ("≥850字且≥2个##(story)" if (cand.get("format") == "story" and cand.get("is_long_form") == 1)
-              else "≤900字且无##(news)")
+    _r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
+    tgt = f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文 export)" if _r["publish_method"] == "export" else _r["note"]
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{tgt}。\n"
             "判断该素材走 xhs 还是 gzh（男团/男偶像的**产业·厂牌·销量·战略·行业分析**类→gzh；"
@@ -135,7 +133,7 @@ def write_one(cand, dry_run=True):
     score = {"total": 0}
     attempts = 0
     cj = cand.get("content_ja") or ""
-    pmethod = "export" if len(cj) > 3000 else "post"
+    pmethod = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))["publish_method"]
     spec = {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}
 
     while attempts < 3:
@@ -151,7 +149,8 @@ def write_one(cand, dry_run=True):
             ctx = "未达标，请修正后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
         channel, title, body, related = compose(cand, retry_ctx=ctx)
         body, _ = _dh.fix_text(body)                 # 机械修复顿号（SKILL 规定）
-        title = _trim_title(title)                   # 标题机械改短 <=20
+        body = _kana.replace(body)                   # 机械替换假名专名
+        title = _kana.replace(_trim_title(title))    # 标题假名替换 + 改短 <=20
         mech = _pc.check_text(f"## {title}\n{body}", spec)
         if mech["problems"]:
             continue
@@ -160,6 +159,10 @@ def write_one(cand, dry_run=True):
         if (score.get("total") or 0) >= need:
             break
 
+    try:
+        _kana.log_pending(body, note=cand["key"][:12])   # 记录新抓到的日文专名（供人工审核）
+    except Exception:
+        pass
     need = 8 if cand.get("format") == "story" else 6
     ok = not mech["problems"] and (score.get("total") or 0) >= need
     rk = _resolve_keys(related)
