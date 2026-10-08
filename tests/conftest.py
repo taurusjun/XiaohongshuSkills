@@ -32,6 +32,7 @@ import sys as _sys
 from pathlib import Path as _Path
 _ROOT = _Path(__file__).resolve().parent.parent
 _SKILL_SCRIPTS = _ROOT / "skills" / "creative" / "xhs-write-publish-flow" / "scripts"
-for _p in (_ROOT, _ROOT / "scripts", _SKILL_SCRIPTS):
+_MCP_SERVERS = _ROOT / "mcp_servers"
+for _p in (_ROOT, _ROOT / "scripts", _SKILL_SCRIPTS, _MCP_SERVERS):
     if str(_p) not in _sys.path:
         _sys.path.insert(0, str(_p))

@@ -13,6 +13,13 @@
         "mcp_servers/xhs_llm_server.py"
       ],
       "cwd": "/Users/user/PG/XiaohongshuSkills"
+    },
+    "xhs-services": {
+      "command": ".venv/bin/python",
+      "args": [
+        "mcp_servers/xhs_services_server.py"
+      ],
+      "cwd": "/Users/user/PG/XiaohongshuSkills"
     }
   }
 }
