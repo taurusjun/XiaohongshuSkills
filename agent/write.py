@@ -73,31 +73,40 @@ def pick_candidates(n=3):
 
 
 # ---------------- 阶段3：编写（体裁+字数路由） ----------------
-def compose(cand, prev=None, retry_ctx=None, max_tokens=16000):
-    """prev=(title,body,channel) 时基于上一版修改。返回 (channel,title,body,related)。"""
-    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
+def prepare_package(cand):
+    """阶段1 写前准备（机械）：组装「写作包」— 全文原文 + 同事件关联 + 相关知识 + 体裁/字数路由。"""
     cj = cand.get("content_ja") or ""
-    _r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
-    tgt = f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文 export)" if _r["publish_method"] == "export" else _r["note"]
-    user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
-            f"lf={cand.get('is_long_form')}；长度要求：{tgt}。\n"
-            "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。related 放同事件其它素材 key 前缀。\n\n"
-            f"=== content_ja（原文全文）===\n{cj[:9000]}")
+    r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
+    target = (f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文 export)"
+              if r["publish_method"] == "export" else r["note"])
+    refs = related_text = ""
     try:
-        rel = _refs.relevant(cand.get("title") or "")
-        if rel:
-            user += "\n\n=== 相关规范/案例（节选）===\n" + rel
+        refs = _refs.relevant(cand.get("title") or "")
     except Exception:
         pass
     try:
         sibs = _rel.find_related(cand["key"], cand.get("title") or "")
-        if sibs:
-            user += "\n\n=== 同事件关联素材（可合并，key 前缀放 related）===\n" + "\n".join(
-                f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:400]}"
-                for s in sibs)
+        related_text = "\n".join(
+            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:400]}" for s in sibs)
     except Exception:
         pass
+    return {"content_ja": cj[:9000], "target": target, "refs": refs,
+            "related_text": related_text, "method": r["publish_method"],
+            "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
+
+
+def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
+    """阶段3 撰写（LLM）：只吃写作包 pkg。prev=(title,body,channel) 时基于上一版修改。"""
+    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
+    user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
+            f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n"
+            "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。related 放同事件其它素材 key 前缀。\n\n"
+            f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
+    if pkg["refs"]:
+        user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
+    if pkg["related_text"]:
+        user += "\n\n=== 同事件关联素材（可合并）===\n" + pkg["related_text"]
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
@@ -163,9 +172,8 @@ def write_one(cand, dry_run=True):
     score = {"total": 0}
     attempts = 0
     need = 8
-    cj = cand.get("content_ja") or ""
-    pmethod = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))["publish_method"]
-    spec = {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}
+    pkg = prepare_package(cand)                 # 阶段1：写前准备
+    pmethod, spec = pkg["method"], pkg["spec"]
 
     while attempts < 3:
         attempts += 1
@@ -177,7 +185,7 @@ def write_one(cand, dry_run=True):
                 fb.append(f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
             ctx = "基于上一版**修改**（不要整篇重写），修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
             prev = (title, body, channel)
-        channel, title, body, related = compose(cand, prev=prev, retry_ctx=ctx)
+        channel, title, body, related = compose(cand, pkg, prev=prev, retry_ctx=ctx)
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
