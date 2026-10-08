@@ -248,6 +248,9 @@ def run(n=3, deliver=False, dry_run=False):
     if deliver:
         from services.delivery import deliver as _d
         okr = [r for r in results if r["ok"]]          # 只交付达标稿
+        if not okr:
+            print("[delivery] 本次 0 篇达标，跳过飞书推送（无内容可审核）")
+            return results
         lines = [f"# 写稿结果（达标入库 {len(okr)} 篇）", ""]
         for r in okr:
             lines += [f"## {r['title']}",
