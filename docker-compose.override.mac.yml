@@ -1,0 +1,17 @@
+# Mac (colima) 专属 override —— 用命名卷"遮挡"macOS 的 .venv/data/tmp/logs，
+# 隔离可变状态，绝不覆盖生产 venv、绝不写生产 DB。
+# 用法：docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d
+services:
+  xhs:
+    platform: linux/amd64
+    volumes:
+      - xhs-venv:/home/user/PG/XiaohongshuSkills/.venv
+      - xhs-data:/home/user/PG/XiaohongshuSkills/data
+      - xhs-logs:/home/user/PG/XiaohongshuSkills/logs
+      - xhs-tmp:/home/user/PG/XiaohongshuSkills/tmp
+
+volumes:
+  xhs-venv:
+  xhs-data:
+  xhs-logs:
+  xhs-tmp:

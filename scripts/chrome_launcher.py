@@ -15,6 +15,7 @@ import sys
 import time
 import socket
 import subprocess
+import shlex
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,9 @@ _current_account: Optional[str] = None
 
 def get_chrome_path() -> str:
     """Find Chrome executable on Windows/macOS/Linux."""
+    env_bin = os.environ.get("CHROME_BIN")
+    if env_bin and os.path.isfile(env_bin):
+        return env_bin
     candidates = []
 
     if sys.platform == "win32":
@@ -150,7 +154,11 @@ def launch_chrome(
         "--remote-allow-origins=*",  # 允许 WebSocket 连接
     ]
 
-    if headless:
+    # 容器/可移植：额外 flags 从环境变量注入
+    cmd += shlex.split(os.environ.get("CHROME_EXTRA_FLAGS", ""))
+
+    # CHROME_FORCE_HEADED=1 时忽略调用方传入的 headless（Xvfb+headed 保活 9222）
+    if headless and os.environ.get("CHROME_FORCE_HEADED") != "1":
         cmd.append("--headless=new")
 
     # 代理配置：proxy 参数优先，其次读 yahoo_conf
@@ -258,6 +266,17 @@ def kill_chrome(port: int = CDP_PORT):
         except Exception:
             pass
 
+    # Strategy 4: POSIX fallback — 按 remote-debugging-port 匹配 pkill（macOS/Linux）
+    if sys.platform != "win32" and is_port_open(port):
+        try:
+            subprocess.run(
+                ["pkill", "-f", f"remote-debugging-port={port}"],
+                capture_output=True, timeout=5,
+            )
+            print(f"[chrome_launcher] Sent pkill for port {port}.")
+        except Exception:
+            pass
+
     # Wait for port to be released
     deadline = time.time() + 5
     while time.time() < deadline:
@@ -337,9 +356,11 @@ def ensure_proxy_chrome(proxy_url: Optional[str] = None) -> bool:
         return True
     from config.yahoo_conf import PROXY_URL
     effective_proxy = proxy_url or PROXY_URL
-    profile_dir = os.path.join(
-        os.path.expanduser("~"), "Google", "Chrome", "XiaohongshuProfiles", "proxy"
+    profiles_base = os.environ.get(
+        "XHS_PROFILES_BASE",
+        os.path.join(os.path.expanduser("~"), "Google", "Chrome", "XiaohongshuProfiles"),
     )
+    profile_dir = os.path.join(profiles_base, "proxy")
     try:
         chrome_path = get_chrome_path()
         cmd = [
@@ -349,9 +370,14 @@ def ensure_proxy_chrome(proxy_url: Optional[str] = None) -> bool:
             "--no-first-run",
             "--no-default-browser-check",
             "--remote-allow-origins=*",
-            f"--proxy-server={effective_proxy}",
-            "--headless=new",
         ]
+        cmd += shlex.split(os.environ.get("CHROME_EXTRA_FLAGS", ""))
+        if effective_proxy:
+            cmd.append(f"--proxy-server={effective_proxy}")
+        else:
+            cmd.append("--no-proxy-server")
+        if os.environ.get("PROXY_CHROME_HEADLESS", "1") == "1":
+            cmd.append("--headless=new")
         print(f"[chrome_launcher] Launching proxy Chrome on port {CDP_PORT_PROXY} "
               f"(proxy={effective_proxy})...")
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

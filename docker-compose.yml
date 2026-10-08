@@ -1,0 +1,24 @@
+# xhs 容器 —— base（可移植，Linux 云与 Mac 共用）
+# 宿主差异只出现在 docker-compose.override.<host>.yml 与 .env
+services:
+  xhs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: xhs:dev
+    container_name: xhs
+    env_file:
+      - ops/env/xhs.env
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ${XHS_PROJECT_DIR}:/home/user/PG/XiaohongshuSkills
+      - ${XHS_PROFILES_HOST}:/data/chrome-profiles
+      - ${XHS_BACKUP_HOST}:/backup
+    ports:
+      - "127.0.0.1:5000:5000"    # admin UI
+      - "127.0.0.1:5001:5001"    # MCP (http)
+      - "127.0.0.1:9222:9222"    # CDP（只绑 127.0.0.1）
+    shm_size: "1g"
+    stop_grace_period: 60s
+    restart: unless-stopped

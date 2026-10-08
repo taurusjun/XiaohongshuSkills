@@ -1,0 +1,22 @@
+# 容器内 Python 依赖（权威列表）
+# 不复用被 Hermes 污染的 .venv（163 包，含 git+ 依赖）
+# = requirements.txt 对齐 + 补 web/mcp 层此前"只在 .venv 里碰巧存在"的包
+requests>=2.28.0
+websocket-client>=1.9.0
+instaloader>=4.15.0
+yt-dlp>=2026.3.0
+Pillow>=10.0.0
+deep-translator>=1.11.0
+python-dotenv>=1.0.0
+scipy>=1.11.0
+pandas>=2.0.0
+fastmcp>=0.9.0
+# --- 补：web / mcp 层 ---
+Flask>=3.1.0
+beautifulsoup4>=4.12.0
+Markdown>=3.5
+numpy>=1.26
+openpyxl>=3.1
+tweepy>=4.14
+urllib3>=2.0
+websockets>=12.0

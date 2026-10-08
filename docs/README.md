@@ -17,7 +17,8 @@
 
 | 文档 | 内容 |
 |---|---|
-| [docker-migration-plan.md](docker-migration-plan.md) | **方案（未实施）**：从 macOS 迁到 Linux Docker —— 双容器拓扑、扫码登录接 admin UI、Hermes 一并迁移、代码改造清单、备份改造、迁移步骤与风险清单 |
+| [docker-containerization-plan.md](docker-containerization-plan.md) | **现行方案（未实施）**：Mac(colima) 先容器化跑通、镜像原样迁 Linux 云；含 70 资源评估、可移植契约、能力/大脑解耦、扫码 POC、重构路线图 |
+| [docker-migration-plan.md](docker-migration-plan.md) | **历史（被上取代）**：从 macOS 迁到 Linux Docker —— 双容器拓扑、扫码登录接 admin UI、Hermes 一并迁移、代码改造清单、备份改造、迁移步骤与风险清单 |
 
 ## 其它
 

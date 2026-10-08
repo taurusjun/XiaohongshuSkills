@@ -37,6 +37,7 @@ class _ConnectionContext:
         self._conn.row_factory = sqlite3.Row
         if not is_memory:
             self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.execute("PRAGMA foreign_keys=OFF")
 
     def execute(self, sql, params=()):

@@ -1,0 +1,17 @@
+# 安全关键：密钥与数据绝不进镜像
+.venv/
+.venv
+.git/
+.git
+scripts/.env
+config/wechat_conf.json
+config/accounts.json
+data/
+tmp/
+logs/
+*.db
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+*.log

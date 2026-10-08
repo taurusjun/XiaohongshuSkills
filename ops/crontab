@@ -1,0 +1,16 @@
+# xhs 容器内定时任务（Debian cron，以 user 运行；cron 不继承容器 env，故此处显式声明）
+SHELL=/bin/bash
+PATH=/home/user/PG/XiaohongshuSkills/.venv/bin:/usr/local/bin:/usr/bin:/bin
+TZ=Asia/Shanghai
+DISPLAY=:99
+SQLITE_PATH=/home/user/PG/XiaohongshuSkills/data/news_dev.db
+XHS_WEBAPI_BASE=http://127.0.0.1:5000
+
+# fetch-runner 每天 00:30（0-30min 随机打散）
+30 0 * * * cd /home/user/PG/XiaohongshuSkills && sleep $((RANDOM%1800)) && /opt/ops/wait_idle.sh && .venv/bin/python scripts/fetch_runner.py >> logs/fetch_runner.log 2>&1
+# metrics-collector 每小时 :07（避开整点）
+7 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python scripts/metrics_collector.py >> logs/metrics.log 2>&1
+# reflection-runner 周日 23:00
+0 23 * * 0 cd /home/user/PG/XiaohongshuSkills && .venv/bin/python scripts/reflection_runner.py >> logs/reflection.log 2>&1
+# db-backup 每小时 :17
+17 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
