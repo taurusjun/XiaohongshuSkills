@@ -73,24 +73,27 @@ def pick_candidates(n=3):
 
 
 # ---------------- 阶段3：编写（体裁+字数路由） ----------------
-def compose(cand, retry_ctx=None, max_tokens=16000):
+def compose(cand, prev=None, retry_ctx=None, max_tokens=16000):
+    """prev=(title,body,channel) 时基于上一版修改。返回 (channel,title,body,related)。"""
     msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
     cj = cand.get("content_ja") or ""
     _r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
     tgt = f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文 export)" if _r["publish_method"] == "export" else _r["note"]
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{tgt}。\n"
-            "判断该素材走 xhs 还是 gzh（男团/男偶像的**产业·厂牌·销量·战略·行业分析**类→gzh；"
-            "粉丝向爆料/日常/综艺花絮→xhs）。\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。给出 related（同事件其它素材key前缀，可空）。\n\n"
+            "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。related 放同事件其它素材 key 前缀。\n\n"
             f"=== content_ja ===\n{cj[:3500]}")
     try:
         rel = _refs.relevant(cand.get("title") or "")
         if rel:
-            user += "\n\n=== 相关规范/案例（节选，供参考）===\n" + rel
+            user += "\n\n=== 相关规范/案例（节选）===\n" + rel
     except Exception:
         pass
     msgs.append({"role": "user", "content": user})
+    if prev and prev[0]:
+        msgs.append({"role": "assistant", "content": json.dumps(
+            {"key": cand["key"], "channel": prev[2], "title": prev[0], "body": prev[1]}, ensure_ascii=False)})
     if retry_ctx:
         msgs.append({"role": "user", "content": retry_ctx})
     raw = llm.chat(msgs, max_tokens=max_tokens)
@@ -98,7 +101,7 @@ def compose(cand, retry_ctx=None, max_tokens=16000):
     return d.get("channel", "xhs"), d.get("title", ""), d.get("body", ""), d.get("related") or []
 
 
-# ---------------- 阶段5：5 维内容评分 ----------------
+
 def score_content(title, body, max_tokens=4000):
     sysd = "你是中文内容评审。只输出严格 JSON：{\"爆发点\":n,\"情绪价值\":n,\"信息增量\":n,\"内容深度\":n,\"标题质量\":n,\"total\":n}（各0-2）。"
     usr = _read(REVIEW_PROMPT)[:3000] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
@@ -144,69 +147,66 @@ def _trim_title(title, limit=20):
 
 
 def write_one(cand, dry_run=True):
-    """阶段3~5：编写→(机械门禁)→(5维评分)→改稿；返回结果 dict。"""
+    """阶段3~5：编写→门禁(precheck+renwei/gzh)→评分(按渠道)→改稿(最多3轮,基于上一版)。"""
     title = body = ""
     channel = "xhs"
     related = []
     mech = {"problems": ["未开始"]}
     score = {"total": 0}
     attempts = 0
+    need = 8
     cj = cand.get("content_ja") or ""
     pmethod = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))["publish_method"]
     spec = {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}
 
     while attempts < 3:
         attempts += 1
-        ctx = None
+        ctx, prev = None, None
         if attempts > 1:
             fb = list(mech.get("problems") or [])
-            _need = 8 if cand.get("format") == "story" else 6
-            if (score.get("total") or 0) < _need:
-                low = [k for k, v in score.items()
-                       if isinstance(v, (int, float)) and k != "total" and v < 2]
-                fb.append(f"内容评分 {score.get('total')}/10 偏低，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
-            ctx = "未达标，请修正后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
-        channel, title, body, related = compose(cand, retry_ctx=ctx)
-        body, _ = _dh.fix_text(body)                 # 机械修复顿号（SKILL 规定）
-        body = _kana.replace(body)                   # 机械替换假名专名
-        title = _kana.replace(_trim_title(title))    # 标题假名替换 + 改短 <=20
+            if (score.get("total") or 0) < need:
+                low = [k for k, v in score.items() if isinstance(v, (int, float)) and k != "total" and v < 2]
+                fb.append(f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
+            ctx = "基于上一版**修改**（不要整篇重写），修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
+            prev = (title, body, channel)
+        channel, title, body, related = compose(cand, prev=prev, retry_ctx=ctx)
+        body, _ = _dh.fix_text(body)
+        body = _kana.replace(body)
+        title = _kana.replace(_trim_title(title))
         mech = _pc.check_text(f"## {title}\n{body}", spec)
-        if mech["problems"]:
+        gate = list(mech["problems"]) + (_gz.check(title, body) if channel == "gzh" else _rw.check(body))
+        mech["problems"] = gate
+        need = 7 if channel == "gzh" else (8 if cand.get("format") == "story" else 6)
+        if gate:
             continue
-        score = score_content(title, body)
-        need = 8 if cand.get("format") == "story" else 6     # story≥8 / news≥6
+        score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
         if (score.get("total") or 0) >= need:
             break
 
     try:
-        _kana.log_pending(body, note=cand["key"][:12])   # 记录新抓到的日文专名（供人工审核）
+        _kana.log_pending(body, note=cand["key"][:12])
     except Exception:
         pass
-    need = 8 if cand.get("format") == "story" else 6
     ok = not mech["problems"] and (score.get("total") or 0) >= need
     rk = _resolve_keys(related)
     if ok and not dry_run:
         if channel == "gzh":
             _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,
-                                            "channel": "gzh", "preselected": 0, "publish_xhs": 0,
-                                            "related_keys": rk})
+                                            "channel": "gzh", "preselected": 0, "publish_xhs": 0, "related_keys": rk})
         else:
             _news.update_news(cand["key"], {"rewritten_title": title, "rewritten_content": body,
                                             "publish_mode": "rewritten", "publish_method": pmethod,
                                             "related_keys": rk, "preselected": 1, "publish_xhs": 0})
-        # 阶段4：三步验证（回读）
         got = _news.get_by_key(cand["key"]) or {}
-        if channel == "gzh":
-            ok = got.get("wechat_title") == title and bool(got.get("wechat_content"))
-        else:
-            ok = got.get("rewritten_title") == title and len(got.get("rewritten_content") or "") > 50
+        ok = (got.get("wechat_title") == title and bool(got.get("wechat_content"))) if channel == "gzh" \
+            else (got.get("rewritten_title") == title and len(got.get("rewritten_content") or "") > 50)
     return {"key": cand["key"][:12], "full_key": cand["key"], "ok": ok, "attempts": attempts,
             "channel": channel, "title": title, "text": body, "body": mech.get("body_len"),
             "h2": mech.get("h2"), "kana": mech.get("kana"), "method": pmethod,
             "score": score.get("total"), "related": rk, "problems": mech.get("problems") or []}
 
 
-# ---------------- 阶段6：待发布推荐 ----------------
+
 def recommend_and_schedule(n=5, seed=None):
     import datetime as dt
     import random
@@ -247,17 +247,17 @@ def run(n=3, deliver=False, dry_run=False):
 
     if deliver:
         from services.delivery import deliver as _d
-        lines = [f"# 写稿结果（{passed}/{len(results)} 通过）", ""]
-        for r in results:
-            lines += [f"## {r['title']}", f"`{r['key']}` {r['channel']} {'✅' if r['ok'] else '❌'}"
-                      f"（{r['method']}，{r['body']}字，评分{r['score']}/10）", ""]
-            lines.append(r["text"] if r["ok"]
-                         else "未达标：\n- " + "\n- ".join(
-                             r["problems"] or [f"内容评分 {r['score']}/10 低于门槛"]))
-            lines += ["", "---", ""]
+        okr = [r for r in results if r["ok"]]          # 只交付达标稿
+        lines = [f"# 写稿结果（达标入库 {len(okr)} 篇）", ""]
+        for r in okr:
+            lines += [f"## {r['title']}",
+                      f"`{r['key']}` {r['channel']}（{r['method']}，{r['body']}字，评分{r['score']}/10）",
+                      "", r["text"], "", "---", ""]
         if sched:
             lines += ["# 待发布推荐（明天 09/12/15/18/20）", ""]
             lines += [f"- `{x['key']}` **{x['time']}**  {x['title']}" for x in sched]
+        if len(results) - len(okr):
+            lines += ["", f"> 另有 {len(results)-len(okr)} 篇未达标（未入库，不列出）。"]
         print("[delivery]", _d("\n".join(lines), name="write-result.md"))
     return results
 
