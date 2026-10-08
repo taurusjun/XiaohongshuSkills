@@ -3,11 +3,13 @@
 取代 Hermes 的 skill_view + cron。任务定义见 TASKS；提示词=仓库里的 SKILL.md。
 """
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
 from agent import llm
+from agent import tools as _tools
 from services import paths
 
 TASKS = {
@@ -27,7 +29,7 @@ TASKS = {
     },
 }
 
-__all__ = ["build_messages", "run_task", "main"]
+__all__ = ["build_messages", "run_task", "run_agent", "main"]
 
 
 def load_skill_text(rel_path: str) -> str:
@@ -53,12 +55,41 @@ def run_task(task: str, context: str = "", chat_fn=None) -> str:
     return (chat_fn or llm.chat)(messages)
 
 
+def run_agent(task: str, context: str = "", chat_raw_fn=None, max_iters: int = 8,
+              tools=None) -> str:
+    """函数调用循环：LLM 可反复调用 tools（services 的能力），直到给出最终文本。"""
+    chat_raw_fn = chat_raw_fn or llm.chat_raw
+    schemas = _tools.TOOL_SCHEMAS if tools is None else tools
+    messages = build_messages(task, context)
+    for _ in range(max_iters):
+        msg = chat_raw_fn(messages, tools=schemas)
+        if not isinstance(msg, dict):
+            return str(msg)
+        msg.setdefault("role", "assistant")
+        messages.append(msg)
+        tcs = msg.get("tool_calls")
+        if not tcs:
+            return msg.get("content", "") or ""
+        for tc in tcs:
+            fn = (tc.get("function") or {})
+            name = fn.get("name", "")
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except Exception:
+                args = {}
+            result = _tools.dispatch(name, args)
+            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""),
+                             "content": json.dumps(result, ensure_ascii=False)})
+    return messages[-1].get("content", "") or ""
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     ap = argparse.ArgumentParser(description="项目内置编排器")
     ap.add_argument("--task", required=True, choices=sorted(TASKS))
     ap.add_argument("--context-file", default=None)
     ap.add_argument("--dry-run", action="store_true", help="只打印组装好的 prompt，不调 LLM")
+    ap.add_argument("--agent", action="store_true", help="用工具循环（function calling）而非单轮")
     ap.add_argument("--deliver", action="store_true", help="把结果交付（本地落盘+按需飞书）")
     ap.add_argument("--name", default="latest.md")
     args = ap.parse_args(argv)
@@ -75,7 +106,7 @@ def main(argv=None) -> int:
         print(msgs[1]["content"])
         return 0
 
-    out = run_task(args.task, context)
+    out = run_agent(args.task, context) if args.agent else run_task(args.task, context)
     print(out)
     if args.deliver:
         from services.delivery import deliver

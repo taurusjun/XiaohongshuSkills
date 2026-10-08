@@ -51,3 +51,23 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=300) ->
     with _NO_PROXY_OPENER.open(req, timeout=timeout) as resp:
         data = json.loads(resp.read())
     return data["choices"][0]["message"]["content"]
+
+
+def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None, timeout=300) -> dict:
+    """返回完整 assistant message（含 tool_calls），供 function-calling 循环使用。"""
+    url = _base_url() + "/chat/completions"
+    if max_tokens is None:
+        max_tokens = int(os.environ.get("LITELLM_MAX_TOKENS", "3000") or 3000)
+    body = {"model": model or os.environ.get("LITELLM_MODEL", ""), "messages": messages,
+            "temperature": temperature, "max_tokens": max_tokens}
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {os.environ.get('LITELLM_API_KEY', '')}"},
+        method="POST")
+    with _NO_PROXY_OPENER.open(req, timeout=timeout) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]
