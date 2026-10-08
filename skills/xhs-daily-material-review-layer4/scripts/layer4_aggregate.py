@@ -22,7 +22,8 @@ import sys
 import urllib.request
 from collections import Counter, defaultdict
 
-BASE = "http://127.0.0.1:5000/api/news"
+import os as _os
+BASE = (_os.environ.get("XHS_API_BASE") or _os.environ.get("XHS_WEBAPI_BASE") or "http://127.0.0.1:5000") + "/api/news"
 LIMIT = 250
 MAX_PAGES = 16
 

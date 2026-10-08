@@ -111,3 +111,100 @@ def main_write(argv=None) -> int:
     print(f"Body length: {len(body)} chars")
     print(f"Key: {key}")
     return 0
+
+def get_key(keyword: str, db: str | None = None, limit: int = 20):
+    """查完整 key + 改写状态 + content_ja 长度（迁移自 get-key.sh）。"""
+    import sqlite3
+    from services import paths
+    db = db or paths.sqlite_path()
+    conn = sqlite3.connect(db)
+    try:
+        if keyword == "全部":
+            sql = ("SELECT key, substr(title,1,40), "
+                   "CASE WHEN rewritten_title!='' THEN '已写' ELSE '未写' END, "
+                   "length(content_ja), COALESCE(preselected,0), COALESCE(publish_xhs,0), "
+                   "substr(rewritten_content,1,50) FROM news "
+                   "WHERE title!='' AND (publish_xhs IS NULL OR publish_xhs=0) "
+                   "AND status!='archived' ORDER BY id DESC LIMIT ?")
+            return [tuple(r) for r in conn.execute(sql, (limit,))]
+        sql = ("SELECT key, substr(title,1,40), "
+               "CASE WHEN rewritten_title!='' THEN '已写' ELSE '未写' END, "
+               "length(content_ja), COALESCE(preselected,0), COALESCE(publish_xhs,0), "
+               "substr(rewritten_content,1,50) FROM news "
+               "WHERE title LIKE ? OR key LIKE ? ORDER BY id DESC LIMIT ?")
+        like = f"%{keyword}%"
+        return [tuple(r) for r in conn.execute(sql, (like, like, limit))]
+    finally:
+        conn.close()
+
+
+def main_getkey(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        print("用法: get-key.sh <关键词>   （全部=最近50条未发布素材）")
+        return 1
+    rows = get_key(argv[0])
+    cols = ["key", "title40", "改写", "ja_len", "pre", "pub", "rc50"]
+    try:
+        print("\t".join(cols))
+        for r in rows:
+            print("\t".join(str(x) if x is not None else "" for x in r))
+    except BrokenPipeError:
+        pass
+    return 0
+
+
+def verify_rewrite(key: str, api_base: str | None = None, fetch=None) -> dict:
+    """入库合规检查（迁移自 verify_rewrite.sh）。返回检查结果 dict。"""
+    d = (fetch or get_news)(key, api_base)
+    rt = d.get("rewritten_title") or ""
+    rc = d.get("rewritten_content") or ""
+    ps = d.get("preselected")
+    px = d.get("publish_xhs")
+    pm = d.get("publish_mode") or ""
+    rk = d.get("related_keys") or ""
+    ch = d.get("channel") or ""
+    checks = {
+        "标题不以#开头": not rc.startswith("#"),
+        "正文开头不是标题": not (rc[:len(rt)] == rt and rt),
+        "preselected": ps == 1,
+        "publish_xhs": px == 1,
+        "publish_mode": pm,
+        "channel": ch,
+    }
+    return {"title": rt, "body_len": len(rc), "preselected": ps, "publish_xhs": px,
+            "publish_mode": pm, "channel": ch, "related_keys": rk, "checks": checks}
+
+
+def main_verify(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        print("用法: verify_rewrite.sh <完整40位key>")
+        return 1
+    key = argv[0]
+    r = verify_rewrite(key)
+    print("=== 入库验证 ===")
+    print(f"Key: {key}")
+    print()
+    print(f"标题: {r['title']}")
+    print(f"正文字数: {r['body_len']}")
+    print(f"preselected: {r['preselected']}")
+    print(f"publish_xhs: {r['publish_xhs']}")
+    print(f"publish_mode: {r['publish_mode']}")
+    print(f"channel: {r['channel']}")
+    print(f"related_keys: {r['related_keys'][:60]}")
+    print()
+    c = r["checks"]
+    print(f"检查1 {'✅ 正文不以标题行开头' if c['标题不以#开头'] else '❌ 正文以标题行开头'}")
+    print(f"检查2 {'✅ 正文开头不是标题' if c['正文开头不是标题'] else '❌ 标题混入正文'}")
+    print(f"检查3 {'✅ preselected=1' if c['preselected'] else '⚠️ preselected=' + str(r['preselected'])}")
+    print(f"检查4 {'✅ publish_xhs=1' if c['publish_xhs'] else '⚠️ publish_xhs=' + str(r['publish_xhs'])}")
+    print(f"检查5 {'✅ publish_mode=' + r['publish_mode'] if r['publish_mode'] else 'ℹ️ publish_mode=normal（默认）'}")
+    if r["channel"] == "gzh":
+        print("检查6 ✅ channel=gzh（公众号稿）")
+    elif r["channel"] == "":
+        print("检查6 ℹ️ channel为空（默认小红书）")
+    else:
+        print(f"检查6 ℹ️ channel={r['channel']}")
+    return 0
+
