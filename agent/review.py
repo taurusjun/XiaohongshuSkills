@@ -12,7 +12,8 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-__all__ = ["compact_rows", "prepare_package", "persist_related", "run", "main"]
+__all__ = ["compact_rows", "prepare_package", "persist_related_mapping",
+           "persist_related_mechanical", "run", "main"]
 
 
 def _read(rel):
@@ -44,8 +45,58 @@ def prepare_package(date):
     return {"rows": rows, "prev": prev, "clusters": ctxt}
 
 
-def persist_related(date, gap=3):
-    """review 前置：把「同事件聚类」（含前 gap 日、带日期窗口）写入每篇的 related_keys。"""
+def _resolve_keys(prefixes):
+    import sqlite3
+    out = []
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        for pfx in prefixes or []:
+            r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (str(pfx)[:40],)).fetchone()
+            if r:
+                out.append(r[0])
+    finally:
+        conn.close()
+    return out
+
+
+def _extract_related_json(text):
+    """取 LLM 输末的 ```json {"related":{...}}``` 块 → (mapping, 去掉该块后的文本)。"""
+    import re
+    if not text:
+        return None, text
+    for mm in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
+        try:
+            d = json.loads(mm.group(1))
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(d, dict) and "related" in d:
+            return (d.get("related") or {}), text[:mm.start()] + text[mm.end():]
+    return None, text
+
+
+def persist_related_mapping(mapping, clear_keys=None):
+    """review 前置（LLM 确认版）：写入 {key前缀:[同事件key前缀,...]}（覆盖、去自指/去重）；
+    clear_keys 里「当日」且未被 LLM 列入的行 → 清空 related_keys（纠正旧机械误连）。"""
+    changed = seen_cleared = 0
+    seen = set()
+    for kp, sibs in (mapping or {}).items():
+        kfull = _resolve_keys([kp])
+        if not kfull:
+            continue
+        seen.add(kfull[0])
+        sibfull = [x for x in _resolve_keys(sibs) if x and x != kfull[0]]
+        sibfull = list(dict.fromkeys(sibfull))
+        _news.update_news(kfull[0], {"related_keys": ",".join(sibfull)})
+        changed += 1
+    for k in (clear_keys or []):
+        if k not in seen and (_news.get_by_key(k) or {}).get("related_keys"):
+            _news.update_news(k, {"related_keys": ""})
+            seen_cleared += 1
+    return len(mapping or {}), changed, seen_cleared
+
+
+def persist_related_mechanical(date, gap=3):
+    """机械兜底：LLM 未给关联 JSON 时，用近期窗口同事件聚类写入。"""
     import datetime as dt
     from services import cluster as _cl
     try:
@@ -62,7 +113,6 @@ def persist_related(date, gap=3):
         for x in g:
             sib = [k for k in ids if k != x["key"]]
             if sib:
-                # review 是关联的权威来源：覆盖写入（write 阶段只读沿用）
                 _news.update_news(x["key"], {"related_keys": ",".join(sib)})
                 changed += 1
     return len(groups), changed
@@ -81,13 +131,20 @@ def build_messages(date, pkg):
 def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
+    part1 = build_archive(date, single_table=True)          # 一、单张合并表
+    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 关联JSON
+    mapping, out = _extract_related_json(out)
     try:
-        ng, nc = persist_related(date)
-        print(f"[related] 同事件聚类 {ng} 组 → related_keys 写入 {nc} 篇")
+        if mapping:
+            scope = [r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)]
+            nm, nc, nclr = persist_related_mapping(mapping, clear_keys=scope)
+            print(f"[related] LLM 确认 {nm} 组 → 写入 {nc} 篇 / 清空旧关联 {nclr} 篇")
+        else:
+            ng, nc = persist_related_mechanical(date)
+            print(f"[related] 无 LLM 关联JSON，机械兜底 {ng} 组 → 写入 {nc} 篇")
     except Exception as e:  # noqa: BLE001
         print(f"[related] 跳过: {e}")
-    part1 = build_archive(date, single_table=True)          # 一、单张合并表
-    rest = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)  # 二~六
+    rest = out
     # 裁掉 LLM 可能多输出的 H1/元信息/「一、」（已由系统生成），只保留从「## 二、」起
     idx = rest.find("## 二、")
     if idx > 0:
