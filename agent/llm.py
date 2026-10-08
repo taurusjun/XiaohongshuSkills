@@ -31,7 +31,16 @@ def _base_url() -> str:
     return url
 
 
-def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=300) -> str:
+def _apply_thinking(body: dict, thinking):
+    """注入 {"thinking": {"type": enabled|disabled}}；默认 disabled（避免推理占用输出预算）。"""
+    if thinking is None:
+        thinking = os.environ.get("LITELLM_THINKING", "disabled")
+    if thinking:
+        body["thinking"] = {"type": thinking}
+    return body
+
+
+def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=300, thinking=None) -> str:
     url = _base_url() + "/chat/completions"
     # 推理模型会把 token 花在 reasoning_content 上；给足预算（默认取 LITELLM_MAX_TOKENS）
     if max_tokens is None:
@@ -42,6 +51,7 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=300) ->
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    _apply_thinking(body, thinking)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json",
@@ -53,7 +63,7 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=300) ->
     return data["choices"][0]["message"]["content"]
 
 
-def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None, timeout=300) -> dict:
+def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None, timeout=300, thinking=None) -> dict:
     """返回完整 assistant message（含 tool_calls），供 function-calling 循环使用。"""
     url = _base_url() + "/chat/completions"
     if max_tokens is None:
@@ -63,6 +73,7 @@ def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None,
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
+    _apply_thinking(body, thinking)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json",
