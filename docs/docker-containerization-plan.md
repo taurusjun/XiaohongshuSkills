@@ -362,3 +362,18 @@ docker run --rm hello-world     # EXIT=0 ✓
 `scripts/cdp_publish.py` 6002 行，按职责切分（用户已同意按此建议）：
 1. `xhs_selectors.py`（常量/选择器）→ 2. `cdp_login.py`（登录/二维码/cookie 缓存，mixin）→ 3. `cdp_feed.py`（搜索/详情/评论）→ 4. `cdp_publish_flow.py`（填表/发布）。
 先加行为特征化测试护栏，再逐块移动；每步跑 parity。
+
+### 2026-10-08 · P6 拆分完成（cdp_publish 6088 -> 1196 行，↓80%）
+
+| 模块 | 行数 | 职责 |
+|---|---|---|
+| `scripts/cdp_publish.py` | 1196 | CDP 核心（connect/_send/_evaluate/_navigate/上传路径）+ `main()` |
+| `scripts/cdp_login.py` | 493 | LoginMixin：登录/二维码/cookie 缓存 |
+| `scripts/cdp_feed.py` | 2582 | FeedMixin：搜索/详情/评论/profile |
+| `scripts/cdp_publish_flow.py` | ~800 | PublishFlowMixin：上传/填表/定时/发布（最脆弱） |
+| `scripts/cdp_stats.py` | ~450 | StatsMixin：内容数据/通知 |
+| `scripts/xhs_constants.py` | 59 | URL/选择器/时序 |
+| `scripts/xhs_util.py` | 158 | 纯函数/格式化 |
+| `scripts/xhs_errors.py` | 15 | CDPError 等 |
+
+`XiaohongshuPublisher(LoginMixin, FeedMixin, PublishFlowMixin, StatsMixin)`。回归：compile OK、104 passed、`login-probe`/`check-login` 容器内通过、各子命令 `--help` 冒烟通过。未做发布实跑（最脆弱，需在容器内 `--preview` 单独验证）。
