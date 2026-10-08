@@ -46,6 +46,10 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     rows = compact_rows(date)
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
     rest = llm.chat(build_messages(date, rows), max_tokens=max_tokens)  # 二~六
+    # 裁掉 LLM 可能多输出的 H1/元信息/「一、」（已由系统生成），只保留从「## 二、」起
+    idx = rest.find("## 二、")
+    if idx > 0:
+        rest = rest[idx:]
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     if deliver:
         from services.delivery import deliver as _d
