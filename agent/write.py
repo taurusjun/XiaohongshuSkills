@@ -251,7 +251,9 @@ def run(n=3, deliver=False, dry_run=False):
         for r in results:
             lines += [f"## {r['title']}", f"`{r['key']}` {r['channel']} {'✅' if r['ok'] else '❌'}"
                       f"（{r['method']}，{r['body']}字，评分{r['score']}/10）", ""]
-            lines.append(r["text"] if r["ok"] else "未达标：\n- " + "\n- ".join(r["problems"]))
+            lines.append(r["text"] if r["ok"]
+                         else "未达标：\n- " + "\n- ".join(
+                             r["problems"] or [f"内容评分 {r['score']}/10 低于门槛"]))
             lines += ["", "---", ""]
         if sched:
             lines += ["# 待发布推荐（明天 09/12/15/18/20）", ""]
