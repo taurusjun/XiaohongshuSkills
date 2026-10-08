@@ -90,6 +90,10 @@ def _extract_related_json(text):
     return None, None, text
 
 
+def _title_of(key):
+    return ((_news.get_by_key(key) or {}).get("title") or "")
+
+
 def _normalize_mapping(mapping):
     """{key前缀:[前缀...]} → {fullkey:"fullkey,fullkey"}（连通分量展开，保证互指）。"""
     adj = {}
@@ -101,7 +105,7 @@ def _normalize_mapping(mapping):
         adj.setdefault(a, set())
         for sp in sibs or []:
             b = _resolve_keys([sp])
-            if b and b[0] != a:
+            if b and b[0] != a and _rel.link_ok(_title_of(a), _title_of(b[0])):
                 adj[a].add(b[0])
                 adj.setdefault(b[0], set()).add(a)
     seen, comps = set(), []
@@ -147,7 +151,9 @@ def persist_related_mapping(same_event, timeline=None, day_keys=None):
             continue
         if dayset is not None and kf[0] not in dayset:
             continue
-        sib = list(dict.fromkeys(x for x in _resolve_keys(sibs) if x and x != kf[0]))
+        anchor = _title_of(kf[0])
+        sib = list(dict.fromkeys(x for x in _resolve_keys(sibs)
+                                 if x and x != kf[0] and _rel.link_ok(anchor, _title_of(x))))
         if sib:
             tlnorm[kf[0]] = ",".join(sib)
     for k, v in tlnorm.items():

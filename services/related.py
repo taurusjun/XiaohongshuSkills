@@ -1,22 +1,61 @@
-"""关联候选（机械，**全历史无窗口**）：token 命中 + 相关性排序 top-K。
+"""关联候选（机械，全历史无窗口）：token 命中 + **通用短语过滤** + 相关性排序 top-K。
 
-- 不做时间窗口：任何时间的素材都可作为关联候选（对齐原 skill「跨时间关联」）。
-- 排序：共享 token 越多、越长、越稀有 → 分越高；同日的候选给 same_day 标记。
+- 不做时间窗口：任何时间的素材都可作为候选（对齐原 skill「跨时间关联」）。
+- 只把"共享非通用 token（人名/系列等）"的素材当候选 → 抑制「移籍新事务所/剪去长发」类误连。
 """
+import re
 import sqlite3
 
 from services import paths, cluster as _cl
 
-__all__ = ["find_related"]
+__all__ = ["find_related", "link_ok"]
+
+_LAT = re.compile(r"[A-Za-z][A-Za-z0-9']+")
+_STOP = None
 
 
-def _tokens(text):
-    return [t for t in _cl.tokens(text or "")]
+def _stopwords():
+    global _STOP
+    if _STOP is None:
+        f = paths.REPO_ROOT / "config" / "related_stopwords.txt"
+        words = []
+        if f.exists():
+            words = [w.strip() for w in f.read_text(encoding="utf-8").splitlines()
+                     if w.strip() and not w.startswith("#")]
+        _STOP = tuple(words)
+    return _STOP
+
+
+def _is_generic(tok):
+    for w in _stopwords():
+        if w in tok or tok in w:
+            return True
+    return False
+
+
+def _tokset(text):
+    return {t for t in _cl.tokens(text or "") if not _is_generic(t)}
+
+
+def _latin(text):
+    return {w.lower() for w in _LAT.findall(text or "") if len(w) >= 2}
+
+
+def _sim(a, b):
+    """两文本相似度：非通用 CJK n-gram(按长度加权) + Latin 词(各 3 分)。"""
+    s = sum(len(t) for t in (_tokset(a) & _tokset(b)))
+    s += 3 * len(_latin(a) & _latin(b))
+    return s
+
+
+def link_ok(a, b):
+    """两条标题是否有"非通用"共享证据（人名/系列/Latin 词）；否则判为仅通用短语相连。"""
+    return _sim(a, b) > 0
 
 
 def find_related(key: str, title: str, limit: int = 8, db: str | None = None):
     """返回按相关性排序的关联候选：[{key,title,content_ja,day,score,same_day}, ...]。"""
-    toks = _tokens(title)[:10]
+    toks = [t for t in _cl.tokens(title or "")][:10]
     if not toks:
         return []
     conn = sqlite3.connect(db or paths.sqlite_path())
@@ -34,19 +73,12 @@ def find_related(key: str, title: str, limit: int = 8, db: str | None = None):
                     (key, f"%{t}%", f"%{t}%")):
                 cand.setdefault(r[0], {"key": r[0], "title": r[1] or "",
                                        "content_ja": r[2] or "", "day": (r[3] or "")[:10]})
-        if not cand:
-            return []
-        tset = {k: (_cl.tokens(v["title"]) & set(toks)) for k, v in cand.items()}
-        from collections import Counter
-        df = Counter(t for ts in tset.values() for t in ts)
-        n = len(cand) or 1
-        rare = max(2, int(n * 0.05))
         out = []
-        for k, v in cand.items():
-            shared = tset[k]
-            if not shared:
-                continue
-            v["score"] = round(sum(len(t) * (1.0 if df[t] <= rare else 0.3) for t in shared), 2)
+        for v in cand.values():
+            sc = _sim(title, v["title"]) + 0.4 * _sim(title, v["content_ja"])
+            if sc <= 0:
+                continue                          # 只共享通用短语 → 不作为候选
+            v["score"] = round(sc, 2)
             v["same_day"] = (v["day"] == day and bool(day))
             out.append(v)
         out.sort(key=lambda x: (-x["score"], x["day"]))
