@@ -53,15 +53,28 @@ def web_save(text: str, name: str = "latest.md") -> bool:
 
 
 def deliver(text: str, channel: str | None = None, name: str = "latest.md",
-            max_chars: int = DEFAULT_MAX, send_fn=None) -> dict:
+            max_chars: int = DEFAULT_MAX, send_fn=None, save_local: bool = True) -> dict:
+    """交付：**始终本地落盘**（data/reviews/），channel 含 feishu 时额外推送。
+
+    渠道取值（XHS_DELIVERY_CHANNEL 或 channel 参数）：
+      feishu（默认）: 本地存档 + 飞书推送
+      web          : 仅本地存档
+    """
     channel = channel or os.environ.get("XHS_DELIVERY_CHANNEL") or "feishu"
+    result = {"channel": channel, "chunks": 0, "local_saved": False, "path": ""}
+    if save_local:
+        result["local_saved"] = web_save(text, name)
+        result["path"] = str(paths.REPO_ROOT / "data" / "reviews" / name)
     if channel == "web":
-        ok = web_save(text, name)
-        return {"ok": ok, "channel": "web", "chunks": 1, "path": str(paths.REPO_ROOT / "data" / "reviews" / name)}
+        result["ok"] = bool(result["local_saved"])
+        return result
     chunks = chunk_markdown(text, max_chars)
     send = send_fn or feishu_send
     results = [bool(send(c)) for c in chunks]
-    return {"ok": all(results) if results else False, "channel": channel, "chunks": len(chunks)}
+    result["chunks"] = len(chunks)
+    result["feishu_sent"] = all(results) if results else False
+    result["ok"] = bool(result["local_saved"]) and bool(result["feishu_sent"])
+    return result
 
 
 def main_legacy(argv=None) -> int:

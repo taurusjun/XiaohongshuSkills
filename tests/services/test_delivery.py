@@ -20,3 +20,18 @@ def test_deliver_web(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
     r = delivery.deliver("内容", channel="web", name="d.md")
     assert r["ok"] and (tmp_path / "data" / "reviews" / "d.md").read_text() == "内容"
+
+
+def test_deliver_always_saves_locally(tmp_path, monkeypatch):
+    from services import paths
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
+    r = delivery.deliver("hi", channel="feishu", name="x.md", send_fn=lambda t: True)
+    assert r["local_saved"] and (tmp_path / "data" / "reviews" / "x.md").read_text() == "hi"
+    assert r["feishu_sent"] and r["ok"]
+
+
+def test_deliver_web_only(tmp_path, monkeypatch):
+    from services import paths
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
+    r = delivery.deliver("hi", channel="web", name="y.md")
+    assert r["local_saved"] and "feishu_sent" not in r

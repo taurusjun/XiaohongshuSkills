@@ -5,7 +5,7 @@ import sys, os, json, uuid, threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastmcp import FastMCP
-from scripts.sqlite_db import (
+from services.news import (
     query_news, get_by_key, update_news,
     get_score_dims, load_active_dimensions,
     get_top_topics, get_config, set_config,
@@ -82,7 +82,7 @@ def update_article_status(news_key: str, status: str, note: str = "") -> dict:
 def get_dimension_versions() -> dict:
     """获取评分维度版本列表"""
     try:
-        from scripts.sqlite_db import _connect
+        from services.news import _connect
         with _connect() as db:
             rows = db.execute(
                 "SELECT id, version, created_at, created_by, change_note, is_active FROM scoring_dimension_versions ORDER BY id DESC"
@@ -118,7 +118,7 @@ def get_topic_performance(limit: int = 20, window_days: int = 90) -> dict:
 def get_weekly_stats(week_start: str = "") -> dict:
     """聚合本周发布统计"""
     try:
-        from scripts.sqlite_db import _connect
+        from services.news import _connect
         from datetime import datetime, timedelta
         if not week_start:
             today = datetime.now()
@@ -148,7 +148,7 @@ def override_dim_score(news_key: str, dim_name: str, value: float, note: str) ->
     if value not in (0, 0.5, 1):
         return _error("INVALID_VALUE", "value must be 0, 0.5, or 1")
     try:
-        from scripts.sqlite_db import _connect
+        from services.news import _connect
         with _connect() as db:
             existing = db.execute(
                 "SELECT value FROM score_dims WHERE news_key=? AND dimension=?", (news_key, dim_name)
@@ -170,17 +170,17 @@ def run_reflection(mode: str = "quick") -> dict:
     """启动反思分析（异步后台执行）"""
     task_id = str(uuid.uuid4())[:8]
     try:
-        from scripts.sqlite_db import set_state
+        from services.news import set_state
         set_state(f"task_{task_id}", {"status": "running", "mode": mode})
 
         def _run():
             try:
                 from scripts.reflection_runner import run
                 run(dry_run=(mode == "quick"), min_samples=30 if mode == "full" else 10)
-                from scripts.sqlite_db import set_state
+                from services.news import set_state
                 set_state(f"task_{task_id}", {"status": "completed", "mode": mode})
             except Exception as e:
-                from scripts.sqlite_db import set_state
+                from services.news import set_state
                 set_state(f"task_{task_id}", {"status": "failed", "error": str(e)})
 
         t = threading.Thread(target=_run, daemon=True)
@@ -194,7 +194,7 @@ def run_reflection(mode: str = "quick") -> dict:
 def get_task_status(task_id: str) -> dict:
     """查询异步任务状态"""
     try:
-        from scripts.sqlite_db import get_state
+        from services.news import get_state
         status = get_state(f"task_{task_id}")
         if status is None:
             return _error("NOT_FOUND", f"Task {task_id} not found")
@@ -425,7 +425,7 @@ def xhs_score_dim(news_key: str, dimension: str, human_value: float, override_no
     if human_value not in (0, 0.5, 1):
         return _error("INVALID_VALUE", "human_value must be 0, 0.5, or 1")
     try:
-        from scripts.sqlite_db import _connect
+        from services.news import _connect
         with _connect() as db:
             existing = db.execute(
                 "SELECT value FROM score_dims WHERE news_key=? AND dimension=?",
@@ -451,7 +451,7 @@ def xhs_metrics_history(news_key: str) -> dict:
     返回：{snapshots: [{collected_at, views, likes, saves, comments, impression, click_rate}], count}
     """
     try:
-        from scripts.sqlite_db import _connect
+        from services.news import _connect
         with _connect() as db:
             rows = db.execute(
                 "SELECT collected_at, views, likes, saves, comments, impression, click_rate "
