@@ -33,8 +33,6 @@ def build_archive(date: str, rows=None, single_table: bool = True) -> str:
         "",
         "---",
         "",
-        f"## 一、全量素材一览（按来源分组，{n}条）",
-        "",
     ]
     if single_table:
         lines.append(f"## 一、全量素材一览（单张合并表，{n}条）")
@@ -45,6 +43,8 @@ def build_archive(date: str, rows=None, single_table: bool = True) -> str:
             lines.append(f"| {r.get('fetch_by') or '?'} | `{r.get('key','')}` | {r.get('title_score','-')} | "
                          f"{r.get('content_score','-')} | {len(r.get('content_ja') or '')} | {r.get('title','')} |")
     else:
+        lines.append(f"## 一、全量素材一览（按来源分组，{n}条）")
+        lines.append("")
         for fb, cnt in dist.most_common():
             lines.append(f"### fetch_by = {fb}（{cnt}条）")
             lines.append("")
