@@ -13,12 +13,16 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ${XHS_PROJECT_DIR}:/home/user/PG/XiaohongshuSkills
-      - ${XHS_PROFILES_HOST}:/data/chrome-profiles
-      - ${XHS_BACKUP_HOST}:/backup
+      - xhs-profiles:/data/chrome-profiles
+      - xhs-backup:/backup
     ports:
-      - "127.0.0.1:5000:5000"    # admin UI
-      - "127.0.0.1:5001:5001"    # MCP (http)
-      - "127.0.0.1:9222:9222"    # CDP（只绑 127.0.0.1）
+      - "127.0.0.1:${XHS_UI_PORT:-5000}:5000"    # admin UI
+      - "127.0.0.1:${XHS_MCP_PORT:-5001}:5001"   # MCP (http)
+      - "127.0.0.1:${XHS_CDP_PORT:-9222}:9222"   # CDP（只绑 127.0.0.1）
     shm_size: "1g"
     stop_grace_period: 60s
     restart: unless-stopped
+
+volumes:
+  xhs-profiles:
+  xhs-backup:

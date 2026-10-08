@@ -3,6 +3,10 @@
 set -euo pipefail
 cd /home/user/PG/XiaohongshuSkills
 
+mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+mkdir -p /data/chrome-profiles /backup
+chown -R user:user /data/chrome-profiles /backup 2>/dev/null || true
+
 mkdir -p data data/logs tmp logs
 chown -R user:user data tmp logs .venv 2>/dev/null || true
 

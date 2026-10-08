@@ -22,6 +22,7 @@ from typing import Optional
 # Add repo root to sys.path so in-script imports (config, etc.) work
 # regardless of whether the script is run from repo root or scripts/ dir.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/
 
 CDP_PORT = 9222
 CDP_PORT_PROXY = 9223  # 代理 Chrome，用于 Instagram/Twitter
