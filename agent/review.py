@@ -12,7 +12,7 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-__all__ = ["compact_rows", "prepare_package", "persist_related_mapping", "persist_related_mechanical",
+__all__ = ["compact_rows", "prepare_package", "persist_related_mapping", "persist_related_mechanical", "clear_related_pointing_to",
            "enforce_symmetric_related", "run", "main"]
 
 
@@ -115,7 +115,10 @@ def _normalize_mapping(mapping):
 
 
 def persist_related_mapping(mapping, clear_keys=None):
-    """review 前置（LLM 确认版）：规范化(→互指)后覆盖写入；clear_keys 内未列入的行清空（反旧误连）。"""
+    """review 前置（LLM 确认版）：规范化(→互指)后覆盖写入；clear_keys 内未列入的行清空（反旧误连）。
+
+    返回 (规范化映射 dict, 写入篇数, 清空篇数)。
+    """
     norm = _normalize_mapping(mapping)
     for k, v in norm.items():
         _news.update_news(k, {"related_keys": v})
@@ -124,7 +127,30 @@ def persist_related_mapping(mapping, clear_keys=None):
         if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
             _news.update_news(k, {"related_keys": ""})
             cleared += 1
-    return len(norm), len(norm), cleared
+    return norm, len(norm), cleared
+
+
+def clear_related_pointing_to(involved, keep=()):
+    """任何 related_keys 指向 involved（本次 review 涉及 key）且不在 keep 的行 → 清空其关联。
+
+    用于清除窗口之外的旧误连（如机械写坏的跨日行）。
+    """
+    import sqlite3
+    inv, keep = set(involved), set(keep)
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        rows = conn.execute("SELECT key,related_keys FROM news "
+                            "WHERE related_keys IS NOT NULL AND related_keys!=''").fetchall()
+    finally:
+        conn.close()
+    cleared = 0
+    for k, rk in rows:
+        if k in keep:
+            continue
+        if inv & {x for x in (rk or "").split(",") if x}:
+            _news.update_news(k, {"related_keys": ""})
+            cleared += 1
+    return cleared
 
 
 def enforce_symmetric_related():
@@ -191,9 +217,14 @@ def run(date, deliver=False, name=None, max_tokens=20000):
             import datetime as dt
             lo = (dt.date.fromisoformat(date) - dt.timedelta(days=pkg.get("gap", 3))).isoformat()
             scope = [r["key"] for r in _news.query_news(date_from=lo, date_to=date, status="active", limit=1000)]
-            nm, nc, nclr = persist_related_mapping(mapping, clear_keys=scope)
+            norm, nc, nclr = persist_related_mapping(mapping, clear_keys=scope)
+            involved = set(scope) | set(norm)
+            for _kp, _sibs in (mapping or {}).items():
+                involved.update(_resolve_keys([_kp]))
+                involved.update(_resolve_keys(_sibs))
+            npt = clear_related_pointing_to(involved, keep=set(norm))
             nfix = enforce_symmetric_related()
-            print(f"[related] LLM 确认 {nm} 组 → 写入 {nc} 篇 / 清空 {nclr} 篇 / 互指校正 {nfix} 篇")
+            print(f"[related] LLM 确认 {nc} 篇 → 窗口清空 {nclr} / 指向清空 {npt} / 互指校正 {nfix}")
         else:
             ng, nc = persist_related_mechanical(date)
             print(f"[related] 无 LLM 关联JSON，机械兜底 {ng} 组 → 写入 {nc} 篇")
