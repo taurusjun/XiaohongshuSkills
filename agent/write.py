@@ -84,16 +84,22 @@ def prepare_package(cand):
         refs = _refs.relevant(cand.get("title") or "")
     except Exception:
         pass
-    # 关联素材来自 review 前置阶段写入 DB 的 related_keys（write 只读不重算）
+    # 关联来自 review 前置阶段写入 DB 的两个字段（write 只读不重算）：
+    #   related_keys  = 同事件（可合并）
+    #   timeline_keys = 跨时间（仅前情/时间线，不合并）
+    related_text = timeline_text = ""
     try:
         _rk = [k.strip() for k in (cand.get("related_keys") or "").split(",") if k.strip()]
         sibs = [x for x in (_news.get_by_key(k) for k in _rk[:8]) if x]
         related_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1500]}" for s in sibs)
+        _tk = [k.strip() for k in (cand.get("timeline_keys") or "").split(",") if k.strip()]
+        tsibs = [x for x in (_news.get_by_key(k) for k in _tk[:6]) if x]
+        timeline_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}" for s in tsibs)
     except Exception:
         pass
     return {"content_ja": cj[:9000], "target": target, "refs": refs,
-            "related_text": related_text, "method": r["publish_method"],
+            "related_text": related_text, "timeline_text": timeline_text, "method": r["publish_method"],
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
@@ -108,7 +114,9 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
     if pkg["related_text"]:
-        user += "\n\n=== 同事件关联素材（可合并；如需合并，把这些素材的角度并入并标 related）===\n" + pkg["related_text"]
+        user += "\n\n=== 同事件关联（**可合并**：把这些素材的角度并入正文）===\n" + pkg["related_text"]
+    if pkg.get("timeline_text"):
+        user += "\n\n=== 时间线关联（仅供了解前情，**绝不合并**、不要写进正文）===\n" + pkg["timeline_text"]
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
@@ -206,15 +214,17 @@ def write_one(cand, dry_run=True):
     except Exception:
         pass
     ok = not mech["problems"] and (score.get("total") or 0) >= need
-    rk = cand.get("related_keys") or ""     # review 前置已写库，write 直接沿用
+    rk = cand.get("related_keys") or ""       # review 前置：同事件
+    tk = cand.get("timeline_keys") or ""      # review 前置：时间线
     if ok and not dry_run:
         if channel == "gzh":
             _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,
-                                            "channel": "gzh", "preselected": 0, "publish_xhs": 0, "related_keys": rk})
+                                            "channel": "gzh", "preselected": 0, "publish_xhs": 0,
+                                            "related_keys": rk, "timeline_keys": tk})
         else:
             _news.update_news(cand["key"], {"rewritten_title": title, "rewritten_content": body,
                                             "publish_mode": "rewritten", "publish_method": pmethod,
-                                            "related_keys": rk, "preselected": 1, "publish_xhs": 0})
+                                            "related_keys": rk, "timeline_keys": tk, "preselected": 1, "publish_xhs": 0})
         got = _news.get_by_key(cand["key"]) or {}
         ok = (got.get("wechat_title") == title and bool(got.get("wechat_content"))) if channel == "gzh" \
             else (got.get("rewritten_title") == title and len(got.get("rewritten_content") or "") > 50)

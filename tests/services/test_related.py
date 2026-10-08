@@ -10,7 +10,7 @@ def _mk(db, rows):
     c.commit(); c.close()
 
 
-def test_find_related(tmp_path):
+def test_find_related_basic(tmp_path):
     db = str(tmp_path / "n.db")
     _mk(db, [
         ("k" * 40, "乃木坂 小津玲奈 写真", "小津玲奈", "active", "2026-10-08 10:00:00"),
@@ -22,12 +22,12 @@ def test_find_related(tmp_path):
     assert all(r["key"] != "k" * 40 for r in res)
 
 
-def test_find_related_date_window(tmp_path):
-    """同名但相隔 30 天 → 日期窗口应排除，不算同事件。"""
+def test_find_related_no_window_cross_time(tmp_path):
+    """去窗口：相隔很远的同话题也应作为候选（对齐原 skill 跨时间关联）。"""
     db = str(tmp_path / "w.db")
     _mk(db, [
         ("k" * 40, "相川暖花 活动A", "相川暖花", "active", "2026-10-08 10:00:00"),
-        ("old" + "0" * 37, "相川暖花 活动B", "相川暖花", "active", "2026-09-08 10:00:00"),
+        ("o" + "0" * 39, "相川暖花 活动B", "相川暖花", "active", "2026-04-08 10:00:00"),
     ])
-    res = related.find_related("k" * 40, "相川暖花 活动A", db=db, max_gap_days=3)
-    assert all(r["key"] != "old" + "0" * 37 for r in res), res
+    res = related.find_related("k" * 40, "相川暖花 活动A", db=db)
+    assert any(r["key"] == "o" + "0" * 39 for r in res), res

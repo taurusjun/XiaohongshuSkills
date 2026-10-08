@@ -1,9 +1,15 @@
-"""完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。"""
+"""完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）+ 关联写库。
+
+关联模型（对齐原 skill）：
+- **无时间窗口**（全历史）；候选由 services.related 按相关性检索。
+- LLM 判定分两类：same_event(同事件·可合并) / timeline(跨时间·续篇/时间线)。
+- 只写/清「当日」行；历史行不重判（历史由各自那天的 review 负责）。
+"""
 import json
 import sys
 
 from agent import llm
-from services import news as _news, paths
+from services import news as _news, paths, related as _rel
 
 SKILL_FILES = [
     "skills/creative/xhs-daily-material-review/SKILL.md",
@@ -12,8 +18,8 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-__all__ = ["compact_rows", "prepare_package", "persist_related_mapping", "persist_related_mechanical", "clear_related_pointing_to",
-           "enforce_symmetric_related", "run", "main"]
+__all__ = ["compact_rows", "prepare_package", "persist_related_mapping",
+           "persist_related_mechanical", "run", "main"]
 
 
 def _read(rel):
@@ -29,26 +35,28 @@ def compact_rows(date, limit=500):
              "pub": r.get("publish_xhs")} for r in rows]
 
 
-def prepare_package(date, gap=3):
-    """review 阶段1 写前准备（机械）：当日全量 + 前一天 + 近期(前2~3日,供关联) + 机械聚类线索。
-
-    关联视野覆盖 [date-gap, date]，使 review 对该窗口的 related_keys 完整负责。
-    """
+def prepare_package(date, hist_k=6):
+    """review 阶段1 写前准备（机械）：当日全量 + 前一天(日期陷阱)
+    + 当日同事件机械候选 + 每个当日稿的**全历史**关联候选（无窗口，按相关性）。"""
     import datetime as dt
     from services import cluster as _cl
     rows = compact_rows(date)
-    prev, recent = [], []
     try:
-        for dd in range(1, gap + 1):
-            d2 = (dt.date.fromisoformat(date) - dt.timedelta(days=dd)).isoformat()
-            (prev if dd == 1 else recent).extend(compact_rows(d2))
+        prev = compact_rows((dt.date.fromisoformat(date) - dt.timedelta(days=1)).isoformat())
     except Exception:  # noqa: BLE001
-        pass
-    pool = [{"key": r["key"], "title": r["title"]} for r in (rows + prev + recent) if r.get("title")]
-    groups = _cl.cluster(pool)
-    ctxt = "\n".join(f"- 组{i+1}: " + " / ".join(x["key"][:12] for x in g)
+        prev = []
+    groups = _cl.cluster([{"key": r["key"], "title": r["title"]} for r in rows if r.get("title")])
+    ctxt = "\n".join(f"- 组{i+1}: " + " / ".join(x["key"] for x in g)
                      for i, g in enumerate(groups)) or "（无）"
-    return {"rows": rows, "prev": prev, "recent": recent, "clusters": ctxt, "gap": gap}
+    hist = {}
+    for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500):
+        if not (r.get("title") or "").strip():
+            continue
+        cs = _rel.find_related(r["key"], r["title"], limit=hist_k)
+        if cs:
+            hist[r["key"][:12]] = [{"k": c["key"][:12], "day": c["day"],
+                                    "t": (c["title"] or "")[:26]} for c in cs]
+    return {"rows": rows, "prev": prev, "clusters": ctxt, "hist": hist}
 
 
 def _resolve_keys(prefixes):
@@ -66,22 +74,24 @@ def _resolve_keys(prefixes):
 
 
 def _extract_related_json(text):
-    """取 LLM 输末的 ```json {"related":{...}}``` 块 → (mapping, 去掉该块后的文本)。"""
+    """取 ```json {"same_event":{...},"timeline":{...}}``` → (same_event, timeline, 去块文本)。"""
     import re
     if not text:
-        return None, text
+        return None, None, text
     for mm in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
         try:
             d = json.loads(mm.group(1))
         except Exception:  # noqa: BLE001
             continue
-        if isinstance(d, dict) and "related" in d:
-            return (d.get("related") or {}), text[:mm.start()] + text[mm.end():]
-    return None, text
+        if isinstance(d, dict) and ("same_event" in d or "timeline" in d or "related" in d):
+            se = d.get("same_event") or d.get("related") or {}
+            tl = d.get("timeline") or {}
+            return se, tl, text[:mm.start()] + text[mm.end():]
+    return None, None, text
 
 
 def _normalize_mapping(mapping):
-    """{key前缀:[前缀...]} → {fullkey:[fullkey...]}（连通分量展开，保证互指）。"""
+    """{key前缀:[前缀...]} → {fullkey:"fullkey,fullkey"}（连通分量展开，保证互指）。"""
     adj = {}
     for kp, sibs in (mapping or {}).items():
         a = _resolve_keys([kp])
@@ -114,91 +124,55 @@ def _normalize_mapping(mapping):
     return out
 
 
-def persist_related_mapping(mapping, day_keys=None):
-    """review 前置（LLM 确认版）：**只写/清当日行**（历史行不碰）。
+def persist_related_mapping(same_event, timeline=None, day_keys=None):
+    """**只写/清当日行**（历史行不碰）。
 
-    - 当日行：规范化分组后写 related_keys（可含"历史关联"key，即当日稿指向前作）；
-    - 当日行未被 LLM 列入 → 清空；
-    - 非当日行：一律不动。
-    返回 (规范化映射 dict, 写入篇数, 清空篇数)。
+    - same_event → related_keys（规范化互指；可含历史 key，即当日稿指向前作）；
+    - timeline   → timeline_keys（单向即可，不做合并）；
+    - 当日行未被列入 → 清空对应字段。
+    返回 (same_event 规范化 dict, related 写入篇数, related 清空篇数, timeline 写入篇数)。
     """
-    norm = _normalize_mapping(mapping)
+    norm = _normalize_mapping(same_event or {})
     dayset = set(day_keys) if day_keys is not None else None
-    wrote = 0
+    wrote = tlw = cleared = 0
     for k, v in norm.items():
         if dayset is not None and k not in dayset:
-            continue                                  # 历史行：不管
+            continue
         _news.update_news(k, {"related_keys": v})
         wrote += 1
-    cleared = 0
-    for k in (day_keys or []):
-        if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
-            _news.update_news(k, {"related_keys": ""})
-            cleared += 1
-    return norm, wrote, cleared
-
-
-def clear_related_pointing_to(involved, keep=()):
-    """任何 related_keys 指向 involved（本次 review 涉及 key）且不在 keep 的行 → 清空其关联。
-
-    用于清除窗口之外的旧误连（如机械写坏的跨日行）。
-    """
-    import sqlite3
-    inv, keep = set(involved), set(keep)
-    conn = sqlite3.connect(paths.sqlite_path())
-    try:
-        rows = conn.execute("SELECT key,related_keys FROM news "
-                            "WHERE related_keys IS NOT NULL AND related_keys!=''").fetchall()
-    finally:
-        conn.close()
-    cleared = 0
-    for k, rk in rows:
-        if k in keep:
+    tlnorm = {}
+    for kp, sibs in (timeline or {}).items():
+        kf = _resolve_keys([kp])
+        if not kf:
             continue
-        if inv & {x for x in (rk or "").split(",") if x}:
+        if dayset is not None and kf[0] not in dayset:
+            continue
+        sib = list(dict.fromkeys(x for x in _resolve_keys(sibs) if x and x != kf[0]))
+        if sib:
+            tlnorm[kf[0]] = ",".join(sib)
+    for k, v in tlnorm.items():
+        _news.update_news(k, {"timeline_keys": v})
+        tlw += 1
+    for k in (day_keys or []):
+        cur = _news.get_by_key(k) or {}
+        if k not in norm and (cur.get("related_keys") or ""):
             _news.update_news(k, {"related_keys": ""})
             cleared += 1
-    return cleared
+        if k not in tlnorm and (cur.get("timeline_keys") or ""):
+            _news.update_news(k, {"timeline_keys": ""})
+    return norm, wrote, cleared, tlw
 
 
-def enforce_symmetric_related():
-    """全局不变量：related_keys 必须互指（原 skill「关联素材回指主稿」）；去单向/悬空。"""
-    import sqlite3
-    conn = sqlite3.connect(paths.sqlite_path())
-    try:
-        rows = conn.execute("SELECT key,related_keys FROM news "
-                            "WHERE related_keys IS NOT NULL AND related_keys!=''").fetchall()
-    finally:
-        conn.close()
-    m = {k: [x for x in (rk or "").split(",") if x] for k, rk in rows}
-    changed = 0
-    for k, sibs in m.items():
-        keep = [x for x in sibs if x in m and k in m.get(x, [])]
-        if keep != sibs:
-            _news.update_news(k, {"related_keys": ",".join(keep)})
-            changed += 1
-    return changed
-
-
-def persist_related_mechanical(date, gap=3):
-    """机械兜底：LLM 未给关联 JSON 时，用近期窗口同事件聚类写入。"""
-    import datetime as dt
+def persist_related_mechanical(date):
+    """机械兜底：LLM 未给关联 JSON 时，用**当日**同事件聚类写入 related_keys。"""
     from services import cluster as _cl
-    try:
-        lo = (dt.date.fromisoformat(date) - dt.timedelta(days=gap)).isoformat()
-    except Exception:  # noqa: BLE001
-        lo = date
-    rows = _news.query_news(date_from=lo, date_to=date, status="active", limit=800)
-    items = [{"key": r["key"], "title": r.get("title") or "",
-              "day": (r.get("created_at") or "")[:10]} for r in rows if (r.get("title") or "").strip()]
-    groups = _cl.cluster(items, date_field="day", max_gap_days=gap)
-    day = {it["key"] for it in items if (it.get("day") or "")[:10] == date}
+    rows = _news.query_news(date_from=date, date_to=date, status="active", limit=500)
+    items = [{"key": r["key"], "title": r.get("title") or ""} for r in rows if (r.get("title") or "").strip()]
+    groups = _cl.cluster(items)
     changed = 0
     for g in groups:
         ids = [x["key"] for x in g]
         for x in g:
-            if x["key"] not in day:               # 只写当日
-                continue
             sib = [k for k in ids if k != x["key"]]
             if sib:
                 _news.update_news(x["key"], {"related_keys": ",".join(sib)})
@@ -211,10 +185,10 @@ def build_messages(date, pkg):
     user = (f"日期：{date}（东京时间）。\n\n"
             f"=== 当日全量素材（JSON）===\n{json.dumps(pkg['rows'], ensure_ascii=False)}\n\n"
             f"=== 前一天素材（JSON，用于日期陷阱）===\n{json.dumps(pkg['prev'], ensure_ascii=False)}\n\n"
-            f"=== 近期素材（前2~3日，供关联判断，不必分级）===\n{json.dumps(pkg.get('recent', []), ensure_ascii=False)}\n\n"
-            f"=== 机械聚类候选（token 重叠，供第三节参考，可修正；含全部近期素材）===\n{pkg['clusters']}")
+            f"=== 当日同事件机械候选（同日；供第三节参考，可修正）===\n{pkg['clusters']}\n\n"
+            f"=== 当日稿的全历史关联候选（无时间窗口，按相关性排序；供关联判定）===\n"
+            f"{json.dumps(pkg['hist'], ensure_ascii=False)}")
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
-
 
 
 def run(date, deliver=False, name=None, max_tokens=20000):
@@ -222,13 +196,12 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
     out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 关联JSON
-    mapping, out = _extract_related_json(out)
+    se, tl, out = _extract_related_json(out)
     try:
-        if mapping:
-            # 只写/清"当日"行；历史行不碰（历史由各自那天的 review 负责）
+        if se or tl:
             day_keys = [r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)]
-            _norm, nc, nclr = persist_related_mapping(mapping, day_keys=day_keys)
-            print(f"[related] LLM 确认 → 当日写入 {nc} 篇 / 当日清空 {nclr} 篇（历史不动）")
+            _norm, nc, nclr, ntl = persist_related_mapping(se or {}, tl or {}, day_keys=day_keys)
+            print(f"[related] 当日写入：同事件 {nc} 篇 / 时间线 {ntl} 篇 / 清空 {nclr} 篇（历史不动）")
         else:
             ng, nc = persist_related_mechanical(date)
             print(f"[related] 无 LLM 关联JSON，机械兜底 {ng} 组 → 写入 {nc} 篇")
