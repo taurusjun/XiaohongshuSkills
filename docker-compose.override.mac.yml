@@ -21,12 +21,12 @@ services:
       args:
         APT_MIRROR: mirrors.cloud.tencent.com   # 境内构建加速；Linux 云可留空用官方源
     volumes:
-      - xhs-venv:/home/user/PG/XiaohongshuSkills/.venv
-      - xhs-data:/home/user/PG/XiaohongshuSkills/data
-      - xhs-logs:/home/user/PG/XiaohongshuSkills/logs
-      - xhs-tmp:/home/user/PG/XiaohongshuSkills/tmp
-      - xhs-gallery:/home/user/.cache/xhs_images   # 图集缓存（持久，重建不丢）
-      - xhs-exports:/home/user/.cache/xhs_exports  # 长文导出 md（持久，重建不丢）
+      - ${XHS_VENV_SRC}:/home/user/PG/XiaohongshuSkills/.venv
+      - ${XHS_DATA_SRC}:/home/user/PG/XiaohongshuSkills/data
+      - ${XHS_LOGS_SRC}:/home/user/PG/XiaohongshuSkills/logs
+      - ${XHS_TMP_SRC}:/home/user/PG/XiaohongshuSkills/tmp
+      - ${XHS_GALLERY_SRC}:/home/user/.cache/xhs_images
+      - ${XHS_EXPORTS_SRC}:/home/user/.cache/xhs_exports
 
 volumes:
   xhs-venv:
