@@ -1164,6 +1164,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <span class="sp"></span>
       <button class="btn btn-red btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
       <button class="btn-ghost" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span></button>
+      <button class="btn-ghost" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
     </div>
   </div>
 
@@ -1971,6 +1972,17 @@ function openLogin(){var f=document.getElementById('loginFrame');f.src='/login?t
 function closeLogin(){document.getElementById('loginModal').style.display='none';document.getElementById('loginFrame').src='about:blank';refreshLoginDot();}
 async function refreshLoginDot(){try{var d=await (await fetch('/api/login/status')).json();var e=document.getElementById('loginDot');if(e)e.style.background=d.logged_in?'#07c160':'#ffc53d';}catch(err){}}
 refreshLoginDot();
+<div id="chromeModal" onclick="if(event.target===this)closeChrome()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
+  <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
+    <button onclick="closeChrome()" style="position:absolute;right:10px;top:6px;background:none;border:0;color:#aaa;font-size:16px;cursor:pointer">✕</button>
+    <img id="chromeShot" alt="容器 Chrome 画面" style="width:760px;max-width:92vw;border-radius:8px;background:#000;display:block" src="">
+  </div>
+</div>
+<script>
+var _chromeTimer=null;
+function openChrome(){document.getElementById('chromeModal').style.display='flex';shootChrome();_chromeTimer=setInterval(shootChrome,3000);}
+function closeChrome(){document.getElementById('chromeModal').style.display='none';if(_chromeTimer){clearInterval(_chromeTimer);_chromeTimer=null;}}
+function shootChrome(){var i=document.getElementById('chromeShot');i.src='/api/creator/screenshot?ts='+Date.now();}
 </script>
 </body></html>"""
 

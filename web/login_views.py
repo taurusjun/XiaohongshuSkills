@@ -197,6 +197,40 @@ def api_qrcode_probe(job_id):
         return jsonify({"ok": False, "error": str(e), "logged_in": False})
 
 
+@login_bp.get("/api/creator/screenshot")
+def api_creator_screenshot():
+    """返回容器里 Chrome 当前 creator 标签的截图（PNG），供 admin UI 预览。"""
+    from flask import Response
+    import base64
+    import urllib.request
+    try:
+        from websockets.sync.client import connect
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"websockets 不可用: {e}"}), 500
+    try:
+        targets = json.loads(urllib.request.urlopen(
+            f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
+        tabs = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
+        tab = next((t for t in tabs if "creator.xiaohongshu.com" in t.get("url", "")), tabs[0] if tabs else None)
+        if not tab:
+            return jsonify({"ok": False, "error": "没有可截图的 page 标签"}), 404
+        data = ""
+        with connect(tab["webSocketDebuggerUrl"], max_size=None) as ws:
+            ws.send(json.dumps({"id": 1, "method": "Page.captureScreenshot",
+                                "params": {"format": "png"}}))
+            while True:
+                m = json.loads(ws.recv())
+                if m.get("id") == 1:
+                    data = (m.get("result") or {}).get("data", "")
+                    break
+        if not data:
+            return jsonify({"ok": False, "error": "captureScreenshot 返回空"}), 502
+        return Response(base64.b64decode(data), mimetype="image/png",
+                        headers={"Cache-Control": "no-store"})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @login_bp.post("/api/login/tabs/cleanup")
 def api_tabs_cleanup():
     """关闭残留 page 标签，保留一个 creator 标签（优先 /new/home）。"""
