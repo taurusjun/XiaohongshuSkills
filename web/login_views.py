@@ -245,6 +245,17 @@ def api_creator_type():
 # --------------------------------------------------------------------------
 # 浏览页(www.xiaohongshu.com) 登录 —— 截屏弹窗（会话绑定主 profile）
 # --------------------------------------------------------------------------
+_WWW_QR_JS = (
+    "(async()=>{var q=document.querySelector('.login-container .left .code-area .qrcode')"
+    "||document.querySelector('.login-container .left');if(!q)return '';"
+    "var img=q.querySelector('img');"
+    "if(img&&img.src){if(img.src.indexOf('data:')===0)return img.src;"
+    "try{var r=await fetch(img.src);var b=await r.blob();"
+    "return await new Promise(function(res){var fr=new FileReader();fr.onload=function(){res(fr.result)};fr.readAsDataURL(b)});}catch(e){}}"
+    "var cv=q.querySelector('canvas');if(cv&&cv.toDataURL)return cv.toDataURL('image/png');"
+    "return '';})()")
+
+
 def _www_tab_ws():
     import urllib.request
     tabs = json.loads(urllib.request.urlopen(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
@@ -275,7 +286,7 @@ def _www_logged_in():
 
 
 def _www_login_screenshot(wait=6):
-    """导航 explore → 截全页（含登录弹窗二维码）→ 返回 data URL。"""
+    """导航 explore → 优先直接读 .qrcode 的 img(canvas) 为 data URL；拿不到再整页截屏兜底。"""
     import base64
     from websockets.sync.client import connect
     ws_url = _www_tab_ws()
@@ -288,23 +299,28 @@ def _www_login_screenshot(wait=6):
             my = mid[0]; mid[0] += 1
             ws.send(json.dumps({"id": my, "method": method, "params": params or {}}))
             while True:
-                m = json.loads(ws.recv(timeout=to))
-                if m.get("id") == my:
-                    return m
+                m2 = json.loads(ws.recv(timeout=to))
+                if m2.get("id") == my:
+                    return m2
 
         _send("Page.enable")
         _send("Page.navigate", {"url": "https://www.xiaohongshu.com/explore"})
         time.sleep(wait)
-        # 尽量只截登录弹窗左侧二维码区（.login-container .left）；拿不到就整页
+        # ① 直接读二维码 img/canvas 的 data URL（等它渲染出来）
+        for _ in range(8):
+            r = _send("Runtime.evaluate", {"returnByValue": True, "awaitPromise": True,
+                                           "expression": _WWW_QR_JS}, to=15)
+            url = (r.get("result") or {}).get("result", {}).get("value") or ""
+            if isinstance(url, str) and url.startswith("data:image"):
+                return url
+            time.sleep(1)
+        # ② 兜底：截屏 .qrcode 区域
         clip = None
         try:
             rr = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
                 "(function(){var e=document.querySelector('.login-container .left .code-area .qrcode')"
-                "||document.querySelector('.login-container .left .qrcode')"
-                "||document.querySelector('.login-container .qrcode')"
-                "||document.querySelector('.login-container .left')"
-                "||document.querySelector('.login-container');if(!e)return null;"
-                "var r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})()")})
+                "||document.querySelector('.login-container .left')||document.querySelector('.login-container');"
+                "if(!e)return null;var r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})()")})
             clip = (rr.get("result") or {}).get("result", {}).get("value")
         except Exception:
             clip = None
@@ -314,7 +330,6 @@ def _www_login_screenshot(wait=6):
         r = _send("Page.captureScreenshot", params, to=20)
         data = (r.get("result") or {}).get("data", "")
         return ("data:image/png;base64," + data) if data else None
-
 
 @login_bp.get("/api/creator/screenshot")
 def api_creator_screenshot():
