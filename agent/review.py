@@ -48,7 +48,7 @@ def compact_rows(date, limit=500, with_body=False):
              "cs": r.get("content_score"), "cj": len(r.get("content_ja") or ""),
              "src": r.get("fetch_by"), "pub": r.get("publish_xhs")}
         if with_body:
-            d["body"] = _body(r.get("content_ja"), 2500)
+            d["body"] = _body(r.get("content_ja"), 6000)   # 覆盖全文（当日最长正文 5779）
         out.append(d)
     return out
 
