@@ -81,3 +81,19 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
    ```
    ❗ 漏掉 `-f docker-compose.override.mac.yml` → `data`/`.venv` 命名卷不挂载 → 容器内 DB 变 **0 字节**、报 **`no such table: news`**、`.venv` 里没有 `pytest`。**见到这三个现象，先查是不是少了 override（而不是数据丢了）。**
 5. **数据/代码安全**：可变状态都在命名卷（`xhs_xhs-data`/`xhs_xhs-venv`/`xhs_xhs-profiles`/…）；生产仓库 `/Users/user/PG/XiaohongshuSkills` 与 worktree `/Users/user/PG/xhs-docker-src` 分离，重启不影响。核对：`docker inspect xhs --format '{{json .Mounts}}'` 应看到 4 个 `xhs_xhs-*` 卷挂到 `data/.venv/logs/tmp`。
+
+## 8. 端口隔离（容器 vs 生产，硬约束）
+
+容器内 `5000`(webapp)/`5001`(MCP)/`9222`(Chrome CDP) 只在**容器网络命名空间**内；对外**只重映射**到：
+
+| 容器内 | 宿主发布（`127.0.0.1`） |
+|---|---|
+| 5000 webapp | **15000** |
+| 5001 MCP | **15001** |
+| 9222 CDP | **19222** |
+
+生产在宿主用 `5000`(webapp)、`9222/9223`(Chrome CDP)——**两者不重叠**。
+- `.env`：`XHS_UI_PORT=15000` / `XHS_MCP_PORT=15001` / `XHS_CDP_PORT=19222`。
+- `docker-compose.yml` 的**默认值也必须是 15000/15001/19222**（`.env` 丢失时兜底）。
+- 契约测试 `tests/test_compose_ports.py`：宿主端口 ∈ {15000,15001,19222}，且 ∉ {5000,5001,9222,9223}。
+- ⚠️ **禁止**把容器写成直映 `5000:5000` / `9222:9222`——会撞生产。
