@@ -11,6 +11,9 @@ rm -f /data/chrome-profiles/*/Singleton* 2>/dev/null || true
 
 mkdir -p data data/logs tmp logs
 chown -R user:user data tmp logs .venv 2>/dev/null || true
+# 图集缓存卷（命名卷根属 root）：交给 user，否则下载 Permission denied
+mkdir -p /home/user/.cache/xhs_images
+chown -R user:user /home/user/.cache 2>/dev/null || true
 
 if [ ! -x .venv/bin/python ]; then
   echo "[entrypoint] bootstrapping .venv (first run)..."
