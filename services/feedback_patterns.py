@@ -74,9 +74,10 @@ def update(pattern_section, trend_row, date=None):
         return False, "LLM 未给 pattern/trend_row"
     txt = p.read_text(encoding="utf-8")
     orig = txt
-    if pat:
-        if date and any(l.startswith("### ") and str(date) in l for l in txt.split("\n")):
-            pat = ""          # 同日模式节已存在 → 跳过（幂等）
+    same_day = bool(date) and any(
+        re.match(rf"^\|\s*{re.escape(str(date))}\s*\|", l) for l in txt.split("\n"))
+    if pat and same_day:
+        pat = ""          # 同日趋势行已存在 → 视为已处理，跳过模式节（幂等）
     if pat:
         i = txt.find(TREND_MARK)
         if i < 0:
