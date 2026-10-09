@@ -67,6 +67,10 @@ def prepare_package(cand):
         tmin, tmax = max(800, int(j * 0.30)), max(900, int(j * 0.34))
     else:
         tmin, tmax = int(j * 0.30), 900
+    # 小红书图文正文硬上限 1000（post 类）；export 走 md 不受限
+    if r["publish_method"] != "export":
+        tmax = min(tmax, 1000)
+        tmin = min(tmin, tmax)
     target = f"{tmin}~{tmax}字（密度=正文字数/日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
     refs = related_text = ""
     try:
