@@ -23,7 +23,7 @@ def _patch(monkeypatch):
     monkeypatch.setattr(w._kana, "replace", lambda s: s)
     monkeypatch.setattr(w._kana, "new_terms", lambda s: [], raising=False)
     monkeypatch.setattr(w._kana, "log_pending", lambda *a, **k: None)
-    monkeypatch.setattr(w._pc, "check_text", lambda t, spec: {"problems": [], "body_len": len(t), "h2": 0, "kana": 0})
+    monkeypatch.setattr(w._pc, "check_text", lambda t, spec, channel="xhs": {"problems": [], "body_len": len(t), "h2": 0, "kana": 0})
     monkeypatch.setattr(w._pc, "title_len", lambda t: len(t))
     monkeypatch.setattr(w._rw, "review", lambda t: {"exit": 0, "problems": [], "hits": {}})
     monkeypatch.setattr(w._gz, "check", lambda t, b: [])
@@ -110,3 +110,28 @@ def test_pick_candidates_includes_gzh_hint(monkeypatch):
     monkeypatch.setattr(w._news, "query_news", lambda **kw: rows)
     keys = [r["key"] for r in w.pick_candidates(0)]
     assert A in keys            # gzh 方向（无 S/A 分级）也必须入选
+
+
+def test_write_one_akb_bullet(monkeypatch):
+    """AKB 晒照型（akb_type=bullet）→ 不写正文，只设 preselected=1/publish_xhs=0。"""
+    st = _fake_db(monkeypatch)
+    cand = {"key": "c" * 40, "title": "t", "format": "story", "is_long_form": 1,
+            "content_ja": "x", "akb_type": "bullet"}
+    r = w.write_one(cand, dry_run=False)
+    assert r["bullet"] and r["ok"] and r["versions"] == []
+    row = st["c" * 40]
+    assert row["preselected"] == 1 and row["publish_xhs"] == 0 and row["publish_mode"] == "normal"
+    assert "rewritten_content" not in row and "wechat_content" not in row
+
+
+def test_pick_candidates_excludes_processed_bullet(monkeypatch):
+    A, B = "a" * 40, "b" * 40
+    rows = [
+        {"key": A, "content_ja": "x", "format": "story", "rewritten_content": "", "grade": "AKB大TOP",
+         "akb_type": "bullet", "preselected": 1, "title_score": 5.0, "cluster_keys": ""},   # 已处理
+        {"key": B, "content_ja": "x", "format": "story", "rewritten_content": "", "grade": "AKB大TOP",
+         "akb_type": "event", "preselected": 0, "title_score": 4.0, "cluster_keys": ""},     # 事件型
+    ]
+    monkeypatch.setattr(w._news, "query_news", lambda **kw: rows)
+    keys = [r["key"] for r in w.pick_candidates(0)]
+    assert B in keys and A not in keys

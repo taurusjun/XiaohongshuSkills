@@ -69,3 +69,23 @@ def test_title_too_long():
 def test_h3_not_allowed():
     r = pc.check_text("## 标题\n### 三级\n## A\n## B\n" + "啊" * 900, STORY)
     assert any("三级标题" in p for p in r["problems"])
+
+
+def test_gzh_skips_density_and_structure():
+    # gzh：密度<30% + 无 ## + 三级标题 都不算问题；标题限 30
+    text = "## " + "标" * 25 + "\n### 三级\n" + "啊" * 100
+    r = pc.check_text(text, {"fmt": "story", "lf": 1, "ja": 1000}, channel="gzh")
+    assert r["problems"] == [], r["problems"]
+
+
+def test_xhs_same_text_fails():
+    text = "## " + "标" * 25 + "\n### 三级\n" + "啊" * 100
+    r = pc.check_text(text, {"fmt": "story", "lf": 1, "ja": 1000}, channel="xhs")
+    assert any("> 20" in p for p in r["problems"])
+    assert any("三级标题" in p for p in r["problems"])
+    assert any("密度" in p for p in r["problems"])
+
+
+def test_gzh_kana_still_enforced():
+    r = pc.check_text("## 标题\nあいうえおか\n" + "啊" * 100, {"fmt": "gzh", "lf": 0, "ja": 1000}, channel="gzh")
+    assert any("假名" in p for p in r["problems"])

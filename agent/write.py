@@ -38,7 +38,9 @@ def pick_candidates(n=0):
     # ① DB grade(S/A) ② review 存档分级 ③ 分数兜底
     rows = _news.query_news(status="active", limit=300)
     base = [r for r in rows if (r.get("content_ja") or "")
-            and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")]
+            and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")
+            # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑
+            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() == "gzh"]
@@ -239,7 +241,7 @@ def _produce(cand, pkg, channel, first=None):
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
-        mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"])
+        mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"], channel)
         gate = list(mech["problems"])
         try:
             rw = _rw.review(body)
@@ -266,7 +268,16 @@ def _produce(cand, pkg, channel, first=None):
 
 
 def write_one(cand, dry_run=True, force_channel=None):
-    """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。force_channel 用于指定渠道。"""
+    """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。force_channel 用于指定渠道。
+
+    AKB大TOP 晒照型（review 标 akb_type=bullet）→ **不写正文**，只设 preselected=1/publish_xhs=0。
+    """
+    if (cand.get("akb_type") or "").strip().lower() == "bullet":
+        if not dry_run:
+            _news.update_news(cand["key"], {"preselected": 1, "publish_xhs": 0, "publish_mode": "normal"})
+        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": True, "bullet": True,
+                "attempts": 0, "channel": "xhs", "title": "", "text": "", "body": 0, "h2": 0,
+                "kana": 0, "method": "bullet", "score": 0, "related": "", "problems": [], "versions": []}
     pkg = prepare_package(cand)
     method = pkg["method"]
     eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
@@ -388,6 +399,9 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             cands = _split_candidates(cands)
     results = [write_one(c, dry_run=dry_run, force_channel=force_channel) for c in cands]
     for r in results:
+        if r.get("bullet"):
+            print(f"BULLET {r['key']}（AKB 晒照型 → 仅入库不写正文）")
+            continue
         for v in r["versions"]:
             print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
                   f"m={r['method']} score={v['score']} body={v['body']} ##={v['h2']} kana={v['kana']} "

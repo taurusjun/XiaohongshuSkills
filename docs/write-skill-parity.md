@@ -91,6 +91,27 @@
 - `skills/creative/xhs-write-publish-flow/`（SKILL + references + `reviews/chinese-review-prompt.md`）
 - `ops/verify_write_alignment.py`（真实验证脚本，可复现）
 
+## 9. review→write 结构化数据审计
+
+旧 write 会从 **review 存档（`~/.hermes/daily-reviews/DATE.md`，自然语言）**取数据；容器化后 review 只产结构化输出。逐项审计：
+
+| 场景（write 从 review 取的…） | 旧形态 | 结构化字段 | 状态 |
+|---|---|---|---|
+| 分级 S/A/B/C/AKB大TOP | 存档分级列表 | `grade` | ✅ |
+| 同事件聚类 / A级同S簇跳过 | 聚类标注 | `cluster_keys`（write 每组取一条） | ✅ |
+| **gzh 方向**（阶段2） | 「公众号方向/改道」备注 | `channel_hint` | ✅ 补 |
+| **AKB大TOP 事件型 vs 晒照型**（写不写正文） | 「事件型→写全文 / 晒照型→summary bullet」备注 | `akb_type`（event/bullet） | ✅ 补 |
+| 跳过（非赛道 / 成人产业「行当玩法」） | 「跳过」备注 | `grade=C`（不入候选池）；改道=`channel_hint` | ✅ |
+| 第2层价值建议（标题方向/情绪预期） | 存档自由文本 | —（写稿用不到；纯人读建议） | 不改 |
+
+### `akb_type` 真实验证（2026-10-09）
+```
+review 真实输出：[persist] … / AKB分流 4 篇
+DB：1c1195de/dc62bbe1/6779ef94/20d27ab6 均 grade=AKB大TOP, akb_type=event
+模拟标 bullet 后 write --key 20d27ab6 → "BULLET …（仅入库不写正文）"
+DB：akb_type=bullet, preselected=1, publish_xhs=0, rewritten_content 空
+```
+
 ## 8. gzh 写稿触发机制（A 方案：结构化）
 
 ### 旧 skill 是怎么触发的（原始语义）

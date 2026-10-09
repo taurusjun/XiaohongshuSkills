@@ -82,24 +82,26 @@ def _loads_balanced(raw):
 
 
 def _extract_machine_json(text):
-    """取输末 ```json {...}``` → (grades, clusters, channel_hint, feedback, 去块文本)。"""
+    """取输末 ```json {...}``` → (machine_dict|None, 去块文本)。
+
+    machine 可能含 grades/clusters/channel_hint/akb_type/feedback。
+    """
     if not text:
-        return None, None, None, None, text
+        return None, text
     for mm in reversed(list(re.finditer(r"```json\s*", text))):
         start = mm.end()
         end = text.find("```", start)
         if end < 0:
             continue
         d = _loads_balanced(text[start:end].strip())
-        if isinstance(d, dict) and ("grades" in d or "clusters" in d or "feedback" in d or "channel_hint" in d):
-            return ((d.get("grades") or {}), (d.get("clusters") or []),
-                    (d.get("channel_hint") or {}), d.get("feedback"),
-                    text[:mm.start()] + text[end + 3:])
-    return None, None, None, None, text
+        if isinstance(d, dict) and any(k in d for k in
+                                       ("grades", "clusters", "feedback", "channel_hint", "akb_type")):
+            return d, text[:mm.start()] + text[end + 3:]
+    return None, text
 
 
-def persist(date, grades, clusters, channel_hint=None):
-    """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint（gzh 方向）。"""
+def persist(date, grades, clusters, channel_hint=None, akb_type=None):
+    """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type。"""
     day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     wg = wr = cleared = 0
     for k12, g in (grades or {}).items():
@@ -132,7 +134,19 @@ def persist(date, grades, clusters, channel_hint=None):
     for k in day:
         if k not in ch_keys and (_news.get_by_key(k) or {}).get("channel_hint"):
             _news.update_news(k, {"channel_hint": ""})
-    return wg, wr, cleared, ch
+    # akb_type（AKB大TOP 事件型 vs 晒照型 → 决定 write 是否写正文）
+    ak = 0
+    ak_keys = set()
+    for k12, v in (akb_type or {}).items():
+        fk = _resolve_keys([k12])
+        if fk and fk[0] in day and str(v).strip() in ("event", "bullet"):
+            _news.update_news(fk[0], {"akb_type": str(v).strip()})
+            ak_keys.add(fk[0])
+            ak += 1
+    for k in day:
+        if k not in ak_keys and (_news.get_by_key(k) or {}).get("akb_type"):
+            _news.update_news(k, {"akb_type": ""})
+    return wg, wr, cleared, ch, ak
 
 
 def extract_entities(items, max_tokens=4000):
@@ -202,7 +216,13 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=False)         # 一、按来源分组（旧 skill 1d）
     out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 机器JSON
-    grades, clusters, channel_hint, feedback, out = _extract_machine_json(out)
+    machine, out = _extract_machine_json(out)
+    machine = machine or {}
+    grades = machine.get("grades") or {}
+    clusters = machine.get("clusters") or []
+    channel_hint = machine.get("channel_hint") or {}
+    akb_type = machine.get("akb_type") or {}
+    feedback = machine.get("feedback")
     rest = out
     idx = rest.find("## 二、")
     if idx > 0:
@@ -210,8 +230,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:
-        wg, wr, cl, ch = persist(date, grades, clusters, channel_hint)
-        print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇（仅当日；related_keys 留给 write）")
+        wg, wr, cl, ch, ak = persist(date, grades, clusters, channel_hint, akb_type)
+        print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇（仅当日；related_keys 留给 write）")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 表格铁律：收尾校验

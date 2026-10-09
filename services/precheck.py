@@ -1,7 +1,9 @@
-"""批量 draft 机械门禁预检 —— 唯一实现（迁移自 batch_precheck.py）。
+"""批量 draft 机械门禁预检 —— 唯一实现（迁移自 batch_precheck.py，按渠道分流）。
 
-与迁移前一致：story lf=1 正文≥800 且 `##`≥2；news 无 `##`；顿号行 0；假名≤5；
-日文新字体 FAIL（嶋/壱 降级 WARN）；密度≥30%；标题≤20。
+- **xhs**：标题≤20；story lf=1 正文≥800 且 `##`≥2；news 无 `##`；无 `###`；顿号行 0；
+  假名≤5；日文新字体 FAIL（嶋/壱 降级 WARN）；密度≥30%。
+- **gzh**：标题≤30；**不套** 30% 密度门、不套 story/news 结构门（公众号长文排版自由）；
+  其余（顿号/假名/新字体）照旧。对齐 `xhs-content-review`「gzh 稿不按 xhs 5 维/密度门」。
 差异：不再 shell out 调 xhs_word_count.py，直接调 services.word_count。
 """
 import argparse
@@ -36,10 +38,11 @@ def body_of(path):
         return split_title_body(f.read())
 
 
-def check_text(text, spec):
-    """对草稿文本做全部机械门禁检查，返回结果 dict。"""
+def check_text(text, spec, channel="xhs"):
+    """对草稿文本做机械门禁检查（按渠道），返回结果 dict。"""
     title, body = split_title_body(text)
     problems, warns = [], []
+    is_gzh = (channel == "gzh")
 
     if title is None:
         problems.append("缺首行 `## 标题`（入库会把正文第一句当 rewritten_title）")
@@ -48,26 +51,28 @@ def check_text(text, spec):
 
     if title is not None:
         tl = title_len(title)
-        if tl > 20:
-            problems.append(f"标题 {tl} 字 > 20（news/story 同限；就地改短到 <=20）")
+        limit = 30 if is_gzh else 20
+        if tl > limit:
+            problems.append(f"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）")
 
     body_len = content_len(body)
     h2 = [l for l in body.split("\n") if l.startswith("## ")]
     h3 = [l for l in body.split("\n") if l.startswith("###")]
-    if h3:
-        problems.append(f"出现三级标题 ### ×{len(h3)}（story 小标题必须 ## ）")
 
     fmt, lf = spec.get("fmt", "?"), spec.get("lf", 0)
-    if fmt == "story" and lf == 1:
-        if body_len < 800:
-            problems.append(f"story 正文 {body_len} 字 < 800（硬门禁）")
-        elif body_len < 850:
-            warns.append(f"story 正文 {body_len} 字，低于 850 余量线（改稿删字易跌破 800）")
-        if len(h2) < 2:
-            problems.append(f"story 正文 `##` 小标题 {len(h2)} 个 < 2")
-    else:
-        if h2:
-            problems.append(f"news 正文不得有 `##` 分隔标题（发现 {len(h2)} 个），改自然过渡句")
+    if not is_gzh:                                   # xhs 体裁结构门；gzh 长文排版自由
+        if h3:
+            problems.append(f"出现三级标题 ### ×{len(h3)}（story 小标题必须 ## ）")
+        if fmt == "story" and lf == 1:
+            if body_len < 800:
+                problems.append(f"story 正文 {body_len} 字 < 800（硬门禁）")
+            elif body_len < 850:
+                warns.append(f"story 正文 {body_len} 字，低于 850 余量线（改稿删字易跌破 800）")
+            if len(h2) < 2:
+                problems.append(f"story 正文 `##` 小标题 {len(h2)} 个 < 2")
+        else:
+            if h2:
+                problems.append(f"news 正文不得有 `##` 分隔标题（发现 {len(h2)} 个），改自然过渡句")
 
     dunhao = [(i, l) for i, l in enumerate(body.split("\n"), 1) if l.count("、") >= 2]
     if dunhao:
@@ -87,16 +92,16 @@ def check_text(text, spec):
 
     ja = spec.get("ja") or 0
     density = (body_len / ja * 100) if ja else None
-    if density is not None and density < 30:
+    if not is_gzh and density is not None and density < 30:     # gzh 不套 xhs 30% 密度门
         problems.append(f"密度 {density:.1f}% < 30%（先复核是否合并稿误用分母，再扩充）")
 
     return dict(key="", title=title, body_len=body_len, h2=len(h2), density=density,
-                kana=kana_all, dunhao=dunhao, problems=problems, warns=warns)
+                kana=kana_all, dunhao=dunhao, problems=problems, warns=warns, channel=channel)
 
 
-def check(path, spec):
+def check(path, spec, channel="xhs"):
     with open(path, encoding="utf-8") as f:
-        r = check_text(f.read(), spec)
+        r = check_text(f.read(), spec, channel)
     r["key"] = os.path.basename(path)
     return r
 
@@ -108,6 +113,7 @@ def main(argv=None):
     ap.add_argument("--dir", required=True, help="draft 所在目录")
     ap.add_argument("--plan", help="plan.json 路径")
     ap.add_argument("--spec", action="append", default=[], help="k12=fmt:lf:ja（可重复）")
+    ap.add_argument("--channel", default="xhs", choices=["xhs", "gzh"])
     ap.add_argument("--glob", default="*_draft_*.md")
     args = ap.parse_args(argv)
 
@@ -131,7 +137,7 @@ def main(argv=None):
         if spec is None:
             print(f"SKIP {k12}  (plan 里没有这个 key，先补 fmt/lf/ja 再判)")
             continue
-        r = check(path, spec)
+        r = check(path, spec, args.channel)
         verdict = "FAIL" if r["problems"] else ("WARN" if r["warns"] else "PASS")
         if r["problems"]:
             fails += 1
@@ -142,8 +148,6 @@ def main(argv=None):
             print(f"      ✗ {p}")
         for w in r["warns"]:
             print(f"      ! {w}")
-        for i, line in r["dunhao"][:3]:
-            print(f"      · L{i}: {line[:90]}")
 
     print(f"\n{len(files)} 篇检查完毕，FAIL {fails} 篇")
     return 1 if fails else 0
