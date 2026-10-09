@@ -6,6 +6,13 @@ from services import paths
 
 __all__ = ["roots", "list_refs", "read_ref", "search_refs", "relevant", "main"]
 
+# 非"规范/案例"的数据产物，不属于写稿知识库（review 第4层的累积数据，走 feedback_patterns 表）
+_EXCLUDE_NAMES = {"data-feedback-patterns.md"}
+
+
+def _is_excluded(name):
+    return name in _EXCLUDE_NAMES or name.startswith("data-feedback-patterns.md.")
+
 SKILL_DIRS = [
     "skills/creative/xhs-write-publish-flow",
     "skills/creative/xhs-daily-material-review",
@@ -31,7 +38,7 @@ def list_refs(skill=None):
     for d, r in roots():
         if skill and skill not in d:
             continue
-        files += [f"{d}/references/{p.name}" for p in sorted(r.glob("*.md"))]
+        files += [f"{d}/references/{p.name}" for p in sorted(r.glob("*.md")) if not _is_excluded(p.name)]
     return files
 
 
@@ -49,6 +56,8 @@ def search_refs(query, limit=12):
     rx = re.compile(re.escape(query), re.I)
     for d, r in roots():
         for p in sorted(r.glob("*.md")):
+            if _is_excluded(p.name):
+                continue
             try:
                 for i, ln in enumerate(p.read_text(encoding="utf-8").split("\n"), 1):
                     if rx.search(ln):
