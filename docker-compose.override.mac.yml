@@ -13,8 +13,8 @@ services:
       HTTPS_PROXY: http://192.168.5.2:20808
       ALL_PROXY: socks5://192.168.5.2:20808
       PROXY_URL: http://192.168.5.2:20808          # config.yahoo_conf 优先读它（避免回退到 scripts/.env 的宿主值）
-      NO_PROXY: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
-      no_proxy: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
+      NO_PROXY: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,yimg.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
+      no_proxy: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,yimg.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
     sysctls:
       net.ipv6.conf.all.disable_ipv6: "1"   # 容器只有 IPv4 路由；否则 pip 走 IPv6 会 Network unreachable
     build:
