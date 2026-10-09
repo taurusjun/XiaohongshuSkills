@@ -39,12 +39,19 @@ def pick_candidates(n=3):
     rows = _news.query_news(status="active", limit=300)
     base = [r for r in rows if (r.get("content_ja") or "")
             and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")]
-    # 选材口径：**review 前置写入 DB 的 grade**（S/A/AKB大TOP）；无分级才分数兜底
+    # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
-    if graded:
-        return sorted(graded, key=lambda r: -(r.get("title_score") or 0))[:n]
-    base.sort(key=lambda r: -(r.get("title_score") or 0))
-    return base[:n]
+    pool = graded or base
+    picks, used = [], set()
+    for r in sorted(pool, key=lambda x: -(x.get("title_score") or 0)):
+        cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
+        if (cl | {r["key"]}) & used:
+            continue
+        picks.append(r)
+        used |= cl | {r["key"]}
+        if len(picks) >= n:
+            break
+    return picks
 
 
 # ---------------- 阶段3：编写（体裁+字数路由） ----------------
