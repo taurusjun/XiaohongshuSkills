@@ -79,3 +79,7 @@ data/multi_source.db-wal
 data/custom_keywords.json
 xhs-visual-director-skill.bak/
 config/.wechat_token_cache.json
+
+# 崩溃转储（曾被误入库，含密钥风险）
+core
+core.*
