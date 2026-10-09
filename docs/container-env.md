@@ -42,6 +42,21 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
 | **`LITELLM_THINKING`** | **默认 `disabled`**。推理模型会把大量 token 花在 `reasoning_content`，导致正文被截断（`finish_reason=length`、`content` 为空）。关闭思考后 0.4s 返回。需要思考时才设 `enabled` |
 
 - LLM 请求用 **no-proxy opener 直连**，不受 `HTTP_PROXY` 影响。
+- **并非走 LiteLLM 网关**（变量名沿用 `LITELLM_*`），而是 `agent/llm.py` 直接打 DeepSeek 的 OpenAI 兼容接口。
+
+**当前实际值（`scripts/.env`）**：
+
+| 变量 | 当前值 |
+|---|---|
+| `LITELLM_URL` | `https://api.deepseek.com` |
+| `LITELLM_MODEL` | **`deepseek-v4-flash`** |
+| `LITELLM_API_KEY` | `sk-a61…`（在 `scripts/.env`） |
+| `LITELLM_MAX_TOKENS` | `3000`（各调用会覆盖：review 20000 / compose 16000 / 评分 4000…） |
+| `temperature` | `0.0` |
+| `LITELLM_THINKING` | 未设 → 默认 **`disabled`** |
+
+> **fetch 抓取同款**：`fetch_runner`/抓取链路也用 `deepseek-v4-flash`（日志 `模型=deepseek-v4-flash | 后端=sqlite`）。
+> 换模型/端点：改 `scripts/.env` 的 `LITELLM_MODEL`/`LITELLM_URL`/`LITELLM_MAX_TOKENS`。
 
 ## 4. 交付（`services/delivery.py`）
 
