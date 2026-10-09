@@ -1975,14 +1975,13 @@ refreshLoginDot();
 <div id="chromeModal" onclick="if(event.target===this)closeChrome()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
   <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
     <button onclick="closeChrome()" style="position:absolute;right:10px;top:6px;background:none;border:0;color:#aaa;font-size:16px;cursor:pointer">✕</button>
-    <img id="chromeShot" alt="容器 Chrome 画面" style="width:760px;max-width:92vw;border-radius:8px;background:#000;display:block" src="">
+    <iframe id="chromeFrame" src="about:blank" title="容器 Chrome 远程控制"
+      style="width:920px;height:620px;max-width:94vw;max-height:88vh;border:0;border-radius:8px;background:#000;display:block"></iframe>
   </div>
 </div>
 <script>
-var _chromeTimer=null;
-function openChrome(){document.getElementById('chromeModal').style.display='flex';shootChrome();_chromeTimer=setInterval(shootChrome,3000);}
-function closeChrome(){document.getElementById('chromeModal').style.display='none';if(_chromeTimer){clearInterval(_chromeTimer);_chromeTimer=null;}}
-function shootChrome(){var i=document.getElementById('chromeShot');i.src='/api/creator/screenshot?ts='+Date.now();}
+function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://127.0.0.1:16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
+function closeChrome(){document.getElementById('chromeModal').style.display='none';document.getElementById('chromeFrame').src='about:blank';}
 </script>
 </body></html>"""
 

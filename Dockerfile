@@ -27,6 +27,7 @@ RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::T
       sqlite3 \
       git curl ca-certificates gnupg jq \
       supervisor cron tini netcat-openbsd procps psmisc \
+      x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Google Chrome（apt 源，锁定稳定版；不做运行期 apt upgrade） ----

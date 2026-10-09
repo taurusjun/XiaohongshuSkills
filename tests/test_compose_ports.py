@@ -9,7 +9,7 @@ import yaml
 
 from services import paths
 
-ALLOWED = {15000, 15001, 19222}
+ALLOWED = {15000, 15001, 16080, 19222}
 FORBIDDEN = {5000, 5001, 9222, 9223}
 COMPOSE_FILES = ("docker-compose.yml", "docker-compose.override.mac.yml")
 
