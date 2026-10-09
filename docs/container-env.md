@@ -112,3 +112,27 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
 - `docker-compose.yml` 的**默认值也必须是 15000/15001/19222**（`.env` 丢失时兜底）。
 - 契约测试 `tests/test_compose_ports.py`：宿主端口 ∈ {15000,15001,19222}，且 ∉ {5000,5001,9222,9223}。
 - ⚠️ **禁止**把容器写成直映 `5000:5000` / `9222:9222`——会撞生产。
+
+## 9. 存储源可配（卷名 ⇄ 宿主路径）
+
+`.env` 里每个 `XHS_*_SRC` 的**值**既可以是**命名卷名**，也可以是**宿主绝对路径**（compose 自动识别 bind/volume）：
+```dotenv
+XHS_VENV_SRC=xhs-venv
+XHS_DATA_SRC=xhs-data
+XHS_LOGS_SRC=xhs-logs
+XHS_TMP_SRC=xhs-tmp
+XHS_GALLERY_SRC=xhs-gallery      # ~/.cache/xhs_images
+XHS_EXPORTS_SRC=xhs-exports      # ~/.cache/xhs_exports
+```
+- **macOS/colima（默认）**：用命名卷名（DB/Chrome 有锁，不放 virtiofs）。
+- **Linux / 想放宿主盘**：改成路径，例：
+  ```dotenv
+  XHS_DATA_SRC=/srv/xhs/data
+  XHS_GALLERY_SRC=/srv/xhs/gallery
+  XHS_EXPORTS_SRC=/srv/xhs/exports
+  ```
+  Linux 上 bind 是原生挂载，SQLite/Chrome 无 virtiofs 风险；**迁移整机 = rsync 那个目录**。
+
+改完 `docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d`。
+
+> 卷数据丢失时机：`docker compose down -v`、`docker volume rm/prune`、`colima delete`/重建 VM。放宿主路径可规避前三者。
