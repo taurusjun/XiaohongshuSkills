@@ -26,6 +26,7 @@ services:
       - xhs-logs:/home/user/PG/XiaohongshuSkills/logs
       - xhs-tmp:/home/user/PG/XiaohongshuSkills/tmp
       - xhs-gallery:/home/user/.cache/xhs_images   # 图集缓存（持久，重建不丢）
+      - xhs-exports:/home/user/.cache/xhs_exports  # 长文导出 md（持久，重建不丢）
 
 volumes:
   xhs-venv:
@@ -33,3 +34,4 @@ volumes:
   xhs-logs:
   xhs-tmp:
   xhs-gallery:
+  xhs-exports:
