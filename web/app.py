@@ -1961,9 +1961,17 @@ async function refreshLoginDot(){
            e.title='创作号:'+(cOn?'已登录':'未登录')+' / 浏览页:'+(wOn?'已登录':'未登录')
                   +(w.nickname?(' / 账户:'+w.nickname+(w.red_id?(' 小红书号:'+w.red_id):'')):'');}
     var a=document.getElementById('loginAcct');
-    if(a){ if(wOn && w.nickname){a.textContent=w.nickname+(w.red_id?(' · '+w.red_id):'');
-            a.title='profileId:'+(w.profile_id||'')+'　小红书号:'+(w.red_id||'');}
-           else{a.textContent='';} }
+    if(a){
+      var parts=[];
+      if(wOn&&w.nickname) parts.push('浏览:'+w.nickname+(w.red_id?('·'+w.red_id):''));
+      if(cOn&&c.nickname) parts.push('创作:'+c.nickname+(c.red_id?('·'+c.red_id):''));
+      var mism=(wOn&&cOn&&w.red_id&&c.red_id&&w.red_id!==c.red_id);
+      a.textContent = parts.length? parts.join('  ') : ((wOn||cOn)?(wOn?'浏览页✓':'创作号✓'):'');
+      a.style.color = mism? '#ff6b6b' : '#9fb0c8';
+      a.title = mism? ('⚠️ 浏览/创作小红书号不一致：'+w.red_id+' / '+c.red_id)
+                    : ('浏览 profileId:'+(w.profile_id||'')+'　小红书号:'+(w.red_id||'')
+                       +(c.red_id?('\n创作 小红书号:'+c.red_id):''));
+    }
   }catch(err){}
 }
 refreshLoginDot();setInterval(refreshLoginDot,8000);

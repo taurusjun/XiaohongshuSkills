@@ -156,14 +156,24 @@ def _real_creator_status(ttl=30):
 
             _send("Page.enable")
             _send("Page.navigate", {"url": "https://creator.xiaohongshu.com/new/home"})
-            time.sleep(5)
-            r = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
-                "(function(){var h=location.href;var t=(document.body&&document.body.innerText)||'';"
-                "var login=h.indexOf('/login')>=0||!!document.querySelector('.login-container')"
-                "||t.indexOf('扫一扫登录')>=0||t.indexOf('网络异常')>=0||t.indexOf('返回重新扫描')>=0;"
-                "return {href:h,login:login};})()")})
-            v = (r.get("result") or {}).get("result", {}).get("value") or {}
+            v = {}
+            for _ in range(6):
+                time.sleep(2)
+                r = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
+                    "(function(){var h=location.href;var t=(document.body&&document.body.innerText)||'';"
+                    "var login=h.indexOf('/login')>=0||!!document.querySelector('.login-container')"
+                    "||t.indexOf('扫一扫登录')>=0||t.indexOf('网络异常')>=0||t.indexOf('返回重新扫描')>=0;"
+                    "var p=document.querySelector('.personal')||document;"
+                    "var nm=(p.querySelector('.account-name')||{}).innerText||'';"
+                    "var ot=(p.querySelector('.others.description-text')||{}).innerText||'';"
+                    "var m=ot.match(/小红书账号[:：]\s*([0-9A-Za-z]+)/);"
+                    "return {href:h,login:login,nickname:(nm||'').trim(),red_id:m?m[1]:''};})()")})
+                v = (r.get("result") or {}).get("result", {}).get("value") or {}
+                if v.get("login") or v.get("nickname"):
+                    break
             val = not bool(v.get("login"))
+            _status_cache["account"] = ({"nickname": v.get("nickname", ""), "red_id": v.get("red_id", "")}
+                                        if val and v.get("nickname") else {})
     except Exception:
         val = False
     _status_cache["t"] = now
@@ -185,7 +195,11 @@ def api_accounts():
 def api_status():
     """真实检测 creator 登录态（导航 check-login，30s 缓存）。"""
     val = _real_creator_status()
-    return jsonify({"ok": True, "logged_in": bool(val), "source": "live-check"})
+    acc = _status_cache.get("account") or {}
+    if val and acc.get("nickname"):
+        _save_creator_meta(acc)
+    return jsonify({"ok": True, "logged_in": bool(val), "source": "live-check",
+                    "nickname": acc.get("nickname", ""), "red_id": acc.get("red_id", "")})
 
 
 @login_bp.post("/api/login/status/refresh")
@@ -342,6 +356,26 @@ def _save_account_meta(info):
         acc = _read_current_account() or default_acc or "default"
         meta[str(acc)] = {"profile_id": info.get("profile_id", ""), "nickname": info.get("nickname", ""),
                           "red_id": info.get("red_id", ""), "updated_at": int(time.time())}
+        _accounts_meta_file().parent.mkdir(parents=True, exist_ok=True)
+        _accounts_meta_file().write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _account_name():
+    default_acc = get_default_account()
+    if isinstance(default_acc, dict):
+        default_acc = default_acc.get("name")
+    return _read_current_account() or default_acc or "default"
+
+
+def _save_creator_meta(acc):
+    """把 creator 账户(昵称/小红书号) 记到同一账户名下（与 www 关联，供交叉核对）。"""
+    try:
+        meta = _read_accounts_meta()
+        e = meta.setdefault(str(_account_name()), {})
+        e["creator"] = {"nickname": acc.get("nickname", ""), "red_id": acc.get("red_id", ""),
+                        "updated_at": int(time.time())}
         _accounts_meta_file().parent.mkdir(parents=True, exist_ok=True)
         _accounts_meta_file().write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
