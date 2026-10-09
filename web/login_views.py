@@ -256,37 +256,21 @@ def _www_tab_ws():
 
 
 def _www_logged_in():
-    """浏览页登录态：打开 explore，看是否弹登录框(.login-container)。有弹窗=未登录。"""
+    """浏览页登录态：**不导航**，仅在当前 www 标签上查是否出现登录弹窗(.login-container)。
+    有弹窗=未登录。零导航以免刷新二维码使其失效（对齐 creator 的 login-probe）。"""
     from websockets.sync.client import connect
     ws_url = _www_tab_ws()
     if not ws_url:
         return False
     with connect(ws_url, max_size=None) as ws:
-        mid = [0]
-
-        def _send(method, params=None, to=15):
-            my = mid[0]; mid[0] += 1
-            ws.send(json.dumps({"id": my, "method": method, "params": params or {}}))
-            while True:
-                mm = json.loads(ws.recv(timeout=to))
-                if mm.get("id") == my:
-                    return mm
-
-        _send("Page.enable")
-        _send("Page.navigate", {"url": "https://www.xiaohongshu.com/explore"})
-        # 页面加载后轮询是否出现登录弹窗（出现=未登录）；最多等 ~12s
-        popup = False
-        for _ in range(12):
-            time.sleep(1)
-            try:
-                r = _send("Runtime.evaluate", {"returnByValue": True,
-                          "expression": "!!document.querySelector('.login-container')"}, to=8)
-                if (r.get("result") or {}).get("result", {}).get("value"):
-                    popup = True
-                    break
-            except Exception:
-                pass
-        return not popup
+        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                            "params": {"returnByValue": True,
+                                       "expression": "!!document.querySelector('.login-container')"}}))
+        while True:
+            mm = json.loads(ws.recv(timeout=10))
+            if mm.get("id") == 1:
+                popup = bool((mm.get("result") or {}).get("result", {}).get("value"))
+                return not popup
 
 
 
