@@ -13,6 +13,8 @@
 
 **为什么不全用 md**：md 适合人看/审计，但"规律"的语义（题材/标题类型/结论方向/对策）无法精确查询 → 决策检索走结构化的表。
 
+> 该 md 是**第4层的数据产物**，**不属于写稿知识库**：`services/references.py` 已把种子 `data-feedback-patterns.md`（及 `.bak-*`）从 `references` 检索中**排除**，写稿只通过 `feedback_patterns.relevant()`（读表）消费规律，避免重复/读到旧种子。
+
 ## 2. 结构化字段（facets）
 
 表结构：`no(PK) / date / title / body(md原文) / tags` + **8 个 facets**：
