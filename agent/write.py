@@ -34,7 +34,7 @@ def _read(rel):
 # ---------------- 阶段1：写前准备（分级 + 关联） ----------------
 
 
-def pick_candidates(n=3):
+def pick_candidates(n=0):
     # ① DB grade(S/A) ② review 存档分级 ③ 分数兜底
     rows = _news.query_news(status="active", limit=300)
     base = [r for r in rows if (r.get("content_ja") or "")
@@ -49,7 +49,7 @@ def pick_candidates(n=3):
             continue
         picks.append(r)
         used |= cl | {r["key"]}
-        if len(picks) >= n:
+        if n and len(picks) >= n:
             break
     return picks
 
@@ -284,7 +284,7 @@ def recommend_and_schedule(n=5, seed=None):
     return picks, plan, bad, reasons, backups, overview
 
 
-def run(n=3, deliver=False, dry_run=False):
+def run(n=0, deliver=False, dry_run=False):
     cands = pick_candidates(n)
     results = [write_one(c, dry_run=dry_run) for c in cands]
     for r in results:
@@ -339,7 +339,7 @@ def main(argv=None):
     import argparse
     argv = sys.argv[1:] if argv is None else argv
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=3)
+    ap.add_argument("--n", type=int, default=0, help="最多写几篇；0=全部 S/A/AKB（默认）")
     ap.add_argument("--deliver", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
