@@ -307,6 +307,13 @@ def run(n=3, deliver=False, dry_run=False):
         print("[备选补位] " + "; ".join(f"{b['key'][:12]} {b.get('title','')[:18]}" for b in backups))
         if bad:
             print("[!] 落库失败:", bad)
+        # 待发布必跑：重新获取图集（原 skill：发布前 gallery-download）
+        try:
+            from services import gallery as _gal
+            gres = _gal.sync(keys=[r["key"] for r in picks], timeout=180)
+            print("[图集] " + "; ".join(f"{k[:12]}={st}" for k, st in gres))
+        except Exception as e:  # noqa: BLE001
+            print(f"[图集] 跳过: {e}")
 
     if deliver:
         from services.delivery import deliver as _d
