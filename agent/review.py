@@ -68,7 +68,7 @@ def _extract_machine_json(text):
 
 
 def persist(date, grades, clusters):
-    """把 review 的**结构化共享数据**写库（只写当日行）：grade + related_keys（聚类 互指）。"""
+    """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys（聚类计划，互指）。"""
     day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     wg = wr = cleared = 0
     for k12, g in (grades or {}).items():
@@ -76,17 +76,18 @@ def persist(date, grades, clusters):
         if fk and fk[0] in day:
             _news.update_news(fk[0], {"grade": str(g)})
             wg += 1
+    # 聚类计划 → cluster_keys（**不是** related_keys；related_keys 由 write 阶段写）
     norm = {}
     for grp in (clusters or []):
         fks = [x for x in _resolve_keys(list(grp)) if x in day]
         for x in fks:
             norm[x] = ",".join(sorted(y for y in fks if y != x))
     for k, v in norm.items():
-        _news.update_news(k, {"related_keys": v})
+        _news.update_news(k, {"cluster_keys": v})
         wr += 1
     for k in day:
-        if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
-            _news.update_news(k, {"related_keys": ""})
+        if k not in norm and (_news.get_by_key(k) or {}).get("cluster_keys"):
+            _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
     return wg, wr, cleared
 
@@ -152,7 +153,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     # 结构化共享数据入 DB（只写当日行）：grade + related_keys
     try:
         wg, wr, cl = persist(date, grades, clusters)
-        print(f"[persist] grade {wg} 篇 / related {wr} 篇 / 清空 {cl} 篇（仅当日）")
+        print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇（仅当日；related_keys 留给 write）")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 本地存档（人看 / 飞书）：**无条件**

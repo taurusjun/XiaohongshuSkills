@@ -59,17 +59,38 @@ def prepare_package(cand):
         refs = _refs.relevant(cand.get("title") or "")
     except Exception:
         pass
-    # 关联素材来自 review 前置写入 DB 的 related_keys（结构化，不依赖 md）
-    related_text = ""
+    # 关联（write 阶段决定并写 related_keys）：
+    #   同事件 = review 的聚类计划 cluster_keys（可合并）
+    #   同人物历史 = 写稿时按实体名检索
+    merge_text = hist_text = ""
+    related_keys = []
     try:
-        _rk = [k.strip() for k in (cand.get("related_keys") or "").split(",") if k.strip()]
-        sibs = [x for x in (_news.get_by_key(k) for k in _rk[:8]) if x]
-        related_text = "\n".join(
+        ck = [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()]
+        sibs = [x for x in (_news.get_by_key(k) for k in ck) if x]
+        merge_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
+        related_keys += ck
     except Exception:
         pass
+    try:
+        from agent import review as _rev
+        from services import related as _rel
+        ents = (_rev.extract_entities([{"key": cand["key"][:12], "title": cand.get("title") or "",
+                                        "ja": (cand.get("title_ja") or "")[:60]}])
+                .get(cand["key"][:12], []))
+        hist = [h["key"] for h in _rel.find_related(cand["key"], ents, limit=4)
+                if h["key"] not in related_keys]
+        if hist:
+            hs = [x for x in (_news.get_by_key(k) for k in hist) if x]
+            hist_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}" for s in hs)
+            related_keys += hist
+    except Exception:
+        pass
+    related_keys = list(dict.fromkeys(related_keys))
     return {"content_ja": cj[:9000], "target": target, "refs": refs,
-            "related_text": related_text, "method": r["publish_method"],
+            "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
+            "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
+            "method": r["publish_method"],
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
@@ -79,12 +100,14 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n"
             "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。（关联素材由 review 前置给定，直接合并即可。）\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不并入。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
-    if pkg["related_text"]:
-        user += "\n\n=== 关联素材（review 前置已定·可合并：把这些素材的角度并入正文）===\n" + pkg["related_text"]
+    if pkg.get("merge_text"):
+        user += "\n\n=== 同事件关联（可合并：把这些素材的角度并入正文）===\n" + pkg["merge_text"]
+    if pkg.get("hist_text"):
+        user += "\n\n=== 同人物历史（仅供前情/避免重复，**不合并**）===\n" + pkg["hist_text"]
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
@@ -182,7 +205,7 @@ def write_one(cand, dry_run=True):
     except Exception:
         pass
     ok = not mech["problems"] and (score.get("total") or 0) >= need
-    rk = cand.get("related_keys") or ""       # review 前置写入 DB，write 直接沿用
+    rk = ",".join(pkg["related_keys"])         # write 阶段写 related_keys（同事件+同人物历史）
     if ok and not dry_run:
         if channel == "gzh":
             _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,
@@ -192,6 +215,15 @@ def write_one(cand, dry_run=True):
             _news.update_news(cand["key"], {"rewritten_title": title, "rewritten_content": body,
                                             "publish_mode": "rewritten", "publish_method": pmethod,
                                             "related_keys": rk, "preselected": 1, "publish_xhs": 0})
+        # 关联素材回指主稿（先读当前 state 再合并，防止覆盖已有 related_keys）
+        for sib in pkg.get("cluster_keys", []):
+            if sib == cand["key"]:
+                continue
+            cur = _news.get_by_key(sib) or {}
+            lst = [x for x in (cur.get("related_keys") or "").split(",") if x]
+            if cand["key"] not in lst:
+                lst.append(cand["key"])
+            _news.update_news(sib, {"related_keys": ",".join(lst)})
         got = _news.get_by_key(cand["key"]) or {}
         ok = (got.get("wechat_title") == title and bool(got.get("wechat_content"))) if channel == "gzh" \
             else (got.get("rewritten_title") == title and len(got.get("rewritten_content") or "") > 50)
