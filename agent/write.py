@@ -176,18 +176,6 @@ def _resolve_keys(prefixes):
     return ",".join(dict.fromkeys(out))
 
 
-def _trim_to(body: str, tmax: int) -> str:
-    """机械兜底：正文超上限时按句（。！？/换行）从尾部删减到 ≤tmax，保留开头钩子。"""
-    import re as _re
-    if content_len(body) <= tmax:
-        return body
-    parts = [p for p in _re.split(r"(?<=[。！？\n])", body) if p]
-    while len(parts) > 1 and content_len("".join(parts)) > tmax:
-        parts.pop()
-    out = "".join(parts).rstrip()
-    return out if content_len(out) <= tmax else out[:tmax].rstrip()
-
-
 def _trim_title(title, limit=20):
     """标题按 xhs_title_len 机械改短到 <=limit。"""
     while title and _pc.title_len(title) > limit:
@@ -207,7 +195,7 @@ def write_one(cand, dry_run=True):
     pkg = prepare_package(cand)                 # 阶段1：写前准备
     pmethod, spec = pkg["method"], pkg["spec"]
 
-    while attempts < 5:
+    while attempts < 3:
         attempts += 1
         ctx, prev = None, None
         if attempts > 1:
@@ -222,9 +210,6 @@ def write_one(cand, dry_run=True):
             except Exception:
                 pass
             fb = list(dict.fromkeys(fb))
-            if body and content_len(body) > pkg["tmax"]:   # 过长 → 置顶，强指令删减
-                fb.insert(0, f"**正文过长（{content_len(body)} > {pkg['tmax']}）**：必须删到 ≤{pkg['tmax']} 字，"
-                              "删掉修饰性/重复句，只保留硬信息与关键情节，不要新增内容")
             if body and len(body) < pkg["tmin"]:   # 字数不足 → **置顶**并要求扩写
                 fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
                               f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
@@ -235,11 +220,7 @@ def write_one(cand, dry_run=True):
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
-        if content_len(body) > pkg["tmax"]:          # 机械兜底：LLM 压不下来就按句删
-            body = _trim_to(body, pkg["tmax"])
         mech = _pc.check_text(f"## {title}\n{body}", spec)
-        if content_len(body) > pkg["tmax"]:            # 正文硬上限（post）
-            mech["problems"].append(f"正文过长 {content_len(body)} > {pkg['tmax']}（需删减到 ≤{pkg['tmax']}）")
         gate = list(mech["problems"]) + (_gz.check(title, body) if channel == "gzh" else _rw.check(body))
         mech["problems"] = gate
         need = 7 if channel == "gzh" else (8 if cand.get("format") == "story" else 6)
