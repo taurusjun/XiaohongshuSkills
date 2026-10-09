@@ -204,12 +204,12 @@ def write_one(cand, dry_run=True):
                     fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
             except Exception:
                 pass
-            if body and len(body) < pkg["tmin"]:  # 字数不足 → 显式目标
-                fb.append(f"正文仅 {len(body)} 字 < 目标 {pkg['tmin']}~{pkg['tmax']} 字"
-                          f"（密度须 ≥30%），请扩写到目标区间")
-            # 保留原密度/字数问题时去重
             fb = list(dict.fromkeys(fb))
-            ctx = "基于上一版**修改**（不要整篇重写），修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
+            if body and len(body) < pkg["tmin"]:   # 字数不足 → **置顶**并要求扩写
+                fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
+                              f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
+            ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
+                   "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
             prev = (title, body, channel)
         channel, title, body, related = compose(cand, pkg, prev=prev, retry_ctx=ctx)
         body, _ = _dh.fix_text(body)
