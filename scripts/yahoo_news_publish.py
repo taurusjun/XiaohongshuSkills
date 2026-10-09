@@ -569,6 +569,26 @@ def main():
     if not check_chrome_cdp():
         return
 
+    # 阶段1：导出 export 篇（串行、失败不阻断普通发布）
+    try:
+        import subprocess as _sp
+        from sqlite_db import get_pending_export
+        _exp = get_pending_export()
+        if _exp:
+            print(f"🖨  先导出 {len(_exp)} 篇（publish_method=export）…")
+            for _i, _k in enumerate(_exp, 1):
+                try:
+                    rr = _sp.run([sys.executable, 'xhs_publish_story.py', _k, '--export'],
+                                 capture_output=True, text=True, timeout=120,
+                                 cwd=os.path.dirname(os.path.abspath(__file__)))
+                    print(f"  [{_i}/{len(_exp)}] {'OK' if rr.returncode == 0 else 'ERR'} {_k[:16]} "
+                          f"{(rr.stdout or '').strip()[-120:]}")
+                except Exception as _e:  # noqa: BLE001
+                    print(f"  [{_i}/{len(_exp)}] 导出失败 {_k[:16]}: {_e}")
+            print("🖨  导出完成，继续普通发布…\n")
+    except Exception as _e:  # noqa: BLE001
+        print(f"🖨  导出阶段跳过: {_e}")
+
     # 查询待发布条目
     print("📡 查询 Notion 待发布内容...")
     pages = get_pending_pages()

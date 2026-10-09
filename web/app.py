@@ -195,13 +195,6 @@ def api_trigger_publish():
     with _task_counter_lock:
         tid = str(_task_counter); _task_counter += 1
 
-    # 导出文章（publish_method='export'）只生成 md 文件、不占 CDP 浏览器，
-    # 不得阻断普通发布 —— 原实现里 export 分支提前 return，普通发布被无限期饿死。
-    # 现改为串行链：先把 export 篇全部导出，随后同一线程继续跑普通发布，
-    # 两者共用同一任务日志（前端只看到先「导出」后「发布」的顺序推进）。
-    # export 不消除「待发布」状态（导出后仍需人工微调+手动发布），这是预期行为。
-    from sqlite_db import get_pending_export
-    export_keys = get_pending_export()
 
     cmd = [sys.executable, 'yahoo_news_publish.py', '--auto', '--force', '--reuse-existing-tab']
     post_time = (request.json or {}).get('post_time', '')
@@ -214,36 +207,8 @@ def api_trigger_publish():
         with _publish_lock:
             _publish_running = False
 
-    def run_publish_chain():
-        # 阶段 1：导出（只写 md 文件，秒级；失败不阻断后面的普通发布）
-        if export_keys:
-            log_lines = [f'导出发布: {len(export_keys)} 篇']
-            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
-            import subprocess as _sp
-            ok_export = 0
-            for i, key in enumerate(export_keys):
-                log_lines.append(f'[{i+1}/{len(export_keys)}] {key[:16]}...')
-                _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
-                try:
-                    result = _sp.run(
-                        [sys.executable, 'xhs_publish_story.py', key, '--export'],
-                        capture_output=True, text=True, timeout=120,
-                        cwd=os.path.join(os.path.dirname(__file__), '..', 'scripts'),
-                        env={**os.environ, 'STORAGE_BACKEND': STORAGE_BACKEND, 'SQLITE_PATH': DB_PATH}
-                    )
-                    log_lines.append(result.stdout[-500:] if result.stdout else '(no output)')
-                    if result.returncode != 0:
-                        log_lines.append(f'⚠️ 返回码: {result.returncode}')
-                    else:
-                        ok_export += 1
-                except Exception as e:
-                    log_lines.append(f'❌ 导出错: {e}')
-            log_lines.append(f'✅ 导出完成 {ok_export}/{len(export_keys)}，继续普通发布…')
-            _tasks[tid] = {'status': 'running', 'log': '\n'.join(log_lines)}
-        # 阶段 2：普通发布（沿用 _run_task 的日志与落盘逻辑）
-        _run_task(cmd, tid, sub_env, on_publish_done)
-
-    threading.Thread(target=run_publish_chain, daemon=True).start()
+    # 导出与普通发布都在 yahoo_news_publish.py 内串行执行（export 失败不阻断）
+    threading.Thread(target=_run_task, args=(cmd, tid, sub_env, on_publish_done), daemon=True).start()
     return jsonify({"task_id": tid})
 
 @app.route('/api/task/<tid>')
