@@ -479,8 +479,14 @@ def publish_to_xhs(title: str, content: str, image_urls: list[str] = None,
                     cmd += ["--images"] + local_paths
                     print(f"  配图 {len(local_paths)} 张: {os.path.basename(local_paths[0])}...")
                 else:
-                    msg = f"全部配图下载失败（{len(effective_urls)} 张），本次发布无配图"
-                    print(f"  ⚠️ {msg}")
+                    # 回退：把远程 URL 交给发布管线自行下载（避免无 --images/--image-urls 导致 argparse 直接报错）
+                    urls = [u for u in effective_urls if str(u).startswith("http")]
+                    msg = f"全部配图预下载失败（{len(effective_urls)} 张）"
+                    if urls:
+                        cmd += ["--image-urls"] + urls
+                        print(f"  ⚠️ {msg}，改用 URL 交给发布管线下载")
+                    else:
+                        print(f"  ⚠️ {msg} 且无可回退 URL")
                     try:
                         from sqlite_db import _log_db_error
                         _log_db_error(msg)
