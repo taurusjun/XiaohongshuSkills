@@ -1981,8 +1981,19 @@ function renderWechatItems(items){
 <script>
 function openLogin(){var f=document.getElementById('loginFrame');f.src='/login?ts='+Date.now();document.getElementById('loginModal').style.display='flex';}
 function closeLogin(){document.getElementById('loginModal').style.display='none';document.getElementById('loginFrame').src='about:blank';refreshLoginDot();}
-async function refreshLoginDot(){try{var d=await (await fetch('/api/login/status')).json();var e=document.getElementById('loginDot');if(e)e.style.background=d.logged_in?'#07c160':'#ffc53d';}catch(err){}}
-refreshLoginDot();
+async function refreshLoginDot(){
+  try{
+    var c=await (await fetch('/api/login/status')).json();
+    var w=await (await fetch('/api/login/www/status')).json();
+    var cOn=!!c.logged_in, wOn=!!w.logged_in;
+    var e=document.getElementById('loginDot');
+    if(e){e.style.background=(cOn&&wOn)?'#07c160':((cOn||wOn)?'#ffc53d':'#ff4d4f');
+           e.title='创作号:'+(cOn?'已登录':'未登录')+' / 浏览页:'+(wOn?'已登录':'未登录');}
+    var b=document.getElementById('loginBtnText');
+    if(b){b.textContent=(cOn&&wOn)?'已登录':(cOn?'创作号✓':'浏览页✓');}
+  }catch(err){}
+}
+refreshLoginDot();setInterval(refreshLoginDot,8000);
 </script>
 <div id="chromeModal" onclick="if(event.target===this)closeChrome()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
   <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
