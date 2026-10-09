@@ -246,12 +246,10 @@ def api_creator_type():
 # 浏览页(www.xiaohongshu.com) 登录 —— 截屏弹窗（会话绑定主 profile）
 # --------------------------------------------------------------------------
 _WWW_QR_JS = (
-    "(async()=>{var q=document.querySelector('.login-container .left .code-area .qrcode')"
-    "||document.querySelector('.login-container .left');if(!q)return '';"
+    "(async()=>{var q=document.querySelector('.login-container .left .code-area .qrcode');"
+    "if(!q)return '';"
     "var img=q.querySelector('img');"
-    "if(img&&img.src){if(img.src.indexOf('data:')===0)return img.src;"
-    "try{var r=await fetch(img.src);var b=await r.blob();"
-    "return await new Promise(function(res){var fr=new FileReader();fr.onload=function(){res(fr.result)};fr.readAsDataURL(b)});}catch(e){}}"
+    "if(img&&img.src&&img.src.indexOf('data:')===0)return img.src;"
     "var cv=q.querySelector('canvas');if(cv&&cv.toDataURL)return cv.toDataURL('image/png');"
     "return '';})()")
 
@@ -311,8 +309,8 @@ def _www_login_screenshot(wait=6):
             r = _send("Runtime.evaluate", {"returnByValue": True, "awaitPromise": True,
                                            "expression": _WWW_QR_JS}, to=15)
             url = (r.get("result") or {}).get("result", {}).get("value") or ""
-            if isinstance(url, str) and url.startswith("data:image"):
-                return url
+            if isinstance(url, str) and url.startswith("data:image") and 2000 < len(url) < 150000:
+                return url          # 合理大小的二维码 data URL（img/canvas）
             time.sleep(1)
         # ② 兜底：截屏 .qrcode 区域
         clip = None
