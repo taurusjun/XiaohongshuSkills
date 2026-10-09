@@ -13,6 +13,7 @@ from agent import llm
 from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
                       format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
                       references as _refs)
+from services.word_count import content_len  # noqa: E402
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
