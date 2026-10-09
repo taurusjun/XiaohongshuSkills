@@ -72,7 +72,7 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
    ```
    然后**同步三处**：
    - **VM dockerd**（拉镜像）：`/etc/systemd/system/docker.service.d/http-proxy.conf` → `HTTP(S)_PROXY=socks5://192.168.5.2:<PORT>`，再 `systemctl daemon-reload && systemctl restart docker`；
-   - **容器 env**：`docker-compose.override.mac.yml` 的 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY`（当前脚本不自动改，recover 脚本会 sed 对齐）；
+   - **容器 env**：`docker-compose.override.mac.yml` 的 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY`（`recover-host.sh` 会 sed 对齐到当前端口）；
    - **`scripts/.env`**：由 `com.xhs.gateway-watchdog`(每120s) 自动跟随，**无需手改**。
    > 注意：**HTTP 代理（20809）与 socks5（20808）可能不是同一端口**——探活要用 `socks5h://` 且逐个端口试。容器 env 里 HTTP_PROXY 用 `http://192.168.5.2:<PORT>`、ALL_PROXY 用 `socks5://...`。
 4. **起容器必须带 override**：
