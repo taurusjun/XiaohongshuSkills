@@ -50,6 +50,16 @@ from web.login_views import login_bp
 app.register_blueprint(login_bp)
 from web.services_views import services_bp
 app.register_blueprint(services_bp)
+
+
+@app.after_request
+def _no_cache_html(resp):
+    """避免浏览器缓存 admin 页导致「改了没生效/按钮失效」的旧页问题。"""
+    ct = (resp.headers.get("Content-Type") or "")
+    if "text/html" in ct:
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
 init_db()
 
 @app.before_request
