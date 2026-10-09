@@ -1,4 +1,5 @@
 # xhs 容器内定时任务（Debian cron，以 user 运行；cron 不继承容器 env，故此处显式声明）
+# 时间 = 生产 + 1 小时（避免与生产同时打外部:小红书/yahoo/代理）。生产: fetch 00:30 / review 01:30 / write 03:00
 SHELL=/bin/bash
 PATH=/home/user/PG/XiaohongshuSkills/.venv/bin:/usr/local/bin:/usr/bin:/bin
 TZ=Asia/Shanghai
@@ -6,11 +7,15 @@ DISPLAY=:99
 SQLITE_PATH=/home/user/PG/XiaohongshuSkills/data/news_dev.db
 XHS_WEBAPI_BASE=http://127.0.0.1:5000
 
-# fetch-runner 每天 00:30（0-30min 随机打散）
-30 0 * * * cd /home/user/PG/XiaohongshuSkills && sleep $((RANDOM%1800)) && /opt/ops/wait_idle.sh && .venv/bin/python scripts/fetch_runner.py >> logs/fetch_runner.log 2>&1
-# metrics-collector 每小时 :07（避开整点）
-7 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python scripts/metrics_collector.py >> logs/metrics.log 2>&1
-# reflection-runner 周日 23:00
-0 23 * * 0 cd /home/user/PG/XiaohongshuSkills && .venv/bin/python scripts/reflection_runner.py >> logs/reflection.log 2>&1
-# db-backup 每小时 :17
-17 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
+# fetch-runner：生产 00:30 → 容器 01:30（0-30min 随机打散）
+30 1 * * * cd /home/user/PG/XiaohongshuSkills && sleep $((RANDOM%1800)) && /opt/ops/wait_idle.sh && .venv/bin/python scripts/fetch_runner.py >> logs/fetch_runner.log 2>&1
+# review：生产 01:30 → 容器 02:30（当日 review，交付）
+30 2 * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python -m cli review-full --date $(date +\%F) --deliver >> logs/review.log 2>&1
+# write：生产 03:00 → 容器 04:00（全批次写稿+排期+交付）
+0 4 * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python -m cli write-full --deliver >> logs/write.log 2>&1
+# metrics-collector：生产 每小时:00 → 容器 每小时:37（错开整点）
+37 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python scripts/metrics_collector.py >> logs/metrics.log 2>&1
+# reflection-runner：生产 周日 23:00 → 容器 周一 00:00
+0 0 * * 1 cd /home/user/PG/XiaohongshuSkills && .venv/bin/python scripts/reflection_runner.py >> logs/reflection.log 2>&1
+# db-backup：生产 每小时:17 → 容器 每小时:47（错开）
+47 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
