@@ -245,23 +245,28 @@ def write_one(cand, dry_run=True):
 
 
 def recommend_and_schedule(n=5, seed=None):
+    """阶段6：4 篇数据驱动（时效+人物历史+分数）+ 1 篇随机 + 2 备选；§0 总览；只排期不发布。"""
     import datetime as dt
     import random
-    from services import schedule as _sch
-    tomorrow = (dt.datetime.now(_sch.JST) + dt.timedelta(days=1)).date()
-    pool = [r for r in _news.query_news(status="active", limit=300)
-            if r.get("preselected") == 1 and (r.get("rewritten_content") or "")
-            and not r.get("publish_xhs")]
-    pool.sort(key=lambda r: -(r.get("title_score") or 0))
+    from services import schedule as _sch, recommend as _rec
+    from agent import review as _rev
+    today = dt.datetime.now(_sch.JST).date()
+    tomorrow = today + dt.timedelta(days=1)
+    pool = _rec.candidates(days=3)
+    busy = _rec.tomorrow_busy(tomorrow)
+    items = [{"key": r["key"][:12], "title": r.get("title") or "", "ja": (r.get("title_ja") or "")[:60]}
+             for r in (pool + busy)]
+    ents = _rev.extract_entities(items)                     # LLM 一次：候选+明天已排的实体
+    busy_ents = [e for r in busy for e in (ents.get(r["key"][:12]) or [])]
+    picks, backups, stat_by_key = _rec.stage6(pool, ents, busy_entities=busy_ents,
+                                              n=n, seed=seed, today=today)
     rng = random.Random(seed)
-    pick = pool[:n - 1]
-    rest = pool[n - 1:]
-    if rest:
-        pick = pick + [rng.choice(rest)]
     plan = _sch.build_plan(tomorrow, _sch.parse_slots(",".join(_sch.DEFAULT_SLOTS)), 8, rng)
-    keys = [r["key"] for r in pick][:len(plan)]
+    keys = [r["key"] for r in picks][:len(plan)]
     ok, bad = _sch.apply_plan(paths.sqlite_path(), keys, plan, True)
-    return pick[:len(plan)], plan, bad
+    reasons = _rec.reasons(picks, stat_by_key, today)
+    overview = _rec.data_overview(today, pool)
+    return picks, plan, bad, reasons, backups, overview
 
 
 def run(n=3, deliver=False, dry_run=False):
@@ -275,12 +280,18 @@ def run(n=3, deliver=False, dry_run=False):
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+5维≥8）"
           f"（{'dry-run，未入库' if dry_run else '已入库'}）")
 
-    sched = None
     if not dry_run:
-        pick, plan, bad = recommend_and_schedule(5)
-        sched = [{"key": p["key"][:12], "title": p.get("title"), "time": t}
-                 for p, (_, t) in zip(pick, plan)]
-        print("[待发布推荐] " + "; ".join(f"{x['key']}→{x['time']}" for x in sched))
+        picks, plan, bad, reasons, backups, ov = recommend_and_schedule(5)
+        gap = "无记录" if ov["gap_days"] is None else f"{ov['gap_days']}天"
+        print(f"\n[数据总览] 断更 {gap} | 本月发布 " +
+              " ".join(f"{d[-5:]}:{c}" for d, c in ov["perday"][:7]) +
+              f" | 候选池 {ov['pool']} | 待发队列 {ov['pending']}")
+        print("[待发布推荐]")
+        for r, (slot, t), why in zip(picks, plan, reasons):
+            print(f"  {r['key'][:12]} → {t}  《{r.get('rewritten_title') or r.get('title')}》  （{why}）")
+        print("[备选补位] " + "; ".join(f"{b['key'][:12]} {b.get('title','')[:18]}" for b in backups))
+        if bad:
+            print("[!] 落库失败:", bad)
 
     if deliver:
         from services.delivery import deliver as _d
