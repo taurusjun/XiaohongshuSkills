@@ -625,7 +625,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="card">
   <h1><span id="dot" class="dot off"></span>小红书扫码登录</h1>
   <div class="sub" id="stat">加载中…</div>
+  <div id="alarm" style="display:none;margin:8px 0;padding:8px;border:1px solid #ff4d4f;border-radius:6px;font-size:12px;color:#ff4d4f;text-align:left;white-space:pre-wrap"></div>
   <select id="acc"></select>
+  <button id="btnSwitch" style="margin-top:6px">切换到此账户</button>
   <select id="target"><option value="creator">创作号 (creator.xiaohongshu.com)</option><option value="www">浏览页 (www.xiaohongshu.com)</option></select>
   <div id="qr">二维码未加载</div>
   <div id="hint"></div>
@@ -657,7 +659,9 @@ async function refreshStatus(){
   const d=await j('/api/login/status');
   const on=d.logged_in;
   $('dot').className='dot '+(on?'on':'off');
-  $('stat').textContent=on?('已登录'+(d.age_seconds!=null?('（缓存 '+d.age_seconds+'s）'):'')):'未登录 / 无缓存';
+  const who=on&&d.nickname?('（'+d.nickname+(d.red_id?('·'+d.red_id):'')+'）'):'';
+  $('stat').textContent=on?('创作号已登录'+who+(d.age_seconds!=null?('（缓存 '+d.age_seconds+'s）'):'')):'未登录 / 无缓存';
+  checkMismatch();
 }
 async function getQR(){
   clearInterval(timer);
@@ -676,7 +680,9 @@ async function getQR(){
 }
 async function pollWww(){
   const d=await j('/api/login/www/status');
-  if(d.logged_in){clearInterval(timer);$('dot').className='dot on';$('stat').textContent='浏览页已登录 ✓';}
+  if(d.logged_in){clearInterval(timer);$('dot').className='dot on';
+    $('stat').textContent='浏览页已登录 ✓'+(d.nickname?('（'+d.nickname+(d.red_id?('·'+d.red_id):'')+'）'):'');
+    checkMismatch();}
 }
 async function poll(){
   if(!jobId)return;
@@ -695,7 +701,7 @@ async function poll(){
   if(p.logged_in){gotLoggedIn();}
 }
 function gotLoggedIn(){clearInterval(timer);$('dot').className='dot on';$('stat').textContent='已登录 ✓';
-  $('qr').innerHTML='登录成功';$('hint').textContent='';}
+  $('qr').innerHTML='登录成功';$('hint').textContent='';refreshStatus();}
 $('btnGet').onclick=getQR;
 $('btnCheck').onclick=async()=>{const d=await j('/api/login/status/refresh',{method:'POST',
   headers:{'Content-Type':'application/json'},body:JSON.stringify({account:$('acc').value})});
@@ -703,7 +709,34 @@ $('btnCheck').onclick=async()=>{const d=await j('/api/login/status/refresh',{met
 $('btnRe').onclick=async()=>{if(!confirm('清除 Cookie 并重新登录？'))return;
   const d=await j('/api/login/relogin',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({account:$('acc').value})});$('log').style.display='block';$('log').textContent=d.log||'';};
+async function checkMismatch(){
+  try{
+    let meta={}; try{const m=await j('/api/login/accounts/meta');meta=(m&&m.meta)||{};}catch(e){}
+    const acc=$('acc').value, exp=meta[acc]||{}, expRid=exp.red_id||((exp.creator&&exp.creator.red_id)||'');
+    const w=await j('/api/login/www/status');
+    const c=await j('/api/login/status');
+    const wRid=w.logged_in?(w.red_id||''):'', cRid=c.logged_in?(c.red_id||''):'';
+    const issues=[];
+    if(w.logged_in&&c.logged_in&&wRid&&cRid&&wRid!==cRid)
+      issues.push('浏览/创作 小红书号不一致：'+wRid+' ≠ '+cRid);
+    if(expRid&&w.logged_in&&wRid&&wRid!==expRid)
+      issues.push('浏览账户与预期['+acc+']不一致：预期 '+expRid+'，实际 '+wRid);
+    if(expRid&&c.logged_in&&cRid&&cRid!==expRid)
+      issues.push('创作账户与预期['+acc+']不一致：预期 '+expRid+'，实际 '+cRid);
+    const el=$('alarm');
+    if(issues.length){el.style.display='block';el.textContent='⚠️ '+issues.join('\n⚠️ ');}
+    else{el.style.display='none';el.textContent='';}
+  }catch(e){}
+}
+$('btnSwitch').onclick=async()=>{
+  const a=$('acc').value;
+  if(!confirm('切换到账户「'+a+'」？（会重启容器内 Chrome）'))return;
+  $('hint').textContent='切换中…（Chrome 重启后自动校验）';
+  await j('/api/login/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account:a})});
+  setTimeout(refreshStatus,6000);
+};
 loadAccounts();refreshStatus();
+setInterval(checkMismatch,12000);
 </script></body></html>"""
 
 
