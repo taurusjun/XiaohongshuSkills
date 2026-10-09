@@ -197,6 +197,32 @@ def api_qrcode_probe(job_id):
         return jsonify({"ok": False, "error": str(e), "logged_in": False})
 
 
+@login_bp.post("/api/login/tabs/cleanup")
+def api_tabs_cleanup():
+    """关闭残留 page 标签，保留一个 creator 标签（优先 /new/home）。"""
+    import urllib.request
+    base = f"http://{CDP_HOST}:{CDP_PORT}"
+    try:
+        targets = json.loads(urllib.request.urlopen(base + "/json", timeout=5).read())
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+    pages = [t for t in targets if t.get("type") == "page"]
+    keep = next((t for t in pages if "creator.xiaohongshu.com/new/home" in t.get("url", "")), None)
+    if not keep:
+        keep = next((t for t in pages if "creator.xiaohongshu.com" in t.get("url", "")), None)
+    closed = 0
+    for t in pages:
+        if keep and t.get("id") == keep.get("id"):
+            continue
+        try:
+            urllib.request.urlopen(base + "/json/close/" + t["id"], timeout=5)
+            closed += 1
+        except Exception:
+            pass
+    return jsonify({"ok": True, "closed": closed, "kept": (keep or {}).get("url", ""),
+                    "before": len(pages)})
+
+
 @login_bp.post("/api/login/account")
 def api_set_account():
     body = request.get_json(silent=True) or {}

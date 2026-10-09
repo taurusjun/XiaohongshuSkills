@@ -278,8 +278,12 @@ class XiaohongshuPublisher(LoginMixin, FeedMixin, PublishFlowMixin, StatsMixin):
                 t for t in usable
                 if "xiaohongshu.com" in t.get("url", "")
             ]
+            creator_any = [
+                t for t in usable
+                if "creator.xiaohongshu.com" in t.get("url", "")
+            ]
             chosen = (
-                (xhs_explore_detail or xhs_explore_any or xhs_any or usable)[0]
+                (creator_any or xhs_explore_detail or xhs_explore_any or xhs_any or usable)[0]
             )
             url = chosen.get("url", "")
             print(
@@ -519,11 +523,16 @@ def main():
     )
     parser.add_argument(
         "--reuse-existing-tab",
+        dest="reuse_existing_tab",
         action="store_true",
-        help=(
-            "Prefer reusing an existing tab before creating a new one. "
-            "Useful in headed mode to reduce foreground focus switching."
-        ),
+        default=True,
+        help="Prefer reusing an existing tab before creating a new one (default: on).",
+    )
+    parser.add_argument(
+        "--no-reuse-existing-tab",
+        dest="reuse_existing_tab",
+        action="store_false",
+        help="Always create a new tab (disable tab reuse).",
     )
     parser.add_argument(
         "--preserve-upload-paths",
