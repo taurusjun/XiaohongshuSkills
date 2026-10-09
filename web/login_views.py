@@ -295,7 +295,10 @@ def _www_login_screenshot(wait=6):
         clip = None
         try:
             rr = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
-                "(function(){var e=document.querySelector('.login-container .left')"
+                "(function(){var e=document.querySelector('.login-container .left .code-area .qrcode')"
+                "||document.querySelector('.login-container .left .qrcode')"
+                "||document.querySelector('.login-container .qrcode')"
+                "||document.querySelector('.login-container .left')"
                 "||document.querySelector('.login-container');if(!e)return null;"
                 "var r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})()")})
             clip = (rr.get("result") or {}).get("result", {}).get("value")
