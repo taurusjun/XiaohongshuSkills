@@ -39,6 +39,58 @@ def compact_rows(date, limit=500):
              "src": r.get("fetch_by"), "pub": r.get("publish_xhs")} for r in rows]
 
 
+def _resolve_keys(prefixes):
+    import sqlite3
+    out = []
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        for pfx in prefixes or []:
+            r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (str(pfx)[:40],)).fetchone()
+            if r:
+                out.append(r[0])
+    finally:
+        conn.close()
+    return out
+
+
+def _extract_machine_json(text):
+    """取输末 ```json {"grades":{...},"clusters":[[...]]}``` → (grades, clusters, 去块文本)。"""
+    if not text:
+        return None, None, text
+    for mm in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
+        try:
+            d = json.loads(mm.group(1))
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(d, dict) and ("grades" in d or "clusters" in d):
+            return (d.get("grades") or {}), (d.get("clusters") or []), text[:mm.start()] + text[mm.end():]
+    return None, None, text
+
+
+def persist(date, grades, clusters):
+    """把 review 的**结构化共享数据**写库（只写当日行）：grade + related_keys（聚类 互指）。"""
+    day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
+    wg = wr = cleared = 0
+    for k12, g in (grades or {}).items():
+        fk = _resolve_keys([k12])
+        if fk and fk[0] in day:
+            _news.update_news(fk[0], {"grade": str(g)})
+            wg += 1
+    norm = {}
+    for grp in (clusters or []):
+        fks = [x for x in _resolve_keys(list(grp)) if x in day]
+        for x in fks:
+            norm[x] = ",".join(sorted(y for y in fks if y != x))
+    for k, v in norm.items():
+        _news.update_news(k, {"related_keys": v})
+        wr += 1
+    for k in day:
+        if k not in norm and (_news.get_by_key(k) or {}).get("related_keys"):
+            _news.update_news(k, {"related_keys": ""})
+            cleared += 1
+    return wg, wr, cleared
+
+
 def extract_entities(items, max_tokens=4000):
     """items:[{key,title,ja}] → {key12: [实体,...]}（LLM 抽取，日文原始写法优先）。"""
     if not items:
@@ -90,12 +142,20 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=True)          # 一、单张合并表
-    rest = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)  # 二~六
+    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 机器JSON
+    grades, clusters, out = _extract_machine_json(out)
+    rest = out
     idx = rest.find("## 二、")
     if idx > 0:
         rest = rest[idx:]
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
-    # 本地存档：**无条件**（write 阶段要读它；对齐原 skill 每日存档）
+    # 结构化共享数据入 DB（只写当日行）：grade + related_keys
+    try:
+        wg, wr, cl = persist(date, grades, clusters)
+        print(f"[persist] grade {wg} 篇 / related {wr} 篇 / 清空 {cl} 篇（仅当日）")
+    except Exception as e:  # noqa: BLE001
+        print(f"[persist] 跳过: {e}")
+    # 本地存档（人看 / 飞书）：**无条件**
     from services.delivery import web_save
     web_save(md, name=name or f"{date}-review-full.md")
     if deliver:                                          # 推送：可选
