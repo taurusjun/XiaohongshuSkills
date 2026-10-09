@@ -291,7 +291,20 @@ def _www_login_screenshot(wait=6):
         _send("Page.enable")
         _send("Page.navigate", {"url": "https://www.xiaohongshu.com/explore"})
         time.sleep(wait)
-        r = _send("Page.captureScreenshot", {"format": "png"}, to=20)
+        # 尽量只截登录弹窗左侧二维码区（.login-container .left）；拿不到就整页
+        clip = None
+        try:
+            rr = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
+                "(function(){var e=document.querySelector('.login-container .left')"
+                "||document.querySelector('.login-container');if(!e)return null;"
+                "var r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};})()")})
+            clip = (rr.get("result") or {}).get("result", {}).get("value")
+        except Exception:
+            clip = None
+        params = {"format": "png"}
+        if clip and clip.get("width", 0) > 50:
+            params["clip"] = {"x": clip["x"], "y": clip["y"], "width": clip["width"], "height": clip["height"], "scale": 2}
+        r = _send("Page.captureScreenshot", params, to=20)
         data = (r.get("result") or {}).get("data", "")
         return ("data:image/png;base64," + data) if data else None
 
