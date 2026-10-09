@@ -399,7 +399,8 @@ def _split_candidates(cands):
     return out
 
 
-def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None):
+def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
+        verify_gallery=False):
     if key:
         import sqlite3
         conn = sqlite3.connect(paths.sqlite_path())
@@ -438,11 +439,20 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         print("[备选补位] " + "; ".join(f"{b['key'][:12]} {b.get('title','')[:18]}" for b in backups))
         if bad:
             print("[!] 落库失败:", bad)
-        # 待发布必跑：重新获取图集（原 skill：发布前 gallery-download）
+        # 待发布必跑：对**整个待发布队列** one-way 触发图集下载（fire-and-forget，后读状态/日志确认）
         try:
             from services import gallery as _gal
-            gres = _gal.sync(keys=[r["key"] for r in picks], timeout=180)
-            print("[图集] " + "; ".join(f"{k[:12]}={st}" for k, st in gres))
+            ks = _gal.pending_keys()
+            gres = _gal.sync(keys=ks, wait=False)
+            started = sum(1 for _, st in gres if st == "started")
+            cached = sum(1 for _, st in gres if str(st).startswith("skip"))
+            print(f"[图集] 待发布队列 {len(ks)} 篇：触发 {started} / 已有缓存 {cached}"
+                  f"（one-way，稍后查 /api/gallery-status）")
+            if verify_gallery:
+                import time as _t
+                _t.sleep(5)
+                vres = _gal.sync(keys=ks, wait=True, timeout=120)
+                print("[图集·verify] " + "; ".join(f"{k[:12]}={st}" for k, st in vres))
         except Exception as e:  # noqa: BLE001
             print(f"[图集] 跳过: {e}")
 
@@ -477,6 +487,8 @@ def main(argv=None):
     ap.add_argument("--key", default=None, help="只处理指定 key（前缀即可；用于重写/验证）")
     ap.add_argument("--force-channel", default=None, choices=["xhs", "gzh", "both"],
                     help="强制渠道（默认由 LLM 判断）")
+    ap.add_argument("--verify-gallery", action="store_true",
+                    help="图集 one-way 触发后再轮询一次确认（默认只触发不等）")
     a = ap.parse_args(argv)
-    run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel)
+    run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel, a.verify_gallery)
     return 0

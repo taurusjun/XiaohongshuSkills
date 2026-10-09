@@ -34,7 +34,7 @@
 | 5 达标才交付 | `deliver` 只推 `ok` 稿（0 篇达标不推） | ✅ |
 | 6 待发布 5=4 数据+1 随机+2 备选 | `recommend.stage6` | ✅ |
 | 6 排期 09/12/15/18/20、随机禁整点 | `schedule.DEFAULT_SLOTS`+`build_plan(jitter)` | ✅ |
-| 6 不触发发布 / 发布前图集 | 无 trigger；`gallery.sync` | ✅ |
+| 6 不触发发布 / 发布前图集 | 无 trigger；阶段6 对**整个待发布队列** one-way 触发 `gallery.sync(wait=False)`（fire-and-forget，后读 `/api/gallery-status` 确认；`--verify-gallery` 可选轮询） | ✅ |
 | **关联素材体量过大 → 拆多篇**（默认关） | `services/split_write` + `cli write-full --split-large` | ✅ 已补 |
 
 ## 3. 已补回的功能（关键）
