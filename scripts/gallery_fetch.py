@@ -418,7 +418,7 @@ def _scrape_limo(gallery_url: str) -> list[str]:
             else:
                 page_url = f"{base_url}?page={page}"
 
-            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _tft_get(page_url, headers)
             s = BeautifulSoup(r.text, "html.parser")
 
             # 找大图（870wm 尺寸）
@@ -729,7 +729,7 @@ def _scrape_thetv(gallery_url: str) -> list[str]:
         if len(images) >= MAX_IMAGES:
             break
         try:
-            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _tft_get(page_url, headers)
             s = BeautifulSoup(r.text, "html.parser")
             target_pat = f"/i/nw/{article_id}/{img_num}"
             for img in s.find_all("img"):
@@ -1594,7 +1594,7 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
     for i in range(1, min(max_page, MAX_IMAGES) + 1):
         page_url = f"{base_sns}/{i}/"
         try:
-            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _tft_get(page_url, headers)
             s = BeautifulSoup(r.text, "html.parser")
             bq = s.find("blockquote", class_="instagram-media")
             if bq:
@@ -1648,6 +1648,20 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
     return images[:MAX_IMAGES]
 
 
+def _tft_get(url: str, headers: dict, timeout: int = 15):
+    """thefirsttimes 请求：先走配置代理，失败则直连兜底（图集站直连；规避死代理）。"""
+    try:
+        return requests.get(url, headers=headers, proxies=_get_proxies(), timeout=timeout)
+    except Exception:
+        import requests as _rq
+        sess = _rq.Session()
+        sess.trust_env = False            # 忽略 env 里的 HTTP(S)_PROXY
+        try:
+            return sess.get(url, headers=headers, timeout=timeout)
+        finally:
+            sess.close()
+
+
 def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
     """thefirsttimes.jp 图集分两种类型：
 
@@ -1660,11 +1674,11 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
     headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
     p = urlparse(gallery_url)
-    m_article = re.search(r'/news/(\d+)/', p.path)
+    m_article = re.search(r'/(news|report)/(\d+)/', p.path)
     if not m_article:
         return []
-    article_id = m_article.group(1)
-    article_url = f"{p.scheme}://{p.netloc}/news/{article_id}/"
+    kind, article_id = m_article.group(1), m_article.group(2)
+    article_url = f"{p.scheme}://{p.netloc}/{kind}/{article_id}/"
 
     # ── SNS embed 路径 ────────────────────────────────────
     if "attachment-sns" in gallery_url:
@@ -1687,16 +1701,16 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
         # 兜底：回文章页找图片版 attachment 入口
         try:
-            r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _tft_get(article_url, headers)
             s = BeautifulSoup(r.text, "html.parser")
-            slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+            slug_pattern = re.compile(rf"/{kind}/{article_id}/attachment/([^/]+)/?$")
             for a in s.find_all("a", href=True):
                 if "attachment-sns" in a["href"]:
                     continue
                 m = slug_pattern.search(a["href"])
                 if m:
                     first_slug = m.group(1)
-                    real_url = f"{p.scheme}://{p.netloc}/news/{article_id}/attachment/{first_slug}/"
+                    real_url = f"{p.scheme}://{p.netloc}/{kind}/{article_id}/attachment/{first_slug}/"
                     print(f"  🔄 找到图片版入口: {real_url}")
                     return _scrape_thefirsttimes(real_url)
         except Exception as e:
@@ -1706,13 +1720,13 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
 
     # ── 图片版路径 ────────────────────────────────────────
     try:
-        r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        r = _tft_get(article_url, headers)
         s = BeautifulSoup(r.text, "html.parser")
     except Exception as e:
-        print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e}")
-        return []
+        print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e} → 回退直抓附件页")
+        return _scrape_thefirsttimes_page(gallery_url, headers)
 
-    slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+    slug_pattern = re.compile(rf"/{kind}/{article_id}/attachment/([^/]+)/?$")
     slugs: list[str] = []
     seen: set[str] = set()
     for a in s.find_all("a", href=True):
@@ -1732,21 +1746,21 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
     images: list[str] = []
     base = f"{p.scheme}://{p.netloc}"
     for slug in slugs[:MAX_IMAGES]:
-        page_url = f"{base}/news/{article_id}/attachment/{slug}/"
+        page_url = f"{base}/{kind}/{article_id}/attachment/{slug}/"
         imgs = _scrape_thefirsttimes_page(page_url, headers)
         images.extend(imgs)
         if len(images) >= MAX_IMAGES:
             break
         time.sleep(0.2)
 
-    return images[:MAX_IMAGES]
+    return list(dict.fromkeys(images))[:MAX_IMAGES]   # 跨附件页去重（各页常含全部图）
 
 
 def _scrape_thefirsttimes_page(page_url: str, headers: dict) -> list[str]:
     """抓取单个 thefirsttimes attachment 页的大图 URL"""
     import re
     try:
-        r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        r = _tft_get(page_url, headers)
         s = BeautifulSoup(r.text, "html.parser")
         images = []
         seen: set[str] = set()
@@ -2125,7 +2139,7 @@ def _scrape_deview(gallery_url: str) -> list[str]:
     for img_no in sorted(img_nos)[:MAX_IMAGES]:
         try:
             page_url = f"{base}/NewsImage?am_article_id={article_id}&am_image_no={img_no}"
-            r = requests.get(page_url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _tft_get(page_url, headers)
             s = BeautifulSoup(r.content, "html.parser", from_encoding="shift_jis")
 
             for img in s.find_all("img"):
