@@ -1980,7 +1980,7 @@ refreshLoginDot();
   </div>
 </div>
 <script>
-function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://127.0.0.1:16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
+function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://'+location.hostname+':16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
 function closeChrome(){document.getElementById('chromeModal').style.display='none';document.getElementById('chromeFrame').src='about:blank';}
 </script>
 </body></html>"""
