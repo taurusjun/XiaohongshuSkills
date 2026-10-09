@@ -125,6 +125,26 @@ def _run_qr_job(job_id: str, account, wait_seconds: int):
 # --------------------------------------------------------------------------
 # API
 # --------------------------------------------------------------------------
+_status_cache = {"t": 0, "value": None}
+
+
+def _real_creator_status(ttl=30):
+    """真实检测 creator 登录（导航 check-login，看是否被踢回登录页），带 ttl 缓存。"""
+    now = time.time()
+    if _status_cache["value"] is not None and (now - _status_cache["t"]) < ttl:
+        return _status_cache["value"]
+    acc = _read_current_account() or get_default_account()
+    cmd = _base_cmd(acc) + ["check-login"]
+    try:
+        pr = subprocess.run(cmd, cwd=str(ROOT), env=_env(), capture_output=True, text=True, timeout=50)
+        val = (pr.returncode == 0)
+    except Exception:
+        val = False
+    _status_cache["t"] = now
+    _status_cache["value"] = val
+    return val
+
+
 @login_bp.get("/api/login/accounts")
 def api_accounts():
     try:
@@ -137,7 +157,9 @@ def api_accounts():
 
 @login_bp.get("/api/login/status")
 def api_status():
-    return jsonify({"ok": True, **_cache_status()})
+    """真实检测 creator 登录态（导航 check-login，30s 缓存）。"""
+    val = _real_creator_status()
+    return jsonify({"ok": True, "logged_in": bool(val), "source": "live-check"})
 
 
 @login_bp.post("/api/login/status/refresh")
