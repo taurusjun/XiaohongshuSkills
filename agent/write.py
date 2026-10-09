@@ -259,14 +259,18 @@ def _produce(cand, pkg, channel, first=None):
             "score": score.get("total"), "problems": mech.get("problems") or []}
 
 
-def write_one(cand, dry_run=True):
-    """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。"""
+def write_one(cand, dry_run=True, force_channel=None):
+    """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。force_channel 用于指定渠道。"""
     pkg = prepare_package(cand)
     method = pkg["method"]
-    d0 = compose(cand, pkg)
-    ch = d0.get("channel") or pkg["pre_channel"]
-    if ch not in ("xhs", "gzh", "both"):
-        ch = pkg["pre_channel"]
+    if force_channel:
+        d0 = compose(cand, pkg, force_channel=force_channel)
+        ch = force_channel
+    else:
+        d0 = compose(cand, pkg)
+        ch = d0.get("channel") or pkg["pre_channel"]
+        if ch not in ("xhs", "gzh", "both"):
+            ch = pkg["pre_channel"]
     t0, b0 = d0.get("title") or "", d0.get("body") or ""
     versions = []
     if ch == "both":
@@ -281,7 +285,7 @@ def write_one(cand, dry_run=True):
             continue
         if v["channel"] == "gzh":
             _news.update_news(cand["key"], {"wechat_title": v["title"], "wechat_content": v["text"],
-                                            "channel": "gzh", "preselected": 0, "publish_xhs": 0,
+                                            "preselected": 0, "publish_xhs": 0,
                                             "related_keys": rk_s})
         else:
             _news.update_news(cand["key"], {"rewritten_title": v["title"], "rewritten_content": v["text"],
@@ -299,8 +303,20 @@ def write_one(cand, dry_run=True):
         v["ok"] = (got.get("wechat_title") == v["title"] and bool(got.get("wechat_content"))) \
             if v["channel"] == "gzh" else (got.get("rewritten_title") == v["title"]
                                            and len(got.get("rewritten_content") or "") > 50)
-    if not dry_run and ch == "both" and all(v["ok"] for v in versions):
-        _news.update_news(cand["key"], {"channel": "both"})
+    # 写后按字段实际存在情况判定 channel（xhs=空 / gzh=gzh / 两版共存=both）——避免残留旧标记
+    if not dry_run:
+        got = _news.get_by_key(cand["key"]) or {}
+        has_x = bool((got.get("rewritten_content") or "").strip())
+        has_w = bool((got.get("wechat_content") or "").strip())
+        chan = "both" if (has_x and has_w) else ("gzh" if has_w else "")
+        upd = {}
+        if (got.get("channel") or "") != chan:
+            upd["channel"] = chan
+        want_ps = 1 if has_x else 0          # xhs 版本存在 → 待发(1)；仅 gzh → 0
+        if got.get("preselected") != want_ps:
+            upd["preselected"] = want_ps
+        if upd:
+            _news.update_news(cand["key"], upd)
     prim = versions[0]
     return {"key": cand["key"][:12], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
             "attempts": max(v["attempts"] for v in versions), "channel": ch,
@@ -349,11 +365,21 @@ def _split_candidates(cands):
     return out
 
 
-def run(n=0, deliver=False, dry_run=False, split_large=False):
-    cands = pick_candidates(n)
-    if split_large:
-        cands = _split_candidates(cands)
-    results = [write_one(c, dry_run=dry_run) for c in cands]
+def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None):
+    if key:
+        import sqlite3
+        conn = sqlite3.connect(paths.sqlite_path())
+        try:
+            r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (key[:40],)).fetchone()
+        finally:
+            conn.close()
+        cands = [_news.get_by_key(r[0])] if r else []
+        cands = [c for c in cands if c]
+    else:
+        cands = pick_candidates(n)
+        if split_large:
+            cands = _split_candidates(cands)
+    results = [write_one(c, dry_run=dry_run, force_channel=force_channel) for c in cands]
     for r in results:
         for v in r["versions"]:
             print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
@@ -363,7 +389,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False):
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"
           f"（{'dry-run，未入库' if dry_run else '已入库'}）")
 
-    if not dry_run:
+    if not dry_run and not key:          # 指定 key 重写时不重跑阶段6
         picks, plan, bad, reasons, backups, ov = recommend_and_schedule(5)
         gap = "无记录" if ov["gap_days"] is None else f"{ov['gap_days']}天"
         print(f"\n[数据总览] 断更 {gap} | 本月发布 " +
@@ -411,6 +437,9 @@ def main(argv=None):
     ap.add_argument("--deliver", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--split-large", action="store_true", help="关联素材体量过大时拆多篇（默认关）")
+    ap.add_argument("--key", default=None, help="只处理指定 key（前缀即可；用于重写/验证）")
+    ap.add_argument("--force-channel", default=None, choices=["xhs", "gzh", "both"],
+                    help="强制渠道（默认由 LLM 判断）")
     a = ap.parse_args(argv)
-    run(a.n, a.deliver, a.dry_run, a.split_large)
+    run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel)
     return 0

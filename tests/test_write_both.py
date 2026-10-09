@@ -7,6 +7,16 @@ def _pkg():
             "method": "post", "pre_channel": "xhs", "spec": {"fmt": "news", "lf": 0, "ja": 1000}}
 
 
+def _fake_db(monkeypatch, initial=None):
+    """用内存 dict 模拟 news 表，让 update_news/get_by_key 反映真实写入。"""
+    state = dict(initial or {})
+    monkeypatch.setattr(w._news, "get_by_key", lambda k: state.get(k, {"key": k}))
+    def upd(k, fields):
+        state.setdefault(k, {"key": k}).update(fields)
+    monkeypatch.setattr(w._news, "update_news", upd)
+    return state
+
+
 def _patch(monkeypatch):
     monkeypatch.setattr(w, "prepare_package", lambda c: _pkg())
     monkeypatch.setattr(w._dh, "fix_text", lambda b: (b, []))
@@ -21,18 +31,57 @@ def _patch(monkeypatch):
     monkeypatch.setattr(w, "score_gzh", lambda t, b, **k: {"total": 8})
 
 
-def test_write_one_both(monkeypatch):
+def _cand():
+    return {"key": "a" * 40, "title": "t", "format": "news", "is_long_form": 0, "content_ja": "x"}
+
+
+def test_write_one_both_channels(monkeypatch):
     _patch(monkeypatch)
+    st = _fake_db(monkeypatch)
     monkeypatch.setattr(w, "compose", lambda *a, **k: {
         "channel": "both", "title": "X标题", "body": "xhs正文", "gzh_title": "G标题", "gzh_body": "gzh正文"})
-    r = w.write_one({"key": "a" * 40, "title": "t", "format": "news", "is_long_form": 0, "content_ja": "x"}, dry_run=True)
+    r = w.write_one(_cand(), dry_run=False)
     assert r["channel"] == "both"
     assert [v["channel"] for v in r["versions"]] == ["xhs", "gzh"]
-    assert all(v["ok"] for v in r["versions"])
+    row = st["a" * 40]
+    assert row["rewritten_title"] == "X标题" and row["wechat_title"] == "G标题"
+    assert row["channel"] == "both"                       # 两版共存 → both
+    assert row["preselected"] == 1                        # both：xhs 版本待发 → 1
+    assert row["publish_xhs"] == 0
+
+
+def test_write_one_xhs_channel_empty(monkeypatch):
+    _patch(monkeypatch)
+    st = _fake_db(monkeypatch)
+    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    w.write_one(_cand(), dry_run=False)
+    row = st["a" * 40]
+    assert row.get("channel", "") == ""                   # xhs 独有 → 空（旧约定）
+    assert row["rewritten_title"] == "X" and "wechat_title" not in row
+
+
+def test_write_one_gzh_channel(monkeypatch):
+    _patch(monkeypatch)
+    st = _fake_db(monkeypatch)
+    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "gzh", "title": "G", "body": "文"})
+    w.write_one(_cand(), dry_run=False)
+    row = st["a" * 40]
+    assert row["channel"] == "gzh" and row["wechat_title"] == "G"
+    assert "rewritten_title" not in row
+
+
+def test_write_one_clears_stale_gzh(monkeypatch):
+    """xhs 重写时若残留 channel='gzh' 但无 wechat 内容 → 清空。"""
+    _patch(monkeypatch)
+    st = _fake_db(monkeypatch, {"a" * 40: {"key": "a" * 40, "channel": "gzh"}})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    w.write_one(_cand(), dry_run=False)
+    assert st["a" * 40].get("channel", "") == ""
 
 
 def test_write_one_channel_fallback(monkeypatch):
     _patch(monkeypatch)
+    _fake_db(monkeypatch)
     monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "weird", "title": "X", "body": "b"})
-    r = w.write_one({"key": "a" * 40, "title": "t", "format": "news", "is_long_form": 0, "content_ja": "x"}, dry_run=True)
+    r = w.write_one(_cand(), dry_run=True)
     assert r["channel"] == "xhs" and len(r["versions"]) == 1
