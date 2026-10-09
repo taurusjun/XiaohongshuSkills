@@ -129,151 +129,47 @@ _status_cache = {"t": 0, "value": None}
 
 
 def _real_creator_status(ttl=30):
-    """真实检测 creator 登录（导航 check-login，看是否被踢回登录页），带 ttl 缓存。"""
+    """真实检测 creator 登录：导航 creator 页，按**内容**判断（登录框/扫一扫/网络异常=未登录）。
+    仅按 URL 会被 SPA「网络异常但仍停留 /new/home」骗过。带 ttl 缓存。"""
+    from websockets.sync.client import connect
     now = time.time()
     if _status_cache["value"] is not None and (now - _status_cache["t"]) < ttl:
         return _status_cache["value"]
-    acc = _read_current_account() or get_default_account()
-    cmd = _base_cmd(acc) + ["check-login"]
+    val = False
     try:
-        pr = subprocess.run(cmd, cwd=str(ROOT), env=_env(), capture_output=True, text=True, timeout=50)
-        val = (pr.returncode == 0)
+        import urllib.request
+        tabs = json.loads(urllib.request.urlopen(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
+        tab = next((t for t in tabs if t.get("type") == "page" and "creator.xiaohongshu.com" in t.get("url", "")), None)
+        if not tab:
+            req = urllib.request.Request(f"http://{CDP_HOST}:{CDP_PORT}/json/new?https://creator.xiaohongshu.com", method="PUT")
+            tab = json.loads(urllib.request.urlopen(req, timeout=8).read())
+        with connect(tab["webSocketDebuggerUrl"], max_size=None) as ws:
+            mid = [0]
+
+            def _send(method, params=None, to=15):
+                my = mid[0]; mid[0] += 1
+                ws.send(json.dumps({"id": my, "method": method, "params": params or {}}))
+                while True:
+                    mm = json.loads(ws.recv(timeout=to))
+                    if mm.get("id") == my:
+                        return mm
+
+            _send("Page.enable")
+            _send("Page.navigate", {"url": "https://creator.xiaohongshu.com/new/home"})
+            time.sleep(5)
+            r = _send("Runtime.evaluate", {"returnByValue": True, "expression": (
+                "(function(){var h=location.href;"
+                "var t=(document.body&&document.body.innerText)||'';"
+                "var login=h.indexOf('/login')>=0||!!document.querySelector('.login-container')"
+                "||t.indexOf('扫一扫登录')>=0||t.indexOf('网络异常')>=0||t.indexOf('返回重新扫描')>=0;"
+                "return {href:h, login:login};})()")})
+            v = (r.get("result") or {}).get("result", {}).get("value") or {}
+            val = not bool(v.get("login"))
     except Exception:
         val = False
     _status_cache["t"] = now
     _status_cache["value"] = val
     return val
-
-
-@login_bp.get("/api/login/accounts")
-def api_accounts():
-    try:
-        accs = list_accounts()
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e)}), 500
-    current = _read_current_account() or get_default_account()
-    return jsonify({"ok": True, "accounts": accs, "current": current})
-
-
-@login_bp.get("/api/login/status")
-def api_status():
-    """真实检测 creator 登录态（导航 check-login，30s 缓存）。"""
-    val = _real_creator_status()
-    return jsonify({"ok": True, "logged_in": bool(val), "source": "live-check"})
-
-
-@login_bp.post("/api/login/status/refresh")
-def api_status_refresh():
-    body = request.get_json(silent=True) or {}
-    acc = body.get("account") or _read_current_account() or get_default_account()
-    cmd = _base_cmd(acc) + ["check-login"]
-    try:
-        p = subprocess.run(cmd, cwd=str(ROOT), env=_env(),
-                           capture_output=True, text=True, timeout=45)
-        return jsonify({"ok": True, "logged_in": p.returncode == 0,
-                        "log": (p.stdout or "")[-1500:]})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@login_bp.post("/api/login/qrcode")
-def api_qrcode():
-    body = request.get_json(silent=True) or {}
-    acc = body.get("account") or _read_current_account() or get_default_account()
-    if not account_exists(acc):
-        return jsonify({"ok": False, "error": f"account '{acc}' not found"}), 400
-    wait = int(body.get("wait_seconds", 25))
-    job_id = uuid.uuid4().hex[:12]
-    with _jobs_lock:
-        _qr_jobs[job_id] = {"status": "pending", "started_at": time.time(),
-                            "account": acc, "logged_in": None,
-                            "qrcode_data_url": "", "hint_text": "", "log": ""}
-    threading.Thread(target=_run_qr_job, args=(job_id, acc, wait), daemon=True).start()
-    return jsonify({"ok": True, "job_id": job_id, "account": acc})
-
-
-@login_bp.get("/api/login/qrcode/<job_id>")
-def api_qrcode_status(job_id):
-    with _jobs_lock:
-        job = _qr_jobs.get(job_id)
-        if not job:
-            return jsonify({"ok": False, "error": "unknown job"}), 404
-        out = {k: job.get(k) for k in ("status", "qrcode_data_url", "hint_text",
-                                       "logged_in", "account", "log")}
-        out["age_seconds"] = int(time.time() - job.get("started_at", time.time()))
-    return jsonify({"ok": True, **out})
-
-
-@login_bp.post("/api/login/qrcode/<job_id>/probe")
-def api_qrcode_probe(job_id):
-    with _jobs_lock:
-        job = _qr_jobs.get(job_id) or {}
-        acc = job.get("account") or _read_current_account()
-    cmd = _base_cmd(acc, no_cache=False) + ["login-probe"]
-    try:
-        p = subprocess.run(cmd, cwd=str(ROOT), env=_env(),
-                           capture_output=True, text=True, timeout=20)
-        logged = '"logged_in": true' in (p.stdout or "")
-        return jsonify({"ok": True, "logged_in": bool(logged)})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e), "logged_in": False})
-
-
-@login_bp.post("/api/creator/type")
-def api_creator_type():
-    """把文本注入容器 Chrome 当前焦点元素（绕开 noVNC 剪贴板，普通 http 也能用）。"""
-    import urllib.request
-    body = request.get_json(silent=True) or {}
-    text = body.get("text", "") or ""
-    enter = bool(body.get("enter"))
-    if not text and not enter:
-        return jsonify({"ok": False, "error": "empty"}), 400
-    try:
-        from websockets.sync.client import connect
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": f"websockets 不可用: {e}"}), 500
-    try:
-        targets = json.loads(urllib.request.urlopen(
-            f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
-        tabs = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
-        tab = next((t for t in tabs if "creator.xiaohongshu.com" in t.get("url", "")), tabs[0] if tabs else None)
-        if not tab:
-            return jsonify({"ok": False, "error": "没有可注入的 page 标签"}), 404
-        with connect(tab["webSocketDebuggerUrl"], max_size=None) as ws:
-            mid = [1]
-
-            def _send(method, params):
-                my = mid[0]; mid[0] += 1
-                ws.send(json.dumps({"id": my, "method": method, "params": params}))
-                while True:
-                    m = json.loads(ws.recv())
-                    if m.get("id") == my:
-                        return m
-
-            if text:
-                _send("Input.insertText", {"text": text})
-            if enter:
-                _send("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter",
-                                                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
-                _send("Input.dispatchKeyEvent", {"type": "char", "text": "\r", "key": "Enter", "code": "Enter"})
-                _send("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter",
-                                                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
-        return jsonify({"ok": True, "typed": len(text), "enter": enter,
-                        "tab": tab.get("url", "")[:60]})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-# --------------------------------------------------------------------------
-# 浏览页(www.xiaohongshu.com) 登录 —— 截屏弹窗（会话绑定主 profile）
-# --------------------------------------------------------------------------
-_WWW_QR_JS = (
-    "(async()=>{var q=document.querySelector('.login-container .left .code-area .qrcode');"
-    "if(!q)return '';"
-    "var img=q.querySelector('img');"
-    "if(img&&img.src&&img.src.indexOf('data:')===0)return img.src;"
-    "var cv=q.querySelector('canvas');if(cv&&cv.toDataURL)return cv.toDataURL('image/png');"
-    "return '';})()")
 
 
 def _www_tab_ws():
