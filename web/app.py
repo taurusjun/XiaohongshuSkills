@@ -1149,6 +1149,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <select id="scoreFilter" class="fs" onchange="page=0;loadList()"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
     <div class="filter-divider"></div>
     <select id="preselectedFilter" class="fs" onchange="page=0;loadList()"><option value="">全部</option><option value="1">★ 已预选</option><option value="0">☆ 未预选</option></select>
+    <div class="filter-divider"></div>
+    <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span></button>
+    <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
   </div>
 
   <!-- Action bars -->
@@ -1163,8 +1166,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <span class="lbl"><b id="pendingCount">0</b> 条待发布</span>
       <span class="sp"></span>
       <button class="btn btn-red btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
-      <button class="btn-ghost" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span></button>
-      <button class="btn-ghost" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
     </div>
   </div>
 
