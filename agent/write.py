@@ -29,6 +29,22 @@ def _read(rel):
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
+def _review_doc_for(date_str):
+    """读当日 review 存档文档（对齐 7-8：写稿先读 review 文档）。"""
+    d = paths.REPO_ROOT / "data" / "reviews"
+    if not d.exists():
+        return ""
+    files = sorted(d.glob(f"{date_str}-review*.md"))
+    if not files:
+        files = sorted(d.glob("*-review*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for f in files:
+        try:
+            return f.read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
 # ---------------- 阶段1：写前准备（分级 + 关联） ----------------
 def _grade_keys_from_archive():
     """从最新 review 存档的「分级结果」节抽取 S/A 级 key（best-effort）。"""
@@ -84,13 +100,14 @@ def prepare_package(cand):
         refs = _refs.relevant(cand.get("title") or "")
     except Exception:
         pass
-    # 关联来自 review 前置阶段写入 DB 的 related_keys（write 只读不重算）
+    # 关联候选来自 review 存档文档（写稿阶段由 LLM 决定 related；对齐 7-8 读 review 文档）
     related_text = ""
     try:
-        _rk = [k.strip() for k in (cand.get("related_keys") or "").split(",") if k.strip()]
-        sibs = [x for x in (_news.get_by_key(k) for k in _rk[:8]) if x]
+        doc = _review_doc_for((cand.get("created_at") or "")[:10])
+        keys = [k for k in dict.fromkeys(re.findall(r"\b([0-9a-f]{40})\b", doc)) if k != cand["key"]][:12]
+        sibs = [x for x in (_news.get_by_key(k) for k in keys) if x]
         related_text = "\n".join(
-            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1500]}" for s in sibs)
+            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
     except Exception:
         pass
     return {"content_ja": cj[:9000], "target": target, "refs": refs,
@@ -104,12 +121,12 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n"
             "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。（关联素材由 review 前置给定，无需你判断。）\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。related 从下方「关联候选」中选**确实相关**的 key 前12位（同事件/同系列）；不确定就不选。\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
     if pkg["related_text"]:
-        user += "\n\n=== 关联素材（同事件/同系列·可合并：把这些素材的角度并入正文）===\n" + pkg["related_text"]
+        user += "\n\n=== 关联候选（来自 review 文档；可合并，并从中选 related）===\n" + pkg["related_text"]
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
@@ -207,7 +224,7 @@ def write_one(cand, dry_run=True):
     except Exception:
         pass
     ok = not mech["problems"] and (score.get("total") or 0) >= need
-    rk = cand.get("related_keys") or ""       # review 前置已写库，write 直接沿用
+    rk = _resolve_keys(related)               # 写稿 LLM 决定 related → 解析全 key
     if ok and not dry_run:
         if channel == "gzh":
             _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,
