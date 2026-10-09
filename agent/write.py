@@ -220,6 +220,8 @@ def write_one(cand, dry_run=True):
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
         mech = _pc.check_text(f"## {title}\n{body}", spec)
+        if content_len(body) > pkg["tmax"]:            # 正文硬上限（post）
+            mech["problems"].append(f"正文过长 {content_len(body)} > {pkg['tmax']}（需删减到 ≤{pkg['tmax']}）")
         gate = list(mech["problems"]) + (_gz.check(title, body) if channel == "gzh" else _rw.check(body))
         mech["problems"] = gate
         need = 7 if channel == "gzh" else (8 if cand.get("format") == "story" else 6)
