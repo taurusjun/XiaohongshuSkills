@@ -1130,7 +1130,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="filter-divider"></div>
     <select id="preselectedFilter" class="fs" onchange="page=0;loadList()"><option value="">全部</option><option value="1">★ 已预选</option><option value="0">☆ 未预选</option></select>
     <div class="filter-divider"></div>
-    <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span></button>
+    <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span><span id="loginAcct" style="margin-left:6px;color:#9fb0c8;font-size:11px"></span></button>
     <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
   </div>
 
@@ -1958,9 +1958,12 @@ async function refreshLoginDot(){
     var cOn=!!c.logged_in, wOn=!!w.logged_in;
     var e=document.getElementById('loginDot');
     if(e){e.style.background=(cOn&&wOn)?'#07c160':((cOn||wOn)?'#ffc53d':'#ff4d4f');
-           e.title='创作号:'+(cOn?'已登录':'未登录')+' / 浏览页:'+(wOn?'已登录':'未登录');}
-    var b=document.getElementById('loginBtnText');
-    if(b){b.textContent=(cOn&&wOn)?'已登录':(cOn?'创作号✓':'浏览页✓');}
+           e.title='创作号:'+(cOn?'已登录':'未登录')+' / 浏览页:'+(wOn?'已登录':'未登录')
+                  +(w.nickname?(' / 账户:'+w.nickname+(w.red_id?(' 小红书号:'+w.red_id):'')):'');}
+    var a=document.getElementById('loginAcct');
+    if(a){ if(wOn && w.nickname){a.textContent=w.nickname+(w.red_id?(' · '+w.red_id):'');
+            a.title='profileId:'+(w.profile_id||'')+'　小红书号:'+(w.red_id||'');}
+           else{a.textContent='';} }
   }catch(err){}
 }
 refreshLoginDot();setInterval(refreshLoginDot,8000);

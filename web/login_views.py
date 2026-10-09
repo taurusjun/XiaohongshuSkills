@@ -312,6 +312,58 @@ def _www_tab_ws():
     return tab.get("webSocketDebuggerUrl")
 
 
+WWW_ACCOUNT_JS = (
+    "(()=>{try{var u=window.__INITIAL_STATE__&&window.__INITIAL_STATE__.user;"
+    "if(!u)return {logged_in:false};"
+    "var li=u.loggedIn&&(u.loggedIn._value!==undefined?u.loggedIn._value:u.loggedIn._rawValue);"
+    "var ui=(u.userInfo&&(u.userInfo._rawValue||u.userInfo._value||{}))||{};"
+    "return {logged_in:!!li,user_id:ui.userId||'',nickname:ui.nickname||'',red_id:ui.redId||'',image:ui.images||''};"
+    "}catch(e){return {logged_in:false,err:String(e)};}})()")
+
+
+def _accounts_meta_file():
+    return ROOT / "data" / "accounts_meta.json"
+
+
+def _read_accounts_meta():
+    try:
+        return json.loads(_accounts_meta_file().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_account_meta(info):
+    """把「账户名 → {profile_id, nickname, red_id}」写入 data/accounts_meta.json（data 卷，多 profile 关联）。"""
+    try:
+        meta = _read_accounts_meta()
+        default_acc = get_default_account()
+        if isinstance(default_acc, dict):
+            default_acc = default_acc.get("name")
+        acc = _read_current_account() or default_acc or "default"
+        meta[str(acc)] = {"profile_id": info.get("profile_id", ""), "nickname": info.get("nickname", ""),
+                          "red_id": info.get("red_id", ""), "updated_at": int(time.time())}
+        _accounts_meta_file().parent.mkdir(parents=True, exist_ok=True)
+        _accounts_meta_file().write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _www_account():
+    """读当前 www 标签的登录账户：profileId(userId) + 昵称 + redId（读 __INITIAL_STATE__，零导航）。"""
+    from websockets.sync.client import connect
+    ws_url = _www_tab_ws()
+    if not ws_url:
+        return {"logged_in": False}
+    with connect(ws_url, max_size=None) as ws:
+        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                            "params": {"returnByValue": True, "expression": WWW_ACCOUNT_JS}}))
+        while True:
+            mm = json.loads(ws.recv(timeout=10))
+            if mm.get("id") == 1:
+                v = (mm.get("result") or {}).get("result", {}).get("value")
+                return v if isinstance(v, dict) else {"logged_in": False}
+
+
 def _www_logged_in():
     """浏览页登录态：**不导航**，仅在当前 www 标签上查是否出现登录弹窗(.login-container)。
     有弹窗=未登录。零导航以免刷新二维码使其失效（对齐 creator 的 login-probe）。"""
@@ -440,9 +492,22 @@ def api_tabs_cleanup():
 @login_bp.get("/api/login/www/status")
 def api_www_status():
     try:
-        return jsonify({"ok": True, "logged_in": _www_logged_in()})
+        acc = _www_account()
+        out = {"ok": True, "logged_in": bool(acc.get("logged_in")),
+               "profile_id": acc.get("user_id", "") or "", "nickname": acc.get("nickname", "") or "",
+               "red_id": acc.get("red_id", "") or "", "account": _read_current_account() or "default"}
+        if out["logged_in"] and out["profile_id"]:
+            _save_account_meta(out)         # profileId ↔ 昵称 关联落 data/accounts_meta.json
+        return jsonify(out)
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e), "logged_in": False})
+
+
+@login_bp.get("/api/login/accounts/meta")
+def api_accounts_meta():
+    """账户名 → {profile_id, nickname, red_id}（多 profile 展示用）。"""
+    return jsonify({"ok": True, "meta": _read_accounts_meta(),
+                    "current": _read_current_account() or "default"})
 
 
 @login_bp.post("/api/login/www/qrcode")
