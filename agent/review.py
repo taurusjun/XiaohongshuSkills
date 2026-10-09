@@ -247,7 +247,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     if isinstance(feedback, dict):
         try:
             from services import feedback_patterns as _fb
-            ok, msg = _fb.update(feedback.get("pattern"), feedback.get("trend_row"), date=date)
+            ok, msg = _fb.update(feedback.get("pattern"), feedback.get("trend_row"), date=date,
+                                patterns=feedback.get("patterns"))
             print(f"[feedback-patterns] {msg}")
         except Exception as e:  # noqa: BLE001
             print(f"[feedback-patterns] 跳过: {e}")

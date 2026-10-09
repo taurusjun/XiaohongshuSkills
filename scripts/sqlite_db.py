@@ -218,6 +218,15 @@ def init_db():
                 created_at  TEXT,
                 updated_at  TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS feedback_patterns (
+                no          INTEGER PRIMARY KEY,   -- 模式编号（唯一，跨会话递增）
+                date        TEXT,                  -- 归属日期
+                title       TEXT,                  -- 模式标题
+                body        TEXT,                  -- 模式正文（md）
+                tags        TEXT DEFAULT '',       -- 检索标签（题材/实体/模式类型，逗号分隔）
+                created_at  TEXT
+            );
         """)
         # Compat: add columns to existing DBs
         _news_compat = [

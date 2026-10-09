@@ -38,3 +38,39 @@ def test_update_no_content(tmp_path, monkeypatch):
     monkeypatch.setattr(fp, "_fb_path", lambda: f)
     ok, msg = fp.update("", "", date="2026-10-09")
     assert not ok
+
+
+def test_runtime_path_env_and_seed(tmp_path, monkeypatch):
+    from pathlib import Path
+    seed = tmp_path / "seed.md"
+    seed.write_text("## 跨会话趋势表\n\n| a | b |\n|---|---|\n| x | y |\n", encoding="utf-8")
+    monkeypatch.setattr(fp, "_seed_path", lambda: seed)
+    monkeypatch.setenv("XHS_FEEDBACK_MD", str(tmp_path / "rt.md"))
+    p = fp._fb_path()
+    assert Path(p) == tmp_path / "rt.md"
+    assert p.exists()                      # 首次使用从种子拷贝
+    assert p.read_text(encoding="utf-8") == seed.read_text(encoding="utf-8")
+
+
+def test_insert_assigns_no_and_relevant_hits(tmp_path, monkeypatch):
+    db = tmp_path / "t.db"
+    monkeypatch.setattr(fp.paths, "sqlite_path", lambda: str(db))
+    monkeypatch.setattr(fp, "_ensure_seed", lambda: None)      # 临时库不灌历史
+    rows = fp.insert_patterns([
+        {"title": "分析性长标题零曝光（X）", "tags": "娱乐,分析性标题", "body": "- 规律：分析性长标题无初始分发"},
+        {"title": "经济+数字对比有流量（Y）", "tags": "经济,数字对比", "body": "- 规律：经济类目数字对比钩子有效"},
+    ], date="2026-10-09")
+    assert [r["no"] for r in rows] == [1, 2]
+    assert "经济+数字对比有流量" in fp.relevant("FRUITS 经济 数字对比")
+
+
+def test_update_row_and_get(tmp_path, monkeypatch):
+    db = tmp_path / "t.db"
+    monkeypatch.setattr(fp.paths, "sqlite_path", lambda: str(db))
+    monkeypatch.setattr(fp, "_ensure_seed", lambda: None)
+    fp.insert_patterns([{"title": "T", "body": "b", "category": "娱乐",
+                         "direction": "零曝光", "action": "慎用"}], date="2026-10-09")
+    assert fp.update_row(1, {"action": "优先", "entities": "甲,乙"})
+    r = fp.get_pattern(1)
+    assert r["action"] == "优先" and r["entities"] == "甲,乙" and r["category"] == "娱乐"
+    assert fp.update_row(1, {}) is False

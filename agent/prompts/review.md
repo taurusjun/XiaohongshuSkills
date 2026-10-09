@@ -35,11 +35,11 @@
  "clusters": [["<key前12位>", "<key前12位>"]],
  "channel_hint": {"<key前12位>": "gzh"},
  "akb_type": {"<key前12位>": "event|bullet"},
- "feedback": {"pattern": "### <下一个编号>. <标题>（<日期>确认）\n\n- **案例**：...\n- **规律**：...", "trend_row": "| <日期> | #<模式> | <来源数据> | <说明> |"}}
+ "feedback": {"patterns": [{"title": "<标题>（<日期>确认）", "tags": "<题材·实体·模式类型，逗号分隔，检索用>", "category": "娱乐|经济|体育|社会|其他", "genre": "题材(如 争议发言/行业分析/亲情/偶像退圈/写真/宣传)", "title_style": "标题类型(如 分析性长标题/数字对比/不点名争议/半开玩笑请求/悬念)", "publish_mode": "normal|rewritten|caption|free|any", "direction": "爆发|稳态|零曝光|延迟归位|降级|中性", "action": "优先|慎用|改道gzh|降级|跳过|中性", "confidence": "待验证|待第2例|已确认", "entities": "相关人物/IP，逗号分隔(FA日文原形)", "body": "- **案例**：...\n- **规律**：...\n- **对策**：..."}], "trend_row": "| <日期> | #<模式> | <来源数据> | <说明> |"}}
 ```
 - `grades`：每条当日素材的分级，与「四、分级结果」**完全一致**。
 - `clusters`：**同一事件**的成组素材（≥2 条），组内元素互指（程序据此写 `cluster_keys` 用于合并）；单条不成组的不列。
 - `channel_hint`：标出**适合走公众号 gzh** 的素材（男团/男偶像的产业·厂牌·销量·榜单·战略·**行业分析**、跨赛道深度），值固定为 `"gzh"`；其余不列。write 阶段据此**优先写 gzh**（旧 skill 阶段2）。
 - `akb_type`：**仅 AKB大TOP** 素材填 —— 事件型（育儿/争议/对话/爆料）填 `"event"`（写全文）；晒照/表纸/日常/行程型填 `"bullet"`（**只入库不写正文**）。其余不列。write 据此决定是否写正文。
-- `feedback.pattern`：**仅新增**的模式节（编号=输入「当前最大模式编号」+1），插到趋势表之前；无新增则给空串。
+- `feedback.patterns`：**仅新增**的模式（数组）。程序接续「当前最大模式编号」自动分配编号、渲染 md、并写入 `feedback_patterns` 表。除 `title/body/tags` 外**必须**给结构化 facets：`category/genre/title_style/publish_mode/direction/action/confidence/entities`（见接口示例；这些字段用于日后**精确检索/决策**，务必具体、可用小词典值）。无新增给空数组。
 - `feedback.trend_row`：**一行**趋势表新行（`| 日期 | 新增模式 | 来源数据 | 说明 |`）；无则给空串。

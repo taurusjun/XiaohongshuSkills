@@ -135,3 +135,17 @@ def test_pick_candidates_excludes_processed_bullet(monkeypatch):
     monkeypatch.setattr(w._news, "query_news", lambda **kw: rows)
     keys = [r["key"] for r in w.pick_candidates(0)]
     assert B in keys and A not in keys
+
+
+def test_compose_includes_history_patterns(monkeypatch):
+    cap = {}
+
+    def fake(msgs, **k):
+        cap["msgs"] = msgs
+        return '{"channel":"xhs","title":"X","body":"b"}'
+    monkeypatch.setattr(w.llm, "chat", fake)
+    pkg = _pkg()
+    pkg["patterns"] = "[#132] 分析性长标题=系统性零曝光\n- 对策：慎用分析性长标题"
+    w.compose({"key": "a" * 40}, pkg)
+    assert "历史发布规律" in cap["msgs"][1]["content"]
+    assert "分析性长标题" in cap["msgs"][1]["content"]

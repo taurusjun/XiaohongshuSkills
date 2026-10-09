@@ -50,6 +50,8 @@ from web.login_views import login_bp
 app.register_blueprint(login_bp)
 from web.services_views import services_bp
 app.register_blueprint(services_bp)
+from web.feedback_views import feedback_bp
+app.register_blueprint(feedback_bp)
 
 
 @app.after_request
@@ -1026,6 +1028,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     </div>
     <div class="nav-item" onclick="location.href='/topic-cache'">
       <span class="ni">#️⃣</span> 话题缓存
+    </div>
+    <div class="nav-item" onclick="location.href='/feedback-patterns'">
+      <span class="ni">📈</span> 发布规律
     </div>
   </div>
 

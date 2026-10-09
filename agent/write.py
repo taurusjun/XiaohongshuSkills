@@ -82,9 +82,14 @@ def prepare_package(cand):
     # 渠道：review 标注的 gzh 方向 > 机械预判（旧 skill 阶段2「review 标了 gzh 方向的必须先处理」）
     hint = (cand.get("channel_hint") or "").strip().lower()
     pre_channel = "gzh" if hint == "gzh" else _route.route(cand.get("title") or "", cj[:500])
-    refs = related_text = ""
+    refs = related_text = patterns = ""
     try:
         refs = _refs.relevant(f"{cand.get('title') or ''} {cand.get('title_ja') or ''}")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from services import feedback_patterns as _fbpat
+        patterns = _fbpat.relevant(f"{cand.get('title') or ''} {cand.get('title_ja') or ''}")
     except Exception:  # noqa: BLE001
         pass
     # 关联（write 阶段决定并写 related_keys）：
@@ -115,7 +120,7 @@ def prepare_package(cand):
     except Exception:  # noqa: BLE001
         pass
     related_keys = list(dict.fromkeys(related_keys))
-    return {"content_ja": cj[:cap], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs,
+    return {"content_ja": cj[:cap], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs, "patterns": patterns,
             "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
             "method": r["publish_method"], "pre_channel": pre_channel,
@@ -141,6 +146,9 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
         user += "\n\n=== 同事件关联（可合并：把这些素材的角度并入正文）===\n" + pkg["merge_text"]
     if pkg.get("hist_text"):
         user += "\n\n=== 同人物历史（仅供前情/避免重复，**不合并**）===\n" + pkg["hist_text"]
+    if pkg.get("patterns"):
+        user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
+                 "来自 feedback_patterns 表）===\n" + pkg["patterns"])
     msgs.append({"role": "user", "content": user})
     if prev and prev[0]:
         msgs.append({"role": "assistant", "content": json.dumps(
@@ -364,6 +372,14 @@ def recommend_and_schedule(n=5, seed=None):
     keys = [r["key"] for r in picks][:len(plan)]
     ok, bad = _sch.apply_plan(paths.sqlite_path(), keys, plan, True)
     reasons = _rec.reasons(picks, stat_by_key, today)
+    try:
+        from services import feedback_patterns as _fbpat
+        for i, r in enumerate(picks):
+            pat = _fbpat.relevant(f"{r.get('rewritten_title') or ''} {r.get('title') or ''} {r.get('title_ja') or ''}", k=1)
+            if pat:
+                reasons[i] = f"{reasons[i]}｜历史规律 {pat.splitlines()[0][:50]}"
+    except Exception:  # noqa: BLE001
+        pass
     overview = _rec.data_overview(today, pool)
     return picks, plan, bad, reasons, backups, overview
 
