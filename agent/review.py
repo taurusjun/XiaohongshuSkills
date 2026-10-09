@@ -187,7 +187,7 @@ def build_messages(date, pkg):
 def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
-    part1 = build_archive(date, single_table=True)          # 一、单张合并表
+    part1 = build_archive(date, single_table=False)         # 一、按来源分组（旧 skill 1d）
     out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 机器JSON
     grades, clusters, feedback, out = _extract_machine_json(out)
     rest = out
@@ -214,7 +214,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     if isinstance(feedback, dict):
         try:
             from services import feedback_patterns as _fb
-            ok, msg = _fb.update(feedback.get("pattern"), feedback.get("trend_row"))
+            ok, msg = _fb.update(feedback.get("pattern"), feedback.get("trend_row"), date=date)
             print(f"[feedback-patterns] {msg}")
         except Exception as e:  # noqa: BLE001
             print(f"[feedback-patterns] 跳过: {e}")

@@ -60,8 +60,11 @@ def context():
     return {"last_pattern_no": last, "tail": tail}
 
 
-def update(pattern_section, trend_row):
-    """仅追加：模式节插入趋势表前；趋势行追加到趋势表末行后。返回 (ok, msg)。"""
+def update(pattern_section, trend_row, date=None):
+    """仅追加：模式节插入趋势表前；趋势行追加到趋势表末行后。返回 (ok, msg)。
+
+    幂等：若给了 date，则「同日模式节」已存在时跳过、同日趋势行已存在时**替换**（防手动/cron 重跑重复）。
+    """
     pat = (pattern_section or "").strip()
     row = (trend_row or "").strip()
     p = _fb_path()
@@ -71,6 +74,9 @@ def update(pattern_section, trend_row):
         return False, "LLM 未给 pattern/trend_row"
     txt = p.read_text(encoding="utf-8")
     orig = txt
+    if pat:
+        if date and any(l.startswith("### ") and str(date) in l for l in txt.split("\n")):
+            pat = ""          # 同日模式节已存在 → 跳过（幂等）
     if pat:
         i = txt.find(TREND_MARK)
         if i < 0:
@@ -85,9 +91,22 @@ def update(pattern_section, trend_row):
         cand = [k for k in range(mi + 1, len(lines)) if lines[k].strip().startswith("|")]
         if not cand:
             return False, "趋势表无数据行"
-        lines.insert(cand[-1] + 1, row)
+        idx = None
+        if date:
+            for k in cand:
+                if re.match(rf"^\|\s*{re.escape(str(date))}\s*\|", lines[k]):
+                    idx = k
+                    break
+        if idx is not None:
+            lines[idx] = row      # 同日已有 → 替换（幂等）
+            tail = "替换"
+        else:
+            lines.insert(cand[-1] + 1, row)
+            tail = "追加"
         txt = "\n".join(lines)
+    else:
+        tail = "无"
     if txt == orig:
         return False, "无变化"
     p.write_text(txt, encoding="utf-8")
-    return True, f"已更新（模式节={'有' if pat else '无'}，趋势行={'有' if row else '无'}）"
+    return True, f"已更新（模式节={'有' if pat else '无/跳过'}，趋势行={tail}）"
