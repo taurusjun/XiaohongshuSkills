@@ -466,8 +466,17 @@ class XiaohongshuPublisher(LoginMixin, FeedMixin, PublishFlowMixin, StatsMixin):
     def _navigate(self, url: str):
         """Navigate the current tab to the given URL and wait for load."""
         print(f"[cdp_publish] Navigating to {url}")
-        self._send("Page.enable")
-        self._send("Page.navigate", {"url": url})
+        try:
+            self._send("Page.enable")
+        except CDPError:
+            self._reconnect()
+        # Page.navigate 触发整页 reload 时会关闭 WebSocket、响应丢失 → 超时属预期，
+        # 不抛错：重连后由调用方按 window.location 判定是否导航成功。
+        try:
+            self._send("Page.navigate", {"url": url})
+        except CDPError:
+            print("[cdp_publish] Page.navigate 响应超时（可能已开始导航），重连继续")
+            self._reconnect()
         self._sleep(PAGE_LOAD_WAIT, minimum_seconds=1.0)
         # Page.navigate can trigger a full-page reload which closes the WebSocket.
         # Silently reconnect so callers do not need to handle this.
