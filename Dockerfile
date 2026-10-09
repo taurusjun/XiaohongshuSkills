@@ -18,7 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai
 
 # ---- 系统依赖 ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
+ && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install -y --no-install-recommends \
       xvfb x11-utils xauth \
       fonts-noto-cjk fonts-noto-color-emoji fonts-liberation \
       ffmpeg librsvg2-bin \
@@ -33,8 +34,8 @@ RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
       | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
       > /etc/apt/sources.list.d/google-chrome.list \
- && apt-get update \
- && apt-get install -y --no-install-recommends google-chrome-stable \
+ && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
+ && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install -y --no-install-recommends google-chrome-stable \
  && rm -rf /var/lib/apt/lists/*
 
 # ---- 非 root 用户：HOME=/home/user，与代码里 ~/PG/XiaohongshuSkills 硬编码一致 ----
