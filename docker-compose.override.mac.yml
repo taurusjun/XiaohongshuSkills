@@ -10,6 +10,7 @@ services:
       HTTP_PROXY: http://192.168.5.2:20808
       HTTPS_PROXY: http://192.168.5.2:20808
       ALL_PROXY: socks5://192.168.5.2:20808
+      PROXY_URL: http://192.168.5.2:20808          # config.yahoo_conf 优先读它（避免回退到 scripts/.env 的宿主值）
       NO_PROXY: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
       no_proxy: "127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn"
     sysctls:
@@ -22,9 +23,11 @@ services:
       - xhs-data:/home/user/PG/XiaohongshuSkills/data
       - xhs-logs:/home/user/PG/XiaohongshuSkills/logs
       - xhs-tmp:/home/user/PG/XiaohongshuSkills/tmp
+      - xhs-gallery:/home/user/.cache/xhs_images   # 图集缓存（持久，重建不丢）
 
 volumes:
   xhs-venv:
   xhs-data:
   xhs-logs:
   xhs-tmp:
+  xhs-gallery:
