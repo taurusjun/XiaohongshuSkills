@@ -195,7 +195,7 @@ def write_one(cand, dry_run=True):
     pkg = prepare_package(cand)                 # 阶段1：写前准备
     pmethod, spec = pkg["method"], pkg["spec"]
 
-    while attempts < 3:
+    while attempts < 5:
         attempts += 1
         ctx, prev = None, None
         if attempts > 1:
@@ -210,6 +210,9 @@ def write_one(cand, dry_run=True):
             except Exception:
                 pass
             fb = list(dict.fromkeys(fb))
+            if body and content_len(body) > pkg["tmax"]:   # 过长 → 置顶，强指令删减
+                fb.insert(0, f"**正文过长（{content_len(body)} > {pkg['tmax']}）**：必须删到 ≤{pkg['tmax']} 字，"
+                              "删掉修饰性/重复句，只保留硬信息与关键情节，不要新增内容")
             if body and len(body) < pkg["tmin"]:   # 字数不足 → **置顶**并要求扩写
                 fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
                               f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
