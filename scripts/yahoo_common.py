@@ -1473,11 +1473,13 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     if twitter_embeds:
         _download_twitter_embeds(news, twitter_embeds)
 
-    # 生成短配文
+    # 生成短配文（注：函数签名是 (title_zh, summary, content, tags)，必须传全 4 个）
     try:
         news['video_caption'] = generate_video_caption(
-            news['title_zh'], news.get('content', ''))
-    except Exception:
+            news['title_zh'], news.get('summary', ''),
+            news.get('content', ''), news.get('tags') or [])
+    except Exception as e:  # noqa: BLE001
+        print(f"    ⚠️ 短配文生成失败: {e}")
         news['video_caption'] = ""
 
     # 写入 DB（故事体走了独立路径，不会回到 process_news_item 的 insert_news）
@@ -1497,6 +1499,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
                 'tags': news.get('tags', []),
                 'image_url': news.get('image_url', ''),
                 'original_image_url': news.get('original_image_url', ''),
+                'gallery_images': news.get('gallery_images', []),
                 'video_caption': news.get('video_caption', ''),
                 'content_ja': news.get('body_text', '') or news.get('ja_summary', ''),
                 'pub_time': news.get('pub_time', ''),
