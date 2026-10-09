@@ -60,10 +60,12 @@ def _grade_keys_from_archive():
             continue
         keys, cur = [], ""
         for line in m.group(1).split("\n"):
-            if re.match(r"^###", line):
-                cur = line
-            if re.search(r"S级|A级", cur):
-                keys += re.findall(r"`([0-9a-f]{12,40})`", line)
+            st = line.strip()
+            # 分级标题：### S级 / **S级** / **AKB大TOP（…）** 等
+            if st.startswith("#") or (st.startswith("**") and st.endswith("**")):
+                cur = st
+            if re.search(r"S级|A级|大TOP", cur):
+                keys += re.findall(r"`([0-9a-f]{12,40})`", st)
         if keys:
             return list(dict.fromkeys(keys))
     return []

@@ -95,7 +95,10 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     if idx > 0:
         rest = rest[idx:]
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
-    if deliver:
+    # 本地存档：**无条件**（write 阶段要读它；对齐原 skill 每日存档）
+    from services.delivery import web_save
+    web_save(md, name=name or f"{date}-review-full.md")
+    if deliver:                                          # 推送：可选
         from services.delivery import deliver as _d
         print("[delivery]", _d(md, name=name or f"{date}-review-full.md"))
     else:
