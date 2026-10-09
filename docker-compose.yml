@@ -16,7 +16,7 @@ services:
       - xhs-profiles:/data/chrome-profiles
       - xhs-backup:/backup
     ports:
-      - "127.0.0.1:${XHS_UI_PORT:-15000}:5000"    # admin UI（宿主端口必须避开生产 5000）
+      - "0.0.0.0:${XHS_UI_PORT:-15000}:5000"      # admin UI（对外开放；宿主端口必须避开生产 5000）
       - "127.0.0.1:${XHS_MCP_PORT:-15001}:5001"   # MCP (http)
       - "127.0.0.1:${XHS_CDP_PORT:-19222}:9222"   # CDP（宿主端口必须避开生产 9222）
     shm_size: "1g"

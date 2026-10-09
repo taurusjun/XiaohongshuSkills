@@ -5,7 +5,7 @@ services:
   xhs:
     platform: linux/amd64
     ports:
-      - "127.0.0.1:16080:6080"   # noVNC（浏览器远程控制容器 Chrome，可点验证）
+      - "0.0.0.0:16080:6080"       # noVNC（浏览器远程控制容器 Chrome，可点验证；对外开放）
     environment:
       PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple   # 境内加速 venv 引导
       # 容器内代理指向 VM 网关(宿主 Mac 的 127.0.0.1:20809)；主链路/境内服务走直连
