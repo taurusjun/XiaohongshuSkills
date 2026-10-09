@@ -1,11 +1,10 @@
 """完整写稿 skill 运行（对齐 xhs-write-publish-flow 6 阶段）。
 
-阶段1 写前准备(分级/关联) → 2 渠道路由(xhs/gzh) → 3 编写(体裁+字数路由/publish_method)
-→ 4 入库+验证 → 5 xhs-content-review 5维评分+改稿 → 6 待发布推荐。
-用法: python -m cli write-full [--n 3] [--deliver] [--dry-run]
+阶段1 写前准备(分级/关联/体裁路由) → 2 渠道路由(xhs/gzh/both)
+→ 3 编写 → 4 入库+验证 → 5 renwei(六类信号) + xhs 5维 / gzh 3维 + 改稿 → 6 待发布推荐。
+用法: python -m cli write-full [--n 3] [--deliver] [--dry-run] [--split-large]
 """
 import json
-import os
 import re
 import sys
 
@@ -18,18 +17,18 @@ from services.word_count import content_len  # noqa: E402
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
 SYS = ('你是小红书日娱写稿助手。只输出严格 JSON 对象：'
-       '{"key": "<40位key>", "channel": "xhs|gzh", "title": "...", "body": "...", '
-       '"related": ["<关联素材key前缀12位>", ...]}。不要任何多余文字。')
+       '{"key": "<40位key>", "channel": "xhs|gzh|both", "title": "...", "body": "...", '
+       '"gzh_title": "...", "gzh_body": "...", "related": ["<关联素材key前缀12位>", ...]}。'
+       'channel=both 时 title/body 为 xhs 版、gzh_title/gzh_body 为公众号版；'
+       'channel 非 both 时 gzh_title/gzh_body 留空。不要任何多余文字。')
 
-__all__ = ["pick_candidates", "compose", "score_content", "write_one",
+__all__ = ["pick_candidates", "prepare_package", "compose", "score_content", "write_one",
            "recommend_and_schedule", "run", "main"]
 
 
 def _read(rel):
     p = paths.REPO_ROOT / rel
     return p.read_text(encoding="utf-8") if p.exists() else ""
-
-
 
 
 # ---------------- 阶段1：写前准备（分级 + 关联） ----------------
@@ -57,13 +56,14 @@ def pick_candidates(n=0):
 
 # ---------------- 阶段3：编写（体裁+字数路由） ----------------
 def prepare_package(cand):
-    """阶段1 写前准备（机械）：组装「写作包」— 全文原文 + 同事件关联 + 相关知识 + 体裁/字数路由。"""
+    """阶段1 写前准备（机械）：写作包 — 全文原文 + 同事件关联 + 相关知识 + 体裁/字数路由 + 机械渠道预判。"""
     cj = cand.get("content_ja") or ""
     r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
-    from services.word_count import content_len
     j = content_len(cj) or 1
-    if r["publish_method"] == "export":
+    cap = 9000
+    if r["publish_method"] == "export":                 # 超长文：喂更多原文（旧 dump_ja 全文口径）
         tmin, tmax = int(j * 0.31), int(j * 0.33)
+        cap = 20000
     elif cand.get("format") == "story" and cand.get("is_long_form"):
         tmin, tmax = max(800, int(j * 0.30)), max(900, int(j * 0.34))
     else:
@@ -72,15 +72,17 @@ def prepare_package(cand):
     if r["publish_method"] != "export":
         tmax = min(tmax, 900)
         tmin = min(tmin, tmax)
-    target = f"{tmin}~{tmax}字（密度=正文字数/日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
+    target = f"{tmin}~{tmax}字（密度=正文字数/主素材日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
+    # 机械渠道预判（旧 skill：机械先判，边界由 LLM 兜底）
+    pre_channel = _route.route(cand.get("title") or "", cj[:500])
     refs = related_text = ""
     try:
-        refs = _refs.relevant(cand.get("title") or "")
-    except Exception:
+        refs = _refs.relevant(f"{cand.get('title') or ''} {cand.get('title_ja') or ''}")
+    except Exception:  # noqa: BLE001
         pass
     # 关联（write 阶段决定并写 related_keys）：
     #   同事件 = review 的聚类计划 cluster_keys（可合并）
-    #   同人物历史 = 写稿时按实体名检索
+    #   同人物历史 = 写稿时按实体名(中日双形)检索
     merge_text = hist_text = ""
     related_keys = []
     try:
@@ -89,7 +91,7 @@ def prepare_package(cand):
         merge_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
         related_keys += ck
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     try:
         from agent import review as _rev
@@ -103,22 +105,26 @@ def prepare_package(cand):
             hs = [x for x in (_news.get_by_key(k) for k in hist) if x]
             hist_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}" for s in hs)
             related_keys += hist
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     related_keys = list(dict.fromkeys(related_keys))
-    return {"content_ja": cj[:9000], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs,
+    return {"content_ja": cj[:cap], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs,
             "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
-            "method": r["publish_method"],
+            "method": r["publish_method"], "pre_channel": pre_channel,
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
-def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
-    """阶段3 撰写（LLM）：只吃写作包 pkg。prev=(title,body,channel) 时基于上一版修改。"""
+def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens=16000):
+    """阶段3 撰写（LLM）：只吃写作包 pkg。返回 dict（channel/title/body/gzh_*/related）。"""
     msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
+    if force_channel:
+        chan_note = f"渠道已指定：channel=\"{force_channel}\"（不要更改）。"
+    else:
+        chan_note = (f"机械预判渠道：{pkg.get('pre_channel', 'xhs')}（可覆盖；拿不准沿用它）。"
+                     "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
-            f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n"
-            "判断走 xhs 还是 gzh（男团/男偶像的产业·厂牌·销量·战略·行业分析→gzh；粉丝向爆料/日常/综艺花絮→xhs）。\n"
+            f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
             "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不并入。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
@@ -134,9 +140,11 @@ def compose(cand, pkg, prev=None, retry_ctx=None, max_tokens=16000):
     if retry_ctx:
         msgs.append({"role": "user", "content": retry_ctx})
     raw = llm.chat(msgs, max_tokens=max_tokens)
-    d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-    return d.get("channel", "xhs"), d.get("title", ""), d.get("body", ""), d.get("related") or []
-
+    try:
+        d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+    except Exception:  # noqa: BLE001
+        d = {}
+    return d if isinstance(d, dict) else {}
 
 
 def score_content(title, body, max_tokens=4000):
@@ -150,7 +158,6 @@ def score_content(title, body, max_tokens=4000):
         return {"error": str(e), "total": 0}
 
 
-# ---------------- 工具 ----------------
 def score_gzh(title, body, max_tokens=4000):
     sysd = '你是公众号内容评审。只输出 JSON：{"标题吸引力":n,"叙事质量":n,"公众号适配度":n,"total":n}（各1-10，合格线7）。'
     usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？\n\n"
@@ -183,70 +190,104 @@ def _trim_title(title, limit=20):
     return title
 
 
-def write_one(cand, dry_run=True):
-    """阶段3~5：编写→门禁(precheck+renwei/gzh)→评分(按渠道)→改稿(最多3轮,基于上一版)。"""
+def _need(cand, channel):
+    if channel == "gzh":
+        return 7
+    return 8 if cand.get("format") == "story" else 6
+
+
+def _produce(cand, pkg, channel, first=None):
+    """单渠道：编写→门禁(precheck+renwei exit1/gzh)→评分→改稿(最多3轮,基于上一版)。"""
+    need = _need(cand, channel)
     title = body = ""
-    channel = "xhs"
-    related = []
-    mech = {"problems": ["未开始"]}
+    mech = {"problems": ["未开始"], "body_len": 0, "h2": 0, "kana": 0}
     score = {"total": 0}
     attempts = 0
-    need = 8
-    pkg = prepare_package(cand)                 # 阶段1：写前准备
-    pmethod, spec = pkg["method"], pkg["spec"]
-
+    prev = None
     while attempts < 3:
         attempts += 1
-        ctx, prev = None, None
-        if attempts > 1:
-            fb = list(mech.get("problems") or [])
-            if (score.get("total") or 0) < need:
-                low = [k for k, v in score.items() if isinstance(v, (int, float)) and k != "total" and v < 2]
-                fb.append(f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
-            try:                                  # 残留假名 → 显式列出，要求替换
-                res = _kana.new_terms(body)
-                if res:
-                    fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
-            except Exception:
-                pass
-            fb = list(dict.fromkeys(fb))
-            if body and len(body) < pkg["tmin"]:   # 字数不足 → **置顶**并要求扩写
-                fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
-                              f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
-            ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
-                   "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
-            prev = (title, body, channel)
-        channel, title, body, related = compose(cand, pkg, prev=prev, retry_ctx=ctx)
+        ctx = None
+        if attempts == 1 and first and first[0] is not None:
+            title, body = first
+        else:
+            if attempts > 1:
+                fb = list(mech.get("problems") or [])
+                if (score.get("total") or 0) < need:
+                    low = [k for k, v in score.items() if isinstance(v, (int, float)) and k != "total" and v < 2]
+                    fb.append(f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
+                try:
+                    res = _kana.new_terms(body)
+                    if res:
+                        fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
+                except Exception:  # noqa: BLE001
+                    pass
+                fb = list(dict.fromkeys(fb))
+                if body and len(body) < pkg["tmin"]:
+                    fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
+                                  f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
+                ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
+                       "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
+                prev = (title, body, channel)
+            d = compose(cand, pkg, force_channel=channel, prev=prev, retry_ctx=ctx)
+            title, body = d.get("title") or "", d.get("body") or ""
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
-        mech = _pc.check_text(f"## {title}\n{body}", spec)
-        gate = list(mech["problems"]) + (_gz.check(title, body) if channel == "gzh" else _rw.check(body))
+        mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"])
+        gate = list(mech["problems"])
+        try:
+            rw = _rw.review(body)
+            if rw["exit"] == 1:                        # exit1=拒绝(聚集信号)；exit2=警告(接受)
+                gate += [f"renwei {p}" for p in rw["problems"]]
+        except Exception:  # noqa: BLE001
+            pass
+        if channel == "gzh":
+            gate += _gz.check(title, body)
         mech["problems"] = gate
-        need = 7 if channel == "gzh" else (8 if cand.get("format") == "story" else 6)
         if gate:
             continue
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
         if (score.get("total") or 0) >= need:
             break
-
+    ok = not mech["problems"] and (score.get("total") or 0) >= need
     try:
         _kana.log_pending(body, note=cand["key"][:12])
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
-    ok = not mech["problems"] and (score.get("total") or 0) >= need
-    rk = ",".join(pkg["related_keys"])         # write 阶段写 related_keys（同事件+同人物历史）
-    if ok and not dry_run:
-        if channel == "gzh":
-            _news.update_news(cand["key"], {"wechat_title": title, "wechat_content": body,
+    return {"channel": channel, "ok": ok, "attempts": attempts, "title": title, "text": body,
+            "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
+            "score": score.get("total"), "problems": mech.get("problems") or []}
+
+
+def write_one(cand, dry_run=True):
+    """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。"""
+    pkg = prepare_package(cand)
+    method = pkg["method"]
+    d0 = compose(cand, pkg)
+    ch = d0.get("channel") or pkg["pre_channel"]
+    if ch not in ("xhs", "gzh", "both"):
+        ch = pkg["pre_channel"]
+    t0, b0 = d0.get("title") or "", d0.get("body") or ""
+    versions = []
+    if ch == "both":
+        versions.append(_produce(cand, pkg, "xhs", first=(t0, b0)))
+        gt, gb = d0.get("gzh_title") or "", d0.get("gzh_body") or ""
+        versions.append(_produce(cand, pkg, "gzh", first=(gt, gb) if (gt and gb) else None))
+    else:
+        versions.append(_produce(cand, pkg, ch, first=(t0, b0)))
+    rk_s = ",".join(pkg["related_keys"])
+    for v in versions:
+        if not (v["ok"] and not dry_run):
+            continue
+        if v["channel"] == "gzh":
+            _news.update_news(cand["key"], {"wechat_title": v["title"], "wechat_content": v["text"],
                                             "channel": "gzh", "preselected": 0, "publish_xhs": 0,
-                                            "related_keys": rk})
+                                            "related_keys": rk_s})
         else:
-            _news.update_news(cand["key"], {"rewritten_title": title, "rewritten_content": body,
-                                            "publish_mode": "rewritten", "publish_method": pmethod,
-                                            "related_keys": rk, "preselected": 1, "publish_xhs": 0})
-        # 关联素材回指主稿（先读当前 state 再合并，防止覆盖已有 related_keys）
-        for sib in pkg.get("cluster_keys", []):
+            _news.update_news(cand["key"], {"rewritten_title": v["title"], "rewritten_content": v["text"],
+                                            "publish_mode": "rewritten", "publish_method": method,
+                                            "related_keys": rk_s, "preselected": 1, "publish_xhs": 0})
+        for sib in pkg.get("cluster_keys", []):        # 关联素材回指主稿
             if sib == cand["key"]:
                 continue
             cur = _news.get_by_key(sib) or {}
@@ -255,13 +296,17 @@ def write_one(cand, dry_run=True):
                 lst.append(cand["key"])
             _news.update_news(sib, {"related_keys": ",".join(lst)})
         got = _news.get_by_key(cand["key"]) or {}
-        ok = (got.get("wechat_title") == title and bool(got.get("wechat_content"))) if channel == "gzh" \
-            else (got.get("rewritten_title") == title and len(got.get("rewritten_content") or "") > 50)
-    return {"key": cand["key"][:12], "full_key": cand["key"], "ok": ok, "attempts": attempts,
-            "channel": channel, "title": title, "text": body, "body": mech.get("body_len"),
-            "h2": mech.get("h2"), "kana": mech.get("kana"), "method": pmethod,
-            "score": score.get("total"), "related": rk, "problems": mech.get("problems") or []}
-
+        v["ok"] = (got.get("wechat_title") == v["title"] and bool(got.get("wechat_content"))) \
+            if v["channel"] == "gzh" else (got.get("rewritten_title") == v["title"]
+                                           and len(got.get("rewritten_content") or "") > 50)
+    if not dry_run and ch == "both" and all(v["ok"] for v in versions):
+        _news.update_news(cand["key"], {"channel": "both"})
+    prim = versions[0]
+    return {"key": cand["key"][:12], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
+            "attempts": max(v["attempts"] for v in versions), "channel": ch,
+            "title": prim["title"], "text": prim["text"], "body": prim["body"], "h2": prim["h2"],
+            "kana": prim["kana"], "method": method, "score": prim["score"], "related": rk_s,
+            "problems": [p for v in versions for p in v["problems"]], "versions": versions}
 
 
 def recommend_and_schedule(n=5, seed=None):
@@ -289,15 +334,33 @@ def recommend_and_schedule(n=5, seed=None):
     return picks, plan, bad, reasons, backups, overview
 
 
-def run(n=0, deliver=False, dry_run=False):
+def _split_candidates(cands):
+    """关联素材体量过大 → 拆多篇（密度极限 fallback，默认关闭）。"""
+    from services import split_write as _sp
+    out = []
+    for c in cands:
+        if _sp.should_split(c):
+            for g in _sp.split_groups(c):
+                main = _news.get_by_key(g[0])
+                if main:
+                    out.append({**main, "cluster_keys": ",".join(g[1:])})
+        else:
+            out.append(c)
+    return out
+
+
+def run(n=0, deliver=False, dry_run=False, split_large=False):
     cands = pick_candidates(n)
+    if split_large:
+        cands = _split_candidates(cands)
     results = [write_one(c, dry_run=dry_run) for c in cands]
     for r in results:
-        print(f"{'PASS' if r['ok'] else 'FAIL'} {r['key']} att={r['attempts']} ch={r['channel']} m={r['method']} "
-              f"score={r['score']} body={r['body']} ##={r['h2']} kana={r['kana']} "
-              f"related={r['related'][:24]}{'' if r['ok'] else ' | ' + '; '.join(r['problems'])}")
+        for v in r["versions"]:
+            print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
+                  f"m={r['method']} score={v['score']} body={v['body']} ##={v['h2']} kana={v['kana']} "
+                  f"related={r['related'][:24]}{'' if v['ok'] else ' | ' + '; '.join(v['problems'])}")
     passed = sum(1 for r in results if r["ok"])
-    print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+5维≥8）"
+    print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"
           f"（{'dry-run，未入库' if dry_run else '已入库'}）")
 
     if not dry_run:
@@ -328,12 +391,12 @@ def run(n=0, deliver=False, dry_run=False):
             return results
         lines = [f"# 写稿结果（达标入库 {len(okr)} 篇）", ""]
         for r in okr:
-            lines += [f"## {r['title']}",
-                      f"`{r['key']}` {r['channel']}（{r['method']}，{r['body']}字，评分{r['score']}/10）",
-                      "", r["text"], "", "---", ""]
-        if sched:
-            lines += ["# 待发布推荐（明天 09/12/15/18/20）", ""]
-            lines += [f"- `{x['key']}` **{x['time']}**  {x['title']}" for x in sched]
+            for v in r["versions"]:
+                if not v["ok"]:
+                    continue
+                lines += [f"## [{v['channel']}] {v['title']}",
+                          f"`{r['key']}` （{r['method']}，{v['body']}字，评分{v['score']}/10）",
+                          "", v["text"], "", "---", ""]
         if len(results) - len(okr):
             lines += ["", f"> 另有 {len(results)-len(okr)} 篇未达标（未入库，不列出）。"]
         print("[delivery]", _d("\n".join(lines), name="write-result.md"))
@@ -347,6 +410,7 @@ def main(argv=None):
     ap.add_argument("--n", type=int, default=0, help="最多写几篇；0=全部 S/A/AKB（默认）")
     ap.add_argument("--deliver", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--split-large", action="store_true", help="关联素材体量过大时拆多篇（默认关）")
     a = ap.parse_args(argv)
-    run(a.n, a.deliver, a.dry_run)
+    run(a.n, a.deliver, a.dry_run, a.split_large)
     return 0
