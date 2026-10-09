@@ -45,6 +45,17 @@ def _review_doc_for(date_str):
     return ""
 
 
+
+def _cluster_siblings(doc, key12):
+    """从 review 文档「三、跨来源聚类分析」里取该稿所在组的其它 key（best-effort）。"""
+    m = re.search(r"##\s*三、.*?(?=\n##\s*四、|\Z)", doc, re.S)
+    if not m:
+        return []
+    for block in re.split(r"\n\s*\n", m.group(0)):
+        if key12 and key12 in block:
+            return list(dict.fromkeys(re.findall(r"([0-9a-f]{12,40})", block)))
+    return []
+
 # ---------------- 阶段1：写前准备（分级 + 关联） ----------------
 def _grade_keys_from_archive():
     """从最新 review 存档的「分级结果」节抽取 S/A 级 key（best-effort）。"""
@@ -106,8 +117,9 @@ def prepare_package(cand):
     related_text = ""
     try:
         doc = _review_doc_for((cand.get("created_at") or "")[:10])
-        keys = [k for k in dict.fromkeys(re.findall(r"\b([0-9a-f]{40})\b", doc)) if k != cand["key"]][:12]
-        sibs = [x for x in (_news.get_by_key(k) for k in keys) if x]
+        sib12 = [k for k in _cluster_siblings(doc, cand["key"][:12]) if not cand["key"].startswith(k)]
+        keys = _resolve_keys(sib12).split(",") if sib12 else []
+        sibs = [x for x in (_news.get_by_key(k) for k in keys if k) if x]
         related_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
     except Exception:
