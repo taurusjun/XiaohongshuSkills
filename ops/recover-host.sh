@@ -34,6 +34,10 @@ sleep 4
 
 echo "[4] 同步 override 里的容器代理端口 -> $PORT"
 sed -i '' -E "s#(http://$GATEWAY:)[0-9]+#\1$PORT#g; s#(socks5://$GATEWAY:)[0-9]+#\1$PORT#g" docker-compose.override.mac.yml
+# 容器视角的 scripts/.env（gitignored）也同步到 VM 网关形式（供无 env 的进程兜底）
+if [ -f scripts/.env ]; then
+  sed -i '' -E "s#(http://)127\.0\.0\.1:[0-9]+#\1$GATEWAY:$PORT#g" scripts/.env
+fi
 
 echo "[5] build + up（必须带 override，否则 data/.venv 卷不挂载）"
 docker compose -f docker-compose.yml -f docker-compose.override.mac.yml build
