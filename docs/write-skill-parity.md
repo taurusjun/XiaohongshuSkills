@@ -64,8 +64,29 @@
 - 验收：逐篇打印 `PASS/FAIL <key> [channel] att=… score=… body=… ##=… kana=…`。
 - 单测：`pytest tests/services/test_renwei_six.py tests/test_write_both.py tests/services/test_split_write.py tests/services/test_precheck.py tests/services/test_routing.py tests/services/test_schedule.py tests/test_pick_cluster.py`。
 
-## 6. 涉及文件
+## 6. 真实验证证据（2026-10-09）
+
+复现：`.venv/bin/python ops/verify_write_alignment.py --date 2026-10-09`
+（用**真实 DB 数据**跑**真实代码路径**；仅 compose/prepare_package 的 LLM 调用打桩，机械逻辑不打桩）。
+
+| 缺口 | 真实验证证据 |
+|---|---|
+| 1 both 双版本 | `write-full --key 27aeaa0e --force-channel both` → DB `channel='both'`、`rewritten_content=986`、`wechat_content=910`、`preselected=1`、`publish_xhs=0` |
+| 1 标记 | 标记表：xhs-only → `channel=''`（`0f696111/1c1195de/b1d4987e`）；both → `channel='both'`（`27aeaa0e/25ed19f8/58184e85`），均 `preselected=1` |
+| 2 拆多篇 | 当日含 cluster 15 行；最大 cluster **13176 字**（阈值 3000）；`should_split=True`；`split_groups=[[354b05cc],[1c307512],[231ef75a],[27aeaa0e,57b3618e],[a4545a7e]]`；8 个 cluster>3000 |
+| 3 routing 接入 | 真实 gzh 命中：`6a49b02c`「M!LK出道多年首破百万」/`2c4c0f6c`/`86ff8e18`；`prepare_package.pre_channel` 已计算；compose user 消息含「机械预判渠道」=True |
+| 4 renwei 六类信号 | 19 篇真实正文：`exit=0`（7）/`exit=2`（12，命中「四、格式痕迹[破折号]/一、意义拔高[格言公式]」）；exit=1 聚集拦截由 `test_renwei_six` 覆盖 |
+| 5 密度 | 19 篇真实值 32.5%~83.6% 全部 ≥30%，`mech_density` 与手算一致（分母=主素材 content_ja） |
+| 6 references | 真实标题检索命中 `ai-taste-checklist.md`+`deep-interview-density.md`（如「道枝骏佑釜山…」） |
+| 7 export cap | 真实行 `b6712f24`：`src=18623 → fed=18623`（cap=20000；旧 cap=9000 会截断） |
+
+### 验证中发现并修复的标记 bug（已被上面的真实证据覆盖）
+1. **xhs 写入未写 `channel`** → 残留旧值 `gzh`。改为**写后按字段实际存在**判定：`both`(有 xhs+gzh) / `gzh`(仅 gzh) / `''`(仅 xhs)。
+2. **both 时 `preselected` 被 gzh 覆盖为 0** → 改为写后按 `has_x` 判定（both→`1`，仅 gzh→`0`）。
+
+## 7. 涉及文件
 
 - `agent/write.py` · `agent/prompts/write.md`
 - `services/renwei.py` · `precheck.py` · `dunhao.py` · `kana.py` · `format_route.py` · `routing.py` · `gzh_review.py` · `references.py` · `split_write.py` · `schedule.py` · `recommend.py` · `gallery.py`
 - `skills/creative/xhs-write-publish-flow/`（SKILL + references + `reviews/chinese-review-prompt.md`）
+- `ops/verify_write_alignment.py`（真实验证脚本，可复现）
