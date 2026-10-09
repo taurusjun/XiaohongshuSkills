@@ -640,9 +640,17 @@ const $=id=>document.getElementById(id);
 async function j(url,opt){const r=await fetch(url,opt);return r.json();}
 async function loadAccounts(){
   const d=await j('/api/login/accounts');
+  let meta={}; try{const m=await j('/api/login/accounts/meta');meta=(m&&m.meta)||{};}catch(e){}
   const s=$('acc'); s.innerHTML='';
-  (d.accounts||[]).forEach(a=>{const o=document.createElement('option');o.value=a.name;
-    o.textContent=a.name+(a.alias?' ('+a.alias+')':'')+(a.is_default?' *':'');s.appendChild(o);});
+  (d.accounts||[]).forEach(a=>{
+    const r=meta[a.name]||{}, cr=r.creator||{};
+    const nick=r.nickname||cr.nickname||'';
+    const rid=r.red_id||cr.red_id||'';
+    const o=document.createElement('option'); o.value=a.name;
+    o.textContent = nick ? (nick+(a.is_default?' *':'')) : ((a.alias||a.name)+(a.is_default?' *':''));
+    o.title = '账户:'+a.name+(nick?('　昵称:'+nick):'')+(rid?('　小红书号:'+rid):'');
+    s.appendChild(o);
+  });
   if(d.current)s.value=d.current;
 }
 async function refreshStatus(){
