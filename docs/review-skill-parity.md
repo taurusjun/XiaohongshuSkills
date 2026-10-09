@@ -44,15 +44,26 @@
 
 ## 4. 结构化共享数据（review → write）
 
-- `review.persist()` 只写**当日行**：`grade`、`cluster_keys`（同事件成组、互指）。
-- `related_keys` 由 **write** 阶段写（review 不写），write 读库合并 cluster 与同人物历史。
-- 机器接口：LLM 在输末输出一个 ` ```json ` 块，`review._extract_machine_json` 解析：
-  ```json
-  {"grades": {"<key前12位>": "S|A|B|C|AKB大TOP"},
-   "clusters": [["<key前12位>", "<key前12位>"]],
-   "feedback": {"pattern": "### <编号>. …", "trend_row": "| <日期> | … |"}}
-  ```
-  解析器取**最后一个** ` ```json ` 块并用括号配平（支持嵌套 `feedback`）。
+`review.persist()` 只写**当日行**，并**清理当日未标注的旧值**：
+
+| 字段 | 取值 | 消费方 |
+|---|---|---|
+| `grade` | `S / A / B / C / AKB大TOP` | write 选材（S/A/AKB） |
+| `cluster_keys` | 同事件成组、互指 | write 合并 / 去重（每组取一条） |
+| `channel_hint` | `gzh`（适合公众号的产业·厂牌·行业分析类） | write **优先/强制 gzh** |
+| `akb_type` | `event / bullet`（仅 AKB大TOP） | write：event 写全文 / bullet **只入库不写正文** |
+
+`related_keys` 由 **write** 阶段写（review 不写）。
+
+机器接口：LLM 在输末输出一个 ```json 块，`review._extract_machine_json` 返回 **(machine_dict, 去块文本)**：
+```json
+{"grades": {"<key前12位>": "S|A|B|C|AKB大TOP"},
+ "clusters": [["<key前12位>", "<key前12位>"]],
+ "channel_hint": {"<key前12位>": "gzh"},
+ "akb_type": {"<key前12位>": "event|bullet"},
+ "feedback": {"pattern": "### <编号>. …", "trend_row": "| <日期> | … |"}}
+```
+解析器取**最后一个** ```json 块并用括号配平（支持嵌套 `feedback`）。`channel_hint`/`akb_type` 的 write 侧用法见 [write-skill-parity.md](write-skill-parity.md) §8/§9。
 
 ## 5. 运行与验收
 
