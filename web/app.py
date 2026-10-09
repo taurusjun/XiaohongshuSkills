@@ -1163,6 +1163,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <span class="lbl"><b id="pendingCount">0</b> 条待发布</span>
       <span class="sp"></span>
       <button class="btn btn-red btn-sm" onclick="triggerPublish()" id="pubBtn">📤 发布小红书</button>
+      <button class="btn-ghost" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span></button>
     </div>
   </div>
 
@@ -1959,6 +1960,18 @@ function renderWechatItems(items){
 #wechatView .wx-btn:hover{border-color:#07c160;color:#07c160}
 #wechatView .wx-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:48px 20px;color:var(--text3);font-size:12px}
 </style>
+<div id="loginModal" onclick="if(event.target===this)closeLogin()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
+  <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
+    <button onclick="closeLogin()" style="position:absolute;right:10px;top:6px;background:none;border:0;color:#aaa;font-size:16px;cursor:pointer">✕</button>
+    <iframe id="loginFrame" src="about:blank" style="width:380px;height:600px;border:0;border-radius:8px;background:#0f0f10"></iframe>
+  </div>
+</div>
+<script>
+function openLogin(){var f=document.getElementById('loginFrame');f.src='/login?ts='+Date.now();document.getElementById('loginModal').style.display='flex';}
+function closeLogin(){document.getElementById('loginModal').style.display='none';document.getElementById('loginFrame').src='about:blank';refreshLoginDot();}
+async function refreshLoginDot(){try{var d=await (await fetch('/api/login/status')).json();var e=document.getElementById('loginDot');if(e)e.style.background=d.logged_in?'#07c160':'#ffc53d';}catch(err){}}
+refreshLoginDot();
+</script>
 </body></html>"""
 
 DETAIL_HTML = r"""
