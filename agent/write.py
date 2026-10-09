@@ -59,8 +59,15 @@ def prepare_package(cand):
     """阶段1 写前准备（机械）：组装「写作包」— 全文原文 + 同事件关联 + 相关知识 + 体裁/字数路由。"""
     cj = cand.get("content_ja") or ""
     r = _fr.route(len(cj), cand.get("format"), cand.get("is_long_form"))
-    target = (f"{int(len(cj)*0.31)}~{int(len(cj)*0.33)}字(长文 export)"
-              if r["publish_method"] == "export" else r["note"])
+    from services.word_count import content_len
+    j = content_len(cj) or 1
+    if r["publish_method"] == "export":
+        tmin, tmax = int(j * 0.31), int(j * 0.33)
+    elif cand.get("format") == "story" and cand.get("is_long_form"):
+        tmin, tmax = max(800, int(j * 0.30)), max(900, int(j * 0.34))
+    else:
+        tmin, tmax = int(j * 0.30), 900
+    target = f"{tmin}~{tmax}字（密度=正文字数/日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
     refs = related_text = ""
     try:
         refs = _refs.relevant(cand.get("title") or "")
@@ -94,7 +101,7 @@ def prepare_package(cand):
     except Exception:
         pass
     related_keys = list(dict.fromkeys(related_keys))
-    return {"content_ja": cj[:9000], "target": target, "refs": refs,
+    return {"content_ja": cj[:9000], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs,
             "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
             "method": r["publish_method"],
@@ -197,6 +204,11 @@ def write_one(cand, dry_run=True):
                     fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
             except Exception:
                 pass
+            if body and len(body) < pkg["tmin"]:  # 字数不足 → 显式目标
+                fb.append(f"正文仅 {len(body)} 字 < 目标 {pkg['tmin']}~{pkg['tmax']} 字"
+                          f"（密度须 ≥30%），请扩写到目标区间")
+            # 保留原密度/字数问题时去重
+            fb = list(dict.fromkeys(fb))
             ctx = "基于上一版**修改**（不要整篇重写），修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
             prev = (title, body, channel)
         channel, title, body, related = compose(cand, pkg, prev=prev, retry_ctx=ctx)
