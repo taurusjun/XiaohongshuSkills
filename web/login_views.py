@@ -242,6 +242,60 @@ def api_creator_type():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# --------------------------------------------------------------------------
+# 浏览页(www.xiaohongshu.com) 登录 —— 截屏弹窗（会话绑定主 profile）
+# --------------------------------------------------------------------------
+def _www_tab_ws():
+    import urllib.request
+    tabs = json.loads(urllib.request.urlopen(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
+    tab = next((t for t in tabs if t.get("type") == "page" and "www.xiaohongshu.com" in t.get("url", "")), None)
+    if not tab:
+        req = urllib.request.Request(f"http://{CDP_HOST}:{CDP_PORT}/json/new?https://www.xiaohongshu.com/explore", method="PUT")
+        tab = json.loads(urllib.request.urlopen(req, timeout=8).read())
+    return tab.get("webSocketDebuggerUrl")
+
+
+def _www_logged_in():
+    from websockets.sync.client import connect
+    ws_url = _www_tab_ws()
+    if not ws_url:
+        return False
+    with connect(ws_url, max_size=None) as ws:
+        ws.send(json.dumps({"id": 1, "method": "Network.getCookies",
+                            "params": {"urls": ["https://www.xiaohongshu.com"]}}))
+        while True:
+            m = json.loads(ws.recv(timeout=10))
+            if m.get("id") == 1:
+                names = {c["name"] for c in (m.get("result") or {}).get("cookies", [])}
+                return "web_session" in names
+
+
+def _www_login_screenshot(wait=6):
+    """导航 explore → 截全页（含登录弹窗二维码）→ 返回 data URL。"""
+    import base64
+    from websockets.sync.client import connect
+    ws_url = _www_tab_ws()
+    if not ws_url:
+        return None
+    with connect(ws_url, max_size=None) as ws:
+        mid = [0]
+
+        def _send(method, params=None, to=15):
+            my = mid[0]; mid[0] += 1
+            ws.send(json.dumps({"id": my, "method": method, "params": params or {}}))
+            while True:
+                m = json.loads(ws.recv(timeout=to))
+                if m.get("id") == my:
+                    return m
+
+        _send("Page.enable")
+        _send("Page.navigate", {"url": "https://www.xiaohongshu.com/explore"})
+        time.sleep(wait)
+        r = _send("Page.captureScreenshot", {"format": "png"}, to=20)
+        data = (r.get("result") or {}).get("data", "")
+        return ("data:image/png;base64," + data) if data else None
+
+
 @login_bp.get("/api/creator/screenshot")
 def api_creator_screenshot():
     """返回容器里 Chrome 当前 creator 标签的截图（PNG），供 admin UI 预览。"""
@@ -300,6 +354,26 @@ def api_tabs_cleanup():
             pass
     return jsonify({"ok": True, "closed": closed, "kept": (keep or {}).get("url", ""),
                     "before": len(pages)})
+
+
+@login_bp.get("/api/login/www/status")
+def api_www_status():
+    try:
+        return jsonify({"ok": True, "logged_in": _www_logged_in()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e), "logged_in": False})
+
+
+@login_bp.post("/api/login/www/qrcode")
+def api_www_qrcode():
+    """浏览页登录：截屏 explore 弹窗（含二维码）。"""
+    try:
+        url = _www_login_screenshot()
+        if not url:
+            return jsonify({"ok": False, "error": "截图失败"}), 502
+        return jsonify({"ok": True, "qrcode_data_url": url, "kind": "screenshot"})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @login_bp.post("/api/login/account")
@@ -372,6 +446,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <h1><span id="dot" class="dot off"></span>小红书扫码登录</h1>
   <div class="sub" id="stat">加载中…</div>
   <select id="acc"></select>
+  <select id="target"><option value="creator">创作号 (creator.xiaohongshu.com)</option><option value="www">浏览页 (www.xiaohongshu.com)</option></select>
   <div id="qr">二维码未加载</div>
   <div id="hint"></div>
   <button class="primary" id="btnGet">获取二维码</button>
@@ -399,11 +474,21 @@ async function refreshStatus(){
 async function getQR(){
   clearInterval(timer);
   $('btnGet').disabled=true; $('qr').innerHTML='获取中…'; $('hint').textContent=''; $('log').style.display='none';
+  if($('target').value==='www'){
+    const d=await j('/api/login/www/qrcode',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(d.ok&&d.qrcode_data_url){$('qr').innerHTML='<img src="'+d.qrcode_data_url+'" style="width:100%">';$('hint').textContent='请用小红书 App 扫图中二维码（浏览页登录）';}
+    else{$('qr').textContent='失败: '+(d.error||'');}
+    $('btnGet').disabled=false; timer=setInterval(pollWww,3000); return;
+  }
   const d=await j('/api/login/qrcode',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({account:$('acc').value})});
   if(!d.ok){$('qr').textContent='失败: '+(d.error||'');$('btnGet').disabled=false;return;}
   jobId=d.job_id; expireAt=Date.now()+120000;
   timer=setInterval(poll,2000);
+}
+async function pollWww(){
+  const d=await j('/api/login/www/status');
+  if(d.logged_in){clearInterval(timer);$('dot').className='dot on';$('stat').textContent='浏览页已登录 ✓';}
 }
 async function poll(){
   if(!jobId)return;
