@@ -57,3 +57,27 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
 - 容器 `websockets` 必须 **16.0**（17.x sync 客户端非 legacy 行为会让 `cdp_publish._send` 挂起）→ `requirements-docker.txt` 钉版。
 - 容器重建后 hostname 变化 → Chrome `Singleton*` 陈旧锁 → entrypoint 启动前 `rm -f`。
 - `ops/*` 改动**必须重建镜像**（entrypoint/supervisord 烘焙在镜像里）。
+
+## 7. 宿主机(Mac)重启后的恢复 + 代理端口漂移（重要）
+
+一键：`bash ops/recover-host.sh`。等价步骤与坑如下。
+
+1. **colima 不会自动起** → `colima start`（可能几十秒）。
+2. **镜像 `xhs:dev` 可能丢失**（重启后 `docker images` 只剩 `hello-world`）→ 必须重建；重建要能拉 `python:3.14-slim-trixie`，即 **dockerd 要走代理**（见第 3 条）。
+3. **代理端口会漂移**：宿主 VeloceMac 的 Mixed 端口在 **20800–20820 之间变动**（`ai.hermes.gateway` + `com.xhs.gateway-watchdog` 只保证 `scripts/.env` 对齐）。**每次都要重新扫描确认**：
+   ```bash
+   for p in $(seq 20800 20820); do
+     colima ssh -- sh -c "curl -s -m4 -x socks5h://192.168.5.2:$p -o/dev/null https://www.baidu.com" </dev/null && echo LIVE=$p && break
+   done
+   ```
+   然后**同步三处**：
+   - **VM dockerd**（拉镜像）：`/etc/systemd/system/docker.service.d/http-proxy.conf` → `HTTP(S)_PROXY=socks5://192.168.5.2:<PORT>`，再 `systemctl daemon-reload && systemctl restart docker`；
+   - **容器 env**：`docker-compose.override.mac.yml` 的 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY`（当前脚本不自动改，recover 脚本会 sed 对齐）；
+   - **`scripts/.env`**：由 `com.xhs.gateway-watchdog`(每120s) 自动跟随，**无需手改**。
+   > 注意：**HTTP 代理（20809）与 socks5（20808）可能不是同一端口**——探活要用 `socks5h://` 且逐个端口试。容器 env 里 HTTP_PROXY 用 `http://192.168.5.2:<PORT>`、ALL_PROXY 用 `socks5://...`。
+4. **起容器必须带 override**：
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d
+   ```
+   ❗ 漏掉 `-f docker-compose.override.mac.yml` → `data`/`.venv` 命名卷不挂载 → 容器内 DB 变 **0 字节**、报 **`no such table: news`**、`.venv` 里没有 `pytest`。**见到这三个现象，先查是不是少了 override（而不是数据丢了）。**
+5. **数据/代码安全**：可变状态都在命名卷（`xhs_xhs-data`/`xhs_xhs-venv`/`xhs_xhs-profiles`/…）；生产仓库 `/Users/user/PG/XiaohongshuSkills` 与 worktree `/Users/user/PG/xhs-docker-src` 分离，重启不影响。核对：`docker inspect xhs --format '{{json .Mounts}}'` 应看到 4 个 `xhs_xhs-*` 卷挂到 `data/.venv/logs/tmp`。
