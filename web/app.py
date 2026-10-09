@@ -1973,6 +1973,7 @@ function openLogin(){var f=document.getElementById('loginFrame');f.src='/login?t
 function closeLogin(){document.getElementById('loginModal').style.display='none';document.getElementById('loginFrame').src='about:blank';refreshLoginDot();}
 async function refreshLoginDot(){try{var d=await (await fetch('/api/login/status')).json();var e=document.getElementById('loginDot');if(e)e.style.background=d.logged_in?'#07c160':'#ffc53d';}catch(err){}}
 refreshLoginDot();
+</script>
 <div id="chromeModal" onclick="if(event.target===this)closeChrome()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
   <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
     <button onclick="closeChrome()" style="position:absolute;right:10px;top:6px;background:none;border:0;color:#aaa;font-size:16px;cursor:pointer">✕</button>
