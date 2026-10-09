@@ -197,6 +197,51 @@ def api_qrcode_probe(job_id):
         return jsonify({"ok": False, "error": str(e), "logged_in": False})
 
 
+@login_bp.post("/api/creator/type")
+def api_creator_type():
+    """把文本注入容器 Chrome 当前焦点元素（绕开 noVNC 剪贴板，普通 http 也能用）。"""
+    import urllib.request
+    body = request.get_json(silent=True) or {}
+    text = body.get("text", "") or ""
+    enter = bool(body.get("enter"))
+    if not text and not enter:
+        return jsonify({"ok": False, "error": "empty"}), 400
+    try:
+        from websockets.sync.client import connect
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"websockets 不可用: {e}"}), 500
+    try:
+        targets = json.loads(urllib.request.urlopen(
+            f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
+        tabs = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
+        tab = next((t for t in tabs if "creator.xiaohongshu.com" in t.get("url", "")), tabs[0] if tabs else None)
+        if not tab:
+            return jsonify({"ok": False, "error": "没有可注入的 page 标签"}), 404
+        with connect(tab["webSocketDebuggerUrl"], max_size=None) as ws:
+            mid = [1]
+
+            def _send(method, params):
+                my = mid[0]; mid[0] += 1
+                ws.send(json.dumps({"id": my, "method": method, "params": params}))
+                while True:
+                    m = json.loads(ws.recv())
+                    if m.get("id") == my:
+                        return m
+
+            if text:
+                _send("Input.insertText", {"text": text})
+            if enter:
+                _send("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter",
+                                                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+                _send("Input.dispatchKeyEvent", {"type": "char", "text": "\r", "key": "Enter", "code": "Enter"})
+                _send("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter",
+                                                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+        return jsonify({"ok": True, "typed": len(text), "enter": enter,
+                        "tab": tab.get("url", "")[:60]})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @login_bp.get("/api/creator/screenshot")
 def api_creator_screenshot():
     """返回容器里 Chrome 当前 creator 标签的截图（PNG），供 admin UI 预览。"""

@@ -1988,12 +1988,19 @@ refreshLoginDot();
   <div style="position:relative;background:#16161a;border:1px solid #2a2a2e;border-radius:12px;padding:10px">
     <button onclick="closeChrome()" style="position:absolute;right:10px;top:6px;background:none;border:0;color:#aaa;font-size:16px;cursor:pointer">✕</button>
     <iframe id="chromeFrame" src="about:blank" title="容器 Chrome 远程控制"
-      style="width:920px;height:620px;max-width:94vw;max-height:88vh;border:0;border-radius:8px;background:#000;display:block"></iframe>
+      style="width:920px;height:560px;max-width:94vw;max-height:80vh;border:0;border-radius:8px;background:#000;display:block"></iframe>
+    <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+      <input id="ctlText" placeholder="在此粘贴文本 → 发送到容器 Chrome（不依赖 noVNC 剪贴板）"
+        style="flex:1;height:28px;font-size:12px;padding:0 8px;border-radius:6px;border:1px solid #2a2a2e;background:#1c1c20;color:#e8e8e8">
+      <button onclick="sendTextToChrome(false)" style="height:28px;padding:0 10px;border-radius:6px;border:1px solid #2a2a2e;background:#1c1c20;color:#e8e8e8;cursor:pointer">发送</button>
+      <button onclick="sendTextToChrome(true)" style="height:28px;padding:0 10px;border-radius:6px;border:1px solid #2a2a2e;background:#1c1c20;color:#e8e8e8;cursor:pointer">发送+回车</button>
+    </div>
   </div>
 </div>
 <script>
 function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://'+location.hostname+':16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
 function closeChrome(){document.getElementById('chromeModal').style.display='none';document.getElementById('chromeFrame').src='about:blank';}
+async function sendTextToChrome(enter){try{var t=document.getElementById('ctlText').value;var r=await fetch('/api/creator/type',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,enter:enter})});var d=await r.json();if(!d.ok)alert('发送失败: '+(d.error||''));}catch(e){alert('发送异常: '+e);}}
 </script>
 </body></html>"""
 
