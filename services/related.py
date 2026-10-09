@@ -1,22 +1,44 @@
 """关联候选（机械，全历史无窗口）：**按实体名检索**（人物/团体/作品/系列名）。
 
-不做 n-gram 重叠：检索键是实体，避免「剪去长发/移籍新事务所」类通用短语误连。
+实体由 LLM 抽取，**中日双形**（日语汉字 + 简体中文）；本模块再补 zhconv 简繁/地区字形变体。
+全库历史以简体中文为主、content_ja 为日文，故用只读 DB 三字段 OR（title/content_ja/rewritten_title），
+比 API search= 更全（API search= 不索引 content_ja 日文正文）。
 """
 import sqlite3
 
 from services import paths
 
-__all__ = ["find_related"]
+__all__ = ["find_related", "variants"]
 
 
-def find_related(key: str, entities, limit: int = 8, db: str | None = None):
-    """entities: [实体名,...]（日文原始写法优先）。返回 [{key,title,day,score,n}]。"""
-    ents = []
+def variants(e):
+    """把一个实体扩展为检索变体：原样 + zhconv 简繁/地区字形。"""
+    out = []
+    e = str(e).strip()
+    if e:
+        out.append(e)
+    try:
+        import zhconv
+        for tgt in ("zh-cn", "zh-hant", "zh-hk", "zh-tw"):
+            try:
+                v = zhconv.convert(e, tgt)
+            except Exception:  # noqa: BLE001
+                v = ""
+            if v and v not in out:
+                out.append(v)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def find_related(key, entities, limit=8, db=None):
+    """entities: [实体名,...]（中日双形）。返回 [{key,title,day,score,n}]。"""
+    terms = []
     for e in (entities or []):
-        e = str(e).strip()
-        if len(e) >= 2 and e not in ents:
-            ents.append(e)
-    if not ents:
+        for v in variants(e):
+            if len(v) >= 2 and v not in terms:
+                terms.append(v)
+    if not terms:
         return []
     conn = sqlite3.connect(db or paths.sqlite_path())
     try:
@@ -26,7 +48,7 @@ def find_related(key: str, entities, limit: int = 8, db: str | None = None):
         sel += ",created_at" if "created_at" in cols else ", ''"
         where = " OR ".join(f"{c} LIKE ?" for c in search)
         cand = {}
-        for e in ents:
+        for e in terms:
             like = f"%{e}%"
             for r in conn.execute(
                     f"SELECT {sel} FROM news WHERE key!=? AND status='active' AND ({where}) LIMIT 200",
