@@ -18,7 +18,7 @@ def _fake_db(monkeypatch, initial=None):
 
 
 def _patch(monkeypatch):
-    monkeypatch.setattr(w, "prepare_package", lambda c: _pkg())
+    monkeypatch.setattr(w, "prepare_package", lambda c: {**_pkg(), "channel_hint": c.get("channel_hint", "")})
     monkeypatch.setattr(w._dh, "fix_text", lambda b: (b, []))
     monkeypatch.setattr(w._kana, "replace", lambda s: s)
     monkeypatch.setattr(w._kana, "new_terms", lambda s: [], raising=False)
@@ -85,3 +85,28 @@ def test_write_one_channel_fallback(monkeypatch):
     monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "weird", "title": "X", "body": "b"})
     r = w.write_one(_cand(), dry_run=True)
     assert r["channel"] == "xhs" and len(r["versions"]) == 1
+
+
+def test_write_one_channel_hint_forces_gzh(monkeypatch):
+    """review 标注 channel_hint=gzh → 即使 LLM 判 xhs 也强制走 gzh。"""
+    _patch(monkeypatch)
+    st = _fake_db(monkeypatch)
+    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    cand = _cand()
+    cand["channel_hint"] = "gzh"
+    r = w.write_one(cand, dry_run=False)
+    assert r["channel"] == "gzh" and r["versions"][0]["channel"] == "gzh"
+    assert st["a" * 40]["channel"] == "gzh" and st["a" * 40].get("wechat_title") == "X"
+
+
+def test_pick_candidates_includes_gzh_hint(monkeypatch):
+    A, B = "a" * 40, "b" * 40
+    rows = [
+        {"key": A, "content_ja": "x", "format": "story", "rewritten_content": "", "grade": "",
+         "channel_hint": "gzh", "title_score": 1.0, "cluster_keys": ""},
+        {"key": B, "content_ja": "x", "format": "news", "rewritten_content": "", "grade": "B",
+         "channel_hint": "", "title_score": 5.0, "cluster_keys": ""},
+    ]
+    monkeypatch.setattr(w._news, "query_news", lambda **kw: rows)
+    keys = [r["key"] for r in w.pick_candidates(0)]
+    assert A in keys            # gzh 方向（无 S/A 分级）也必须入选

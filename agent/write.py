@@ -41,7 +41,11 @@ def pick_candidates(n=0):
             and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")]
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
+    gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() == "gzh"]
     pool = graded or base
+    if gzh_hint:                      # review 标了 gzh 方向 → 也必须处理（旧 skill 阶段2）
+        seen = {r["key"] for r in pool}
+        pool = pool + [r for r in gzh_hint if r["key"] not in seen]
     picks, used = [], set()
     for r in sorted(pool, key=lambda x: -(x.get("title_score") or 0)):
         cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
@@ -73,8 +77,9 @@ def prepare_package(cand):
         tmax = min(tmax, 900)
         tmin = min(tmin, tmax)
     target = f"{tmin}~{tmax}字（密度=正文字数/主素材日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
-    # 机械渠道预判（旧 skill：机械先判，边界由 LLM 兜底）
-    pre_channel = _route.route(cand.get("title") or "", cj[:500])
+    # 渠道：review 标注的 gzh 方向 > 机械预判（旧 skill 阶段2「review 标了 gzh 方向的必须先处理」）
+    hint = (cand.get("channel_hint") or "").strip().lower()
+    pre_channel = "gzh" if hint == "gzh" else _route.route(cand.get("title") or "", cj[:500])
     refs = related_text = ""
     try:
         refs = _refs.relevant(f"{cand.get('title') or ''} {cand.get('title_ja') or ''}")
@@ -112,6 +117,7 @@ def prepare_package(cand):
             "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
             "method": r["publish_method"], "pre_channel": pre_channel,
+            "channel_hint": hint,
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
@@ -263,9 +269,10 @@ def write_one(cand, dry_run=True, force_channel=None):
     """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。force_channel 用于指定渠道。"""
     pkg = prepare_package(cand)
     method = pkg["method"]
-    if force_channel:
-        d0 = compose(cand, pkg, force_channel=force_channel)
-        ch = force_channel
+    eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
+    if eff:
+        d0 = compose(cand, pkg, force_channel=eff)
+        ch = eff
     else:
         d0 = compose(cand, pkg)
         ch = d0.get("channel") or pkg["pre_channel"]

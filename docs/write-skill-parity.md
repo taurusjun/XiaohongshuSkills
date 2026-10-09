@@ -90,3 +90,30 @@
 - `services/renwei.py` · `precheck.py` · `dunhao.py` · `kana.py` · `format_route.py` · `routing.py` · `gzh_review.py` · `references.py` · `split_write.py` · `schedule.py` · `recommend.py` · `gallery.py`
 - `skills/creative/xhs-write-publish-flow/`（SKILL + references + `reviews/chinese-review-prompt.md`）
 - `ops/verify_write_alignment.py`（真实验证脚本，可复现）
+
+## 8. gzh 写稿触发机制（A 方案：结构化）
+
+### 旧 skill 是怎么触发的（原始语义）
+旧 `xhs-write-publish-flow` **阶段2**：「渠道路由 xhs/gzh/both。**从 review 分级结果中提取 gzh 方向素材**，review 标了 gzh 方向的**必须先处理**」。触发链是**自然语言**、非结构化：
+- **review 侧**在日报存档（`~/.hermes/daily-reviews/YYYY-MM-DD.md`）里用文字备注「适合公众号 / 改道公众号深度 / xxx（公众号方向）」（见 `xhs-daily-material-review`、`xhs-daily-material-review-layer23`）；
+- **write 侧**启动时「先扫一遍 review 的 S/A 级和**备注**」，人工/agent 提取 gzh 向素材（《gzh 路由判据》按**内容性质**：给路人看的人物·产业分析→gzh；给粉丝看的爆料·日常→xhs）；
+- 判据还含：review 明写「强搁置→改道公众号」、男团产业·厂牌·销量·战略类、成人产业人物弧光等。
+
+→ 即：**旧触发依赖 review 文本里的中文备注 + agent 人判，没有字段、没有确定性触发**；这也是我们容器化后 gzh 实际不触发的原因（我们的 review 只产结构化 grade/cluster）。
+
+### A 方案：把「review gzh 方向标注」结构化
+1. **DB 加字段 `channel_hint`**（`scripts/sqlite_db.py`，兼容迁移自动 ADD COLUMN）。
+2. **review** 在机器 JSON 里输出 `channel_hint: {"<key12>":"gzh"}`（对产业/厂牌/行业分析类），`persist()` 写库并**清理当日未标注的旧 hint**。
+3. **write**：
+   - `pick_candidates` 把 `channel_hint='gzh'` 的素材**纳入候选池**（不受 S/A 门槛限制）；
+   - `prepare_package` 里 `channel_hint='gzh'` → `pre_channel='gzh'`；
+   - `write_one` 对 `channel_hint='gzh'` 的候选**强制走 gzh**（`compose(force_channel='gzh')`），覆盖 LLM 判定。
+
+### 真实验证证据（2026-10-09）
+```
+review 真实输出: [persist] grade 53 / cluster 14 / gzh方向 4 篇
+DB channel_hint=gzh: b1d4987e(S) 25ed19f8(S) 6a49b02c(B) 58184e85(S)
+write（86ff8e18, grade=B, LLM 本判 xhs）置 channel_hint=gzh 后:
+  pick_candidates 含该素材=True
+  write-full --key 86ff8e18 → PASS [gzh]；DB channel='gzh' wechat_content=346 rewritten_content=0
+```
