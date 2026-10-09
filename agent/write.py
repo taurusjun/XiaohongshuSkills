@@ -191,6 +191,12 @@ def write_one(cand, dry_run=True):
             if (score.get("total") or 0) < need:
                 low = [k for k, v in score.items() if isinstance(v, (int, float)) and k != "total" and v < 2]
                 fb.append(f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(low) or '爆发点/情绪价值/信息增量'}")
+            try:                                  # 残留假名 → 显式列出，要求替换
+                res = _kana.new_terms(body)
+                if res:
+                    fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
+            except Exception:
+                pass
             ctx = "基于上一版**修改**（不要整篇重写），修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"])
             prev = (title, body, channel)
         channel, title, body, related = compose(cand, pkg, prev=prev, retry_ctx=ctx)
