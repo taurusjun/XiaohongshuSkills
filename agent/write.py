@@ -176,6 +176,18 @@ def _resolve_keys(prefixes):
     return ",".join(dict.fromkeys(out))
 
 
+def _trim_to(body: str, tmax: int) -> str:
+    """机械兜底：正文超上限时按句（。！？/换行）从尾部删减到 ≤tmax，保留开头钩子。"""
+    import re as _re
+    if content_len(body) <= tmax:
+        return body
+    parts = [p for p in _re.split(r"(?<=[。！？\n])", body) if p]
+    while len(parts) > 1 and content_len("".join(parts)) > tmax:
+        parts.pop()
+    out = "".join(parts).rstrip()
+    return out if content_len(out) <= tmax else out[:tmax].rstrip()
+
+
 def _trim_title(title, limit=20):
     """标题按 xhs_title_len 机械改短到 <=limit。"""
     while title and _pc.title_len(title) > limit:
@@ -223,6 +235,8 @@ def write_one(cand, dry_run=True):
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
+        if content_len(body) > pkg["tmax"]:          # 机械兜底：LLM 压不下来就按句删
+            body = _trim_to(body, pkg["tmax"])
         mech = _pc.check_text(f"## {title}\n{body}", spec)
         if content_len(body) > pkg["tmax"]:            # 正文硬上限（post）
             mech["problems"].append(f"正文过长 {content_len(body)} > {pkg['tmax']}（需删减到 ≤{pkg['tmax']}）")
