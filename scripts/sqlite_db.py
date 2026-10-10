@@ -548,7 +548,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','channel_hint','akb_type'}
+               'grade','grade_reason','channel_hint','akb_type','score_dims'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

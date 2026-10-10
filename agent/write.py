@@ -134,9 +134,33 @@ def prepare_package(cand):
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
+SKILL_MD = "skills/creative/xhs-write-publish-flow/SKILL.md"
+_RULE_KEYS = ["否决项", "绝对禁止", "结构要求", "Review 通过标准", "公众号稿 review",
+              "渠道字段规则", "密度计算完整规则", "同事件多素材合并", "关联素材体量过大"]
+_rules_cache = None
+
+
+def hard_rules():
+    """从旧 SKILL.md 抽取「硬规则」章节原文（否决项/绝对禁止/结构/通过标准/公众号/渠道/密度/合并/拆篇），
+    常驻注入 system（不靠标题检索，保证长尾纪律在场）。"""
+    global _rules_cache
+    if _rules_cache is None:
+        txt = _read(SKILL_MD)
+        out, cur = [], None
+        for l in txt.split("\n"):
+            if l.startswith("## "):
+                cur = l
+            if cur and any(k in cur for k in _RULE_KEYS):
+                out.append(l)
+        _rules_cache = "\n".join(out)
+    return _rules_cache
+
+
 def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens=16000):
     """阶段3 撰写（LLM）：只吃写作包 pkg。返回 dict（channel/title/body/gzh_*/related）。"""
-    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
+    _hr = hard_rules()
+    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")
+             + ("\n\n=== 硬规则（旧 skill 原文节选，必须遵守）===\n" + _hr if _hr else "")}]
     if force_channel:
         chan_note = f"渠道已指定：channel=\"{force_channel}\"（不要更改）。"
     else:
@@ -186,7 +210,7 @@ def score_content(title, body, max_tokens=4000):
 
 def score_gzh(title, body, max_tokens=4000):
     sysd = '你是公众号内容评审。只输出 JSON：{"标题吸引力":n,"叙事质量":n,"公众号适配度":n,"total":n}（各1-10，合格线7）。'
-    usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？\n\n"
+    usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？再做背景锚定：开头第一段专有名词是否过多/路人看不懂？\n\n"
            f"标题：{title}\n\n{body[:4000]}")
     try:
         raw = llm.chat([{"role": "system", "content": sysd}, {"role": "user", "content": usr}], max_tokens=max_tokens)
@@ -219,7 +243,7 @@ def _trim_title(title, limit=20):
 def _need(cand, channel):
     if channel == "gzh":
         return 7
-    return 8 if cand.get("format") == "story" else 6
+    return 8 if cand.get("format") == "story" else 7
 
 
 REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给【本篇】与各【候选】(同事件或同人物历史的旧文)，'
@@ -345,7 +369,8 @@ def write_one(cand, dry_run=True, force_channel=None):
     """
     if (cand.get("akb_type") or "").strip().lower() == "bullet":
         if not dry_run:
-            _news.update_news(cand["key"], {"preselected": 1, "publish_xhs": 0, "publish_mode": "normal"})
+            _news.update_news(cand["key"], {"preselected": 1, "publish_xhs": 0, "publish_mode": "normal",
+                                            "score_dims": "akb-top-bullet"})
         return {"key": cand["key"][:12], "full_key": cand["key"], "ok": True, "bullet": True,
                 "attempts": 0, "channel": "xhs", "title": "", "text": "", "body": 0, "h2": 0,
                 "kana": 0, "method": "bullet", "score": 0, "related": "", "problems": [], "versions": []}
