@@ -68,6 +68,7 @@
 
 - **密度分母**：合并稿/续篇/同框关联一律用**主素材 content_ja** 做分母（旧 8/15~8/17 实测定论），新实现即此口径，避免合并去重分母造成的假 LOW。
 - **正文上限**：小红书图文软目标 ≤900（发布时可手动调节），写稿阶段不设机械上限。
+- **入库健壮（A9）**：write 走 `services/news.update_news` → **进程内直连 SQLite**（`_connect`：WAL + `busy_timeout=30000` + 退出显式 `commit`），**非 webapp API PUT**。旧 skill 的「API 偶发 500/挂起 → sqlite3 兜底 + commit 纪律」在此架构下 **moot**，无需额外兜底。
 - **Hermes 工具态问题**（批量三阶段调度、中断恢复、无声失败/`ALL_PROXY`、key 位数不固定）在代码化后已 moot。
 
 ## 5. 运行与验收
