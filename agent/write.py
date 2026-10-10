@@ -32,6 +32,12 @@ def _read(rel):
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
+def _log(msg):
+    """单条处理明细日志（带时间戳，直接进日志文件）。"""
+    import datetime as _dt
+    print(f"[{_dt.datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 # ---------------- 阶段1：写前准备（分级 + 关联） ----------------
 
 
@@ -345,6 +351,7 @@ def classify_relations(cand, pkg, max_tokens=2000):
 def _produce(cand, pkg, channel, first=None):
     """单渠道：编写→门禁(precheck+renwei exit1/gzh)→评分→改稿(最多3轮,基于上一版)。"""
     need = _need(cand, channel)
+    _log(f"  [{channel}] 改稿循环（门槛 {need}/10，最多 3 轮）")
     title = body = ""
     mech = {"problems": ["未开始"], "body_len": 0, "h2": 0, "kana": 0}
     score = {"total": 0}
@@ -375,7 +382,13 @@ def _produce(cand, pkg, channel, first=None):
                 ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
                        "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
                 prev = (title, body, channel)
+            import time as _t
+            _c0 = _t.time()
+            _log(f"  撰写 尝试 {attempts}/3 [{channel}] 请求 LLM…")
             d = compose(cand, pkg, force_channel=channel, prev=prev, retry_ctx=ctx)
+            _bt = (d.get("body") or d.get("gzh_body") or "")
+            _log(f"  撰写完成 {int(_t.time() - _c0)}s | title={(d.get('title') or d.get('gzh_title') or '')[:18]} "
+                 f"body={len(_bt)}字")
             if d.get("related"):
                 llm_related = d.get("related")
             title, body = d.get("title") or "", d.get("body") or ""
@@ -413,8 +426,11 @@ def _produce(cand, pkg, channel, first=None):
             gate += _gz.check(title, body)
         mech["problems"] = gate
         if gate:
+            _log(f"  ✗ 门禁未过: {'; '.join(gate)[:120]}")
             continue
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
+        _log(f"  评分 {score.get('total')}/{need}"
+             f"{'（通过）' if (score.get('total') or 0) >= need else '（偏低，继续改）'}")
         if (score.get("total") or 0) >= need:
             break
     ok = not mech["problems"] and (score.get("total") or 0) >= need
@@ -444,10 +460,14 @@ def write_one(cand, dry_run=True, force_channel=None):
         return {"key": cand["key"][:12], "full_key": cand["key"], "ok": True, "bullet": True,
                 "attempts": 0, "channel": "xhs", "title": "", "text": "", "body": 0, "h2": 0,
                 "kana": 0, "method": "bullet", "score": 0, "related": "", "problems": [], "versions": []}
+    _log(f"▶ {cand['key'][:12]} 《{(cand.get('title') or '')[:20]}》 fmt={cand.get('format')} lf={cand.get('is_long_form')}")
     pkg = prepare_package(cand)
     method = pkg["method"]
+    _log(f"  准备: method={method} pre={pkg.get('pre_channel')}({pkg.get('route_conf')}) "
+         f"关联候选={len(pkg.get('rel_candidates') or [])}")
     # 第3层：先判关联类型（旧 skill 3b），再按类型写
     _rels = classify_relations(cand, pkg)
+    _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
     _KEEP = {"时间线补充", "人物呼应", "新角度"}
     if any(r.get("type") == "纯重复" for r in _rels):
         if not dry_run:
