@@ -63,3 +63,12 @@ def test_batches_roundtrip(tmp_path, monkeypatch):
     m = batches.load("2026-10-10")
     assert batches.covered_keys([m]) == {"k1", "k2"}
     assert batches.skipped_map([m])["k2"].startswith("纯重复")
+
+
+def test_need_tiers():
+    import agent.write as W
+    st = {"format": "story"}
+    assert W._need(st, "xhs", 800) == 8
+    assert W._need(st, "xhs", 1200) == 9
+    assert W._need({"format": "news"}, "xhs", 1200) == 7
+    assert W._need(st, "gzh", 1200) == 7

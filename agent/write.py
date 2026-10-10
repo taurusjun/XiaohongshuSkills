@@ -337,12 +337,18 @@ def _fit_title(title, channel="xhs"):
     return t
 
 
-def _need(cand, channel):
+def _need(cand, channel, body_len=None):
+    """story 正文 > soft_max(900) → 门槛提到 min_score_long(9)（长必须有长的价值）。"""
     _t = _rules.thresholds()
     if channel == "gzh":
         return _t.get("gzh", {}).get("min_score", 7)
     _x = _t.get("xhs", {})
-    return _x.get("story_min_score", 8) if cand.get("format") == "story" else _x.get("news_min_score", 7)
+    if cand.get("format") == "story":
+        base = _x.get("story_min_score", 8)
+        if body_len and body_len > _x.get("story_soft_max", 900):
+            base = max(base, _x.get("story_min_score_long", 9))
+        return base
+    return _x.get("news_min_score", 7)
 
 
 REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给【本篇】与各【候选】(同事件或同人物历史的旧文)，'
@@ -449,6 +455,15 @@ def _produce(cand, pkg, channel, first=None):
                               "改成『X的方向/说法/…』或平铺陈述句，标题行也要改。")
                 if any("标志性动词" in str(p) for p in fb):
                     fb.append("去掉『标志着/见证了/体现/彰显/折射出』这类拔高动词，直接陈述事实。")
+                _x = _rules.xhs_th()
+                _blen = mech.get("body_len") or len(body)
+                if (score.get("total") or 0) < need and _blen > _x.get("story_soft_max", 900):
+                    fb.append(f"正文 {_blen} 字偏长但评分 {score.get('total')}/{need}：要么精简到 ≤"
+                              f"{_x.get('story_soft_max',900)} 字，要么把内容深度/信息增量补到 ≥{need}"
+                              f"（长必须有长的价值）。")
+                if _blen > _x.get("story_hard_max", 1300):
+                    fb.append(f"正文 {_blen} 字超过 {_x.get('story_hard_max',1300)}：必须精简到 ≤"
+                              f"{_x.get('story_hard_max',1300)}（仅留最有价值段落）。")
                 fb = list(dict.fromkeys(fb))
                 if body and len(body) < pkg["tmin"]:
                     fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
@@ -508,6 +523,7 @@ def _produce(cand, pkg, channel, first=None):
             _log(f"  ✗ 门禁未过: {'; '.join(gate)[:120]}")
             continue
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
+        need = _need(cand, channel, mech.get("body_len") or len(body))    # 按长度分层
         _log(f"  评分 {score.get('total')}/{need}"
              f"{'（通过）' if (score.get('total') or 0) >= need else '（偏低，继续改）'}")
         if (score.get("total") or 0) >= need:
