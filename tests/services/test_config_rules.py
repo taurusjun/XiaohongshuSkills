@@ -68,9 +68,8 @@ def test_batches_roundtrip(tmp_path, monkeypatch):
 def test_need_tiers():
     import agent.write as W
     story = {"format": "story"}
-    assert W._need(story, "xhs", 800) == 8          # ≤900 → 8
-    assert W._need(story, "xhs", 900) == 8
-    assert W._need(story, "xhs", 1200) == 9         # 901–1300 → 9
-    assert W._need(story, "xhs", 1500) == 9         # >1300 → 仍 9（软顶，提示精简）
-    assert W._need({"format": "news"}, "xhs", 1200) == 7
+    assert W._need(story, "xhs", 800) == 6          # ≤900 → 6
+    assert W._need(story, "xhs", 900) == 6
+    assert W._need(story, "xhs", 1200) == 7         # >900 → 7（长必须有长的价值）
+    assert W._need({"format": "news"}, "xhs", 1200) == 5
     assert W._need(story, "gzh", 1200) == 7

@@ -6,11 +6,11 @@
 ## 规则（config `review_thresholds.json`）
 | 正文长度（机械字数） | 门槛 | 含义 |
 |---|---|---|
-| ≤ `story_soft_max`(900) | `story_min_score`(8) | 目标区间，正常门槛 |
-| `901 ~ story_hard_max`(1300) | `story_min_score_long`(9) | **长必须明显更好**，更高门槛换更长篇幅 |
+| ≤ `story_soft_max`(900) | `story_min_score`(6) | 目标区间，正常门槛 |
+| `901 ~ story_hard_max`(1300) | `story_min_score_long`(7) | **长必须明显更好**，更高门槛换更长篇幅 |
 | > `story_hard_max`(1300) | ≥9 且**提示精简** | 软顶，防失控（不硬 FAIL） |
 
-- `gzh` / `news`：维持原门槛（gzh 7；news 7），不套此分档。
+- `gzh`：7；`news`：`news_min_score`(5)，不套此分档。
 - `story_body_min`(800) 下限不变。
 
 ## 改稿反馈（超长且质量不达标时）
