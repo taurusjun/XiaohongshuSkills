@@ -61,3 +61,4 @@ sqlite3 data/news_dev.db "SELECT COUNT(*) FROM news WHERE publish_xhs=1 AND stat
 
 > 严禁对 `*.db` 做文本/字节操作，只能用 `sqlite3` CLI 或 Python `sqlite3` 模块（见根目录 `CLAUDE.md` 规则 9）。
 - [kana.md](kana.md)：假名处理（字典/自动入表/片段防护/人工复核）
+- [length-quality-policy.md](length-quality-policy.md)：篇幅×质量策略（用质量分仲裁长度上限）
