@@ -637,11 +637,16 @@ def write_one(cand, dry_run=True, force_channel=None):
     prim = versions[0]
     if not dry_run and prim.get("score_obj"):                 # 5 维评分落表（不动原 title_score/content_score）
         _so = prim["score_obj"]
+
+        def _sv(k):
+            v = _so.get(k)
+            v = v.get("score") if isinstance(v, dict) else v
+            return v if isinstance(v, (int, float)) else 0
         try:
             _news.update_news(cand["key"], {
                 "write_score": _so.get("total") or 0,
-                "write_title_score": _so.get("标题质量") or 0,
-                "write_content_score": sum(_so.get(k) or 0 for k in
+                "write_title_score": _sv("标题质量"),
+                "write_content_score": sum(_sv(k) for k in
                                            ("爆发点", "情绪价值", "信息增量", "内容深度")),
                 "write_dims": json.dumps(_so, ensure_ascii=False)[:4000]})
         except Exception:  # noqa: BLE001
