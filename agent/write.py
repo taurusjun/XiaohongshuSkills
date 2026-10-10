@@ -254,7 +254,17 @@ def _produce(cand, pkg, channel, first=None):
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
         mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"], channel)
-        if not (body or "").strip():          # 正文为空 → 明确判为问题（避免空稿入库）
+        if not (body or "").strip():          # 正文为空 → block + 报错（写 error log）
+            _msg = (f"write 正文为空（LLM 未产出正文）key={cand['key'][:12]} "
+                    f"channel={channel} attempt={attempts}")
+            print(f"    ❌ {_msg}")
+            try:
+                import sys as _sys
+                _sys.path.insert(0, str(paths.REPO_ROOT / "scripts"))
+                from sqlite_db import _log_db_error
+                _log_db_error(_msg)
+            except Exception:  # noqa: BLE001
+                pass
             mech["problems"] = list(mech.get("problems") or []) + ["正文为空（LLM 未产出正文）"]
         gate = list(mech["problems"])
         try:
