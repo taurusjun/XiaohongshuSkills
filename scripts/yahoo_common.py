@@ -904,10 +904,20 @@ def fetch_article_details(url: str) -> dict:
     对 Yahoo Expert 长文（/expert/articles/）优先走 CDP 以获取 JS 渲染后的图片。"""
     result = {"image_url": "", "original_title": "", "summary": ""}
     try:
-        # Yahoo 始终用直连（无代理），用代理会被 block
-        resp = _direct_session.get(url, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        }, timeout=15)
+        # Yahoo 始终用直连（无代理，用代理会被 block）；直连偶发 connect 超时 → 重试+退避
+        _headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+        resp = None
+        for _attempt, _wait in enumerate([0, 1, 3, 7]):
+            if _wait:
+                time.sleep(_wait)
+            try:
+                resp = _direct_session.get(url, headers=_headers, timeout=30)
+                break
+            except Exception as _e:  # noqa: BLE001
+                print(f"    ⚠️ 文章详情连接失败(第{_attempt + 1}/4): {_e}")
+        if resp is None:
+            raise RuntimeError("文章详情多次连接失败（直连）")
+        soup = BeautifulSoup(resp.text, "html.parser")
         soup = BeautifulSoup(resp.text, "html.parser")
 
         og = soup.find("meta", property="og:image")

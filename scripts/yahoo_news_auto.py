@@ -67,14 +67,15 @@ KEYWORD_TAG_MAP: dict[str, list[str]] = {
 
 def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        china_filter: bool = True,
-                       max_retries: int = 2) -> List[Dict]:
+                       max_retries: int = 4) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
 
+    _backoff = [1, 2, 4, 8]
     for attempt in range(max_retries + 1):
         if attempt > 0:
             print(f"  🔄 重试 ({attempt}/{max_retries})...")
-            time.sleep(3)
+            time.sleep(_backoff[min(attempt - 1, len(_backoff) - 1)])
         try:
             # 每次搜索创建新 tab，避免重连同一个 DevTools endpoint 导致 recv 超时
             resp = requests.put(
