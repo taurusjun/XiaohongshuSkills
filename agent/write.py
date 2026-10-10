@@ -18,7 +18,7 @@ SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
 SYS = ('你是小红书日娱写稿助手。只输出严格 JSON 对象：'
        '{"key": "<40位key>", "channel": "xhs|gzh|both", "title": "...", "body": "...", '
-       '"gzh_title": "...", "gzh_body": "...", "related": [{"key": "<key前12位>", "type": "时间线补充|人物呼应|新角度|纯重复|无关联"}]}。'
+       '"gzh_title": "...", "gzh_body": "...", "related": [{"key": "<key前12位>", "type": "时间线补充|人物呼应|新角度|纯重复|无关联|同名不同人"}]}。'
        'channel=both 时 title/body 为 xhs 版、gzh_title/gzh_body 为公众号版；'
        'channel 非 both 时 gzh_title/gzh_body 留空。不要任何多余文字。')
 
@@ -138,7 +138,7 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
                      "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不合并正文。related 每项给 {key,type}：时间线补充=旧事件新进展｜人物呼应=旧文写过该人物本篇是新事件｜新角度=旧文X面本篇Y面｜纯重复=同事件标题类似｜无关联。**只把 时间线补充/人物呼应/新角度 放进 related**；纯重复/无关联/仅同团同IP/仅泛提及 都不要放。）\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不合并正文。related 每项给 {key,type}：时间线补充=旧事件新进展｜人物呼应=旧文写过该人物本篇是新事件｜新角度=旧文X面本篇Y面｜纯重复=同事件标题类似｜无关联。**只把 时间线补充/人物呼应/新角度 放进 related**；纯重复/无关联/同名不同人/仅同团同IP/仅泛提及 都不要放。（命中历史必须先核对是否**同一人**，同名/近似名不同人→标「同名不同人」；本篇与某历史旧文同事件标题类似=「纯重复」，该素材应跳过不写。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
@@ -340,6 +340,16 @@ def write_one(cand, dry_run=True, force_channel=None):
             for _fk in [x for x in _resolve_keys([_k]).split(",") if x]:
                 if _fk in cand_set and _fk not in llm_pick:
                     llm_pick.append(_fk)
+    # 纯重复 → 跳过该素材（不写稿），标记 C 防重复入选
+    _pure_dup = any(isinstance(_it, dict) and (_it.get("type") or "") == "纯重复"
+                    for _v in versions for _it in (_v.get("related") or []))
+    if _pure_dup:
+        if not dry_run:
+            _news.update_news(cand["key"], {"grade": "C", "grade_reason": "纯重复(历史已发)"})
+        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
+                "attempts": 0, "channel": ch, "title": "", "text": "", "body": 0, "h2": 0,
+                "kana": 0, "method": method, "score": 0, "related": "", "problems": ["纯重复(历史已发)→跳过"],
+                "versions": []}
     rk_list = llm_pick if llm_pick else list(cand_set)
     rk_s = ",".join(rk_list)
     for v in versions:
@@ -454,6 +464,9 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
     for r in results:
         if r.get("bullet"):
             print(f"BULLET {r['key']}（AKB 晒照型 → 仅入库不写正文）")
+            continue
+        if r.get("skipped"):
+            print(f"SKIP {r['key']}（{'; '.join(r.get('problems') or ['纯重复'])}）")
             continue
         for v in r["versions"]:
             print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
