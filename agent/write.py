@@ -379,6 +379,11 @@ def _produce(cand, pkg, channel, first=None):
                         fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
                 except Exception:  # noqa: BLE001
                     pass
+                if any("格言公式" in str(p) for p in fb):     # renwei 误报高发：给具体改写指引
+                    fb.append("「格言公式」多为误报：把『X的(路/语言/镜子/货币/篇章/缩影/写照)』"
+                              "改成『X的方向/说法/…』或平铺陈述句，标题行也要改。")
+                if any("标志性动词" in str(p) for p in fb):
+                    fb.append("去掉『标志着/见证了/体现/彰显/折射出』这类拔高动词，直接陈述事实。")
                 fb = list(dict.fromkeys(fb))
                 if body and len(body) < pkg["tmin"]:
                     fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
