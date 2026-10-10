@@ -186,26 +186,72 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
     return d if isinstance(d, dict) else {}
 
 
+def _extract_json(raw):
+    """从 LLM 文本里稳健提取第一个**括号配平**的 JSON 对象（跳过字符串内的括号，应对多余文字/多个对象）。"""
+    raw = raw or ""
+    for m in re.finditer(r"\{", raw):
+        depth, start, in_str, esc = 0, m.start(), False, False
+        for i in range(start, len(raw)):
+            ch = raw[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(raw[start:i + 1])
+                    except Exception:  # noqa: BLE001
+                        break
+    return None
+
+
+def _score_call(sysd, usr, max_tokens, dims, agg="sum", tries=2):
+    """LLM 评分：解析容错 + 重试。缺 total 时按维度合成（sum/avg）；全失败才返回 total=0。"""
+    last = None
+    for _ in range(tries):
+        try:
+            raw = llm.chat([{"role": "system", "content": sysd},
+                            {"role": "user", "content": usr}], max_tokens=max_tokens)
+        except Exception as e:  # noqa: BLE001
+            last = {"error": str(e)}
+            continue
+        d = _extract_json(raw)
+        if isinstance(d, dict):
+            if not isinstance(d.get("total"), (int, float)):
+                nums = [d[k] for k in dims if isinstance(d.get(k), (int, float))]
+                if nums:
+                    d["total"] = sum(nums) if agg == "sum" else round(sum(nums) / len(nums))
+            if isinstance(d.get("total"), (int, float)):
+                return d
+            last = {"error": "no total", "raw": (raw or "")[:200]}
+        else:
+            last = {"error": "json parse fail", "raw": (raw or "")[:200]}
+    return {**(last or {}), "total": 0}
+
+
 def score_content(title, body, max_tokens=4000):
     sysd = "你是中文内容评审。只输出严格 JSON：{\"爆发点\":n,\"情绪价值\":n,\"信息增量\":n,\"内容深度\":n,\"标题质量\":n,\"total\":n}（各0-2）。"
     usr = _read(REVIEW_PROMPT)[:3000] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
-    try:
-        raw = llm.chat([{"role": "system", "content": sysd}, {"role": "user", "content": usr}],
-                       max_tokens=max_tokens)
-        return json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-    except Exception as e:  # noqa: BLE001
-        return {"error": str(e), "total": 0}
+    return _score_call(sysd, usr, max_tokens,
+                       ["爆发点", "情绪价值", "信息增量", "内容深度", "标题质量"], agg="sum")
 
 
 def score_gzh(title, body, max_tokens=4000):
     sysd = '你是公众号内容评审。只输出 JSON：{"标题吸引力":n,"叙事质量":n,"公众号适配度":n,"total":n}（各1-10，合格线7）。'
     usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？再做背景锚定：开头第一段专有名词是否过多/路人看不懂？\n\n"
            f"标题：{title}\n\n{body[:4000]}")
-    try:
-        raw = llm.chat([{"role": "system", "content": sysd}, {"role": "user", "content": usr}], max_tokens=max_tokens)
-        return json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-    except Exception as e:  # noqa: BLE001
-        return {"error": str(e), "total": 0}
+    return _score_call(sysd, usr, max_tokens,
+                       ["标题吸引力", "叙事质量", "公众号适配度"], agg="avg")
 
 
 def _resolve_keys(prefixes):
