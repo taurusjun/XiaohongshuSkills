@@ -246,10 +246,16 @@ def _produce(cand, pkg, channel, first=None):
                 prev = (title, body, channel)
             d = compose(cand, pkg, force_channel=channel, prev=prev, retry_ctx=ctx)
             title, body = d.get("title") or "", d.get("body") or ""
+            # gzh：LLM 可能把正文放进 gzh_body（而非 body）→ 回退读取
+            if not (body or "").strip() and (d.get("gzh_body") or "").strip():
+                body = d.get("gzh_body")
+                title = title or (d.get("gzh_title") or "")
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
         title = _kana.replace(_trim_title(title))
         mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"], channel)
+        if not (body or "").strip():          # 正文为空 → 明确判为问题（避免空稿入库）
+            mech["problems"] = list(mech.get("problems") or []) + ["正文为空（LLM 未产出正文）"]
         gate = list(mech["problems"])
         try:
             rw = _rw.review(body)
