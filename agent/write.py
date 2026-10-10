@@ -433,6 +433,9 @@ def _produce(cand, pkg, channel, first=None):
              f"{'（通过）' if (score.get('total') or 0) >= need else '（偏低，继续改）'}")
         if (score.get("total") or 0) >= need:
             break
+    if not mech["problems"] and (score.get("total") or 0) < need:
+        mech["problems"] = list(mech.get("problems") or []) + [
+            f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
     ok = not mech["problems"] and (score.get("total") or 0) >= need
     try:
         _kana.log_pending(body, note=cand["key"][:12])
