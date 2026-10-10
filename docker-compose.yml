@@ -13,8 +13,8 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ${XHS_PROJECT_DIR}:/home/user/PG/XiaohongshuSkills
-      - xhs-profiles:/data/chrome-profiles
-      - xhs-backup:/backup
+      - ${XHS_PROFILES_SRC:-xhs-profiles}:/data/chrome-profiles
+      - ${XHS_BACKUP_SRC:-xhs-backup}:/backup
     ports:
       - "0.0.0.0:${XHS_UI_PORT:-15000}:5000"      # admin UI（对外开放；宿主端口必须避开生产 5000）
       - "127.0.0.1:${XHS_MCP_PORT:-15001}:5001"   # MCP (http)

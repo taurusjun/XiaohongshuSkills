@@ -142,3 +142,11 @@ XHS_EXPORTS_SRC=xhs-exports      # ~/.cache/xhs_exports
 - 主 Chrome 仍 9222；`ops/cdp_keeper.py` 会把 `/explore` 视频流页自动切到账户 profile 页（读 `data/accounts_meta.json`）。
 - **mcp（fastmcp :5001）已停用**（从 `ops/supervisord.conf` 移除）。
 - 账户识别（昵称/profileId/小红书号）见 [login-accounts.md](login-accounts.md)。
+
+## 11. mac 存储改宿主 bind（2026-10）
+- 可变状态迁到宿主目录（容器只做 bind，不再搬回）：`/Users/user/PG/xhs-storage/{data,logs,tmp,gallery,exports,backup}
+`。
+- `.env`：`XHS_DATA_SRC`/`XHS_LOGS_SRC`/`XHS_TMP_SRC`/`XHS_GALLERY_SRC`/`XHS_EXPORTS_SRC`/`XHS_BACKUP_SRC` = 上述宿主路径；`docker-compose.yml` 把 `profiles/backup` 参数化为 `${XHS_*_SRC:-卷名}`。
+- `venv`、`profiles`（Chrome，含登录态）**仍为命名卷**（venv 可重建；profiles 在 virtiofs 有锁风险，未迁）。
+- 好处：`colima delete/重建` 不再丢 DB/备份/图集/日志/导出。
+- 已验：SQLite 在 virtiofs 上并发 WAL 写 integrity=ok。
