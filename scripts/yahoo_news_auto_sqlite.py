@@ -8,6 +8,9 @@ import sys, os, time, threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
+# fetch 用独立 Chrome（独立端口，不与主 9222 抢）——必须在 import yahoo_common 前设端口
+os.environ.setdefault("XHS_FETCH_CDP_PORT", "9333")
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config.yahoo_conf import STORAGE_BACKEND, FETCH_PARALLEL
 
@@ -188,8 +191,18 @@ def main():
     args = parser.parse_args()
 
     if not check_proxy(): return
-    if not check_chrome_cdp(): return
 
+    import chrome_launcher
+    chrome_launcher.launch_fetch_chrome()
+    try:
+        _run_fetch(args)
+    finally:
+        chrome_launcher.kill_fetch_chrome()
+
+
+def _run_fetch(args):
+    import json
+    if not check_chrome_cdp(): return
     if args.keywords:
         keywords = json.loads(args.keywords)
     else:

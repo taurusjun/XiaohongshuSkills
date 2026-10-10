@@ -417,3 +417,64 @@ if __name__ == "__main__":
     else:
         print("[chrome_launcher] Failed to start Chrome.", file=sys.stderr)
         sys.exit(1)
+
+
+# ---- fetch 专用独立 Chrome（端口/profile/参数独立，用完即关）----
+FETCH_CDP_PORT = int(os.environ.get("XHS_FETCH_CDP_PORT") or 9333)
+FETCH_PROFILE = os.environ.get("XHS_FETCH_PROFILE") or "/data/chrome-profiles/fetch"
+FETCH_FLAGS = os.environ.get("XHS_FETCH_CHROME_FLAGS",
+    "--no-sandbox --disable-dev-shm-usage --disable-gpu "
+    "--blink-settings=imagesEnabled=false --disable-accelerated-2d-canvas "
+    "--window-size=1440,900 --lang=zh-CN")
+
+
+def launch_fetch_chrome(port: int = None):
+    """启动 fetch 专用 Chrome：独立 profile、直连、跳过图片渲染、headless。返回 Popen 或 None(已在跑)。"""
+    port = port or FETCH_CDP_PORT
+    if is_port_open(port):
+        print(f"[fetch_chrome] port {port} already open, reuse.")
+        return None
+    chrome_path = get_chrome_path()
+    os.makedirs(FETCH_PROFILE, exist_ok=True)
+    cmd = [chrome_path,
+           f"--remote-debugging-port={port}",
+           f"--user-data-dir={FETCH_PROFILE}",
+           "--no-first-run", "--no-default-browser-check", "--remote-allow-origins=*",
+           "--no-proxy-server", "--headless=new"]
+    cmd += shlex.split(FETCH_FLAGS)
+    print(f"[fetch_chrome] launching on {port} profile={FETCH_PROFILE}")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + STARTUP_TIMEOUT
+    while time.time() < deadline:
+        if is_port_open(port):
+            print(f"[fetch_chrome] ready on {port}")
+            return proc
+        time.sleep(0.5)
+    print("[fetch_chrome] WARNING: not responding yet", file=sys.stderr)
+    return proc
+
+
+def kill_fetch_chrome(port: int = None):
+    """关闭 fetch 专用 Chrome（CDP Browser.close，失败则按 profile pkill）。"""
+    port = port or FETCH_CDP_PORT
+    try:
+        import requests
+        r = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=2)
+        if r.ok:
+            import websockets.sync.client as ws_client
+            ws = ws_client.connect(r.json().get("webSocketDebuggerUrl"))
+            ws.send('{"id":1,"method":"Browser.close"}')
+            try:
+                ws.recv(timeout=2)
+            except Exception:
+                pass
+            ws.close()
+    except Exception:
+        pass
+    time.sleep(1)
+    if is_port_open(port):
+        try:
+            subprocess.run(["pkill", "-f", FETCH_PROFILE], timeout=10)
+        except Exception:
+            pass
+    print(f"[fetch_chrome] closed port {port}")

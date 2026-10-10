@@ -120,8 +120,8 @@ if not LITELLM_MODEL:
     print("❌ 未配置 LITELLM_MODEL，请在 scripts/.env 中设置后重试")
     sys.exit(1)
 
-CDP_HOST = "127.0.0.1"
-CDP_PORT = 9222
+CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
+CDP_PORT = int(os.environ.get("XHS_FETCH_CDP_PORT") or 9222)
 
 YAHOO_BASE_URL   = "https://news.yahoo.co.jp"
 YAHOO_SEARCH_URL = "https://news.yahoo.co.jp/search"
