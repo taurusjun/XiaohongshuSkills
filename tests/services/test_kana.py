@@ -32,3 +32,20 @@ def test_new_terms_captures_full_title():
     terms = kana.new_terms(t)
     assert "マジで" in terms                          # 连续假名片段
     assert "春よ来い、マジで来い" in terms             # 整段作品名（新增）
+
+
+def test_auto_promote_skips_fragments(monkeypatch, tmp_path):
+    from services import kana as K
+    import agent.llm
+    monkeypatch.setattr(K, "pending", lambda: [
+        {"term": "ーザー", "ctx": "卡兹雷ーザー率平成军"},
+        {"term": "れざる", "ctx": "《室井慎次 败れざる者》"},
+        {"term": "クイズフェス", "ctx": "《クイズフェス!2026秋》"},
+    ])
+    monkeypatch.setattr(K, "_pending_path", lambda: tmp_path / "p.jsonl")
+    monkeypatch.setattr(K, "promote", lambda t, zh: None)
+    monkeypatch.setattr(agent.llm, "chat", lambda m, max_tokens=0:
+                        '{"ーザー":"扎","れざる":"不败者","クイズフェス":"问答节"}')
+    res = dict(K.auto_promote(dry_run=True))
+    assert "ーザー" not in res and "れざる" not in res      # 碎片跳过
+    assert res.get("クイズフェス") == "问答节"               # 标题词保留

@@ -127,6 +127,23 @@ def promote(term: str, zh: str):
     return len(data)
 
 
+_SKIP_TERMS = {"から", "まで", "より", "など", "こと", "もの", "あり", "なし", "ざる",
+               "ごと", "ので", "のに", "けど", "です", "ます", "って", "いる", "ある", "する"}
+
+
+def _is_fragment(term, ctxstr):
+    """片段判定：词条在语境里**任一侧紧邻汉字** → 视为碎片（不该进全局替换表）。"""
+    i = (ctxstr or "").find(term)
+    if i < 0:
+        return False
+    before = ctxstr[i - 1] if i > 0 else ""
+    after = ctxstr[i + len(term)] if i + len(term) < len(ctxstr) else ""
+
+    def k(ch):
+        return bool(ch) and "\u4e00" <= ch <= "\u9fff"
+    return k(before) or k(after)
+
+
 def auto_promote(limit=40, dry_run=False):
     """把 pending 里的假名用 LLM 批量中译并**自动写入字典**（先自动、人工后审）。
 
@@ -153,6 +170,10 @@ def auto_promote(limit=40, dry_run=False):
         if not isinstance(zh, str) or not zh.strip() or zh.strip() == t:
             continue
         t, zh = t.strip(), zh.strip()
+        if len(t) < 3 or t in _SKIP_TERMS or t.startswith("ー") or t.endswith("ー"):
+            continue                                   # 太短/助词/长音符片段 → 不入表
+        if _is_fragment(t, ctx.get(t, "")):
+            continue                                   # 紧邻汉字的碎片 → 不入表（防污染）
         if not dry_run:
             promote(t, zh)
         out.append((t, zh))
