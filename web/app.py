@@ -3398,7 +3398,7 @@ function esc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,c=>({'&':'&amp;','<
 async function load(){const d=await(await fetch('/api/write-failures')).json();const tb=document.getElementById('tb');
  if(!d.rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">队列为空 🎉</td></tr>';return;}
  tb.innerHTML=d.rows.map(x=>`<tr><td class="k">${x.key.slice(0,12)}</td>
-  <td>${esc((x.title||'').slice(0,50))} <span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}]</span><div class="r">${esc(x.reason||'')}</div>
+  <td>${esc((x.title||'').slice(0,50))} <span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}·${esc(x.level||'error')}]</span><div class="r">${esc(x.reason||'')}</div>
    ${x.traceback?`<details><summary style="cursor:pointer;font-size:11px;color:#7c3aed">报错堆栈</summary><pre>${esc(x.traceback)}</pre></details>`:''}</td>
   <td><span class="badge ${x.status}">${x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已成功':'待重试')}</span></td>
   <td>${x.retry_count||0}</td><td>${esc(x.next_retry_at||'—')}</td>
