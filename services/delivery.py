@@ -171,6 +171,12 @@ def feishu_send(text: str) -> bool:
     if not ok and schema.startswith("2"):        # 2.0 发送失败 → 回落 1.0
         for card in feishu_build_cards(text, title):
             ok = bool(feishu_bot.send_card(open_id, card)) and ok
+    if not ok:
+        try:
+            from services import error_log as _elog
+            _elog.log(f"飞书投递失败（open_id={open_id[:8]}…）")
+        except Exception:  # noqa: BLE001
+            pass
     return ok
 
 
@@ -220,6 +226,12 @@ def deliver(text: str, channel: str | None = None, name: str = "latest.md",
             result["feishu_sent"] = bool(feishu_send(text))
         except Exception as e:  # noqa: BLE001
             print(f"[delivery] feishu 发送失败: {e}", file=sys.stderr)
+            try:
+                import traceback as _tb
+                from services import error_log as _elog
+                _elog.log(f"[delivery] feishu 发送失败: {e}", tb=_tb.format_exc())
+            except Exception:  # noqa: BLE001
+                pass
             result["feishu_sent"] = False
     result["ok"] = bool(result["local_saved"]) and bool(result.get("feishu_sent"))
     return result

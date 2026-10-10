@@ -53,6 +53,11 @@ def _post(url, body, timeout):
             last = e
         if i < _RETRY_TRIES - 1:
             time.sleep(_RETRY_BACKOFF * (2 ** i))
+    try:
+        from services import error_log as _elog
+        _elog.log(f"LLM 请求失败（重试 {_RETRY_TRIES} 次）: {last}")
+    except Exception:  # noqa: BLE001
+        pass
     raise LiteLLMError(f"LLM 请求失败（重试 {_RETRY_TRIES} 次）: {last}")
 
 

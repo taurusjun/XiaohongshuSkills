@@ -10,6 +10,10 @@ import base64
 import logging
 import requests
 
+# 飞书为国内直连：显式忽略环境代理（防 NO_PROXY 被覆盖/代理抖动导致发送失败）
+_SESSION = requests.Session()
+_SESSION.trust_env = False
+
 logger = logging.getLogger("feishu_bot")
 
 # 加载 .env 文件（若 dotenv 可用）
@@ -39,7 +43,7 @@ def get_tenant_token() -> str:
     if _tenant_token_cache["token"] and now < _tenant_token_cache["expires_at"] - 300:
         return _tenant_token_cache["token"]
     try:
-        resp = requests.post(
+        resp = _SESSION.post(
             f"{FEISHU_API_BASE}/auth/v3/tenant_access_token/internal",
             json={"app_id": FEISHU_APP_ID, "app_secret": FEISHU_APP_SECRET},
             timeout=10,
@@ -52,6 +56,11 @@ def get_tenant_token() -> str:
         return token
     except Exception as e:
         logger.warning(f"获取飞书 token 失败: {e}")
+        try:
+            from services import error_log as _elog
+            _elog.log(f"获取飞书 token 失败: {e}")
+        except Exception:
+            pass
         return ""
 
 
@@ -62,7 +71,7 @@ def _post(path: str, body: dict) -> bool:
     if not token:
         return False
     try:
-        resp = requests.post(
+        resp = _SESSION.post(
             f"{FEISHU_API_BASE}{path}",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json=body,

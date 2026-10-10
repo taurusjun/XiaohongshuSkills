@@ -688,6 +688,11 @@ def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb="
     from services import write_failures as _wf
     _wf.record(cand["key"], reason, stage=stage, attempts=attempts, channel=channel,
                title=title or cand.get("title") or "", tb=tb)
+    try:
+        from services import error_log as _elog              # 同步写 error.log
+        _elog.log(f"写稿失败 {cand['key'][:12]} [{stage}] {reason}", tb=tb)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
