@@ -104,7 +104,7 @@ def check_text(text, spec, channel="xhs"):
         problems.append(f"顿号行 ×{len(dunhao)}（renwei 排比三连前置条件，整段清零）")
 
     kana = len(KANA_RE.findall(body))
-    _full = (title or "") + body
+    _full = (title or "") + "\n" + body          # 分隔，防标题末字与正文首假名粘连误判人名
     kana_all = len(KANA_RE.findall(_full))
     kana_eff = kana_all - _name_kana(_full)          # 人名假名不计入
     if kana_eff > KANA_MAX:
