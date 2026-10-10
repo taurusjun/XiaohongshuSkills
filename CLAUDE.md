@@ -12,6 +12,8 @@
 8. **所有代码修改必须在远程服务器上操作** — 包括改文件、新增文件、删除文件，一律通过 SSH 在 `user@192.168.0.70`（项目路径 `/Users/user/PG/XiaohongshuSkills`）上直接操作。禁止在本地修改后 scp/rsync 上传，或在本地提交再 push。提交和 push 也在远程执行。
 9. **禁止对 SQLite 二进制文件执行文本操作** — `data/*.db` 是二进制文件，严禁用 `patch`、`sed`、`awk`、`dd`、`cp --no-preserve` 等文本/字节替换命令直接操作。修改 DB 内容必须通过 `sqlite3` CLI 或 Python `sqlite3` 模块执行 SQL。违反此规则会破坏 B-tree 页结构，导致数据库不可恢复。
 
+10. **Yahoo 必须直连，严禁使用代理** — 对 `news.yahoo.co.jp`（及任何 Yahoo 域名）的**所有**请求（搜索页、文章详情、封面/图片下载）一律**直连**，**严禁代理**：Yahoo 有**区域限制**，经代理会被 block（返回错误页/异常/区域提示）。Chrome 用 `--no-proxy-server`；Python 用 `_direct_session`（`requests.Session()` + `trust_env=False`）。**排查 Yahoo 抓取，第一件事是确认「没有走代理」。**
+
 ## 图集抓取架构（scrape_gallery_images 调度）
 
 **入口**：`scripts/gallery_fetch.py` 的 `scrape_gallery_images(gallery_url)`。流程：`domain = _domain_of(url)` → 按域名走三档处理 → 返回图片 URL 列表。

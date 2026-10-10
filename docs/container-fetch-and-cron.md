@@ -2,6 +2,8 @@
 
 > 配套 [container-env.md](container-env.md)。记录 fetch 的独立 Chrome 设计与 cron 时间口径。
 
+> ⚠️ **Yahoo 必须直连，严禁代理（区域限制，代理会被 block）**。fetch Chrome `--no-proxy-server`；Python `_direct_session`（`trust_env=False`）。
+
 ## 1. fetch 独立 Chrome（与主 9222 隔离）
 - **主 Chrome**：端口 `9222`（`CHROME_FORCE_HEADED=1` + Xvfb）—— 登录 / 发布 / 「查看 Chrome」用。
 - **fetch 专用 Chrome**：端口 `9333`、独立 profile `/data/chrome-profiles/fetch`、**headless**、**用完即关**。

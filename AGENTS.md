@@ -2,6 +2,8 @@
 
 本文件供 AI Agent（Hermes 等）使用，描述可调用的 REST API 和辅助脚本。
 
+> ⚠️ **Yahoo 必须直连，严禁代理**：对 `news.yahoo.co.jp` 的任何请求都不得走代理（区域限制，会被 block）。Chrome `--no-proxy-server`；Python `_direct_session`(`trust_env=False`)。
+
 ## 基础信息
 
 - Base URL：`http://localhost:5000`

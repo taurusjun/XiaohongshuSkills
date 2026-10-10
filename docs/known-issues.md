@@ -174,3 +174,4 @@ if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
 - **fetch 锁（`_fetch_running`）**：已有抓取时新触发返回 `locked:true` → `fetch_runner` 静默 `exit 0`（正常互斥）；异常残留用 `POST /api/admin/reset-fetch-lock` 复位。
 - **gallery thefirsttimes**：`/report/{id}/attachment/{slug}/` 路径此前未支持（只认 `/news/`）→ 图集为空；已修（支持 `news|report` + 附件页回退 + 直连兜底 + 跨页去重）。
 - **mcp 崩溃循环**：`fastmcp` 因 SOCKS 代理报错在 supervisord `autorestart` 下每 ~3s 重启、持续烧核 → 已移除 `[program:mcp]`。
+- **Yahoo 严禁代理**：`news.yahoo.co.jp` 有区域限制，**任何请求都必须直连**（Chrome `--no-proxy-server` / Python `_direct_session`）；经代理会被 block。抓取异常先确认没有走代理。
