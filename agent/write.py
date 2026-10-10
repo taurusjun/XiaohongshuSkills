@@ -45,7 +45,8 @@ def pick_candidates(n=0):
     # ① DB grade(S/A) ② review 存档分级 ③ 分数兜底
     rows = _news.query_news(status="active", limit=300)
     base = [r for r in rows if (r.get("content_ja") or "")
-            and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")
+            and r.get("format") in ("story", "news", "ranking", "comparison")
+            and not (r.get("rewritten_content") or "")
             and not (r.get("wechat_content") or "")        # gzh-only 已写稿 → 不再重跑
             # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑
             and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
@@ -326,6 +327,24 @@ REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给�
            '前置：命中必须先核对是否同一人；同名/近似名不同人→"同名不同人"。')
 
 
+MAT_SYS = ('判断日文素材类型，只输出严格 JSON：{"type":"catalog|multi_artist|commentary|deep_interview|ranking|normal"}。'
+           'catalog=片单/作品一览(目录占原文70%+)；multi_artist=多艺人综合报道/时间表(目标人物≤1/3)；'
+           'commentary=评论/分析(单视角论点为主)；deep_interview=深访/自述/采访(引语丰富)；'
+           'ranking=榜单/排行榜；normal=单人物单事件普通报道。')
+
+
+def classify_material(cand, max_tokens=200):
+    """1 次 LLM 通读判定素材类型（供密度豁免判定）。"""
+    _set_mat = (cand.get("title") or "") + "\n" + (cand.get("content_ja") or "")[:3000]
+    try:
+        raw = llm.chat([{"role": "system", "content": MAT_SYS},
+                        {"role": "user", "content": _set_mat}], max_tokens=max_tokens)
+        d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+        return (d.get("type") or "normal").strip()
+    except Exception:  # noqa: BLE001
+        return "normal"
+
+
 def classify_relations(cand, pkg, max_tokens=2000):
     """第3层：对候选(同事件∪同人物历史)判关联类型；返回 [{"key":完整key,"type":...}]。"""
     cands = pkg.get("rel_candidates") or []
@@ -432,6 +451,11 @@ def _produce(cand, pkg, channel, first=None):
             except Exception:  # noqa: BLE001
                 pass
             mech["problems"] = list(mech.get("problems") or []) + ["正文为空（LLM 未产出正文）"]
+        if pkg.get("material_type") in ("catalog", "multi_artist", "commentary"):
+            _drop = [p for p in mech["problems"] if "密度" in p]     # 原 skill：只免密度
+            if _drop:
+                mech["problems"] = [p for p in mech["problems"] if "密度" not in p]
+                mech.setdefault("den_exempt", []).extend(_drop)
         gate = list(mech["problems"])
         try:
             rw = _rw.review(body)
@@ -453,14 +477,9 @@ def _produce(cand, pkg, channel, first=None):
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
-    # 3 轮改稿后仍未达标：**质量/篇幅类**（评分不足、字数略短、密度略低）→ 豁免，视为通过
-    _SOFT = ("内容评分", "字 <", "密度")
-    _probs = list(mech.get("problems") or [])
-    exempt = bool(_probs) and all(any(k in p for k in _SOFT) for p in _probs)
-    if exempt:
-        mech["exempt"] = _probs
-        mech["problems"] = []
-    ok = (not mech["problems"] and (score.get("total") or 0) >= need) or exempt
+    ok = not mech["problems"] and (score.get("total") or 0) >= need
+    if mech.get("den_exempt"):
+        _log(f"  密度豁免（{pkg.get('material_type')}）：{'; '.join(mech['den_exempt'])[:60]}")
     try:
         _kana.log_pending(body, note=cand["key"][:12])
     except Exception:  # noqa: BLE001
@@ -492,6 +511,8 @@ def write_one(cand, dry_run=True, force_channel=None):
     method = pkg["method"]
     _log(f"  准备: method={method} pre={pkg.get('pre_channel')}({pkg.get('route_conf')}) "
          f"关联候选={len(pkg.get('rel_candidates') or [])}")
+    pkg["material_type"] = classify_material(cand)          # 1 次 LLM 通读判类型
+    _log(f"  素材类型: {pkg['material_type']}")
     # 第3层：先判关联类型（旧 skill 3b），再按类型写
     _rels = classify_relations(cand, pkg)
     _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
@@ -683,7 +704,7 @@ def pick_rewrite_today():
     rows = _news.query_news(status="active", limit=500)
     base = [r for r in rows if (r.get("created_at") or "").startswith(today)
             and (r.get("content_ja") or "")
-            and r.get("format") in ("story", "news")
+            and r.get("format") in ("story", "news", "ranking", "comparison")
             and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     picks, used = [], set()

@@ -55,6 +55,14 @@
 - **跨日**：每次批量写稿落 `data/write_batches/<date>.json`（处理 + 跳过 keys），下次启动消费跳过清单（纯重复不重写）并提示「新/漏写候选」。
 - **拆篇手动入口**：`--split-large`（现对 `--key` 单篇也生效）、`--split-threshold N`、`--split-preview`（只读）；素材页另有「🧩 拆篇预览」按钮。
 
+### 豁免（对齐原 skill `10-01`/`7-17`/`multi-artist-compilation-density-exemption`）
+
+- **只免「密度」，且按素材类型判**：`classify_material()`（1 次 LLM 通读 content_ja）判 `catalog|multi_artist|commentary|deep_interview|ranking|normal`。
+  - `catalog`(片单/作品一览) / `multi_artist`(多艺人综合) / `commentary`(评论分析) → **豁免密度**；
+  - `deep_interview`(深访/采访) / `ranking`(榜单) → **不豁免**（扩写/按 ja×0.31 写足）。
+- 原文明写：**「豁免只免密度，不免字数门禁与 5 维度评分」** → 字数(800)与评分**不放水**（曾一度实现「评分/字数也豁免」，已按原 skill 撤销）。
+- **`ranking`/`comparison` 纳入写稿**（`pick_candidates`/`pick_rewrite_today` 的 `format` 白名单已含）。
+
 ## 3. 已补回的功能（关键）
 
 1. **renwei「人味审读」完整移植**：`services/renwei.py` 现覆盖六类信号（意义拔高/宣传腔/句式套路/格式痕迹/语气痕迹/填充与对冲）+ 聚集判定（同类≥2 或 跨类≥3 → exit 1；破折号不计入聚集）。`write_one` 仅在 **exit==1** 时拦（exit 2 接受）。
