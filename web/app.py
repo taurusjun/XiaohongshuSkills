@@ -2146,6 +2146,8 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   <a href="javascript:history.back()">← 返回</a>
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
+  {% if news.material_type %}<span class="badge badge-gray" style="flex-shrink:0" title="素材类型（密度豁免判定：catalog/multi_artist/commentary 免密度）">{{news.material_type}}</span>{% endif %}
+  {% if news.manual_review %}<span class="badge" style="flex-shrink:0;background:#fee2e2;color:#b91c1c" title="{{news.manual_reason}}">🚩 待人工</span>{% endif %}
   {% if scores and scores|length > 0 %}
   <span class="badge badge-green" style="flex-shrink:0">📊 {{("%.1f"|format(news.title_score or 0))}}</span>
   {% endif %}
