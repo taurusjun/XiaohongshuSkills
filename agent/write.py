@@ -138,7 +138,7 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
                      "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不并入。related **只能**放「同事件关联」里的 key——「同人物历史」里的、以及只是同团/同人但事件无关的，**都不要**放。）\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不合并正文。related = ①「同事件关联」里的 key，②**同一人物**的往期稿（前情/续篇）。**只是同团/同IP/节目/作品层面相同、或仅泛提及该人物的，不要放**。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
@@ -325,8 +325,8 @@ def write_one(cand, dry_run=True, force_channel=None):
         versions.append(_produce(cand, pkg, "gzh", first=(gt, gb) if (gt and gb) else None))
     else:
         versions.append(_produce(cand, pkg, ch, first=(t0, b0)))
-    # 关联：**只认「同事件」**（review 的 cluster_keys）；LLM 在其中复判，实体历史不进 related_keys
-    cand_set = {k for k in pkg.get("cluster_keys", []) if k and k != cand["key"]}
+    # 关联候选 = 同事件(cluster_keys) ∪ 同人物历史(hist)；由 LLM 复判挑选
+    cand_set = {k for k in pkg["related_keys"] if k and k != cand["key"]}
     llm_pick = []
     for _v in versions:
         for _pfx in (_v.get("related") or []):
