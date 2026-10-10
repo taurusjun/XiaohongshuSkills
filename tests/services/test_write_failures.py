@@ -67,3 +67,11 @@ def test_stats_and_category_persist(tmp_path, monkeypatch):
     assert st["total"] == 3
     cats = {x["category"]: x["n"] for x in st["by_category"]}
     assert cats["gate_density"] == 2 and cats["llm_network"] == 1
+
+
+def test_warn_level(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    wf.warn("kw", "门禁/评分豁免：假名 6>5; 内容评分 7<9", category="gate_exempt")
+    r = wf.list_all()[0]
+    assert r["level"] == "warn" and r["status"] == "resolved" and r["category"] == "gate_exempt"
+    assert wf.list_open() == []          # warn 不进入重试队列
