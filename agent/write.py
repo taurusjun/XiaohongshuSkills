@@ -120,6 +120,7 @@ def prepare_package(cand):
     #   同事件 = review 的聚类计划 cluster_keys（可合并）
     #   同人物历史 = 写稿时按实体名(中日双形)检索
     merge_text = hist_text = ""
+    hist_excerpts = {}          # key -> 节选行（供 classify 后按合格类型决定是否注入）
     related_keys = []
     rel_candidates = []
     try:
@@ -142,7 +143,9 @@ def prepare_package(cand):
                 if h["key"] not in related_keys]
         if hist:
             hs = [x for x in (_news.get_by_key(k) for k in hist) if x]
-            hist_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}｜旧文节选：{((s.get('rewritten_content') or s.get('content_ja') or ''))[:400]}" for s in hs)
+            for s in hs:        # 只登记节选，**暂不注入**（classify 后再按合格类型注入）
+                hist_excerpts[s["key"]] = (f"[{s['key'][:12]}] {s.get('title')}｜旧文节选："
+                                           f"{((s.get('rewritten_content') or s.get('content_ja') or ''))[:400]}")
             rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
                                  "excerpt": ((s.get("rewritten_content") or s.get("content_ja") or ""))[:300]} for s in hs]
             related_keys += hist
@@ -150,7 +153,8 @@ def prepare_package(cand):
         pass
     related_keys = list(dict.fromkeys(related_keys))
     return {"content_ja": cj[:cap], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs, "patterns": patterns,
-            "merge_text": merge_text, "hist_text": hist_text, "related_keys": related_keys,
+            "merge_text": merge_text, "hist_text": hist_text, "hist_excerpts": hist_excerpts,
+            "related_keys": related_keys,
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
             "rel_candidates": rel_candidates,
             "method": r["publish_method"], "pre_channel": pre_channel,
@@ -480,6 +484,9 @@ def write_one(cand, dry_run=True, force_channel=None):
                 "body": 0, "h2": 0, "kana": 0, "method": method, "score": 0, "related": "",
                 "problems": ["纯重复(历史已发)→跳过"], "versions": []}
     pkg["relations"] = [r for r in _rels if r.get("type") in _KEEP and r["key"] != cand["key"]]
+    _kept = {r["key"] for r in pkg["relations"]}                 # 只注入「合格类型」的同人物历史
+    _he = pkg.get("hist_excerpts") or {}
+    pkg["hist_text"] = "\n".join(_he[k] for k in _kept if k in _he)
     rk_s = ",".join(dict.fromkeys(r["key"] for r in pkg["relations"]))
     eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
     if eff:
@@ -649,6 +656,26 @@ def main_retry(argv=None):
     return 0
 
 
+def pick_rewrite_today():
+    """今天入库的候选（grade S/A/AKB，story/news，有原文），**忽略已写** → 供强制重写。"""
+    import datetime as _dt
+    today = _dt.datetime.now().strftime("%Y-%m-%d")
+    rows = _news.query_news(status="active", limit=500)
+    base = [r for r in rows if (r.get("created_at") or "").startswith(today)
+            and (r.get("content_ja") or "")
+            and r.get("format") in ("story", "news")
+            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
+    graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
+    picks, used = [], set()
+    for r in sorted(graded, key=lambda x: -(x.get("title_score") or 0)):
+        cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
+        if (cl | {r["key"]}) & used:
+            continue
+        picks.append(r)
+        used |= cl | {r["key"]}
+    return picks
+
+
 def _print_split_preview(cands):
     """拆篇预览（只读）：打印 cluster 体量与分组，不写库。"""
     from services import split_write as _sp
@@ -696,7 +723,7 @@ def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb="
 
 
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
-        verify_gallery=False, split_threshold=None, split_preview=False):
+        verify_gallery=False, split_threshold=None, split_preview=False, rewrite_today=False):
     if key:
         import sqlite3
         conn = sqlite3.connect(paths.sqlite_path())
@@ -706,6 +733,8 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             conn.close()
         cands = [_news.get_by_key(r[0])] if r else []
         cands = [c for c in cands if c]
+    elif rewrite_today:
+        cands = pick_rewrite_today()
     else:
         cands = pick_candidates(n)
     if not key and cands:
@@ -832,7 +861,9 @@ def main(argv=None):
                     help="拆篇体量阈值（默认读 config，3000）")
     ap.add_argument("--split-preview", action="store_true",
                     help="只打印拆篇分组预览，不写稿（只读）")
+    ap.add_argument("--rewrite-today", action="store_true",
+                    help="强制重写今天入库的候选（忽略已写标记）")
     a = ap.parse_args(argv)
     run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel, a.verify_gallery,
-        a.split_threshold, a.split_preview)
+        a.split_threshold, a.split_preview, a.rewrite_today)
     return 0
