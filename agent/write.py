@@ -538,8 +538,9 @@ def _produce(cand, pkg, channel, first=None):
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
     # 3 轮改稿仍过不了门禁/评分 → **一律通过**（不阻断），问题记入错误表(warn)供后续调整
     _issues = list(mech.get("problems") or [])
-    if (score.get("total") or 0) < need:
-        _issues.append(f"内容评分 {score.get('total')}/10 < 门槛 {need}")
+    _smsg = f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"
+    if (score.get("total") or 0) < need and _smsg not in _issues:
+        _issues.append(_smsg)
     _issues = list(dict.fromkeys(_issues))
     if (body or "").strip():                       # 有正文 → 一律通过（问题降级为 warn）
         ok = True
@@ -688,6 +689,7 @@ def write_one(cand, dry_run=True, force_channel=None):
             "attempts": max(v["attempts"] for v in versions), "channel": ch,
             "title": prim["title"], "text": prim["text"], "body": prim["body"], "h2": prim["h2"],
             "kana": prim["kana"], "method": method, "score": prim["score"], "related": rk_s,
+            "gate_exempt": prim.get("gate_exempt") or [],
             "problems": [p for v in versions for p in v["problems"]], "versions": versions}
 
 
