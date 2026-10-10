@@ -12,10 +12,20 @@ import json
 import os
 import re
 
+from services import rules
 from services.word_count import content_len, title_len
 
-SHINTAI_FAIL = "発恵価歳竜徳沢辺栄広芸戦売買読選抜強実気対経済冨円浜塩込み"
-SHINTAI_WARN = "嶋壱"
+_NF = rules.load("newfont.json")
+_TH_X = rules.xhs_th()
+_TH_G = rules.gzh_th()
+SHINTAI_FAIL = _NF.get("fail", "発恵価歳竜徳沢辺栄広芸戦売買読選抜強実気対経済冨円浜塩込み")
+SHINTAI_WARN = _NF.get("name_reserved", "嶋壱")
+TITLE_MAX_XHS = _TH_X.get("title_max", 20)
+TITLE_MAX_GZH = _TH_G.get("title_max", 30)
+BODY_MIN_STORY = _TH_X.get("story_body_min", 800)
+H2_MIN_STORY = _TH_X.get("story_h2_min", 2)
+KANA_MAX = _TH_X.get("kana_max", 5)
+DENSITY_MIN = _TH_X.get("density_min", 30)
 KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 
 __all__ = ["split_title_body", "check_text", "check", "main"]
@@ -51,7 +61,7 @@ def check_text(text, spec, channel="xhs"):
 
     if title is not None:
         tl = title_len(title)
-        limit = 30 if is_gzh else 20
+        limit = TITLE_MAX_GZH if is_gzh else TITLE_MAX_XHS
         if tl > limit:
             problems.append(f"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）")
 
@@ -64,12 +74,12 @@ def check_text(text, spec, channel="xhs"):
         if h3:
             problems.append(f"出现三级标题 ### ×{len(h3)}（story 小标题必须 ## ）")
         if fmt == "story" and lf == 1:
-            if body_len < 800:
-                problems.append(f"story 正文 {body_len} 字 < 800（硬门禁）")
-            elif body_len < 850:
-                warns.append(f"story 正文 {body_len} 字，低于 850 余量线（改稿删字易跌破 800）")
-            if len(h2) < 2:
-                problems.append(f"story 正文 `##` 小标题 {len(h2)} 个 < 2")
+            if body_len < BODY_MIN_STORY:
+                problems.append(f"story 正文 {body_len} 字 < {BODY_MIN_STORY}（硬门禁）")
+            elif body_len < BODY_MIN_STORY + 50:
+                warns.append(f"story 正文 {body_len} 字，低于 {BODY_MIN_STORY + 50} 余量线（改稿删字易跌破 {BODY_MIN_STORY}）")
+            if len(h2) < H2_MIN_STORY:
+                problems.append(f"story 正文 `##` 小标题 {len(h2)} 个 < {H2_MIN_STORY}")
         else:
             if h2:
                 problems.append(f"news 正文不得有 `##` 分隔标题（发现 {len(h2)} 个），改自然过渡句")
@@ -79,8 +89,8 @@ def check_text(text, spec, channel="xhs"):
         problems.append(f"顿号行 ×{len(dunhao)}（renwei 排比三连前置条件，整段清零）")
 
     kana = len(KANA_RE.findall(body))
-    if kana > 5:
-        problems.append(f"假名 {kana} > 5（含标题行时按全文计）")
+    if kana > KANA_MAX:
+        problems.append(f"假名 {kana} > {KANA_MAX}（含标题行时按全文计）")
     kana_all = len(KANA_RE.findall((title or "") + body))
 
     shintai_fail = sorted(set(re.findall(f"[{SHINTAI_FAIL}]", (title or "") + body)))
@@ -92,8 +102,8 @@ def check_text(text, spec, channel="xhs"):
 
     ja = spec.get("ja") or 0
     density = (body_len / ja * 100) if ja else None
-    if not is_gzh and density is not None and density < 30:     # gzh 不套 xhs 30% 密度门
-        problems.append(f"密度 {density:.1f}% < 30%（先复核是否合并稿误用分母，再扩充）")
+    if not is_gzh and density is not None and density < DENSITY_MIN:     # gzh 不套 xhs 30% 密度门
+        problems.append(f"密度 {density:.1f}% < {DENSITY_MIN}%（先复核是否合并稿误用分母，再扩充）")
 
     return dict(key="", title=title, body_len=body_len, h2=len(h2), density=density,
                 kana=kana_all, dunhao=dunhao, problems=problems, warns=warns, channel=channel)

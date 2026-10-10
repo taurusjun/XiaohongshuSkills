@@ -1132,6 +1132,8 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="filter-divider"></div>
     <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span><span id="loginAcct" style="margin-left:6px;color:#9fb0c8;font-size:11px"></span></button>
     <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
+    <button class="btn-ghost btn-sm" onclick="splitPreview()" title="拆篇预览（只读，不写库）">🧩 拆篇预览</button>
+    <button class="btn-ghost btn-sm" onclick="window.open('/manual-review','_blank')" title="待人工清单">🚩 待人工</button>
   </div>
 
   <!-- Action bars -->
@@ -1991,6 +1993,7 @@ refreshLoginDot();setInterval(refreshLoginDot,8000);
 </div>
 <script>
 function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://'+location.hostname+':16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
+async function splitPreview(){try{const day=(document.getElementById('dateFrom')||{}).value||'';const r=await fetch('/api/split-preview'+(day?'?day='+day:''));const d=await r.json();if(!d.rows.length){alert('无含关联 cluster 的素材（阈值 '+d.threshold+' 字）');return;}const lines=d.rows.map(x=>(x.should_split?'SPLIT':'keep ')+' '+x.key+' 体量='+x.len+' 《'+x.title+'》'+(x.groups.length?'\n   '+x.groups.map((g,i)=>'组'+(i+1)+': '+g.join(',')).join('\n   '):''));alert('拆篇预览（阈值 '+d.threshold+' 字）:\n\n'+lines.join('\n'));}catch(e){alert('预览失败: '+e)}}
 function closeChrome(){document.getElementById('chromeModal').style.display='none';document.getElementById('chromeFrame').src='about:blank';}
 async function sendTextToChrome(enter){try{var t=document.getElementById('ctlText').value;var r=await fetch('/api/creator/type',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,enter:enter})});var d=await r.json();if(!d.ok)alert('发送失败: '+(d.error||''));}catch(e){alert('发送异常: '+e);}}
 </script>
@@ -3307,6 +3310,67 @@ async function openStoryPreview(){
   </div>
 </div></div>
 </body></html>"""
+
+MANUAL_REVIEW_HTML = r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>待人工清单</title>
+<style>body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f6f8;margin:0;padding:20px;color:#222}
+h2{margin:0 0 4px}.sub{color:#888;font-size:12px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th,td{padding:8px 10px;font-size:13px;text-align:left;border-bottom:1px solid #eee;vertical-align:top}
+th{background:#fafafa;color:#666;font-weight:600;font-size:12px}
+.k{font-family:ui-monospace,monospace;color:#7c3aed}.r{color:#b45309;font-size:12px}
+.btn{border:1px solid #ddd;background:#fff;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
+.btn:hover{background:#f0f0f0}.empty{color:#999;padding:30px;text-align:center}</style></head><body>
+<h2>🚩 待人工清单</h2><div class="sub">成人产业/非赛道等内容门禁命中 → 需人工判断是否写、怎么写（不阻断流程）</div>
+<table><thead><tr><th style="width:90px">key</th><th>标题</th><th style="width:60px">体裁</th><th>命中原因</th><th style="width:90px">入库</th><th style="width:70px">操作</th></tr></thead>
+<tbody id="tb"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table>
+<script>
+async function load(){const r=await fetch('/api/manual-review');const d=await r.json();const tb=document.getElementById('tb');
+ if(!d.rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">暂无待人工素材 🎉</td></tr>';return;}
+ tb.innerHTML=d.rows.map(x=>`<tr><td class="k">${x.key.slice(0,12)}</td><td>${(x.title||'').slice(0,60)}</td><td>${x.format||''}</td>
+ <td class="r">${x.manual_reason||''}</td><td>${(x.created_at||'').slice(0,10)}</td>
+ <td><button class="btn" onclick="clearOne('${x.key}')">已处理</button></td></tr>`).join('');}
+async function clearOne(k){await fetch('/api/manual-review/'+k+'/clear',{method:'POST'});load();}
+load();
+</script></body></html>"""
+
+
+@app.route('/api/manual-review', methods=['GET'])
+def api_manual_review():
+    rows = [r for r in query_news(status="active", limit=500) if int(r.get("manual_review") or 0) == 1]
+    return jsonify({"rows": rows, "total": len(rows)})
+
+
+@app.route('/api/manual-review/<key>/clear', methods=['POST'])
+def api_manual_review_clear(key):
+    update_news(key, {"manual_review": 0, "manual_reason": ""})
+    return jsonify({"ok": True})
+
+
+@app.route('/manual-review')
+def manual_review_page():
+    return render_template_string(MANUAL_REVIEW_HTML)
+
+
+@app.route('/api/split-preview')
+def api_split_preview():
+    from services import split_write as _sp
+    day = (request.args.get('day') or '').strip()
+    rows = query_news(status="active", limit=300)
+    if day:
+        rows = [r for r in rows if (r.get('created_at') or '').startswith(day)]
+    out = []
+    for c in rows:
+        has_cluster = bool((c.get('cluster_keys') or '').strip())
+        if not has_cluster:
+            continue
+        L = _sp.cluster_text_len(c)
+        hit = _sp.should_split(c)
+        out.append({"key": c['key'][:12], "title": c.get('title') or '', "len": L,
+                    "should_split": hit,
+                    "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c) if hit else [])]})
+    return jsonify({"day": day, "rows": out, "threshold": _sp.DEFAULT_THRESHOLD})
+
 
 @app.route('/api/topic-cache', methods=['GET'])
 def api_topic_cache_list():

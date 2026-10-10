@@ -271,6 +271,8 @@ def init_db():
             ("grade_reason", "TEXT DEFAULT ''"),
             ("channel_hint", "TEXT DEFAULT ''"),
             ("akb_type", "TEXT DEFAULT ''"),
+            ("manual_review", "INTEGER DEFAULT 0"),
+            ("manual_reason", "TEXT DEFAULT ''"),
         ]
         for col, col_type in _news_compat:
             try: db.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -548,7 +550,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','channel_hint','akb_type','score_dims'}
+               'grade','grade_reason','channel_hint','akb_type','score_dims','manual_review','manual_reason'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

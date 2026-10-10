@@ -69,7 +69,7 @@ def search_refs(query, limit=12):
     return hits
 
 
-def relevant(query, k=4, chars=900):
+def relevant(query, k=6, chars=900):
     """给一段文本（标题/关键词）→ 相关 references 摘录（RAG-lite），供 agent 按需参考。
 
     命中度增强：词项更多（5）、结果更多（k=4）、摘录更长（900）；并**始终**附带 2 篇常读清单
@@ -80,7 +80,9 @@ def relevant(query, k=4, chars=900):
     hits, seen, out = [], [], []
     for t in terms:
         hits += search_refs(t, limit=30)
-    always = ["ai-taste-checklist.md", "deep-interview-density.md"]
+    always = ["ai-taste-checklist.md", "deep-interview-density.md",
+              "title-concreteness-over-category.md", "gzh-review-criteria.md",
+              "content-type-data-profile.md"]
     for name in always:
         if all(name not in h["ref"] for h in hits):
             txt = read_ref(name)

@@ -11,7 +11,8 @@ import sys
 from agent import llm
 from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
                       format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
-                      references as _refs)
+                      references as _refs, content_gate as _gate, name_variants as _nv,
+                      titles as _titles, batches as _batches, rules as _rules)
 from services.word_count import content_len  # noqa: E402
 
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
@@ -41,6 +42,12 @@ def pick_candidates(n=0):
             and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")
             # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑
             and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
+    try:                                             # 消费跳过清单：纯重复不再重写
+        _sk = _batches.skipped_map(_batches.recent())
+        if _sk:
+            base = [r for r in base if not str(_sk.get(r["key"], "")).startswith("纯重复")]
+    except Exception:  # noqa: BLE001
+        pass
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() == "gzh"]
@@ -81,7 +88,10 @@ def prepare_package(cand):
     target = f"{tmin}~{tmax}字（密度=正文字数/主素材日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
     # 渠道：review 标注的 gzh 方向 > 机械预判（旧 skill 阶段2「review 标了 gzh 方向的必须先处理」）
     hint = (cand.get("channel_hint") or "").strip().lower()
-    pre_channel = "gzh" if hint == "gzh" else _route.route(cand.get("title") or "", cj[:500])
+    _rh, _conf = _route.route_detail(cand.get("title") or "", cj[:500])
+    pre_channel = "gzh" if hint == "gzh" else _rh
+    if pre_channel == "ambiguous":
+        pre_channel = "xhs"
     refs = related_text = patterns = ""
     try:
         refs = _refs.relevant(f"{cand.get('title') or ''} {cand.get('title_ja') or ''}")
@@ -130,41 +140,20 @@ def prepare_package(cand):
             "cluster_keys": [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()],
             "rel_candidates": rel_candidates,
             "method": r["publish_method"], "pre_channel": pre_channel,
-            "channel_hint": hint,
+            "channel_hint": hint, "route_conf": _conf,
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
-
-
-SKILL_MD = "skills/creative/xhs-write-publish-flow/SKILL.md"
-_RULE_KEYS = ["否决项", "绝对禁止", "结构要求", "Review 通过标准", "公众号稿 review",
-              "渠道字段规则", "密度计算完整规则", "同事件多素材合并", "关联素材体量过大"]
-_rules_cache = None
-
-
-def hard_rules():
-    """从旧 SKILL.md 抽取「硬规则」章节原文（否决项/绝对禁止/结构/通过标准/公众号/渠道/密度/合并/拆篇），
-    常驻注入 system（不靠标题检索，保证长尾纪律在场）。"""
-    global _rules_cache
-    if _rules_cache is None:
-        txt = _read(SKILL_MD)
-        out, cur = [], None
-        for l in txt.split("\n"):
-            if l.startswith("## "):
-                cur = l
-            if cur and any(k in cur for k in _RULE_KEYS):
-                out.append(l)
-        _rules_cache = "\n".join(out)
-    return _rules_cache
 
 
 def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens=16000):
     """阶段3 撰写（LLM）：只吃写作包 pkg。返回 dict（channel/title/body/gzh_*/related）。"""
-    _hr = hard_rules()
-    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")
-             + ("\n\n=== 硬规则（旧 skill 原文节选，必须遵守）===\n" + _hr if _hr else "")}]
+    msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
     if force_channel:
         chan_note = f"渠道已指定：channel=\"{force_channel}\"（不要更改）。"
     else:
-        chan_note = (f"机械预判渠道：{pkg.get('pre_channel', 'xhs')}（可覆盖；拿不准沿用它）。"
+        _conf = pkg.get("route_conf")
+        _lead = ("渠道机械判据不明确（低置信度），请先根据内容性质自行判断渠道，再决定写法。"
+                 if _conf == "low" else "")
+        chan_note = (_lead + f"机械预判渠道：{pkg.get('pre_channel', 'xhs')}（可覆盖；拿不准沿用它）。"
                      "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
@@ -234,16 +223,36 @@ def _resolve_keys(prefixes):
 
 
 def _trim_title(title, limit=20):
-    """标题按 xhs_title_len 机械改短到 <=limit。"""
+    """标题按 xhs_title_len 机械改短到 <=limit（保底）。"""
     while title and _pc.title_len(title) > limit:
         title = title[:-1].rstrip()
     return title
 
 
+def _fit_title(title, channel="xhs"):
+    """边界优先截断；无边界 → LLM 重写一次（保钩子，不砍词义）。"""
+    limit = _titles.limit_for(channel)
+    t, need_llm = _titles.fit(title, limit)
+    if need_llm and title:
+        try:
+            raw = llm.chat([{"role": "system", "content":
+                             f"把给定标题改写到 {limit} 字以内，保留钩子/数字/矛盾点，不做标题党，"
+                             "只输出标题本身（不要引号、不要解释）。"},
+                            {"role": "user", "content": title}], max_tokens=300)
+            cand_t = (raw or "").strip().strip('"').splitlines()[0].strip() if raw else ""
+            if cand_t and _pc.title_len(cand_t) <= limit:
+                t = cand_t
+        except Exception:  # noqa: BLE001
+            pass
+    return t
+
+
 def _need(cand, channel):
+    _t = _rules.thresholds()
     if channel == "gzh":
-        return 7
-    return 8 if cand.get("format") == "story" else 7
+        return _t.get("gzh", {}).get("min_score", 7)
+    _x = _t.get("xhs", {})
+    return _x.get("story_min_score", 8) if cand.get("format") == "story" else _x.get("news_min_score", 7)
 
 
 REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给【本篇】与各【候选】(同事件或同人物历史的旧文)，'
@@ -322,7 +331,10 @@ def _produce(cand, pkg, channel, first=None):
                 title = title or (d.get("gzh_title") or "")
         body, _ = _dh.fix_text(body)
         body = _kana.replace(body)
-        title = _kana.replace(_trim_title(title))
+        body, _ = _nv.replace(body)
+        title = _kana.replace(title)
+        title, _ = _nv.replace(title)
+        title = _fit_title(title, channel)
         mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"], channel)
         if not (body or "").strip():          # 正文为空 → block + 报错（写 error log）
             _msg = (f"write 正文为空（LLM 未产出正文）key={cand['key'][:12]} "
@@ -356,10 +368,14 @@ def _produce(cand, pkg, channel, first=None):
         _kana.log_pending(body, note=cand["key"][:12])
     except Exception:  # noqa: BLE001
         pass
+    try:
+        _nw = _nv.check(title, body, cand.get("content_ja") or "")
+    except Exception:  # noqa: BLE001
+        _nw = []
     return {"channel": channel, "ok": ok, "attempts": attempts, "title": title, "text": body,
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
             "score": score.get("total"), "problems": mech.get("problems") or [],
-            "related": llm_related}
+            "related": llm_related, "warns": _nw}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -442,8 +458,16 @@ def write_one(cand, dry_run=True, force_channel=None):
             upd["preselected"] = want_ps
         if upd:
             _news.update_news(cand["key"], upd)
+    _mr = None
+    try:
+        _mr = _gate.check(cand.get("title") or "", (versions[0]["text"] if versions else ""))
+    except Exception:  # noqa: BLE001
+        _mr = None
+    if not dry_run and _mr:
+        _news.update_news(cand["key"], _mr)
     prim = versions[0]
     return {"key": cand["key"][:12], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
+            "manual": _mr,
             "attempts": max(v["attempts"] for v in versions), "channel": ch,
             "title": prim["title"], "text": prim["text"], "body": prim["body"], "h2": prim["h2"],
             "kana": prim["kana"], "method": method, "score": prim["score"], "related": rk_s,
@@ -483,13 +507,27 @@ def recommend_and_schedule(n=5, seed=None):
     return picks, plan, bad, reasons, backups, overview
 
 
-def _split_candidates(cands):
+def _print_split_preview(cands):
+    """拆篇预览（只读）：打印 cluster 体量与分组，不写库。"""
+    from services import split_write as _sp
+    for c in cands:
+        L = _sp.cluster_text_len(c)
+        hit = _sp.should_split(c)
+        print(f"{'SPLIT' if hit else 'keep '} {c['key'][:12]} cluster体量={L} "
+              f"主={(c.get('title') or '')[:24]}")
+        if hit:
+            for i, g in enumerate(_sp.split_groups(c), 1):
+                print(f"      组{i}: {[k[:8] for k in g]}")
+
+
+def _split_candidates(cands, threshold=None):
     """关联素材体量过大 → 拆多篇（密度极限 fallback，默认关闭）。"""
     from services import split_write as _sp
+    _th = threshold or _sp.DEFAULT_THRESHOLD
     out = []
     for c in cands:
-        if _sp.should_split(c):
-            for g in _sp.split_groups(c):
+        if _sp.should_split(c, _th):
+            for g in _sp.split_groups(c, _th):
                 main = _news.get_by_key(g[0])
                 if main:
                     out.append({**main, "cluster_keys": ",".join(g[1:])})
@@ -499,7 +537,7 @@ def _split_candidates(cands):
 
 
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
-        verify_gallery=False):
+        verify_gallery=False, split_threshold=None, split_preview=False):
     if key:
         import sqlite3
         conn = sqlite3.connect(paths.sqlite_path())
@@ -511,8 +549,20 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         cands = [c for c in cands if c]
     else:
         cands = pick_candidates(n)
-        if split_large:
-            cands = _split_candidates(cands)
+    if not key and cands:
+        try:
+            _cov = _batches.covered_keys(_batches.recent())
+            _backlog = [c["key"][:12] for c in cands if c["key"] not in _cov]
+            if _backlog:
+                _more = "..." if len(_backlog) > 8 else ""
+                print(f"[跨日] {len(_backlog)} 篇为新/漏写候选：{_backlog[:8]}{_more}")
+        except Exception:  # noqa: BLE001
+            pass
+    if split_preview:
+        _print_split_preview(cands)
+        return []
+    if split_large:
+        cands = _split_candidates(cands, split_threshold)
     results = [write_one(c, dry_run=dry_run, force_channel=force_channel) for c in cands]
     for r in results:
         if r.get("bullet"):
@@ -528,6 +578,13 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
     passed = sum(1 for r in results if r["ok"])
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"
           f"（{'dry-run，未入库' if dry_run else '已入库'}）")
+    if not dry_run and not key:                       # 批次 manifest（跨日漏写检测 + 跳过清单）
+        import datetime as _dt
+        processed = [{"key": r["full_key"], "ok": r["ok"], "channel": r.get("channel"),
+                      "manual": bool(r.get("manual"))} for r in results if r.get("full_key")]
+        skipped = [{"key": r["full_key"], "reason": "；".join(r.get("problems") or ["跳过"])}
+                   for r in results if r.get("full_key") and r.get("skipped")]
+        _batches.save(str(_dt.datetime.now().date()), {"processed": processed, "skipped": skipped})
 
     if not dry_run and not key:          # 指定 key 重写时不重跑阶段6
         picks, plan, bad, reasons, backups, ov = recommend_and_schedule(5)
@@ -591,6 +648,11 @@ def main(argv=None):
                     help="强制渠道（默认由 LLM 判断）")
     ap.add_argument("--verify-gallery", action="store_true",
                     help="图集 one-way 触发后再轮询一次确认（默认只触发不等）")
+    ap.add_argument("--split-threshold", type=int, default=None,
+                    help="拆篇体量阈值（默认读 config，3000）")
+    ap.add_argument("--split-preview", action="store_true",
+                    help="只打印拆篇分组预览，不写稿（只读）")
     a = ap.parse_args(argv)
-    run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel, a.verify_gallery)
+    run(a.n, a.deliver, a.dry_run, a.split_large, a.key, a.force_channel, a.verify_gallery,
+        a.split_threshold, a.split_preview)
     return 0

@@ -1,0 +1,25 @@
+{
+  "_comment": "写稿机械门禁阈值与占比；precheck/write._need/density 统一读此表",
+  "xhs": {
+    "title_max": 20,
+    "story_min_score": 8,
+    "news_min_score": 7,
+    "story_body_min": 800,
+    "story_h2_min": 2,
+    "density_min": 30,
+    "kana_max": 5
+  },
+  "gzh": {
+    "title_max": 30,
+    "min_score": 7
+  },
+  "s_ratio_max_pct": 15,
+  "batch": {
+    "window_days": 3,
+    "manifest_keep": 14,
+    "pool_limit": 300
+  },
+  "split": {
+    "threshold": 3000
+  }
+}
