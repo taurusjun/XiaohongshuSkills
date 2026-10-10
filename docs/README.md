@@ -19,6 +19,8 @@
 |---|---|
 | [container-env.md](container-env.md) | 容器环境变量 / 代理 / LLM(thinking) / 交付 配置说明 |
 | [write-skill-parity.md](write-skill-parity.md) | **新旧写稿 skill 对齐**：6 阶段逐条对照 + 补回项（renwei 六类信号 / both 双版本 / routing 接入 / export 长文 / 拆多篇 / references 命中度） |
+| [container-fetch-and-cron.md](container-fetch-and-cron.md) | **容器 Fetch 独立 Chrome + cron 时间表**：9333 端口/headless/跳图片/用完即关；定时=生产+1h；无 wait_idle/随机退避 |
+| [login-accounts.md](login-accounts.md) | **登录账户识别**：昵称/profileId/小红书号，`accounts_meta.json`，admin UI 显示与一致性校验 |
 | [feedback-patterns.md](feedback-patterns.md) | **发布规律（feedback_patterns）**：结构化字段含义 + 决策接入（write/推荐）+ Admin UI 人工 review 页 |
 | [review-skill-parity.md](review-skill-parity.md) | **新旧 Review skill 对齐**：4 层逐条对照表 + 4 处补回的硬动作（正文入料 / validate-tables / data-feedback-patterns 更新 / 中日双形检索） |
 | [skill-migration-test-plan.md](skill-migration-test-plan.md) | **P4 测试计划**：review/写稿 skill 迁移的分层测试、黄金集、LLM 机械门禁、单写方/并发、端到端门槛 |

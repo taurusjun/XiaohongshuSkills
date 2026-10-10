@@ -136,3 +136,9 @@ XHS_EXPORTS_SRC=xhs-exports      # ~/.cache/xhs_exports
 改完 `docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d`。
 
 > 卷数据丢失时机：`docker compose down -v`、`docker volume rm/prune`、`colima delete`/重建 VM。放宿主路径可规避前三者。
+
+## 10. fetch 独立 Chrome / 媒体 tab / mcp
+- `XHS_FETCH_CDP_PORT=9333`、`XHS_FETCH_PROFILE=/data/chrome-profiles/fetch`：fetch 专用 Chrome（headless、直连、跳图片渲染、用完即关），与主 Chrome(9222) 隔离。详见 [container-fetch-and-cron.md](container-fetch-and-cron.md)。
+- 主 Chrome 仍 9222；`ops/cdp_keeper.py` 会把 `/explore` 视频流页自动切到账户 profile 页（读 `data/accounts_meta.json`）。
+- **mcp（fastmcp :5001）已停用**（从 `ops/supervisord.conf` 移除）。
+- 账户识别（昵称/profileId/小红书号）见 [login-accounts.md](login-accounts.md)。

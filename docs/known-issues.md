@@ -166,3 +166,11 @@ if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
 - **问题 2（note_id）是健壮性问题**：精确匹配退化为 0.7 阈值标题模糊匹配，实测覆盖 93.5%，功能上够用；代价是失去交叉校验锚点，标题改写/相似标题场景下有错配风险。
 
 两处都**不影响发布**。优先级建议：先确认问题 1 的口径是否还要（决定是修链路还是清查询），问题 2 可排在其后。
+
+## 容器内已知坑（2026-10）
+
+- **crontab 的 `%` 必须转义**：未转义的 `%`（如 `RANDOM%1800`）会让 cron 从 `%` 处截断命令（其后作为 stdin）→ 任务**静默不执行**。修：写成 `\%`。
+- **fetch profile 属主**：`/data/chrome-profiles/fetch` 必须是 `user`；若被 root 创建，user 起的 Chrome 打不开端口（fetch 空跑）。修：`chown -R user:user`。
+- **fetch 锁（`_fetch_running`）**：已有抓取时新触发返回 `locked:true` → `fetch_runner` 静默 `exit 0`（正常互斥）；异常残留用 `POST /api/admin/reset-fetch-lock` 复位。
+- **gallery thefirsttimes**：`/report/{id}/attachment/{slug}/` 路径此前未支持（只认 `/news/`）→ 图集为空；已修（支持 `news|report` + 附件页回退 + 直连兜底 + 跨页去重）。
+- **mcp 崩溃循环**：`fastmcp` 因 SOCKS 代理报错在 supervisord `autorestart` 下每 ~3s 重启、持续烧核 → 已移除 `[program:mcp]`。
