@@ -797,6 +797,12 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             _enqueue_failure(c, "；".join(r.get("problems") or ["未达标"]), "gate",   # 质量确认放弃
                              attempts=r.get("attempts", 0), channel=r.get("channel") or "",
                              title=r.get("title") or "")
+        if not dry_run and r.get("ok"):                    # 写稿成功 → 清掉该 key 旧失败记录
+            try:
+                from services import write_failures as _wf
+                _wf.mark_resolved(c["key"], "写稿成功")
+            except Exception:  # noqa: BLE001
+                pass
         results.append(r); _emit(r)
     passed = sum(1 for r in results if r["ok"])
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"

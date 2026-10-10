@@ -102,7 +102,7 @@ def check_text(text, spec, channel="xhs"):
 
     ja = spec.get("ja") or 0
     density = (body_len / ja * 100) if ja else None
-    if not is_gzh and density is not None and density < DENSITY_MIN:     # gzh 不套 xhs 30% 密度门
+    if not is_gzh and density is not None and density < DENSITY_MIN - 0.05:   # 0.05 容差防 30.0<30 假报     # gzh 不套 xhs 30% 密度门
         problems.append(f"密度 {density:.1f}% < {DENSITY_MIN}%（先复核是否合并稿误用分母，再扩充）")
 
     return dict(key="", title=title, body_len=body_len, h2=len(h2), density=density,
