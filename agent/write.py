@@ -536,12 +536,18 @@ def _produce(cand, pkg, channel, first=None):
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
-    # 3 轮后仍只剩「假名」问题 → 豁免通过（但记 warn 留痕）
-    _probs = list(mech.get("problems") or [])
-    if _probs and all("假名" in p for p in _probs):
-        mech["kana_exempt"] = _probs
+    # 3 轮改稿仍过不了门禁/评分 → **一律通过**（不阻断），问题记入错误表(warn)供后续调整
+    _issues = list(mech.get("problems") or [])
+    if (score.get("total") or 0) < need:
+        _issues.append(f"内容评分 {score.get('total')}/10 < 门槛 {need}")
+    _issues = list(dict.fromkeys(_issues))
+    if (body or "").strip():                       # 有正文 → 一律通过（问题降级为 warn）
+        ok = True
         mech["problems"] = []
-    ok = not mech["problems"] and (score.get("total") or 0) >= need
+        if _issues:
+            mech["gate_exempt"] = _issues
+    else:                                          # 空正文无法入库 → 仍算失败
+        ok = False
     if mech.get("den_exempt"):
         _log(f"  密度豁免（{pkg.get('material_type')}）：{'; '.join(mech['den_exempt'])[:60]}")
     try:
@@ -556,7 +562,7 @@ def _produce(cand, pkg, channel, first=None):
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
             "score": score.get("total"), "problems": mech.get("problems") or [],
             "related": llm_related, "warns": _nw, "exempt": mech.get("exempt") or [],
-            "kana_exempt": mech.get("kana_exempt") or [], "score_obj": score}
+            "gate_exempt": mech.get("gate_exempt") or [], "score_obj": score}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -891,6 +897,8 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
                 tail = "" if v["ok"] else " | " + "; ".join(v["problems"])
                 if v.get("exempt"):
                     tail = " | 豁免(" + "; ".join(v["exempt"])[:60] + ")"
+                elif v.get("gate_exempt"):
+                    tail = " | 豁免(" + "; ".join(v["gate_exempt"])[:80] + ")"
                 print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
                       f"m={r.get('method', '')} score={v['score']} body={v['body']} ##={v['h2']} "
                       f"kana={v['kana']} related={(r.get('related') or '')[:24]}{tail}", flush=True)
@@ -915,8 +923,9 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         if not dry_run and r.get("ok"):
             try:
                 from services import write_failures as _wf
-                if r.get("kana_exempt"):
-                    _wf.warn(c["key"], "假名豁免：" + "；".join(r["kana_exempt"])[:120], category="gate_kana")
+                if r.get("gate_exempt"):
+                    _wf.warn(c["key"], "门禁/评分豁免：" + "；".join(r["gate_exempt"])[:150],
+                             category="gate_exempt")
                 else:
                     _wf.mark_resolved(c["key"], "写稿成功")     # 清掉旧失败记录
             except Exception:  # noqa: BLE001
