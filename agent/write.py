@@ -376,7 +376,8 @@ def _produce(cand, pkg, channel, first=None):
                 try:
                     res = _kana.new_terms(body)
                     if res:
-                        fb.append("残留假名必须替换为中文/罗马字（标题+正文都要）：" + "、".join(res[:8]))
+                        fb.append("残留假名必须替换为中文/罗马字（标题+正文都要，"
+                                  "**尤其《》里的日文作品名/节目名/舞台名要中译**）：" + "、".join(res[:8]))
                 except Exception:  # noqa: BLE001
                     pass
                 if any("格言公式" in str(p) for p in fb):     # renwei 误报高发：给具体改写指引
