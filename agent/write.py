@@ -115,7 +115,7 @@ def prepare_package(cand):
                 if h["key"] not in related_keys]
         if hist:
             hs = [x for x in (_news.get_by_key(k) for k in hist) if x]
-            hist_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}" for s in hs)
+            hist_text = "\n".join(f"[{s['key'][:12]}] {s.get('title')}｜旧文节选：{((s.get('rewritten_content') or s.get('content_ja') or ''))[:400]}" for s in hs)
             related_keys += hist
     except Exception:  # noqa: BLE001
         pass
@@ -145,7 +145,7 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
     if pkg.get("merge_text"):
         user += "\n\n=== 同事件关联（可合并：把这些素材的角度并入正文）===\n" + pkg["merge_text"]
     if pkg.get("hist_text"):
-        user += "\n\n=== 同人物历史（仅供前情/避免重复，**不合并**）===\n" + pkg["hist_text"]
+        user += ("\n\n=== 同人物历史（前情参考，按关联类型处理：时间线补充=开头交代旧事件、主体写新进展；人物呼应=续篇口吻、一句带过前情；新角度=换角度切入、别重复旧文；不要照抄旧文）===\n" + pkg["hist_text"])
     if pkg.get("patterns"):
         user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
                  "来自 feedback_patterns 表）===\n" + pkg["patterns"])
