@@ -513,6 +513,11 @@ def write_one(cand, dry_run=True, force_channel=None):
          f"关联候选={len(pkg.get('rel_candidates') or [])}")
     pkg["material_type"] = classify_material(cand)          # 1 次 LLM 通读判类型
     _log(f"  素材类型: {pkg['material_type']}")
+    if not dry_run:
+        try:
+            _news.update_news(cand["key"], {"material_type": pkg["material_type"]})   # 落库
+        except Exception:  # noqa: BLE001
+            pass
     # 第3层：先判关联类型（旧 skill 3b），再按类型写
     _rels = classify_relations(cand, pkg)
     _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
