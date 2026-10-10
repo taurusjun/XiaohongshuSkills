@@ -422,6 +422,7 @@ def _produce(cand, pkg, channel, first=None):
                 fb = list(mech.get("problems") or [])
                 _x = _rules.xhs_th()
                 _blen = mech.get("body_len") or len(body)
+                _score_msg = ""
                 if (score.get("total") or 0) < need:
                     _dims = ("爆发点", "情绪价值", "信息增量", "内容深度", "标题质量")
                     _low, _rs = [], []
@@ -445,7 +446,7 @@ def _produce(cand, pkg, channel, first=None):
                         _msg += "\n修改建议：" + str(score.get("建议"))
                     if _blen > _hard:
                         _msg += f"\n（正文 {_blen} 字超过 {_hard}：必须精简到 ≤{_hard}）"
-                    fb.append(_msg)
+                    _score_msg = _msg
                 try:
                     res = _kana.new_terms(body)
                     if res:
@@ -469,6 +470,8 @@ def _produce(cand, pkg, channel, first=None):
                 if body and len(body) < pkg["tmin"]:
                     fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
                                   f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
+                if _score_msg:                          # 评分+建议 置顶（最显眼）
+                    fb.insert(0, _score_msg)
                 ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
                        "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
                 prev = (title, body, channel)
