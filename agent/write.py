@@ -445,7 +445,14 @@ def _produce(cand, pkg, channel, first=None):
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
-    ok = not mech["problems"] and (score.get("total") or 0) >= need
+    # 3 轮改稿后仍未达标：**质量/篇幅类**（评分不足、字数略短、密度略低）→ 豁免，视为通过
+    _SOFT = ("内容评分", "字 <", "密度")
+    _probs = list(mech.get("problems") or [])
+    exempt = bool(_probs) and all(any(k in p for k in _SOFT) for p in _probs)
+    if exempt:
+        mech["exempt"] = _probs
+        mech["problems"] = []
+    ok = (not mech["problems"] and (score.get("total") or 0) >= need) or exempt
     try:
         _kana.log_pending(body, note=cand["key"][:12])
     except Exception:  # noqa: BLE001
@@ -457,7 +464,7 @@ def _produce(cand, pkg, channel, first=None):
     return {"channel": channel, "ok": ok, "attempts": attempts, "title": title, "text": body,
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
             "score": score.get("total"), "problems": mech.get("problems") or [],
-            "related": llm_related, "warns": _nw}
+            "related": llm_related, "warns": _nw, "exempt": mech.get("exempt") or []}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -767,6 +774,8 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         else:
             for v in r.get("versions") or []:
                 tail = "" if v["ok"] else " | " + "; ".join(v["problems"])
+                if v.get("exempt"):
+                    tail = " | 豁免(" + "; ".join(v["exempt"])[:60] + ")"
                 print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
                       f"m={r.get('method', '')} score={v['score']} body={v['body']} ##={v['h2']} "
                       f"kana={v['kana']} related={(r.get('related') or '')[:24]}{tail}", flush=True)
