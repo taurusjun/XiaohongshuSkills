@@ -420,6 +420,8 @@ def _produce(cand, pkg, channel, first=None):
         else:
             if attempts > 1:
                 fb = list(mech.get("problems") or [])
+                _x = _rules.xhs_th()
+                _blen = mech.get("body_len") or len(body)
                 if (score.get("total") or 0) < need:
                     _dims = ("爆发点", "情绪价值", "信息增量", "内容深度", "标题质量")
                     _low, _rs = [], []
@@ -430,11 +432,19 @@ def _produce(cand, pkg, channel, first=None):
                             _low.append(_k)
                         if isinstance(v, dict) and v.get("reason"):
                             _rs.append(f"{_k}：{v['reason']}")
-                    _msg = f"内容评分 {score.get('total')}/10 低于门槛 {need}，重点加强：{'、'.join(_low) or '各维度'}"
+                    _soft, _hard = _x.get("story_soft_max", 900), _x.get("story_hard_max", 1300)
+                    _msg = f"内容评分 {score.get('total')}/10 未达门槛 {need}"
+                    if _blen > _soft:                      # 超长+评分 → 合成「二选一」
+                        _msg += (f"；且正文 {_blen} 字偏长。**二选一**：① 精简到 ≤{_soft} 字（删重复/铺陈）；"
+                                 f"② 把内容深度/信息增量补足到评分 ≥{need}（长必须有长的价值）。")
+                    else:
+                        _msg += f"，重点加强：{'、'.join(_low) or '各维度'}。"
                     if _rs:
                         _msg += "\n评审理由：" + "；".join(_rs)
                     if score.get("建议"):
                         _msg += "\n修改建议：" + str(score.get("建议"))
+                    if _blen > _hard:
+                        _msg += f"\n（正文 {_blen} 字超过 {_hard}：必须精简到 ≤{_hard}）"
                     fb.append(_msg)
                 try:
                     res = _kana.new_terms(body)
@@ -455,15 +465,6 @@ def _produce(cand, pkg, channel, first=None):
                               "改成『X的方向/说法/…』或平铺陈述句，标题行也要改。")
                 if any("标志性动词" in str(p) for p in fb):
                     fb.append("去掉『标志着/见证了/体现/彰显/折射出』这类拔高动词，直接陈述事实。")
-                _x = _rules.xhs_th()
-                _blen = mech.get("body_len") or len(body)
-                if (score.get("total") or 0) < need and _blen > _x.get("story_soft_max", 900):
-                    fb.append(f"正文 {_blen} 字偏长但评分 {score.get('total')}/{need}：要么精简到 ≤"
-                              f"{_x.get('story_soft_max',900)} 字，要么把内容深度/信息增量补到 ≥{need}"
-                              f"（长必须有长的价值）。")
-                if _blen > _x.get("story_hard_max", 1300):
-                    fb.append(f"正文 {_blen} 字超过 {_x.get('story_hard_max',1300)}：必须精简到 ≤"
-                              f"{_x.get('story_hard_max',1300)}（仅留最有价值段落）。")
                 fb = list(dict.fromkeys(fb))
                 if body and len(body) < pkg["tmin"]:
                     fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
