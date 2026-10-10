@@ -234,43 +234,121 @@ def _extract_json(raw):
     return None
 
 
-def _score_call(sysd, usr, max_tokens, dims, agg="sum", tries=2):
-    """LLM 评分：解析容错 + 重试。缺 total 时按维度合成（sum/avg）；全失败才返回 total=0。"""
-    last = None
-    for _ in range(tries):
+_CONTENT_DIM_KEYS = [("标题", "剧情感"), ("标题", "冲突感"), ("标题", "猎奇感"), ("标题", "用户共鸣"),
+                     ("内容", "原创度"), ("内容", "趣味性"), ("内容", "有用信息"), ("内容", "对立信息")]
+_GZH_DIMS = ["标题吸引力", "叙事质量", "公众号适配度"]
+
+
+def _fine_dims(keys):
+    dims = _rules.load("scoring_dimensions.json").get("dimensions", [])
+    by = {(d.get("category"), d.get("name")): d for d in dims}
+    return [by[k] for k in keys if k in by]
+
+
+def _combine(scores, dims):
+    """按 review 口径合成：每类「加分和 − 减分和」，clamp 0–5；total = 标题 + 内容（0–10）。"""
+    def ssum(cat, sign):
+        t = 0.0
+        for d in dims:
+            if d.get("category") != cat or d.get("direction") != sign:
+                continue
+            v = scores.get(d["name"])
+            v = v.get("score") if isinstance(v, dict) else v
+            if isinstance(v, (int, float)):
+                t += v
+        return t
+    title = max(0.0, min(5.0, ssum("标题", "plus") - ssum("标题", "minus")))
+    content = max(0.0, min(5.0, ssum("内容", "plus") - ssum("内容", "minus")))
+    return round(title + content, 1), round(title, 1), round(content, 1)
+
+
+def _score_multi(sysd, usr, names, max_tokens=4000, run_times=2):
+    """LLM 评分：逐维 0/0.5/1；跑 run_times 次取**偏低值**（min total）。缺 total 按均分合成。"""
+    best, vals = None, []
+    for _ in range(max(1, run_times)):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
                             {"role": "user", "content": usr}], max_tokens=max_tokens)
-        except Exception as e:  # noqa: BLE001
-            last = {"error": str(e)}
+            d = _extract_json(raw)
+        except Exception:  # noqa: BLE001
+            d = None
+        if not isinstance(d, dict):
             continue
-        d = _extract_json(raw)
-        if isinstance(d, dict):
-            if not isinstance(d.get("total"), (int, float)):
-                nums = [d[k] for k in dims if isinstance(d.get(k), (int, float))]
-                if nums:
-                    d["total"] = sum(nums) if agg == "sum" else round(sum(nums) / len(nums))
-            if isinstance(d.get("total"), (int, float)):
-                return d
-            last = {"error": "no total", "raw": (raw or "")[:200]}
-        else:
-            last = {"error": "json parse fail", "raw": (raw or "")[:200]}
-    return {**(last or {}), "total": 0}
+        tot = None
+        nums = []
+        for n in names:                       # 一律按维度算，忽略 LLM 的 total
+            v = d.get(n)
+            v = v.get("score") if isinstance(v, dict) else v
+            if isinstance(v, (int, float)):
+                nums.append(v)
+        if nums:
+            tot = round(10 * sum(nums) / len(names), 1)
+        if isinstance(tot, (int, float)):
+            vals.append(tot)
+            if best is None or tot < best["total"]:
+                best = dict(d); best["total"] = tot
+    if best is None:
+        return {"total": 0, "error": "score fail", "runs": vals}
+    best["runs"] = vals
+    return best
 
 
-def score_content(title, body, max_tokens=4000):
-    sysd = "你是中文内容评审。只输出严格 JSON：{\"爆发点\":n,\"情绪价值\":n,\"信息增量\":n,\"内容深度\":n,\"标题质量\":n,\"total\":n}（各0-2）。"
-    usr = _read(REVIEW_PROMPT)[:3000] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
-    return _score_call(sysd, usr, max_tokens,
-                       ["爆发点", "情绪价值", "信息增量", "内容深度", "标题质量"], agg="sum")
+_GATE_5 = [("爆发点", "开头钩子：冲突/悬念/名场面"), ("情绪价值", "读完的情绪波动/记忆点"),
+           ("信息增量", "比原文多的新角度/细节/合并新视角"), ("内容深度", "背景/关系/因果，路人看得懂"),
+           ("标题质量", "有钩子+信息+不超20字（含全/半角；超字数直接0）")]
+_MINUS_HINT = "**减分信号**（命中则相应维度压低、不得满分）：离题、啰嗦重复、负面情绪、震惊体、简单通知。"
 
 
-def score_gzh(title, body, max_tokens=4000):
-    sysd = '你是公众号内容评审。只输出 JSON：{"标题吸引力":n,"叙事质量":n,"公众号适配度":n,"total":n}（各1-10，合格线7）。'
-    usr = ("先做去魅测试：去掉所有日本专名后，文章是否仍有独立传播价值？再做背景锚定：开头第一段专有名词是否过多/路人看不懂？\n\n"
-           f"标题：{title}\n\n{body[:4000]}")
-    return _score_call(sysd, usr, max_tokens,
-                       ["标题吸引力", "叙事质量", "公众号适配度"], agg="avg")
+def score_content(title, body, max_tokens=4000, run_times=2):
+    """(A) 5 维写稿门槛 0-10（加严+理由）+(B) 21 维流量明细；跑 run_times 次取偏低。"""
+    dims21 = [d for d in _rules.load("scoring_dimensions.json").get("dimensions", [])
+              if d.get("category") in ("标题", "内容")]
+    gate_txt = "\n".join(f"- {n}（0/1/2）：{desc}" for n, desc in _GATE_5)
+    dims_txt = "\n".join(f"- {d['name']}（{'加' if d.get('direction')=='plus' else '减'}）：{d.get('definition','')}"
+                         for d in dims21)
+    sysd = ("你是严格的中文内容评审。**按各维度的 2/1/0 判据严格打分**：达到 2 分判据才给 2；"
+            "明显一般给 1；不达标给 0。逐维附一句理由。\n"
+            "任务A｜写稿质量 5 维，**每维 0/1/2 并附一句理由**：\n" + gate_txt + "\n" + _MINUS_HINT + "\n"
+            "任务B｜流量维度（0/0.5/1，供复盘）：\n" + dims_txt + "\n"
+            '只输出严格 JSON：{"gate":{"爆发点":{"score":1,"reason":".."}, ... 共5维}, '
+            '"dims":{"剧情感":0.5, ...}, "total":n}，total=5维之和(0-10)。')
+    usr = _read(REVIEW_PROMPT)[:1200] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
+    best = None
+    for _ in range(max(1, run_times)):
+        try:
+            raw = llm.chat([{"role": "system", "content": sysd},
+                            {"role": "user", "content": usr}], max_tokens=max_tokens)
+            d = _extract_json(raw)
+        except Exception:  # noqa: BLE001
+            d = None
+        if not isinstance(d, dict):
+            continue
+        gate = d.get("gate") or {}
+        vals = []
+        for n, _ in _GATE_5:
+            v = gate.get(n)
+            v = v.get("score") if isinstance(v, dict) else v
+            if isinstance(v, (int, float)):
+                vals.append(v)
+        if len(vals) != len(_GATE_5):
+            continue
+        tot = sum(vals)
+        if best is None or tot < best[0]:
+            best = (tot, d)
+    if best is None:
+        return {"total": 0, "error": "score fail"}
+    tot, d = best
+    d["total"] = round(tot, 1)
+    return d
+
+
+def score_gzh(title, body, max_tokens=4000, run_times=2):
+    sysd = ("你是严格的公众号内容评审。**宁可偏低不可偏高**（多数 6~8，极出色才 9~10）。"
+            "先做去魅测试（去掉日本专名后是否仍有独立传播价值）与背景锚定（首段专名是否过多/路人看不懂）。"
+            "逐维度打分 0/0.5/1（0=不达标,0.5=一般,1=出色）并**附一句理由**；"
+            '只输出严格 JSON：{"标题吸引力":{"score":0.5,"reason":"..."},"叙事质量":{...},"公众号适配度":{...},"total":n}，'
+            "total = round(10 × 均分, 1)。")
+    return _score_multi(sysd, f"标题：{title}\n\n{body[:4000]}", _GZH_DIMS, max_tokens, run_times)
 
 
 def _resolve_keys(prefixes):
@@ -507,7 +585,8 @@ def _produce(cand, pkg, channel, first=None):
     return {"channel": channel, "ok": ok, "attempts": attempts, "title": title, "text": body,
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
             "score": score.get("total"), "problems": mech.get("problems") or [],
-            "related": llm_related, "warns": _nw, "exempt": mech.get("exempt") or []}
+            "related": llm_related, "warns": _nw, "exempt": mech.get("exempt") or [],
+            "score_obj": score}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -612,6 +691,19 @@ def write_one(cand, dry_run=True, force_channel=None):
     if not dry_run and _mr:
         _news.update_news(cand["key"], _mr)
     prim = versions[0]
+    if not dry_run and prim.get("score_obj"):
+        _so = prim["score_obj"]
+        _d21 = [d for d in _rules.load("scoring_dimensions.json").get("dimensions", [])
+                if d.get("category") in ("标题", "内容")]
+        _, _ts, _cs = _combine(_so.get("dims") or {}, _d21)   # 21 维明细 → 标题/内容(各0-5)
+        try:
+            _news.update_news(cand["key"], {
+                "write_score": _so.get("total") or 0,          # 5 维门槛总分(0-10)
+                "write_title_score": _ts,
+                "write_content_score": _cs,
+                "write_dims": json.dumps(_so, ensure_ascii=False)[:4000]})
+        except Exception:  # noqa: BLE001
+            pass
     return {"key": cand["key"][:12], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
             "manual": _mr,
             "attempts": max(v["attempts"] for v in versions), "channel": ch,
