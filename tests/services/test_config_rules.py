@@ -6,8 +6,8 @@ from services import routing, rules, precheck, batches
 def test_thresholds_config():
     t = rules.thresholds()
     assert t["xhs"]["title_max"] == 20
-    assert t["xhs"]["story_min_score"] == 6
-    assert t["xhs"]["news_min_score"] == 5
+    assert t["xhs"]["story_min_score"] == 8
+    assert t["xhs"]["news_min_score"] == 7
     assert t["gzh"]["min_score"] == 7
     assert t["batch"]["window_days"] == 3
     assert t["split"]["threshold"] == 3000
@@ -63,13 +63,3 @@ def test_batches_roundtrip(tmp_path, monkeypatch):
     m = batches.load("2026-10-10")
     assert batches.covered_keys([m]) == {"k1", "k2"}
     assert batches.skipped_map([m])["k2"].startswith("纯重复")
-
-
-def test_need_tiers():
-    import agent.write as W
-    story = {"format": "story"}
-    assert W._need(story, "xhs", 800) == 6          # ≤900 → 6
-    assert W._need(story, "xhs", 900) == 6
-    assert W._need(story, "xhs", 1200) == 7         # >900 → 7（长必须有长的价值）
-    assert W._need({"format": "news"}, "xhs", 1200) == 5
-    assert W._need(story, "gzh", 1200) == 7
