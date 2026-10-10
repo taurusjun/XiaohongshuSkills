@@ -456,8 +456,9 @@ def _produce(cand, pkg, channel, first=None):
                                 _sn = _ln.strip()
                                 if _sn and _sn not in _ctxs:
                                     _ctxs.append(_sn[:90])
-                        fb.append("残留假名：把**下列整句**里含假名的词/作品名/节目名翻成中文或罗马字"
-                                  "（标题+正文都要，不要留下任何假名）：\n"
+                        fb.append("残留假名：把**下列整句**里含假名的词/作品名/节目名/招牌流行语翻成中文或罗马字"
+                                  "（标题+正文都要，不要留下任何假名；**拟声/口头禅/流行语用罗马字**，"
+                                  "如 じぇじぇじぇ→jejeje）：\n"
                                   + "\n".join(f"    · {c}" for c in _ctxs[:6]))
                 except Exception:  # noqa: BLE001
                     pass
