@@ -11,7 +11,7 @@ from services import paths
 
 __all__ = ["ensure", "record", "due", "resolve", "mark_resolved", "mark_manual",
            "list_open", "list_all", "set_due_now", "stats", "categorize",
-           "CATEGORY_LABELS", "RETRY_DELAY_MIN"]
+           "CATEGORY_LABELS", "warn", "RETRY_DELAY_MIN"]
 
 RETRY_DELAY_MIN = 60
 
@@ -89,14 +89,15 @@ _DDL = """CREATE TABLE IF NOT EXISTS write_failures (
     created_at    TEXT DEFAULT '',
     updated_at    TEXT DEFAULT '',
     traceback     TEXT DEFAULT '',
-    category      TEXT DEFAULT ''
+    category      TEXT DEFAULT '',
+    level         TEXT DEFAULT 'error'
 )"""
 
 
 def ensure():
     with _db() as c:
         c.execute(_DDL)
-        for _col in ("traceback", "category"):        # 老表补列（幂等）
+        for _col in ("traceback", "category", "level"):  # 老表补列（幂等）
             try:
                 c.execute(f"ALTER TABLE write_failures ADD COLUMN {_col} TEXT DEFAULT ''")
             except sqlite3.OperationalError:
@@ -107,7 +108,7 @@ def _fmt(dt):
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def record(key, reason, stage="", attempts=0, channel="", title="", tb="", category=None):
+def record(key, reason, stage="", attempts=0, channel="", title="", tb="", category=None, level="error"):
     """记录一次写稿失败；category 缺省由 categorize() 归一化（供主因分析）。"""
     ensure()
     category = category or categorize(reason, stage, tb)
@@ -117,15 +118,15 @@ def record(key, reason, stage="", attempts=0, channel="", title="", tb="", categ
         row = c.execute("SELECT key FROM write_failures WHERE key=?", (key,)).fetchone()
         if row:
             c.execute("UPDATE write_failures SET reason=?, category=?, stage=?, attempts=attempts+?, "
-                      "channel=?, title=?, traceback=?, status='pending', next_retry_at=?, updated_at=? "
+                      "channel=?, title=?, traceback=?, level=?, status='pending', next_retry_at=?, updated_at=? "
                       "WHERE key=?",
-                      (reason, category, stage, attempts, channel, title, tb or "", nra, _fmt(now), key))
+                      (reason, category, stage, attempts, channel, title, tb or "", level, nra, _fmt(now), key))
         else:
             c.execute("INSERT INTO write_failures (key, reason, category, stage, attempts, channel, "
-                      "title, traceback, retry_count, status, next_retry_at, created_at, updated_at) "
-                      "VALUES (?,?,?,?,?,?,?,?,0,'pending',?,?,?)",
+                      "title, traceback, retry_count, status, next_retry_at, created_at, updated_at, level) "
+                      "VALUES (?,?,?,?,?,?,?,?,0,'pending',?,?,?,?)",
                       (key, reason, category, stage, attempts, channel, title, tb or "", nra,
-                       _fmt(now), _fmt(now)))
+                       _fmt(now), _fmt(now), level))
 
 
 def due(now=None):
@@ -135,6 +136,18 @@ def due(now=None):
         return [dict(r) for r in c.execute(
             "SELECT * FROM write_failures WHERE status='pending' AND next_retry_at<=? "
             "ORDER BY next_retry_at", (_fmt(now),))]
+
+
+def warn(key, reason, category="gate_kana"):
+    """记一条 warn 级（不重试，仅留痕）：status=resolved, level=warn。"""
+    ensure()
+    now = _fmt(datetime.datetime.now())
+    with _db() as c:
+        c.execute("INSERT INTO write_failures (key, reason, category, stage, level, status, "
+                  "created_at, updated_at) VALUES (?,?,?,'gate','warn','resolved',?,?) "
+                  "ON CONFLICT(key) DO UPDATE SET reason=excluded.reason, category=excluded.category, "
+                  "level='warn', status='resolved', updated_at=excluded.updated_at",
+                  (key, reason, category, now, now))
 
 
 def mark_resolved(key, note=""):

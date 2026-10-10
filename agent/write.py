@@ -536,6 +536,11 @@ def _produce(cand, pkg, channel, first=None):
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
+    # 3 轮后仍只剩「假名」问题 → 豁免通过（但记 warn 留痕）
+    _probs = list(mech.get("problems") or [])
+    if _probs and all("假名" in p for p in _probs):
+        mech["kana_exempt"] = _probs
+        mech["problems"] = []
     ok = not mech["problems"] and (score.get("total") or 0) >= need
     if mech.get("den_exempt"):
         _log(f"  密度豁免（{pkg.get('material_type')}）：{'; '.join(mech['den_exempt'])[:60]}")
@@ -551,7 +556,7 @@ def _produce(cand, pkg, channel, first=None):
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
             "score": score.get("total"), "problems": mech.get("problems") or [],
             "related": llm_related, "warns": _nw, "exempt": mech.get("exempt") or [],
-            "score_obj": score}
+            "kana_exempt": mech.get("kana_exempt") or [], "score_obj": score}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -907,10 +912,13 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             _enqueue_failure(c, "；".join(r.get("problems") or ["未达标"]), "gate",   # 质量确认放弃
                              attempts=r.get("attempts", 0), channel=r.get("channel") or "",
                              title=r.get("title") or "")
-        if not dry_run and r.get("ok"):                    # 写稿成功 → 清掉该 key 旧失败记录
+        if not dry_run and r.get("ok"):
             try:
                 from services import write_failures as _wf
-                _wf.mark_resolved(c["key"], "写稿成功")
+                if r.get("kana_exempt"):
+                    _wf.warn(c["key"], "假名豁免：" + "；".join(r["kana_exempt"])[:120], category="gate_kana")
+                else:
+                    _wf.mark_resolved(c["key"], "写稿成功")     # 清掉旧失败记录
             except Exception:  # noqa: BLE001
                 pass
         results.append(r); _emit(r)

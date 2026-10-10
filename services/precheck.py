@@ -31,21 +31,6 @@ KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 __all__ = ["split_title_body", "check_text", "check", "main"]
 
 
-def _name_kana(text):
-    """计入豁免的假名数：**紧邻汉字的假名串**视为人名（如 川川かたまり），不计入门槛。"""
-    n = 0
-    for m in re.finditer(r"[\u3040-\u309f\u30a0-\u30ff]+", text or ""):
-        i, j = m.start(), m.end()
-        before = text[i - 1] if i > 0 else ""
-        after = text[j] if j < len(text) else ""
-
-        def k(ch):
-            return bool(ch) and "\u4e00" <= ch <= "\u9fff"
-        if k(before) or k(after):
-            n += len(m.group())
-    return n
-
-
 def split_title_body(text):
     """返回 (标题|None, 正文)。首行必须带 `## `；缺首行时按整文件当正文。"""
     lines = text.split("\n")
@@ -104,11 +89,9 @@ def check_text(text, spec, channel="xhs"):
         problems.append(f"顿号行 ×{len(dunhao)}（renwei 排比三连前置条件，整段清零）")
 
     kana = len(KANA_RE.findall(body))
-    _full = (title or "") + "\n" + body          # 分隔，防标题末字与正文首假名粘连误判人名
-    kana_all = len(KANA_RE.findall(_full))
-    kana_eff = kana_all - _name_kana(_full)          # 人名假名不计入
-    if kana_eff > KANA_MAX:
-        problems.append(f"假名 {kana_eff} > {KANA_MAX}（人性化：紧邻汉字的人名假名已豁免；含标题行）")
+    if kana > KANA_MAX:
+        problems.append(f"假名 {kana} > {KANA_MAX}（含标题行时按全文计）")
+    kana_all = len(KANA_RE.findall((title or "") + body))
 
     shintai_fail = sorted(set(re.findall(f"[{SHINTAI_FAIL}]", (title or "") + body)))
     if shintai_fail:
