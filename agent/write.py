@@ -49,6 +49,13 @@ def pick_candidates(n=0):
             base = [r for r in base if not str(_sk.get(r["key"], "")).startswith("纯重复")]
     except Exception:  # noqa: BLE001
         pass
+    try:                                             # 失败队列中的稿不重复入选（由 write-retry 处理）
+        from services import write_failures as _wf0
+        _blocked = {r["key"] for r in _wf0.list_open()}
+        if _blocked:
+            base = [r for r in base if r["key"] not in _blocked]
+    except Exception:  # noqa: BLE001
+        pass
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() == "gzh"]
@@ -554,6 +561,71 @@ def recommend_and_schedule(n=5, seed=None):
     return picks, plan, bad, reasons, backups, overview
 
 
+def retry_failures(limit=10):
+    """重试「失败队列」里到期的稿：成功/已写/素材不存在 → 移除；再失败 → 待人工。"""
+    from services import write_failures as _wf
+    rows = _wf.due()[:limit]
+    if not rows:
+        print("[write-retry] 无到期失败稿")
+        return []
+    print(f"[write-retry] 到期 {len(rows)} 篇")
+    out = []
+    for r in rows:
+        key = r["key"]
+        cand = _news.get_by_key(key)
+        if not cand:
+            _wf.mark_resolved(key, "素材不存在（已结）"); out.append((key, "gone"))
+            print(f"  - {key[:12]} 素材不存在→标记成功"); continue
+        if (cand.get("rewritten_content") or "") or (cand.get("wechat_content") or ""):
+            _wf.mark_resolved(key, "已有正文（已结）"); out.append((key, "already-written"))
+            print(f"  - {key[:12]} 已有正文→标记成功"); continue
+        try:
+            res = write_one(cand, dry_run=False)
+            if res.get("ok") or res.get("skipped") or res.get("bullet"):
+                _wf.mark_resolved(key, "重试成功"); out.append((key, "ok"))
+                print(f"  ✅ {key[:12]} 重试成功（标记 resolved）")
+            else:
+                why = "；".join(res.get("problems") or ["未达标"])
+                _wf.mark_manual(key, why); out.append((key, "needs_manual"))
+                print(f"  ❌ {key[:12]} 再次失败→待人工：{why[:60]}")
+        except Exception as e:                        # noqa: BLE001
+            import traceback as _tb
+            _wf.mark_manual(key, f"{type(e).__name__}: {e}", tb=_tb.format_exc())
+            out.append((key, "needs_manual"))
+            print(f"  ❌ {key[:12]} 异常→待人工：{type(e).__name__}: {e}")
+    return out
+
+
+def main_failures(argv=None):
+    """打印写稿失败主因统计 + 未结列表（分析用）。"""
+    import argparse
+    from services import write_failures as _wf
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--days", type=int, default=30)
+    a = ap.parse_args(argv)
+    st = _wf.stats(a.days)
+    print(f"[写稿失败·近 {st['days']} 天] 共 {st['total']} 篇")
+    print("  主因分布：")
+    for x in st["by_category"]:
+        print(f"    {x['n']:>4}  {x['label']}")
+    print("  状态：" + " ".join(f"{s['status']}={s['n']}" for s in st["by_status"]))
+    op = _wf.list_open()
+    if op:
+        print(f"  未结 {len(op)} 篇：")
+        for r in op[:20]:
+            print(f"    [{r['status']}] {r['key'][:12]} {r.get('reason','')[:50]}")
+    return 0
+
+
+def main_retry(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="重试写稿失败队列（到期项）")
+    ap.add_argument("--limit", type=int, default=10)
+    a = ap.parse_args(argv)
+    retry_failures(a.limit)
+    return 0
+
+
 def _print_split_preview(cands):
     """拆篇预览（只读）：打印 cluster 体量与分组，不写库。"""
     from services import split_write as _sp
@@ -583,6 +655,18 @@ def _split_candidates(cands, threshold=None):
     return out
 
 
+def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb=""):
+    """**确认放弃/跳过时**才把文章落入失败表（不在中间态写）。
+
+    - 基础设施：LLM 瞬时错误由 `agent.llm._post` 先做指数退避重试，**退避全部失败**（LiteLLMError）
+      或其它不可恢复异常才会走到这里。
+    - 质量：门禁/评分经 3 轮改稿循环后仍不达标（`write_one` 返回 ok=False）。
+    """
+    from services import write_failures as _wf
+    _wf.record(cand["key"], reason, stage=stage, attempts=attempts, channel=channel,
+               title=title or cand.get("title") or "", tb=tb)
+
+
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
         verify_gallery=False, split_threshold=None, split_preview=False):
     if key:
@@ -610,18 +694,39 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         return []
     if split_large:
         cands = _split_candidates(cands, split_threshold)
-    results = [write_one(c, dry_run=dry_run, force_channel=force_channel) for c in cands]
-    for r in results:
+    def _emit(r):
+        """逐篇即时打印（边写边打印）。"""
         if r.get("bullet"):
-            print(f"BULLET {r['key']}（AKB 晒照型 → 仅入库不写正文）")
-            continue
-        if r.get("skipped"):
-            print(f"SKIP {r['key']}（{'; '.join(r.get('problems') or ['纯重复'])}）")
-            continue
-        for v in r["versions"]:
-            print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
-                  f"m={r['method']} score={v['score']} body={v['body']} ##={v['h2']} kana={v['kana']} "
-                  f"related={r['related'][:24]}{'' if v['ok'] else ' | ' + '; '.join(v['problems'])}")
+            print(f"BULLET {r['key']}（AKB 晒照型 → 仅入库不写正文）", flush=True)
+        elif r.get("skipped"):
+            print(f"SKIP {r['key']}（{'; '.join(r.get('problems') or ['纯重复'])}）", flush=True)
+        elif r.get("error"):
+            print(f"ERROR {r['key']}（{r['error']}）", flush=True)
+        else:
+            for v in r.get("versions") or []:
+                tail = "" if v["ok"] else " | " + "; ".join(v["problems"])
+                print(f"{'PASS' if v['ok'] else 'FAIL'} {r['key']} [{v['channel']}] att={v['attempts']} "
+                      f"m={r.get('method', '')} score={v['score']} body={v['body']} ##={v['h2']} "
+                      f"kana={v['kana']} related={(r.get('related') or '')[:24]}{tail}", flush=True)
+
+    results = []
+    for idx, c in enumerate(cands, 1):
+        print(f"[{idx}/{len(cands)}] 处理 {c['key'][:12]} 《{(c.get('title') or '')[:24]}》...", flush=True)
+        try:
+            r = write_one(c, dry_run=dry_run, force_channel=force_channel)
+        except Exception as e:                        # noqa: BLE001 单篇异常不中断整批
+            print(f"❌ {c['key'][:12]} 异常: {type(e).__name__}: {e}", flush=True)
+            if not dry_run:                           # 确认放弃（异常已含退避耗尽）→ 落表
+                import traceback as _tb
+                _enqueue_failure(c, f"{type(e).__name__}: {e}", "exception", tb=_tb.format_exc())
+            r = {"key": c["key"][:12], "full_key": c["key"], "ok": False, "error": str(e),
+                 "versions": [], "related": "", "channel": "", "problems": [f"{type(e).__name__}: {e}"]}
+            results.append(r); _emit(r); continue
+        if not dry_run and not r.get("ok") and not r.get("skipped") and not r.get("bullet"):
+            _enqueue_failure(c, "；".join(r.get("problems") or ["未达标"]), "gate",   # 质量确认放弃
+                             attempts=r.get("attempts", 0), channel=r.get("channel") or "",
+                             title=r.get("title") or "")
+        results.append(r); _emit(r)
     passed = sum(1 for r in results if r["ok"])
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"
           f"（{'dry-run，未入库' if dry_run else '已入库'}）")

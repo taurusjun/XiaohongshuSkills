@@ -18,6 +18,8 @@ SUBCOMMANDS = {
     "review-archive": review_archive.main,
     "review-full": _review_full.main,
     "write-full": _write_full.main,
+    "write-retry": _write_full.main_retry,
+    "write-failures": _write_full.main_failures,
     "kana": kana.main,
     "references": references.main,
     "gallery": gallery.main,

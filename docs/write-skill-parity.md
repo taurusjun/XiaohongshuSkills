@@ -111,6 +111,7 @@
 - `agent/write.py` · `agent/prompts/write.md`
 - `config/{review_thresholds,newfont,ja_localize,name_variants,adult_industry,off_topic,routing}.json`
 - `services/{rules,content_gate,name_variants,titles,batches}.py`（新增）
+- `services/write_failures.py`（新增，写稿失败队列）+ `docs/write-failures.md`
 - `services/renwei.py` · `precheck.py` · `dunhao.py` · `kana.py` · `format_route.py` · `routing.py` · `gzh_review.py` · `references.py` · `split_write.py` · `schedule.py` · `recommend.py` · `gallery.py`
 - `skills/creative/xhs-write-publish-flow/`（SKILL + references + `reviews/chinese-review-prompt.md`）
 - `ops/verify_write_alignment.py`（真实验证脚本，可复现）

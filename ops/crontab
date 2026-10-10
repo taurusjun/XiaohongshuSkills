@@ -19,3 +19,5 @@ XHS_WEBAPI_BASE=http://127.0.0.1:5000
 0 0 * * 1 cd /home/user/PG/XiaohongshuSkills && .venv/bin/python scripts/reflection_runner.py >> logs/reflection.log 2>&1
 # db-backup：生产 每小时:17 → 容器 每小时:47（错开）
 47 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
+# write-retry：写稿失败队列，每 15 分钟重试到期项（初次失败后 1 小时）
+*/15 * * * * cd /home/user/PG/XiaohongshuSkills && .venv/bin/python -m cli write-retry >> logs/write_retry.log 2>&1

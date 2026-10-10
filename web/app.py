@@ -1134,6 +1134,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
     <button class="btn-ghost btn-sm" onclick="splitPreview()" title="拆篇预览（只读，不写库）">🧩 拆篇预览</button>
     <button class="btn-ghost btn-sm" onclick="window.open('/manual-review','_blank')" title="待人工清单">🚩 待人工</button>
+    <button class="btn-ghost btn-sm" onclick="window.open('/write-failures','_blank')" title="写稿失败队列">❌ 失败稿</button>
   </div>
 
   <!-- Action bars -->
@@ -3370,6 +3371,77 @@ def api_split_preview():
                     "should_split": hit,
                     "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c) if hit else [])]})
     return jsonify({"day": day, "rows": out, "threshold": _sp.DEFAULT_THRESHOLD})
+
+
+WRITE_FAILURES_HTML = r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>写稿失败队列</title>
+<style>body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f6f8;margin:0;padding:20px;color:#222}
+h2{margin:0 0 4px}.sub{color:#888;font-size:12px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th,td{padding:8px 10px;font-size:13px;text-align:left;border-bottom:1px solid #eee;vertical-align:top}
+th{background:#fafafa;color:#666;font-weight:600;font-size:12px}
+.k{font-family:ui-monospace,monospace;color:#7c3aed}
+.badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:11px}
+.pending{background:#fff7e6;color:#b45309}.needs_manual{background:#fee2e2;color:#b91c1c}.resolved{background:#dcfce7;color:#15803d}
+pre{background:#1e1e2e;color:#e0e0e0;padding:10px;border-radius:6px;font-size:11px;max-height:260px;overflow:auto;white-space:pre-wrap}
+.btn{border:1px solid #ddd;background:#fff;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
+.btn:hover{background:#f0f0f0}.empty{color:#999;padding:30px;text-align:center}.r{color:#b45309;font-size:12px}</style></head><body>
+<h2>❌ 写稿失败队列</h2><div class="sub">写稿失败（含 LLM 抖动）→ 1 小时后自动重试 → 再失败转「待人工」；成功则标记 resolved（保留记录）。</div>
+<div id="stats" style="margin-bottom:14px"></div>
+<table><thead><tr><th style="width:86px">key</th><th>标题/原因</th><th style="width:60px">状态</th><th style="width:44px">重试</th><th style="width:120px">下次重试</th><th style="width:78px">操作</th></tr></thead>
+<tbody id="tb"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table>
+<script>
+function esc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function load(){const d=await(await fetch('/api/write-failures')).json();const tb=document.getElementById('tb');
+ if(!d.rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">队列为空 🎉</td></tr>';return;}
+ tb.innerHTML=d.rows.map(x=>`<tr><td class="k">${x.key.slice(0,12)}</td>
+  <td>${esc((x.title||'').slice(0,50))} <span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}]</span><div class="r">${esc(x.reason||'')}</div>
+   ${x.traceback?`<details><summary style="cursor:pointer;font-size:11px;color:#7c3aed">报错堆栈</summary><pre>${esc(x.traceback)}</pre></details>`:''}</td>
+  <td><span class="badge ${x.status}">${x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已成功':'待重试')}</span></td>
+  <td>${x.retry_count||0}</td><td>${esc(x.next_retry_at||'—')}</td>
+  <td>${x.status==='resolved'?'<span style=\"color:#15803d;font-size:11px\">✓</span>':`<button class="btn" onclick="retryNow('${x.key}')">立即重试</button> <button class="btn" onclick="dismiss('${x.key}')">忽略</button>`}</td></tr>`).join('');}
+async function loadStats(){try{const d=await(await fetch('/api/write-failures/stats')).json();
+ const mx=Math.max(1,...d.by_category.map(x=>x.n));
+ const bars=d.by_category.map(x=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:130px;font-size:12px">${esc(x.label)}</span><span style="height:11px;background:#7c3aed;border-radius:3px;width:${Math.round(x.n/mx*200)}px"></span><b style="font-size:12px">${x.n}</b></div>`).join('');
+ document.getElementById('stats').innerHTML=`<div style="background:#fff;padding:12px 14px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)"><b>近 ${d.days} 天失败主因</b>（共 ${d.total} 篇）<div style="margin-top:8px">${bars||'<span style="color:#999;font-size:12px">暂无数据</span>'}</div></div>`;}catch(e){}}
+async function retryNow(k){await fetch('/api/write-failures/'+k+'/retry',{method:'POST'});load();}
+async function dismiss(k){if(confirm('确认移除该失败记录（不再重试）？')){await fetch('/api/write-failures/'+k+'/dismiss',{method:'POST'});load();}}
+loadStats();
+load();
+</script></body></html>"""
+
+
+@app.route('/api/write-failures', methods=['GET'])
+def api_write_failures():
+    from services import write_failures as _wf
+    rows = _wf.list_all()
+    return jsonify({"rows": rows, "total": len(rows)})
+
+
+@app.route('/api/write-failures/stats', methods=['GET'])
+def api_write_failures_stats():
+    from services import write_failures as _wf
+    days = int(request.args.get('days', 30))
+    return jsonify(_wf.stats(days))
+
+
+@app.route('/api/write-failures/<key>/retry', methods=['POST'])
+def api_write_failures_retry(key):
+    from services import write_failures as _wf
+    _wf.set_due_now(key)                 # 置为立即到期，由 write-retry（15 分钟）处理
+    return jsonify({"ok": True})
+
+
+@app.route('/api/write-failures/<key>/dismiss', methods=['POST'])
+def api_write_failures_dismiss(key):
+    from services import write_failures as _wf
+    _wf.resolve(key)
+    return jsonify({"ok": True})
+
+
+@app.route('/write-failures')
+def write_failures_page():
+    return render_template_string(WRITE_FAILURES_HTML)
 
 
 @app.route('/api/topic-cache', methods=['GET'])
