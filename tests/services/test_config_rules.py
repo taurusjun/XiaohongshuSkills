@@ -6,8 +6,8 @@ from services import routing, rules, precheck, batches
 def test_thresholds_config():
     t = rules.thresholds()
     assert t["xhs"]["title_max"] == 20
-    assert t["xhs"]["story_min_score"] == 8
-    assert t["xhs"]["news_min_score"] == 7
+    assert t["xhs"]["story_min_score"] == 6
+    assert t["xhs"]["news_min_score"] == 5
     assert t["gzh"]["min_score"] == 7
     assert t["batch"]["window_days"] == 3
     assert t["split"]["threshold"] == 3000
