@@ -1135,6 +1135,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <button class="btn-ghost btn-sm" onclick="splitPreview()" title="拆篇预览（只读，不写库）">🧩 拆篇预览</button>
     <button class="btn-ghost btn-sm" onclick="window.open('/manual-review','_blank')" title="待人工清单">🚩 待人工</button>
     <button class="btn-ghost btn-sm" onclick="window.open('/write-failures','_blank')" title="写稿失败队列">❌ 失败稿</button>
+    <button class="btn-ghost btn-sm" onclick="window.open('/kana-autopromoted','_blank')" title="假名自动入表复核">🔤 假名词表</button>
   </div>
 
   <!-- Action bars -->
@@ -3442,6 +3443,50 @@ def api_write_failures_dismiss(key):
 @app.route('/write-failures')
 def write_failures_page():
     return render_template_string(WRITE_FAILURES_HTML)
+
+
+KANA_AUTOPROMOTED_HTML = r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>假名自动入表·复核</title>
+<style>body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f6f8;margin:0;padding:20px;color:#222}
+h2{margin:0 0 4px}.sub{color:#888;font-size:12px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th,td{padding:8px 10px;font-size:13px;text-align:left;border-bottom:1px solid #eee;vertical-align:top}
+th{background:#fafafa;color:#666;font-weight:600;font-size:12px}
+.k{font-family:ui-monospace,monospace;color:#7c3aed}.zh{color:#15803d;font-weight:600}.ctx{color:#666;font-size:12px}
+.btn{border:1px solid #ddd;background:#fff;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
+.btn:hover{background:#f0f0f0}.btn-red{color:#b91c1c;border-color:#fca5a5}.empty{color:#999;padding:30px;text-align:center}</style></head><body>
+<h2>🔤 假名自动入表 · 人工复核</h2><div class="sub">写稿时 LLM 自动中译入字典的词条（先自动、人工后审）。确认无误可保留；不对的点「撤回」从字典移除。</div>
+<table><thead><tr><th style="width:120px">时间</th><th style="width:150px">词条 → 中译</th><th>语境</th><th style="width:70px">操作</th></tr></thead>
+<tbody id="tb"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
+<script>
+function esc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function load(){const d=await(await fetch('/api/kana-autopromoted')).json();const tb=document.getElementById('tb');
+ if(!d.rows.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂无自动入表词条 🎉</td></tr>';return;}
+ tb.innerHTML=d.rows.map(x=>`<tr><td>${esc(x.ts||'')}</td>
+  <td><span class="k">${esc(x.term)}</span> → <span class="zh">${esc(x.zh)}</span></td>
+  <td class="ctx">${esc((x.ctx||'').slice(0,80))}</td>
+  <td><button class="btn btn-red" onclick="revert('${encodeURIComponent(x.term)}')">撤回</button></td></tr>`).join('');}
+async function revert(t){if(!confirm('从字典移除该词条？'))return;await fetch('/api/kana-autopromoted/'+t+'/revert',{method:'POST'});load();}
+load();
+</script></body></html>"""
+
+
+@app.route('/api/kana-autopromoted', methods=['GET'])
+def api_kana_autopromoted():
+    from services import kana as _kana
+    rows = _kana.autopromoted()
+    return jsonify({"rows": rows, "total": len(rows)})
+
+
+@app.route('/api/kana-autopromoted/<path:term>/revert', methods=['POST'])
+def api_kana_autopromoted_revert(term):
+    from services import kana as _kana
+    return jsonify({"ok": _kana.revert(term)})
+
+
+@app.route('/kana-autopromoted')
+def kana_autopromoted_page():
+    return render_template_string(KANA_AUTOPROMOTED_HTML)
 
 
 @app.route('/api/topic-cache', methods=['GET'])

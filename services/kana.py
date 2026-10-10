@@ -10,9 +10,10 @@ _KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 _repl = None
 
 __all__ = ["load", "count", "replace", "new_terms", "log_pending", "pending", "promote",
-           "auto_promote", "main"]
+           "auto_promote", "autopromoted", "revert", "main"]
 
 PENDING = "data/kana_pending.jsonl"
+AUTOPROMOTED = "data/kana_autopromoted.jsonl"
 
 
 def load():
@@ -39,7 +40,7 @@ def replace(text: str) -> str:
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] in ("pending", "promote", "autopromote"):
+    if argv and argv[0] in ("pending", "promote", "autopromote", "autolist", "revert"):
         return _cli(argv)
     if not argv:
         print(f"词条数: {len(load())}"); return 0
@@ -187,6 +188,33 @@ def auto_promote(limit=40, dry_run=False):
     return out
 
 
+def autopromoted():
+    """读自动入表的审计记录（供人工复核）。"""
+    p = paths.REPO_ROOT / AUTOPROMOTED
+    if not p.exists():
+        return []
+    rows = []
+    for ln in p.read_text(encoding="utf-8").splitlines():
+        try:
+            rows.append(json.loads(ln))
+        except Exception:  # noqa: BLE001
+            pass
+    rowsl = list(reversed(rows))          # 新→旧
+    return rowsl
+
+
+def revert(term):
+    """人工复核否决：把该自动词条从字典移除。返回是否移除。"""
+    cfg = paths.REPO_ROOT / "config" / "kana_replace.json"
+    data = json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}
+    removed = data.pop(term, None)
+    if removed is not None:
+        cfg.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        global _repl
+        _repl = None
+    return removed is not None
+
+
 def _cli(array):
     if array[0] == "pending":
         for r in pending():
@@ -194,6 +222,12 @@ def _cli(array):
         return 0
     if array[0] == "promote" and len(array) >= 3:
         n = promote(array[1], array[2]); print(f"ok, 表内 {n} 条"); return 0
+    if array[0] == "revert" and len(array) >= 2:
+        print("revert ok" if revert(array[1]) else "未找到"); return 0
+    if array[0] == "autolist":
+        for r in autopromoted():
+            print(f"{r.get('ts','')}\t{r.get('term')} → {r.get('zh')}\t{r.get('ctx','')[:40]}")
+        return 0
     if array[0] == "autopromote":
         dry = "--dry-run" in array
         res = auto_promote(dry_run=dry)
