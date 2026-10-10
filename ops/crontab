@@ -8,7 +8,7 @@ SQLITE_PATH=/home/user/PG/XiaohongshuSkills/data/news_dev.db
 XHS_WEBAPI_BASE=http://127.0.0.1:5000
 
 # fetch-runner：生产 00:30 → 容器 01:30（0-30min 随机打散）
-30 1 * * * cd /home/user/PG/XiaohongshuSkills && sleep $((RANDOM%1800)) && /opt/ops/wait_idle.sh && .venv/bin/python scripts/fetch_runner.py >> logs/fetch_runner.log 2>&1
+30 1 * * * cd /home/user/PG/XiaohongshuSkills && sleep $((RANDOM\%1800)) && /opt/ops/wait_idle.sh && .venv/bin/python scripts/fetch_runner.py >> logs/fetch_runner.log 2>&1
 # review：生产 01:30 → 容器 02:30（当日 review，交付）
 30 2 * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/wait_idle.sh && .venv/bin/python -m cli review-full --date $(date +\%F) --deliver >> logs/review.log 2>&1
 # write：生产 03:00 → 容器 04:00（全批次写稿+排期+交付）
