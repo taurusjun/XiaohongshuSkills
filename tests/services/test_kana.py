@@ -30,8 +30,9 @@ def test_new_terms_captures_full_title():
     from services import kana
     t = "10月23日开幕的《春よ来い、マジで来い》，是她第一次站上舞台"
     terms = kana.new_terms(t)
-    assert "マジで" in terms                          # 连续假名片段
     assert "春よ来い、マジで来い" in terms             # 整段作品名（新增）
+    # 连续假名片段也能抓到（用一个不在字典里的假名词验证）
+    assert any(x == "ぴよぴよ" for x in kana.new_terms("测试ぴよぴよ结束"))
 
 
 def test_auto_promote_skips_fragments(monkeypatch, tmp_path):
