@@ -150,3 +150,12 @@ XHS_EXPORTS_SRC=xhs-exports      # ~/.cache/xhs_exports
 - `venv`、`profiles`（Chrome，含登录态）**仍为命名卷**（venv 可重建；profiles 在 virtiofs 有锁风险，未迁）。
 - 好处：`colima delete/重建` 不再丢 DB/备份/图集/日志/导出。
 - 已验：SQLite 在 virtiofs 上并发 WAL 写 integrity=ok。
+
+## 12. mac 网络改 vmnet（socket_vmnet，根治出网卡顿）
+**问题**：colima 默认走**用户态 NAT**（gvproxy/gvisor-tap-vsock）→ 容器出网**冷连接卡 2~5s、并发下超时**（Yahoo 抓取间歇 `Connection timed out`），生产（宿主原生网络栈）不会。
+**修复**：
+1. `brew install socket_vmnet`；`colima stop && colima start --network-address`（需 sudo 启守护）→ VM 拿到可达 IP `192.168.64.2`（vmnet）。
+2. colima 会同时保留旧 `eth0`(192.168.5.x, 用户态) 与 `col0`(vmnet)，且默认仍优先 eth0 → 需 **`network.preferredRoute: true`**（或 `colima start --network-preferred-route`）让默认路由走 `col0`。
+3. `~/.colima/default/colima.yaml` 已设 `network.address: true` + `preferredRoute: true`（`/tmp/colima.yaml.bak` 有备份）。
+**效果**：容器 → Yahoo `connect ~0.07s`、6/6 稳定（与宿主一致）；冷连接卡顿消失。
+**注意**：代理地址（`192.168.5.2:20808`）走的是仍存在的 eth0 接口，不受影响；Yahoo 一直直连（`--no-proxy-server`）。
