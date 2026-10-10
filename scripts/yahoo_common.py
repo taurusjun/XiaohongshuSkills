@@ -697,12 +697,40 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
 {{"维度名": {{"value": 0或0.5或1, "reason": "15-50字理由"}}, ...}}
 所有 {len(all_dims)} 个维度都必须出现，value 只能是 0、0.5、1 三个值之一。"""
 
-    result = call_litellm(prompt, system_prompt="You are a JSON API. Output ONLY valid JSON.", max_tokens=2000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
-    if not result:
+    _SYS_SCORE = "You are a JSON API. Output ONLY valid JSON."
+
+    def _parse_scoring_json(s):
+        try:
+            return _json.loads(s)
+        except Exception:  # noqa: BLE001
+            import re as _re3
+            _m = _re3.search(r"\{.*\}", s or "", _re3.S)
+            if _m:
+                return _json.loads(_m.group(0))
+            raise
+
+    result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
+    raw = None
+    _perr = None
+    for _try in range(2):
+        if not result:
+            break
+        try:
+            raw = _parse_scoring_json(result)
+            break
+        except Exception as _e:  # noqa: BLE001
+            _perr = _e
+            result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
+    if raw is None:
+        print(f"    ⚠️ 评分JSON解析失败: {_perr} | 输出: {(result or '')[:150]}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"评分JSON解析失败 title={title_zh[:50]}: {_perr}\n原始输出前500字: {(result or '')[:500]}")
+        except Exception:
+            pass
         return {"title_score": 0, "content_score": 0, "scores": {}, "_dim_version": _dim_version}
 
     try:
-        raw = _json.loads(result)
         raw.pop("title_score", None)
         raw.pop("content_score", None)
         # 解析 value + reason
@@ -1288,7 +1316,7 @@ def generate_title_only(title_ja: str, content_ja: str,
                                  summary=summary, story_type=story_type,
                                  current_title=current_title, content_zh=content_zh,
                                  outro=outro)
-    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9, thinking_disabled=False)
+    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.7, thinking_disabled=True)
     if not result:
         return ""
     # 占位符黑名单：prompt 模板示例值 + LLM 思考时常见垃圾占位符
