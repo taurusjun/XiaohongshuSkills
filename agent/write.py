@@ -40,6 +40,7 @@ def pick_candidates(n=0):
     rows = _news.query_news(status="active", limit=300)
     base = [r for r in rows if (r.get("content_ja") or "")
             and r.get("format") in ("story", "news") and not (r.get("rewritten_content") or "")
+            and not (r.get("wechat_content") or "")        # gzh-only 已写稿 → 不再重跑
             # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑
             and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
     try:                                             # 消费跳过清单：纯重复不再重写
