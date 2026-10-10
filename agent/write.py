@@ -138,7 +138,7 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
                      "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
     user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
-            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不并入。）\n\n"
+            "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不并入。related 只放与本文**同一事件/强相关**的候选 key，仅同名/同团但事件无关的**不要**放。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
@@ -220,6 +220,7 @@ def _produce(cand, pkg, channel, first=None):
     score = {"total": 0}
     attempts = 0
     prev = None
+    llm_related = []
     while attempts < 3:
         attempts += 1
         ctx = None
@@ -245,6 +246,8 @@ def _produce(cand, pkg, channel, first=None):
                        "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
                 prev = (title, body, channel)
             d = compose(cand, pkg, force_channel=channel, prev=prev, retry_ctx=ctx)
+            if d.get("related"):
+                llm_related = d.get("related")
             title, body = d.get("title") or "", d.get("body") or ""
             # gzh：LLM 可能把正文放进 gzh_body（而非 body）→ 回退读取
             if not (body or "").strip() and (d.get("gzh_body") or "").strip():
@@ -288,7 +291,8 @@ def _produce(cand, pkg, channel, first=None):
         pass
     return {"channel": channel, "ok": ok, "attempts": attempts, "title": title, "text": body,
             "body": mech.get("body_len"), "h2": mech.get("h2"), "kana": mech.get("kana"),
-            "score": score.get("total"), "problems": mech.get("problems") or []}
+            "score": score.get("total"), "problems": mech.get("problems") or [],
+            "related": llm_related}
 
 
 def write_one(cand, dry_run=True, force_channel=None):
@@ -321,7 +325,16 @@ def write_one(cand, dry_run=True, force_channel=None):
         versions.append(_produce(cand, pkg, "gzh", first=(gt, gb) if (gt and gb) else None))
     else:
         versions.append(_produce(cand, pkg, ch, first=(t0, b0)))
-    rk_s = ",".join(pkg["related_keys"])
+    # 关联：以 **LLM 复判** 为准（∩ 候选集，防幻觉），为空才回退机械列表
+    cand_set = {k for k in pkg["related_keys"] if k and k != cand["key"]}
+    llm_pick = []
+    for _v in versions:
+        for _pfx in (_v.get("related") or []):
+            for _fk in [x for x in _resolve_keys([_pfx]).split(",") if x]:
+                if _fk in cand_set and _fk not in llm_pick:
+                    llm_pick.append(_fk)
+    rk_list = llm_pick if llm_pick else list(cand_set)
+    rk_s = ",".join(rk_list)
     for v in versions:
         if not (v["ok"] and not dry_run):
             continue
