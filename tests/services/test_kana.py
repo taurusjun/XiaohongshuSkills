@@ -24,3 +24,11 @@ def test_new_terms_and_promote(tmp_path, monkeypatch):
     assert len(kana.pending()) == len(added)
     kana.promote("アラレちゃん", "阿拉蕾")
     assert all(r["term"] != "アラレちゃん" for r in kana.pending())
+
+
+def test_new_terms_captures_full_title():
+    from services import kana
+    t = "10月23日开幕的《春よ来い、マジで来い》，是她第一次站上舞台"
+    terms = kana.new_terms(t)
+    assert "マジで" in terms                          # 连续假名片段
+    assert "春よ来い、マジで来い" in terms             # 整段作品名（新增）

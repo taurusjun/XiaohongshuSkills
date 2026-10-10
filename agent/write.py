@@ -815,6 +815,12 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         skipped = [{"key": r["full_key"], "reason": "；".join(r.get("problems") or ["跳过"])}
                    for r in results if r.get("full_key") and r.get("skipped")]
         _batches.save(str(_dt.datetime.now().date()), {"processed": processed, "skipped": skipped})
+        try:                                          # 假名新词自动入字典（先自动，人工后审）
+            _auto = _kana.auto_promote()
+            if _auto:
+                print(f"[假名] 自动入字典 {len(_auto)} 条（人工可后审 data/kana_autopromoted.jsonl）", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
 
     if not dry_run and not key:          # 指定 key 重写时不重跑阶段6
         picks, plan, bad, reasons, backups, ov = recommend_and_schedule(5)

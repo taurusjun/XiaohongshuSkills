@@ -9,7 +9,8 @@ from services import paths
 _KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 _repl = None
 
-__all__ = ["load", "count", "replace", "new_terms", "log_pending", "pending", "promote", "main"]
+__all__ = ["load", "count", "replace", "new_terms", "log_pending", "pending", "promote",
+           "auto_promote", "main"]
 
 PENDING = "data/kana_pending.jsonl"
 
@@ -38,7 +39,7 @@ def replace(text: str) -> str:
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] in ("pending", "promote"):
+    if argv and argv[0] in ("pending", "promote", "autopromote"):
         return _cli(argv)
     if not argv:
         print(f"词条数: {len(load())}"); return 0
@@ -57,6 +58,13 @@ def new_terms(text: str):
             continue
         if tok not in out:
             out.append(tok)
+    for m in re.finditer(r"[《「]([^》」\n]{1,40})[》」]", text or ""):
+        inner = m.group(1).strip()
+        if not _KANA.search(inner):
+            continue
+        if any(inner in k for k in keys) or inner in out:
+            continue
+        out.append(inner)
     return out
 
 
@@ -119,6 +127,45 @@ def promote(term: str, zh: str):
     return len(data)
 
 
+def auto_promote(limit=40, dry_run=False):
+    """把 pending 里的假名用 LLM 批量中译并**自动写入字典**（先自动、人工后审）。
+
+    返回 [(term, zh)]；审计写入 data/kana_autopromoted.jsonl 供后续复核。
+    """
+    rows = pending()
+    terms = list(dict.fromkeys(r["term"] for r in rows if r.get("term")))[:limit]
+    if not terms:
+        return []
+    ctx = {r["term"]: r.get("ctx", "") for r in rows}
+    try:
+        from agent import llm
+        usr = ("把下列日文假名专名译成中文：人名按日本娱乐圈通用译法，作品/节目/曲名译成中文，"
+               "实在无法译的用罗马字。只输出严格 JSON：{\"<原文>\": \"<中译>\"}。\n"
+               + "\n".join(f"- {t}   （语境：{ctx.get(t, '')[:50]}）" for t in terms))
+        raw = llm.chat([{"role": "system", "content": "你是日娱名词翻译，只输出 JSON。"},
+                        {"role": "user", "content": usr}], max_tokens=2000)
+        d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+    except Exception:  # noqa: BLE001
+        return []
+    audit = _pending_path().parent / "kana_autopromoted.jsonl"
+    out = []
+    for t, zh in (d.items() if isinstance(d, dict) else []):
+        if not isinstance(zh, str) or not zh.strip() or zh.strip() == t:
+            continue
+        t, zh = t.strip(), zh.strip()
+        if not dry_run:
+            promote(t, zh)
+        out.append((t, zh))
+        try:
+            with open(audit, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"term": t, "zh": zh, "ctx": ctx.get(t, ""),
+                                    "ts": time.strftime("%Y-%m-%d %H:%M:%S")},
+                                   ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
 def _cli(array):
     if array[0] == "pending":
         for r in pending():
@@ -126,5 +173,11 @@ def _cli(array):
         return 0
     if array[0] == "promote" and len(array) >= 3:
         n = promote(array[1], array[2]); print(f"ok, 表内 {n} 条"); return 0
+    if array[0] == "autopromote":
+        dry = "--dry-run" in array
+        res = auto_promote(dry_run=dry)
+        for t, zh in res:
+            print(f"  {t} → {zh}")
+        print(f"auto-promote {len(res)} 条（{'dry-run' if dry else '已写入字典'}）"); return 0
     return 1
 
