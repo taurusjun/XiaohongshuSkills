@@ -194,6 +194,9 @@ def main():
 
     import chrome_launcher
     chrome_launcher.launch_fetch_chrome()
+    if not chrome_launcher.is_port_open(chrome_launcher.FETCH_CDP_PORT):
+        print("❌ fetch 独立 Chrome 无法启动，放弃本次抓取")
+        return
     try:
         _run_fetch(args)
     finally:

@@ -429,11 +429,26 @@ FETCH_FLAGS = os.environ.get("XHS_FETCH_CHROME_FLAGS",
 
 
 def launch_fetch_chrome(port: int = None):
-    """启动 fetch 专用 Chrome：独立 profile、直连、跳过图片渲染、headless。返回 Popen 或 None(已在跑)。"""
+    """启动 fetch 专用 Chrome：独立 profile、直连、跳过图片渲染、headless。
+    启动前清残留(僵尸/profile 锁)；30s 内未就绪则终止并返回 None。运行中则返回 None。"""
     port = port or FETCH_CDP_PORT
     if is_port_open(port):
         print(f"[fetch_chrome] port {port} already open, reuse.")
         return None
+    # 清理上一次残留
+    try:
+        subprocess.run(["pkill", "-f", FETCH_PROFILE], timeout=10)
+    except Exception:
+        pass
+    try:
+        import glob
+        for f in glob.glob(os.path.join(FETCH_PROFILE, "Singleton*")):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+    except Exception:
+        pass
     chrome_path = get_chrome_path()
     os.makedirs(FETCH_PROFILE, exist_ok=True)
     cmd = [chrome_path,
@@ -444,14 +459,18 @@ def launch_fetch_chrome(port: int = None):
     cmd += shlex.split(FETCH_FLAGS)
     print(f"[fetch_chrome] launching on {port} profile={FETCH_PROFILE}")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    deadline = time.time() + STARTUP_TIMEOUT
+    deadline = time.time() + 30
     while time.time() < deadline:
         if is_port_open(port):
             print(f"[fetch_chrome] ready on {port}")
             return proc
         time.sleep(0.5)
-    print("[fetch_chrome] WARNING: not responding yet", file=sys.stderr)
-    return proc
+    print(f"[fetch_chrome] FAILED: port {port} not open in 30s", file=sys.stderr)
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    return None
 
 
 def kill_fetch_chrome(port: int = None):
