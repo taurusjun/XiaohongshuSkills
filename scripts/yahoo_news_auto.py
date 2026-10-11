@@ -135,10 +135,19 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
+            # 只解析主结果列表；右侧栏 #yjnSub 的访问/评论排行也有 /articles/ 链接，不能混进结果
+            results = soup.select_one("#contentsWrap ol.newsFeed_list")
+            if results is None:
+                if "見つかりませんでした" in soup.get_text():
+                    print(f"  ℹ️ [{keyword}] 无搜索结果")
+                    return []
+                print("  ⚠️ 未找到搜索结果列表（页面结构可能变化），重试")
+                _log_db_error(f"yahoo 搜索页未找到结果列表 keyword={keyword}")
+                continue
             news_list: list[dict] = []
             seen: set[str] = set()
 
-            for link in soup.find_all('a'):
+            for link in results.find_all('a'):
                 if len(news_list) >= max_results * 2:
                     break
                 href = link.get("href", "")

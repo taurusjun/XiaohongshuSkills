@@ -7,7 +7,6 @@ yahoo_common.py — Yahoo Japan 新闻脚本公共模块
 - 过滤工具函数：is_sensitive / is_china_related
 - AI 工具函数：call_litellm / translate_title / generate_content_and_comment
 - 分类函数：auto_classify
-- CDP 工具：get_yahoo_tab_ws_url
 - 文章工具：fetch_article_details / extract_key_from_url
 - Notion 工具：parse_markdown_line / load_today_keys / is_duplicate / push_to_notion
 """
@@ -815,39 +814,6 @@ def auto_classify(title: str, content: str = "", keyword: str = "") -> Tuple[str
 
 
 # ============ CDP 工具 ============
-
-def get_yahoo_tab_ws_url() -> Tuple[str, bool]:
-    """从 CDP /json 列表中找到 Yahoo 新闻首页的 page tab。
-    
-    Returns:
-        (ws_url, already_on_yahoo)
-        already_on_yahoo=True 表示当前 tab 已在 news.yahoo.co.jp，可直接读取。
-        ws_url="" 表示找不到任何可用 tab。
-    """
-    try:
-        resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=10)
-        if resp.status_code != 200:
-            return "", False
-        tabs = resp.json()
-    except Exception:
-        return "", False
-
-    # 优先找已打开 Yahoo 新闻首页的 tab（搜索/文章页没有 #newsFeed）
-    for tab in tabs:
-        if tab.get("type") == "page" and "news.yahoo.co.jp" in tab.get("url", ""):
-            url = tab.get("url", "")
-            # 只有首页才有 #newsFeed 容器（URL 不含 /search /articles 等子路径）
-            from urllib.parse import urlparse
-            path = urlparse(url).path.rstrip("/")
-            if path in ("", "/"):
-                return tab.get("webSocketDebuggerUrl", ""), True
-
-    # 退而求其次：任意普通 page tab（用于导航）
-    for tab in tabs:
-        if tab.get("type") == "page":
-            return tab.get("webSocketDebuggerUrl", ""), False
-
-    return "", False
 
 
 # ============ 文章工具 ============

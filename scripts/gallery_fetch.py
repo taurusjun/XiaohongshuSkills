@@ -1051,14 +1051,16 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
     p = urlparse(gallery_url)
     base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
 
+    # 新开专用 tab、用完关掉；不复用/不导航用户已有的 tab（原先取「第一个 page tab」可能是小红书发布页）
     try:
-        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-        page_tab = next((t for t in tabs if t.get("type") == "page"), None)
-        if not page_tab:
-            print("  ⚠️ 找不到可用的 Chrome tab")
+        page_tab = requests.put(f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10).json()
+        if not page_tab.get("webSocketDebuggerUrl"):
+            print("  ⚠️ 无法新建 Chrome tab")
+            _log_db_error(f"abema.tv 无法新建 Chrome tab: {page_tab}")
             return []
     except Exception as e:
         print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
+        _log_db_error(f"abema.tv 无法连接 Chrome CDP: {e}")
         return []
 
     if max_page > 1:
@@ -1105,6 +1107,12 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
         except Exception as e:
             print(f"  ⚠️ abema.tv CDP page {pg} 失败: {e}")
             _log_db_error(f"abema.tv CDP page {pg} 失败: {e}")
+
+    # 关闭本次专用 tab（每页异常都在循环内捕获，循环本身不会抛出）
+    try:
+        requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json/close/{page_tab['id']}", timeout=3)
+    except Exception:
+        pass
 
     images: list[str] = []
     if tweet_ids:
