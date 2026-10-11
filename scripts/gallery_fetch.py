@@ -1034,6 +1034,7 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
     except ImportError:
         print("  ⚠️ 需要安装: pip install websocket-client")
         return []
+    from scrapers import cdp_eval, cdp_navigate_and_wait
 
     headers = {**HEADERS, "Referer": "https://times.abema.tv/"}
 
@@ -1048,11 +1049,11 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
     p = urlparse(gallery_url)
     base_url = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
 
+    # 新开专用 tab、用完关掉；不复用/不导航用户已有的 tab
     try:
-        tabs = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-        page_tab = next((t for t in tabs if t.get("type") == "page"), None)
-        if not page_tab:
-            print("  ⚠️ 找不到可用的 Chrome tab")
+        page_tab = requests.put(f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10).json()
+        if not page_tab.get("webSocketDebuggerUrl"):
+            print("  ⚠️ 无法新建 Chrome tab")
             return []
     except Exception as e:
         print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
@@ -1070,48 +1071,24 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
         pg_url = gallery_url if pg == 1 else f"{base_url}?page={pg}"
         try:
             ws = websocket.create_connection(ws_url, timeout=15)
-            ws.settimeout(15)
-
-            # 阻断 widgets.js，保留 blockquote.twitter-tweet 原始 HTML
-            ws.send(_json.dumps({"id": 0, "method": "Network.enable"}))
-            ws.recv()
-            ws.send(_json.dumps({"id": 1, "method": "Network.setBlockedURLs",
-                     "params": {"urls": ["platform.twitter.com/widgets.js"]}}))
-            ws.recv()
-
-            ws.send(_json.dumps({"id": 2, "method": "Page.enable"}))
-            ws.recv()
-            ws.send(_json.dumps({"id": 3, "method": "Page.navigate", "params": {"url": pg_url}}))
-
-            import time as _time
-            start = _time.time()
-            while _time.time() - start < 15:
-                try:
-                    msg = _json.loads(ws.recv())
-                except websocket.WebSocketTimeoutException:
-                    break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-                if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                    break
-            ws.close()
-
-            _time.sleep(1)
-            tabs2 = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).json()
-            pg_tab = next((t for t in tabs2 if t.get("type") == "page"), None)
-            if not pg_tab:
-                continue
-            ws_url = pg_tab["webSocketDebuggerUrl"]
-
-            ws2 = websocket.create_connection(ws_url, timeout=15)
-            ws2.settimeout(15)
-            ws2.send(_json.dumps({"id": 9, "method": "Runtime.evaluate",
-                     "params": {"expression": 'document.querySelector(".article-body").innerHTML'}}))
-            html = ""
-            while True:
-                msg = _json.loads(ws2.recv())
-                if msg.get("id") == 9:
-                    html = msg.get("result", {}).get("result", {}).get("value", "")
-                    break
-            ws2.close()
+            try:
+                # 阻断 widgets.js，保留 blockquote.twitter-tweet 原始 HTML
+                ws.send(_json.dumps({"id": 0, "method": "Network.enable"}))
+                ws.recv()
+                ws.send(_json.dumps({"id": 1, "method": "Network.setBlockedURLs",
+                         "params": {"urls": ["platform.twitter.com/widgets.js"]}}))
+                ws.recv()
+                # 等本次导航的新文档出现 .article-body；未就绪跳过该页（避免读到旧文档串图）
+                status = cdp_navigate_and_wait(
+                    ws, pg_url, "!!document.querySelector('.article-body')", timeout=20)
+                if status != "ok":
+                    print(f"  ⚠️ abema.tv page {pg} 未就绪（{status}），跳过")
+                    continue
+                import time as _time
+                _time.sleep(1)
+                html = cdp_eval(ws, 'document.querySelector(".article-body").innerHTML', timeout=15) or ""
+            finally:
+                ws.close()
 
             for bq in re.findall(
                 r'<blockquote[^>]*twitter-tweet[^>]*>(.*?)</blockquote>', html, re.DOTALL):
@@ -1122,6 +1099,11 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
                         tweet_ids.append(tid)
         except Exception as e:
             print(f"  ⚠️ abema.tv CDP page {pg} 失败: {e}")
+
+    try:      # 关闭本次专用 tab
+        requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json/close/{page_tab['id']}", timeout=3)
+    except Exception:
+        pass
 
     images: list[str] = []
     if tweet_ids:
