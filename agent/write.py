@@ -163,8 +163,8 @@ def prepare_package(cand):
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
-def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens=16000):
-    """阶段3 撰写（LLM）：只吃写作包 pkg。返回 dict（channel/title/body/gzh_*/related）。"""
+def _compose_msgs(cand, pkg, force_channel=None):
+    """构建首轮 [system, user（写作包）]。"""
     msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
     if force_channel:
         chan_note = f"渠道已指定：channel=\"{force_channel}\"（不要更改）。"
@@ -192,17 +192,21 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
         user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
                  "来自 feedback_patterns 表）===\n" + pkg["patterns"])
     msgs.append({"role": "user", "content": user})
-    if prev and prev[0]:
-        msgs.append({"role": "assistant", "content": json.dumps(
-            {"key": cand["key"], "channel": prev[2], "title": prev[0], "body": prev[1]}, ensure_ascii=False)})
+    return msgs
+
+
+def compose(cand, pkg, force_channel=None, retry_ctx=None, max_tokens=16000, history=None, return_msgs=False):
+    """阶段3 撰写（LLM）。history 给定则续用（多轮对话）；返回 dict（或 (dict, msgs)）。"""
+    msgs = list(history) if history is not None else _compose_msgs(cand, pkg, force_channel)
     if retry_ctx:
-        msgs.append({"role": "user", "content": retry_ctx})
+        msgs = msgs + [{"role": "user", "content": retry_ctx}]
     raw = llm.chat(msgs, max_tokens=max_tokens, json_mode=True)
     try:
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
         d = {}
-    return d if isinstance(d, dict) else {}
+    d = d if isinstance(d, dict) else {}
+    return (d, msgs) if return_msgs else d
 
 
 def _extract_json(raw):
@@ -429,11 +433,15 @@ def _produce(cand, pkg, channel, first=None):
     attempts = 0
     prev = None
     llm_related = []
+    history = _compose_msgs(cand, pkg, channel)              # 多轮对话：首轮
     while attempts < 3:
         attempts += 1
         ctx = None
         if attempts == 1 and first and first[0] is not None:
             title, body = first
+            history = history + [{"role": "assistant", "content": json.dumps(
+                {"key": cand["key"], "channel": channel, "title": title, "body": body},
+                ensure_ascii=False)}]
         else:
             if attempts > 1:
                 fb = list(mech.get("problems") or [])
@@ -492,11 +500,12 @@ def _produce(cand, pkg, channel, first=None):
                     fb.insert(0, _score_msg)
                 ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
                        "修正下列问题后重新只输出 JSON：\n- " + "\n- ".join(fb or ["提升钩子与情绪"]))
-                prev = (title, body, channel)
             import time as _t
             _c0 = _t.time()
             _log(f"  撰写 尝试 {attempts}/3 [{channel}] 请求 LLM…")
-            d = compose(cand, pkg, force_channel=channel, prev=prev, retry_ctx=ctx)
+            _msgs_in = history + ([{"role": "user", "content": ctx}] if ctx else [])
+            d, _ = compose(cand, pkg, force_channel=channel, history=_msgs_in, return_msgs=True)
+            history = _msgs_in + [{"role": "assistant", "content": json.dumps(d, ensure_ascii=False)}]
             _bt = (d.get("body") or d.get("gzh_body") or "")
             _log(f"  撰写完成 {int(_t.time() - _c0)}s | title={(d.get('title') or d.get('gzh_title') or '')[:18]} "
                  f"body={len(_bt)}字")

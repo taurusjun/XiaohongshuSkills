@@ -45,7 +45,7 @@ def test_auto_promote_skips_fragments(monkeypatch, tmp_path):
     ])
     monkeypatch.setattr(K, "_pending_path", lambda: tmp_path / "p.jsonl")
     monkeypatch.setattr(K, "promote", lambda t, zh: None)
-    monkeypatch.setattr(agent.llm, "chat", lambda m, max_tokens=0:
+    monkeypatch.setattr(agent.llm, "chat", lambda m, max_tokens=0, **kw:
                         '{"ーザー":"扎","れざる":"不败者","クイズフェス":"问答节"}')
     res = dict(K.auto_promote(dry_run=True))
     assert "ーザー" not in res and "れざる" not in res      # 碎片跳过
