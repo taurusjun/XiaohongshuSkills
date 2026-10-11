@@ -24,14 +24,28 @@ from yahoo_common import (
     is_sensitive, is_china_related, extract_key_from_url,
     translate_title, process_news_item,
     load_today_keys, push_with_gallery, push_stub_to_notion,
-    check_chrome_cdp, check_proxy, get_yahoo_tab_ws_url,
+    check_chrome_cdp, check_proxy,
 )
 
 
 # ============ CDP 抓取「あなたにおすすめ」============
 
-def _li_title_source(li, a):
-    """按 DOM 结构取推荐条目的标题和来源（不写死 styled-components 哈希）。"""
+# 首页「あなたにおすすめ」条目 = #newsFeed 下含 /articles/ 链接的 li（广告 li 链到 apm.yahoo.co.jp，自然排除）。
+# 不依赖 data-ual-view-type 等埋点属性；就绪判断（JS）与解析（BeautifulSoup）共用这一条规则，避免两边不一致。
+_FEED_ITEMS_JS = ("Array.from(document.querySelectorAll('#newsFeed li'))"
+                  ".filter(li => li.querySelector('a[href*=\"/articles/\"]'))")
+
+
+def _feed_items(feed) -> list:
+    return [li for li in feed.find_all("li") if li.find("a", href=re.compile(r"/articles/"))]
+
+
+def _li_title_source(li, a) -> tuple[str, str]:
+    """按 DOM 结构取推荐条目的标题和来源。
+    Yahoo 的 class 是 styled-components 哈希（如 sc-baf0c6b2-0），前端每次部署都会变，不能写死。
+    结构：a 内依次是 标题 div、来源 span、<time>；<time> 前面的 span 即来源，
+    a 内第一个有文字的叶子节点（排除来源 span 和 time）即标题。
+    结构对不上时标题退回 a 的全部文本、来源退回 "Yahoo Japan"（旧行为）。"""
     t = li.find("time")
     src_el = t.find_previous_sibling("span") if t else None
     source = src_el.get_text(strip=True) if src_el else ""
@@ -49,47 +63,35 @@ def _li_title_source(li, a):
 def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
     """通过 CDP 强制导航到 Yahoo 首页并读取个性化推荐。"""
     import websocket as _ws_module
-    from scrapers import cdp_eval, cdp_navigate_and_wait
+    from scrapers import cdp_eval, cdp_navigate_and_wait, cdp_new_tab
     try:
         from sqlite_db import _log_db_error
-    except Exception:
+    except Exception:  # 单独运行、config 不在路径上时
         def _log_db_error(msg): pass
 
-    # 新开专用 tab、用完关掉，不复用/不导航用户已有的 tab（登录 cookie 全 tab 共享）
-    try:
-        tab = requests.put(f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10).json()
-        ws_url, tab_id = tab["webSocketDebuggerUrl"], tab["id"]
-    except Exception as e:
-        print(f"❌ 无法新建 Chrome tab: {e}")
-        _log_db_error(f"yahoo 首页推荐无法新建 Chrome tab: {e}")
-        return []
-
+    # 新开专用 tab（with 结束一定关闭，含异常），不复用/不导航用户已有的 tab
+    # （登录态 cookie 全 tab 共享，新 tab 一样拿得到个性化推荐）
     html = ""
     try:
-        ws = _ws_module.create_connection(ws_url, timeout=15)
-        try:
-            print("  导航到 Yahoo 首页...")
-            status = cdp_navigate_and_wait(
-                ws, YAHOO_HOME_URL,
-                "document.querySelectorAll('#newsFeed li[data-ual-view-type=\"list\"]').length > 0",
-                timeout=20)
-            if status != "ok":
-                print(f"  ⚠️ Yahoo 首页推荐未就绪（{status}）")
-                _log_db_error(f"yahoo 首页推荐未就绪 status={status}")
-                return []
-            time.sleep(4)  # 个性化内容渲染
-            html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=15) or ""
-        finally:
-            ws.close()
+        with cdp_new_tab(CDP_HOST, CDP_PORT) as tab:
+            ws = _ws_module.create_connection(tab["webSocketDebuggerUrl"], timeout=15)
+            try:
+                print("  导航到 Yahoo 首页...")
+                status = cdp_navigate_and_wait(
+                    ws, YAHOO_HOME_URL, f"({_FEED_ITEMS_JS}).length > 0", timeout=20)
+                if status != "ok":
+                    print(f"  ⚠️ Yahoo 首页推荐未就绪（{status}）")
+                    _log_db_error(f"yahoo 首页推荐未就绪 status={status}")
+                    return []
+                # 等待个性化内容渲染
+                time.sleep(4)
+                html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=15) or ""
+            finally:
+                ws.close()
     except Exception as e:
         print(f"抓取出错: {e}")
         _log_db_error(f"yahoo 首页推荐抓取出错: {e}")
         return []
-    finally:
-        try:
-            requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}", timeout=3)
-        except Exception:
-            pass
 
     if not html:
         print("❌ 获取页面 HTML 失败")
@@ -102,7 +104,7 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
         print("❌ 未找到 #newsFeed 容器（页面可能未正常加载）")
         return []
 
-    items = feed.find_all("li", attrs={"data-ual-view-type": "list"})
+    items = _feed_items(feed)
     print(f"  ✅ 找到 {len(items)} 条「あなたにおすすめ」条目")
 
     news_list: list[dict] = []
@@ -119,7 +121,7 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
             continue
         seen.add(href)
 
-        title, source = _li_title_source(li, a)   # 按 DOM 结构取（哈希会失效）
+        title, source = _li_title_source(li, a)
         if len(title) < 5:
             continue
 
@@ -146,69 +148,10 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
             "image_url": img_src,
         })
 
+    if not news_list:
+        print("  ⚠️ 推荐流已渲染但解析出 0 条（页面结构可能改版）")
+        _log_db_error(f"yahoo 首页推荐解析出 0 条（候选条目 {len(items)} 个），页面结构可能改版")
     return news_list
-
-
-def fetch_recommendations_fallback() -> List[Dict]:
-    """备用 HTTP 方法（无登录态，通常无法获取个性化推荐）"""
-    print("尝试备用方法获取推荐内容...")
-    try:
-        resp = requests.get(YAHOO_HOME_URL, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-        }, timeout=15)
-        if resp.status_code != 200:
-            print(f"HTTP请求失败: {resp.status_code}")
-            return []
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        feed = soup.find(id="newsFeed")
-        if not feed:
-            print("⚠️ 未找到 #newsFeed（备用HTTP方式无法获取登录后的个性化推荐）")
-            return []
-
-        items = feed.find_all("li", attrs={"data-ual-view-type": "list"})
-        print(f"找到 {len(items)} 个 newsFeed 条目")
-
-        news_list: list[dict] = []
-        seen: set[str] = set()
-        for li in items:
-            if len(news_list) >= 20:
-                break
-            a = li.find("a", href=re.compile(r"/articles/"))
-            if not a:
-                continue
-            href = a.get("href", "")
-            if href in seen:
-                continue
-            seen.add(href)
-
-            title, source = _li_title_source(li, a)
-            if len(title) < 5:
-                continue
-            pub_time = datetime.now().strftime('%Y.%m.%d')
-
-            img_src = ""
-            pic_source = li.find("source", attrs={"type": "image/jpeg"})
-            if pic_source:
-                img_src = pic_source.get("srcset", "").split(",")[0].strip().split(" ")[0]
-            if not img_src:
-                img_el = li.find("img")
-                if img_el:
-                    img_src = img_el.get("src", "")
-
-            full_link = href if href.startswith("http") else YAHOO_BASE_URL + href
-            news_list.append({
-                "title_ja": title, "link": full_link,
-                "source": source, "pub_time": pub_time, "image_url": img_src,
-            })
-
-        print(f"✅ 备用方法提取 {len(news_list)} 条新闻")
-        return news_list
-
-    except Exception as e:
-        print(f"备用方法失败: {e}")
-        return []
 
 
 # ============ 主处理流程 ============
@@ -218,9 +161,7 @@ def fetch_and_filter(max_results: int = 20, no_filter: bool = False,
     """抓取并做基础过滤（敏感词/重复），返回候选列表，不执行 AI 处理。"""
     news_list = fetch_recommendations_via_cdp(max_results)
     if not news_list:
-        print("CDP 方法失败，尝试备用方法...")
-        news_list = fetch_recommendations_fallback()
-    if not news_list:
+        # 不再走 HTTP 备用：未登录时 #newsFeed 里没有条目，个性化推荐只能靠已登录的 Chrome
         return []
 
     candidates: list[dict] = []
