@@ -870,6 +870,45 @@ def _split_candidates(cands, threshold=None):
     return out
 
 
+def main_split_preview_content(argv=None):
+    """拆篇内容预览（dry-run，**不写库**）：对分组走真实写作流程，末尾打印 JSON。"""
+    import argparse
+    import json
+    import sqlite3
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--key", required=True)
+    ap.add_argument("--threshold", type=int, default=0)
+    a = ap.parse_args(argv)
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (a.key[:40],)).fetchone()
+    finally:
+        conn.close()
+    if not r:
+        print("__SPLIT_JSON__ " + json.dumps({"ok": False, "msg": "key 不存在"}, ensure_ascii=False))
+        return 0
+    cand = _news.get_by_key(r[0])
+    cands = _split_candidates([cand], a.threshold or None)
+    results = []
+    for c in cands:
+        try:
+            rr = write_one(c, dry_run=True)          # dry-run：不落库
+        except Exception as e:                       # noqa: BLE001
+            results.append({"key": c["key"][:12], "error": f"{type(e).__name__}: {e}"})
+            continue
+        vs = rr.get("versions") or []
+        if not vs:
+            results.append({"key": c["key"][:12], "ok": False, "skipped": bool(rr.get("skipped")),
+                            "title": "", "body": "", "channel": "", "problems": rr.get("problems") or []})
+        for v in vs:
+            results.append({"key": c["key"][:12], "ok": bool(v.get("ok")), "channel": v.get("channel") or "",
+                            "title": v.get("title") or "", "body": v.get("text") or "",
+                            "score": v.get("score"), "problems": v.get("problems") or []})
+    print("__SPLIT_JSON__ " + json.dumps({"ok": True, "count": len(cands), "results": results},
+                                         ensure_ascii=False))
+    return 0
+
+
 def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb=""):
     """**确认放弃/跳过时**才把文章落入失败表（不在中间态写）。
 

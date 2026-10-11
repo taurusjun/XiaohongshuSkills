@@ -20,6 +20,7 @@ SUBCOMMANDS = {
     "write-full": _write_full.main,
     "write-retry": _write_full.main_retry,
     "write-failures": _write_full.main_failures,
+    "split-preview-content": _write_full.main_split_preview_content,
     "kana": kana.main,
     "references": references.main,
     "gallery": gallery.main,

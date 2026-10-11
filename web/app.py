@@ -1923,26 +1923,89 @@ function _qLoadKana(){
   });
 }
 function _qKanaRevert(t){showConfirm('从字典移除该词条？','','撤回','btn-red','🗑️').then(function(ok){if(!ok)return;fetch('/api/kana-autopromoted/'+t+'/revert',{method:'POST'}).then(function(){qToast('已撤回');_qLoadKana();});});}
+var _qSplitRows=[];
 function _qLoadSplit(onlySplit){
   var day=(document.getElementById('qSplitDay')||{}).value||'';
   var th=(document.getElementById('qSplitTh')||{}).value||'3000';
   fetch('/api/split-preview?day='+encodeURIComponent(day)+'&threshold='+encodeURIComponent(th))
     .then(function(r){return r.json();}).then(function(d){
     var rows=d.rows||[]; if(onlySplit){rows=rows.filter(function(x){return x.should_split;});}
+    _qSplitRows=rows;
     var tb=document.getElementById('qTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('当前无含关联 cluster 的素材');return;}
-    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'标题'},{t:'体裁',w:'64px'},{t:'cluster体量',w:'96px'},{t:'判定',w:'76px'},{t:'操作',w:'150px'}])+'<tbody>'+
+    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'标题'},{t:'体裁',w:'64px'},{t:'cluster体量',w:'96px'},{t:'判定',w:'76px'},{t:'操作',w:'196px'}])+'<tbody>'+
       rows.map(function(x,i){
         var badge=x.should_split?'<span class="badge" style="background:#fee2e2;color:#b91c1c">SPLIT</span>':'<span class="badge" style="background:#eef2ff;color:#4f46e5">keep</span>';
-        var grp=(x.groups&&x.groups.length)?('<tr id="qSplitG'+i+'" style="display:none"><td></td><td colspan="5" style="font-size:11.5px;color:#555;background:#fafafe">'+x.groups.map(function(g,j){return '组'+(j+1)+': '+g.join(', ');}).join('　|　')+'</td></tr>'):'';
-        var act='<button class="btn btn-outline btn-sm" onclick="(function(){var g=document.getElementById(\'qSplitG'+i+'\');if(g)g.style.display=g.style.display===\'none\'?\'table-row\':\'none\';})()">分组</button>';
-        if(x.should_split){act+=' <button class="btn btn-red btn-sm" onclick="_qSplitWrite(\''+x.key+'\')">拆篇写入</button>';}
+        var act='<button class="btn btn-outline btn-sm" onclick="_qSplitPreview('+i+')">🔎 预览</button>';
+        if(x.should_split){act+=' <button class="btn btn-red btn-sm" onclick="_qSplitWrite(\''+x.full_key+'\')">拆篇写入</button>';}
         return '<tr><td><a href="/detail/'+x.full_key+'" target="_blank">'+x.key+'</a></td><td>'+_qEsc((x.title||'').slice(0,40))+'</td>'+
-          '<td style="font-size:12px">'+_qEsc(x.format||'')+'</td><td>'+x.len+' 字</td><td>'+badge+'</td><td>'+act+'</td></tr>'+grp;
+          '<td style="font-size:12px">'+_qEsc(x.format||'')+'</td><td>'+x.len+' 字</td><td>'+badge+'</td><td>'+act+'</td></tr>';
       }).join('')+'</tbody></table>';
   });
 }
-function _qSplitWrite(k){showConfirm('对该素材触发「拆篇写入」？','后台运行 write-full --split-large --key '+k+'，会真实入库','触发','btn-red','🧩').then(function(ok){if(!ok)return;fetch('/api/split-write/'+k,{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast(d.ok?('已触发拆篇写入（后台运行）'):('触发失败: '+(d.msg||'')));});});}
+function _qSplitPreview(i){
+  var x=(_qSplitRows||[])[i]; if(!x) return; window._qSplitCur=x;
+  var plan=x.plan||[]; var body='';
+  if(x.should_split){
+    body='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">将拆为 <b>'+plan.length+'</b> 篇（每组以第 1 条为主稿，其余作为关联素材合并）：</div>';
+    body+=plan.map(function(g){
+      return '<div style="border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:8px">'
+        +'<div style="font-weight:600;font-size:13px;margin-bottom:6px">第 '+g.no+' 篇 · 主稿《'+_qEsc(((g.members||[])[0]||{}).title||'')+'》<span style="color:var(--text3);font-weight:400;font-size:11px"> · 合计 '+g.total_len+' 字</span></div>'
+        +'<table style="font-size:11.5px"><thead><tr><th style="width:96px">key</th><th>标题</th><th style="width:60px">字数</th></tr></thead><tbody>'
+        +g.members.map(function(m,mi){return '<tr'+(mi===0?' style="background:#f6fbf7"':'')+'><td><a href="/detail/'+m.full_key+'" target="_blank">'+m.key+'</a>'+(mi===0?' <span class="badge" style="background:#e8f5ee;color:#15803d">主稿</span>':'')+'</td><td>'+_qEsc((m.title||'').slice(0,48))+'</td><td>'+m.len+'</td></tr>';}).join('')
+        +'</tbody></table></div>';
+    }).join('');
+  } else {
+    body='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">cluster 体量未超阈值，写入时按<b>单篇</b>处理（含关联素材合并）。</div>';
+  }
+  body+='<div style="border-top:1px solid var(--border);margin:10px 0 8px"></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'
+    +'<b style="font-size:12px">内容预览（dry-run，不写库）</b>'
+    +'<button class="btn btn-outline btn-sm" id="qSplitGenBtn" onclick="_qSplitContent()">🧪 生成内容预览</button>'
+    +'<span style="font-size:11px;color:var(--text3)">走真实写作流程但<b>不入库</b>，约 1-3 分钟</span></div>'
+    +'<div id="qSplitContentHost" style="font-size:12px;color:var(--text3)"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+    +'<button class="btn btn-gray" onclick="_qEditClose()">关闭</button>'
+    +(x.should_split?('<button class="btn btn-red" onclick="_qEditClose();_qSplitWrite(\''+x.full_key+'\')">✅ 确认拆篇写入</button>'):'')
+    +'</div>';
+  _qEditOpen('🔎 拆篇预览 · '+x.key, body, null);
+}
+function _qSplitContent(){
+  var x=window._qSplitCur; if(!x) return;
+  var host=document.getElementById('qSplitContentHost'); if(!host) return;
+  host.innerHTML='<div style="padding:6px 0">⏳ 生成中…（LLM 逐篇写作，约 1-3 分钟，请勿关闭）</div>';
+  var btn=document.getElementById('qSplitGenBtn'); if(btn){btn.disabled=true;btn.textContent='生成中…';}
+  fetch('/api/split-content/'+x.full_key,{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if(!d.task_id){host.innerHTML='<span style="color:#b91c1c">触发失败</span>';if(btn){btn.disabled=false;btn.textContent='🧪 生成内容预览';}return;}
+    var iv=setInterval(function(){
+      fetch('/api/task/'+d.task_id).then(function(r){return r.json();}).then(function(t){
+        if(t.status==='running'){var ln=((t.log||'').split('\n')).length;if(host)host.innerHTML='<div style="padding:6px 0">⏳ 生成中…（已输出 '+ln+' 行）</div>';return;}
+        clearInterval(iv); _qRenderSplitContent(t.log||'',host);
+        if(btn){btn.disabled=false;btn.textContent='🧪 重新生成预览';}
+      });
+    },2500);
+  });
+}
+function _qRenderSplitContent(log,host){
+  if(!host) return;
+  var json=null;
+  (log||'').split('\n').forEach(function(ln){var i=ln.indexOf('__SPLIT_JSON__ ');if(i>=0){try{json=JSON.parse(ln.slice(i+15));}catch(e){}}});
+  if(!json){host.innerHTML='<span style="color:#b91c1c">预览失败（无结果）。日志尾部：</span><pre style="white-space:pre-wrap;font-size:11px;max-height:200px;overflow:auto;background:#fafafe;border-radius:7px;padding:8px">'+_qEsc((log||'').slice(-1200))+'</pre>';return;}
+  if(!json.ok){host.innerHTML='<span style="color:#b91c1c">预览失败：'+_qEsc(json.msg||'')+'</span>';return;}
+  var rs=json.results||[];
+  if(!rs.length){host.innerHTML='<span style="color:var(--text3)">无结果</span>';return;}
+  host.innerHTML='<div style="font-size:11px;color:var(--text3);margin-bottom:6px">共 '+rs.length+' 篇（dry-run，<b>未入库</b>）</div>'
+    +rs.map(function(r){
+      var ok=r.ok?'<span class="badge" style="background:#e8f5ee;color:#15803d">PASS</span>':'<span class="badge" style="background:#fee2e2;color:#b91c1c">FAIL</span>';
+      return '<div style="border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+ok+'<b style="font-size:13px">'+_qEsc(r.title||'(无标题)')+'</b>'
+        +'<span style="color:var(--text3);font-size:11px">'+_qEsc(r.channel||'')+' · 主key '+_qEsc(r.key||'')+(r.score!=null?' · 评分 '+r.score:'')+'</span></div>'
+        +(r.problems&&r.problems.length?('<div style="color:#b45309;font-size:11px;margin-bottom:4px">'+r.problems.map(function(p){return _qEsc(p);}).join('；')+'</div>'):'')
+        +'<div style="white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;background:#fafafe;border-radius:7px;padding:8px">'+_qEsc((r.body||'').slice(0,2000))+'</div>'
+        +'</div>';
+    }).join('');
+}
+function _qSplitWrite(k){showConfirm('对该素材触发「拆篇写入」？','后台运行 write-full --split-large --key '+k+'，会真实入库（已预览过的内容将写入）','确认写入','btn-red','🧩').then(function(ok){if(!ok)return;fetch('/api/split-write/'+k,{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast(d.ok?('已触发拆篇写入（后台运行）'):('触发失败: '+(d.msg||'')));});});}
 
 
 // ── 话题缓存（原生应用内视图）──────────────────────────
@@ -2085,7 +2148,8 @@ function _qEditOpen(title,html,onSave){
   document.getElementById('qEditTitle').textContent=title;
   document.getElementById('qEditBody').innerHTML=html;
   document.getElementById('qEditMsg').textContent='';
-  window._qEditSaveFn=onSave;
+  var sb=document.getElementById('qEditSaveBtn'); if(sb) sb.style.display=onSave?'':'none';
+  window._qEditSaveFn=onSave||null;
   document.getElementById('qEditModal').classList.add('active');
 }
 function _qEditClose(){var e=document.getElementById('qEditModal');if(e)e.classList.remove('active');}
@@ -3668,7 +3732,8 @@ def api_split_preview():
         hit = _sp.should_split(c, th)
         out.append({"key": c['key'][:12], "full_key": c['key'], "title": c.get('title') or '',
                     "format": c.get('format') or '', "len": L, "should_split": hit,
-                    "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c, th) if hit else [])]})
+                    "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c, th) if hit else [])],
+                    "plan": (_sp.split_plan(c, th) if hit else [])})
     return jsonify({"day": day, "rows": out, "threshold": th})
 
 
@@ -3700,6 +3765,23 @@ def api_split_write(key):
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
     return jsonify({"ok": True})
+
+
+@app.route('/api/split-content/<key>', methods=['POST'])
+def api_split_content(key):
+    """拆篇内容预览（dry-run，不写库）：后台跑真实写作流程，返回 task_id 供轮询 /api/task。"""
+    global _task_counter
+    with _task_counter_lock:
+        tid = str(_task_counter)
+        _task_counter += 1
+    _tasks[tid] = {'status': 'running', 'log': ''}
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    scripts_dir = os.path.join(repo, 'scripts')
+    env = {**os.environ, 'PYTHONUNBUFFERED': '1', 'SQLITE_PATH': DB_PATH,
+           'PYTHONPATH': repo + ':' + scripts_dir + ':' + os.environ.get('PYTHONPATH', '')}
+    cmd = [sys.executable, '-m', 'cli', 'split-preview-content', '--key', key]
+    threading.Thread(target=_run_task, args=(cmd, tid, env), daemon=True).start()
+    return jsonify({"task_id": tid})
 
 
 WRITE_FAILURES_HTML = r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">

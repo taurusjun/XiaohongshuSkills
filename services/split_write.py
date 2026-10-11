@@ -7,7 +7,7 @@ from services.news import get_by_key
 from services.word_count import content_len
 
 DEFAULT_THRESHOLD = 3000
-__all__ = ["cluster_text_len", "should_split", "split_groups"]
+__all__ = ["cluster_text_len", "should_split", "split_groups", "split_plan"]
 
 
 def _keys(cand):
@@ -41,3 +41,19 @@ def split_groups(cand, threshold=DEFAULT_THRESHOLD):
     if cur:
         groups.append(cur)
     return groups
+
+
+def split_plan(cand, threshold=DEFAULT_THRESHOLD):
+    """拆篇方案（只读）：每组的成员明细（key/标题/字数），供预览。"""
+    out = []
+    for i, g in enumerate(split_groups(cand, threshold), 1):
+        members, tot = [], 0
+        for k in g:
+            r = get_by_key(k) or {}
+            L = content_len(r.get("content_ja") or "")
+            tot += L
+            members.append({"key": k[:12], "full_key": k,
+                            "title": r.get("title") or "", "len": L})
+        out.append({"no": i, "main_key": g[0][:12], "main_full_key": g[0],
+                    "total_len": tot, "members": members})
+    return out
