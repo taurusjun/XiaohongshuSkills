@@ -91,3 +91,91 @@ def cdp_page_html(url: str, port: int = 9222, wait: float = 8.0) -> str:
     except Exception as e:
         print(f"  ⚠️ CDP 取页失败: {e}")
         return ""
+
+
+# ============ CDP 导航 + 等待（公共） ============
+import itertools as _itertools
+_CDP_IDS = _itertools.count(100000)  # 与调用方手写的小 id（1~9）错开
+
+
+def cdp_eval(ws, expression: str, timeout: float = 10.0):
+    """在 ws 对应页面执行 JS，返回值（returnByValue）。
+    只认本次请求 id 的响应，途中的事件和旧请求的迟到响应都跳过。
+    JS 抛异常返回 None；超过 timeout 抛 websocket.WebSocketTimeoutException。"""
+    import json as _json
+    import time as _time
+    import websocket as _websocket
+    mid = next(_CDP_IDS)
+    ws.send(_json.dumps({"id": mid, "method": "Runtime.evaluate",
+                         "params": {"expression": expression, "returnByValue": True}}))
+    deadline = _time.time() + timeout
+    old_timeout = ws.gettimeout()
+    try:
+        while True:
+            remaining = deadline - _time.time()
+            if remaining <= 0:
+                raise _websocket.WebSocketTimeoutException("cdp_eval timed out")
+            ws.settimeout(remaining)
+            msg = _json.loads(ws.recv())
+            if msg.get("id") != mid:
+                continue
+            res = msg.get("result", {})
+            if "exceptionDetails" in res:
+                return None
+            return res.get("result", {}).get("value")
+    finally:
+        ws.settimeout(old_timeout)
+
+
+def cdp_navigate_and_wait(ws, url: str, ready_js: str,
+                          timeout: float = 20.0, poll: float = 0.3) -> str:
+    """导航到 url，等待「本次导航产生的新文档」满足 ready_js。返回 'ok' | 'timeout' | 'nav_error'。
+    - 导航前给旧文档打标记 window.__xhs_old_doc，只有新文档（无标记）满足 ready_js 才算 ok，
+      避免复用 tab 时把 tab 里原来的页面误判为已就绪；
+    - Page.navigate 返回 errorText，或落到 chrome-error:// 错误页 → 'nav_error'；
+    - 到截止时间仍未就绪（含 Page.navigate 迟迟不返回、evaluate 超时）→ 'timeout'。
+    不依赖 load / DOMContentLoaded 事件（广告等子资源卡住时 load 可能永不触发）。"""
+    import json as _json
+    import time as _time
+    import websocket as _websocket
+    deadline = _time.time() + timeout
+    old_timeout = ws.gettimeout()
+    try:
+        try:
+            cdp_eval(ws, "window.__xhs_old_doc = 1", timeout=min(5.0, timeout))
+        except _websocket.WebSocketTimeoutException:
+            pass  # 旧页面卡住打不上标记：仍要等 Page.navigate 响应（导航已提交）后再轮询
+
+        mid = next(_CDP_IDS)
+        ws.send(_json.dumps({"id": mid, "method": "Page.navigate", "params": {"url": url}}))
+        while True:
+            remaining = deadline - _time.time()
+            if remaining <= 0:
+                return "timeout"
+            ws.settimeout(remaining)
+            try:
+                msg = _json.loads(ws.recv())
+            except _websocket.WebSocketTimeoutException:
+                return "timeout"
+            if msg.get("id") == mid:
+                if msg.get("error") or msg.get("result", {}).get("errorText"):
+                    return "nav_error"
+                break
+
+        expr = ("location.href.startsWith('chrome-error://') ? 'ERR' : "
+                "((!window.__xhs_old_doc) && (" + ready_js + ")) ? 'OK' : ''")
+        while True:
+            remaining = deadline - _time.time()
+            if remaining <= 0:
+                return "timeout"
+            try:
+                v = cdp_eval(ws, expr, timeout=min(5.0, remaining))
+            except _websocket.WebSocketTimeoutException:
+                v = None
+            if v == "ERR":
+                return "nav_error"
+            if v == "OK":
+                return "ok"
+            _time.sleep(min(poll, max(0.0, deadline - _time.time())))
+    finally:
+        ws.settimeout(old_timeout)

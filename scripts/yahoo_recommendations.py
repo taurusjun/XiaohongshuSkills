@@ -33,6 +33,11 @@ from yahoo_common import (
 def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
     """通过 CDP 强制导航到 Yahoo 首页并读取个性化推荐。"""
     import websocket as _ws_module
+    from scrapers import cdp_eval, cdp_navigate_and_wait
+    try:
+        from sqlite_db import _log_db_error
+    except Exception:  # 单独运行、config 不在路径上时
+        def _log_db_error(msg): pass
 
     ws_url, _ = get_yahoo_tab_ws_url()
     if not ws_url:
@@ -41,47 +46,27 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
 
     html = ""
     try:
-        # 始终导航到首页
+        # 始终导航到首页（复用已登录的 Yahoo tab，个性化推荐依赖登录态）
         ws = _ws_module.create_connection(ws_url, timeout=15)
-        ws.settimeout(15)
-        ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-        ws.recv()
-        ws.send(json.dumps({
-            "id": 2, "method": "Page.navigate",
-            "params": {"url": YAHOO_HOME_URL},
-        }))
-        print("  导航到 Yahoo 首页...")
-        start = time.time()
-        while time.time() - start < 20:
-            try:
-                msg = json.loads(ws.recv())
-            except _ws_module.WebSocketTimeoutException:
-                break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-            if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                break
-        ws.close()
-
-        # 等待个性化内容渲染，然后重连读取
-        time.sleep(4)
-        ws_url2, _ = get_yahoo_tab_ws_url()
-        if not ws_url2:
-            print("❌ 无法重新获取 WebSocket URL")
-            return []
-        ws2 = _ws_module.create_connection(ws_url2, timeout=15)
-        ws2.settimeout(15)
-        ws2.send(json.dumps({
-            "id": 1, "method": "Runtime.evaluate",
-            "params": {"expression": "document.documentElement.outerHTML"},
-        }))
-        while True:
-            msg = json.loads(ws2.recv())
-            if msg.get("id") == 1:
-                html = msg.get("result", {}).get("result", {}).get("value", "")
-                break
-        ws2.close()
+        try:
+            print("  导航到 Yahoo 首页...")
+            status = cdp_navigate_and_wait(
+                ws, YAHOO_HOME_URL,
+                "document.querySelectorAll('#newsFeed li[data-ual-view-type=\"list\"]').length > 0",
+                timeout=20)
+            if status != "ok":
+                print(f"  ⚠️ Yahoo 首页推荐未就绪（{status}）")
+                _log_db_error(f"yahoo 首页推荐未就绪 status={status}")
+                return []
+            # 等待个性化内容渲染
+            time.sleep(4)
+            html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=15) or ""
+        finally:
+            ws.close()
 
     except Exception as e:
         print(f"抓取出错: {e}")
+        _log_db_error(f"yahoo 首页推荐抓取出错: {e}")
         return []
 
     if not html:

@@ -70,6 +70,11 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        max_retries: int = 2) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
+    from scrapers import cdp_eval, cdp_navigate_and_wait
+    try:
+        from sqlite_db import _log_db_error
+    except Exception:  # 单独运行、config 不在路径上时
+        def _log_db_error(msg): pass
 
     for attempt in range(max_retries + 1):
         if attempt > 0:
@@ -91,40 +96,22 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
 
             ws = _ws_module.create_connection(ws_url, timeout=15)
             try:
-                ws.settimeout(15)
-                ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-                ws.recv()
-
                 url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
-                ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
-
                 print("等待页面加载...")
-                start = time.time()
-                while time.time() - start < 20:
-                    try:
-                        msg = json.loads(ws.recv())
-                    except _ws_module.WebSocketTimeoutException:
-                        break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-                    if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                        break
-                time.sleep(3)
-
-                ws.send(json.dumps({
-                    "id": 3,
-                    "method": "Runtime.evaluate",
-                    "params": {"expression": "document.documentElement.outerHTML"},
-                }))
+                # 等本次导航的新文档出现 /articles/ 链接（无结果页侧栏也有，不会白等）
+                status = cdp_navigate_and_wait(
+                    ws, url, "document.querySelectorAll('a[href*=\"/articles/\"]').length > 0",
+                    timeout=20)
                 html = ""
-                start = time.time()
-                while time.time() - start < 10:
+                if status == "ok":
+                    time.sleep(3)
                     try:
-                        ws.settimeout(3)
-                        msg = json.loads(ws.recv())
-                        if msg.get("id") == 3:
-                            html = msg.get("result", {}).get("result", {}).get("value", "")
-                            break
-                    except Exception:
-                        pass
+                        html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=10) or ""
+                    except _ws_module.WebSocketTimeoutException:
+                        html = ""
+                else:
+                    print(f"  ⚠️ 搜索页未就绪（{status}）")
+                    _log_db_error(f"yahoo 搜索页未就绪 status={status} keyword={keyword}")
             finally:
                 try:
                     ws.close()

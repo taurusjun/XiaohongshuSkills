@@ -858,50 +858,6 @@ def extract_key_from_url(url: str) -> str:
     return m.group(1) if m else ""
 
 
-def _fetch_html_via_cdp(url: str, wait_sec: float = 4.0) -> str:
-    """用 CDP 导航到 url，等待 JS 渲染后返回 outerHTML；失败返回空串。"""
-    try:
-        import websocket as _ws_module
-        resp = requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5)
-        if resp.status_code != 200:
-            return ""
-        tabs = resp.json()
-        ws_url = next((t.get("webSocketDebuggerUrl", "") for t in tabs
-                       if t.get("type") == "page"), "")
-        if not ws_url:
-            return ""
-        ws = _ws_module.create_connection(ws_url, timeout=20)
-        try:
-            ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-            ws.recv()
-            ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
-            start = time.time()
-            while time.time() - start < 20:
-                try:
-                    msg = json.loads(ws.recv())
-                except _ws_module.WebSocketTimeoutException:
-                    break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-                if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                    break
-            time.sleep(wait_sec)  # 等 JS 懒加载
-            ws.send(json.dumps({
-                "id": 3, "method": "Runtime.evaluate",
-                "params": {"expression": "document.documentElement.outerHTML"},
-            }))
-            while True:
-                msg = json.loads(ws.recv())
-                if msg.get("id") == 3:
-                    return msg.get("result", {}).get("result", {}).get("value", "")
-        finally:
-            try:
-                ws.close()
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"    ⚠️ CDP fetch 失败: {e}")
-    return ""
-
-
 def fetch_article_details(url: str) -> dict:
     """HTTP 请求文章页，抓取封面图、原标题、日文摘要。
     对 Yahoo Expert 长文（/expert/articles/）优先走 CDP 以获取 JS 渲染后的图片。"""
