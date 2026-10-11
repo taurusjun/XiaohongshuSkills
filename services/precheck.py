@@ -20,6 +20,23 @@ _TH_X = rules.xhs_th()
 _TH_G = rules.gzh_th()
 SHINTAI_FAIL = _NF.get("fail", "発恵価歳竜徳沢辺栄広芸戦売買読選抜強実気対経済冨円浜塩込み")
 SHINTAI_WARN = _NF.get("name_reserved", "嶋壱")
+
+
+def _font_sets():
+    """新字体集合：优先取 lexicon(type=font)，为空则回退 newfont.json。"""
+    fail = warn = ""
+    try:
+        from services import lexicon as _lx
+        for r in _lx.all(type="font"):
+            if r.get("status") == "rejected":
+                continue
+            if r.get("note") == "fail":
+                fail += r["term"]
+            elif r.get("note") == "warn":
+                warn += r["term"]
+    except Exception:  # noqa: BLE001
+        pass
+    return (fail or SHINTAI_FAIL, warn or SHINTAI_WARN)
 TITLE_MAX_XHS = _TH_X.get("title_max", 20)
 TITLE_MAX_GZH = _TH_G.get("title_max", 30)
 BODY_MIN_STORY = _TH_X.get("story_body_min", 800)
@@ -88,15 +105,23 @@ def check_text(text, spec, channel="xhs"):
     if dunhao:
         problems.append(f"顿号行 ×{len(dunhao)}（renwei 排比三连前置条件，整段清零）")
 
-    kana = len(KANA_RE.findall(body))
+    _keep = 0
+    try:
+        from services import lexicon as _lx
+        for _t in _lx.keep_spans((title or "") + body):        # 保留不译的拟声/neta → 不算残留
+            _keep += len(KANA_RE.findall(_t))
+    except Exception:  # noqa: BLE001
+        _keep = 0
+    kana = max(0, len(KANA_RE.findall(body)) - _keep)
     if kana > KANA_MAX:
-        problems.append(f"假名 {kana} > {KANA_MAX}（含标题行时按全文计）")
-    kana_all = len(KANA_RE.findall((title or "") + body))
+        problems.append(f"假名 {kana} > {KANA_MAX}（已扣除保留词；含标题行按全文计）")
+    kana_all = max(0, len(KANA_RE.findall((title or "") + body)) - _keep)
 
-    shintai_fail = sorted(set(re.findall(f"[{SHINTAI_FAIL}]", (title or "") + body)))
+    _sf, _sw = _font_sets()
+    shintai_fail = sorted(set(re.findall(f"[{_sf}]", (title or "") + body)))
     if shintai_fail:
         problems.append(f"日文新字体命中 {shintai_fail}（逐处替换为简体后复查）")
-    shintai_warn = sorted(set(re.findall(f"[{SHINTAI_WARN}]", (title or "") + body)))
+    shintai_warn = sorted(set(re.findall(f"[{_sw}]", (title or "") + body)))
     if shintai_warn:
         warns.append(f"疑似新字体 {shintai_warn}（人名保留规则：grep 上下文，人名放行）")
 

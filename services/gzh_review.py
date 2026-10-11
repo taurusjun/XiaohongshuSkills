@@ -9,11 +9,11 @@ __all__ = ["check"]
 _KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]{2,}")
 
 def _names():
-    p = paths.REPO_ROOT / "config" / "artist_name_map.json"
     try:
-        d = json.loads(p.read_text(encoding="utf-8"))
-        return list(d.keys()) if isinstance(d, dict) else [x for v in d.values() for x in (v if isinstance(v, list) else [v])]
-    except Exception:
+        from services import lexicon as _lx
+        return [r["term"] for r in _lx.all()
+                if r.get("type") in ("person", "group") and r.get("status") != "rejected"]
+    except Exception:  # noqa: BLE001
         return []
 
 def check(title: str, body: str):

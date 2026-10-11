@@ -1,0 +1,18 @@
+{
+ "萘": {
+  "zh": "萩",
+  "type": "variant"
+ },
+ "髙": {
+  "zh": "高",
+  "type": "variant"
+ },
+ "﨑": {
+  "zh": "崎",
+  "type": "variant"
+ },
+ "辻": {
+  "action": "keep",
+  "type": "variant"
+ }
+}

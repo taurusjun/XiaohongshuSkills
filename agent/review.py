@@ -176,6 +176,13 @@ def prepare_package(date, hist_k=6):
                              "ja": (r.get("title_ja") or "")[:60]}
                             for r in full if (r.get("title") or "").strip()])
     hist = {}
+    try:                                   # 实体 → 术语表候选（未在表者入 pending）
+        from services import lexicon as _lx
+        _all_names = [n for v in ent.values() for n in (v or [])]
+        if _all_names:
+            _lx.discover_names(_all_names, from_="review")
+    except Exception:  # noqa: BLE001
+        pass
     for r in full:
         if not (r.get("title") or "").strip():
             continue

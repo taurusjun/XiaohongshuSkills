@@ -20,9 +20,9 @@ def _fake_db(monkeypatch, initial=None):
 def _patch(monkeypatch):
     monkeypatch.setattr(w, "prepare_package", lambda c: {**_pkg(), "channel_hint": c.get("channel_hint", "")})
     monkeypatch.setattr(w._dh, "fix_text", lambda b: (b, []))
-    monkeypatch.setattr(w._kana, "replace", lambda s: s)
-    monkeypatch.setattr(w._kana, "new_terms", lambda s: [], raising=False)
-    monkeypatch.setattr(w._kana, "log_pending", lambda *a, **k: None)
+    monkeypatch.setattr(w._lx, "replace", lambda s: s)
+    monkeypatch.setattr(w._lx, "residual_terms", lambda s: [], raising=False)
+    monkeypatch.setattr(w._lx, "discover", lambda *a, **k: None)
     monkeypatch.setattr(w._pc, "check_text", lambda t, spec, channel="xhs": {"problems": [], "body_len": len(t), "h2": 0, "kana": 0})
     monkeypatch.setattr(w._pc, "title_len", lambda t: len(t))
     monkeypatch.setattr(w._rw, "review", lambda t: {"exit": 0, "problems": [], "hits": {}})

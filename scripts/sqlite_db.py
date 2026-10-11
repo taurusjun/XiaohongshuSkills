@@ -227,6 +227,32 @@ def init_db():
                 tags        TEXT DEFAULT '',       -- 检索标签（题材/实体/模式类型，逗号分隔）
                 created_at  TEXT
             );
+
+            -- 术语表（日→中专名整体；真源）type: person|group|work|word|variant|font|keep
+            CREATE TABLE IF NOT EXISTS lexicon (
+                term        TEXT PRIMARY KEY,
+                type        TEXT DEFAULT '',
+                action      TEXT DEFAULT 'translate',   -- translate|keep
+                zh          TEXT DEFAULT '',
+                aliases     TEXT DEFAULT '',
+                status      TEXT DEFAULT 'pending',     -- pending|auto|manual|rejected
+                source      TEXT DEFAULT '',
+                src_key     TEXT DEFAULT '',
+                note        TEXT DEFAULT '',
+                created_at  TEXT DEFAULT '',
+                updated_at  TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_lexicon_status ON lexicon(status);
+            CREATE INDEX IF NOT EXISTS idx_lexicon_type ON lexicon(type);
+            CREATE TABLE IF NOT EXISTS lexicon_audit (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                term        TEXT,
+                old_json    TEXT DEFAULT '',
+                new_json    TEXT DEFAULT '',
+                actor       TEXT DEFAULT '',
+                reason      TEXT DEFAULT '',
+                ts          TEXT DEFAULT ''
+            );
         """)
         # Compat: add columns to existing DBs
         _news_compat = [

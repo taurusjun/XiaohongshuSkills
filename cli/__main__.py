@@ -1,8 +1,8 @@
 """统一 CLI：python -m cli <cmd> [args...]  → 分发到 services。"""
 import sys
 
-from services import (word_count, precheck, schedule, dunhao, density,
-                      validate_tables, import_drafts, review_archive, kana, references, gallery)
+from services import (word_count, precheck, schedule, dunhao, density, lexicon,
+                      validate_tables, import_drafts, review_archive, references, gallery)
 from agent import review as _review_full
 from agent import write as _write_full
 
@@ -20,9 +20,9 @@ SUBCOMMANDS = {
     "write-full": _write_full.main,
     "write-retry": _write_full.main_retry,
     "write-failures": _write_full.main_failures,
-    "kana": kana.main,
     "references": references.main,
     "gallery": gallery.main,
+    "lexicon": lexicon.main,
 }
 
 

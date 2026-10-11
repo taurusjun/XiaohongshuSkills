@@ -1,20 +1,32 @@
-"""形近字/异体字自动替换 + 主角名核对（硬规则=config+服务）。以 content_ja 为字形事实源。"""
+"""形近字/异体字自动替换 + 主角名核对（数据来自 lexicon，type=variant）。以 content_ja 为字形事实源。"""
 import re
 
-from services import rules
+from services import lexicon as _lx
 
 __all__ = ["replace", "suspect_names", "check"]
 
-_NV = rules.load("name_variants.json")
-_VARIANTS = _NV.get("variants", {})
-_KEEP = set(_NV.get("keep", []))
+
+def _maps():
+    vars_, keep = {}, set()
+    try:
+        for r in _lx.all(type="variant"):
+            if r.get("status") == "rejected":
+                continue
+            if r.get("action") == "keep":
+                keep.add(r["term"])
+            elif r.get("zh"):
+                vars_[r["term"]] = r["zh"]
+    except Exception:  # noqa: BLE001
+        pass
+    return vars_, keep
 
 
 def replace(text):
-    """把形近字/异体字自动替换为正字；保留字（人名约定）不动。返回 (new_text, changes)。"""
+    """把形近字/异体字替换为正字；保留字（人名约定）不动。返回 (new_text, changes)。"""
     out, changes = text or "", []
-    for wrong, right in _VARIANTS.items():
-        if not wrong or wrong == right or wrong in _KEEP:
+    vars_, keep = _maps()
+    for wrong, right in vars_.items():
+        if not wrong or wrong == right or wrong in keep:
             continue
         if wrong in out:
             out = out.replace(wrong, right)
@@ -24,7 +36,8 @@ def replace(text):
 
 def suspect_names(text):
     """返回含『形近变体字』的疑似人名 token（供 content_ja 核对）。"""
-    bad = {k for k, v in _VARIANTS.items() if k not in _KEEP and k != v}
+    vars_, keep = _maps()
+    bad = {k for k, v in vars_.items() if k not in keep and k != v}
     return [tok for tok in re.findall(r"[\u4e00-\u9fff]{2,6}", text or "")
             if any(c in bad for c in tok)]
 

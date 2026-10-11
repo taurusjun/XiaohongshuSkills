@@ -9,7 +9,7 @@ import re
 import sys
 
 from agent import llm
-from services import (news as _news, paths, precheck as _pc, dunhao as _dh, kana as _kana,
+from services import (news as _news, paths, precheck as _pc, dunhao as _dh, lexicon as _lx,
                       format_route as _fr, routing as _route, renwei as _rw, gzh_review as _gz,
                       references as _refs, content_gate as _gate, name_variants as _nv,
                       titles as _titles, batches as _batches, rules as _rules)
@@ -191,6 +191,18 @@ def _compose_msgs(cand, pkg, force_channel=None):
     if pkg.get("patterns"):
         user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
                  "来自 feedback_patterns 表）===\n" + pkg["patterns"])
+    try:  # 本文专有名词（只注入本文命中的，绝不全量）
+        _hits = _lx.inject(cand.get("title_ja") or "", pkg.get("content_ja") or "")
+        if _hits:
+            _ls = []
+            for _r in _hits:
+                if (_r.get("action") or "translate") == "keep":
+                    _ls.append(f"- {_r['term']}：保持原样（不可译，保留）")
+                else:
+                    _ls.append(f"- {_r['term']} → {_r['zh']}")
+            user += "\n\n=== 本文专有名词（务必整体处理，长词优先）===\n" + "\n".join(_ls)
+    except Exception:  # noqa: BLE001
+        pass
     msgs.append({"role": "user", "content": user})
     return msgs
 
@@ -473,7 +485,7 @@ def _produce(cand, pkg, channel, first=None):
                         _msg += f"\n（正文 {_blen} 字超过 {_hard}：必须精简到 ≤{_hard}）"
                     _score_msg = _msg
                 try:
-                    res = _kana.new_terms(body)
+                    res = _lx.residual_terms(body)
                     if res:
                         _ctxs = []
                         for _ln in (title + "\n" + body).split("\n"):
@@ -517,10 +529,8 @@ def _produce(cand, pkg, channel, first=None):
                 body = d.get("gzh_body")
                 title = title or (d.get("gzh_title") or "")
         body, _ = _dh.fix_text(body)
-        body = _kana.replace(body)
-        body, _ = _nv.replace(body)
-        title = _kana.replace(title)
-        title, _ = _nv.replace(title)
+        body = _lx.replace(body)                 # 术语表统一替换（translate 项）
+        title = _lx.replace(title)
         title = _fit_title(title, channel)
         mech = _pc.check_text(f"## {title}\n{body}", pkg["spec"], channel)
         if not (body or "").strip():          # 正文为空 → block + 报错（写 error log）
@@ -582,7 +592,7 @@ def _produce(cand, pkg, channel, first=None):
     if mech.get("den_exempt"):
         _log(f"  密度豁免（{pkg.get('material_type')}）：{'; '.join(mech['den_exempt'])[:60]}")
     try:
-        _kana.log_pending(body, note=cand["key"][:12], src=cand["key"])
+        _lx.discover(f"{title}\n{body}\n{cand.get('title_ja') or ''}", src_key=cand["key"], from_="write")
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -1035,9 +1045,9 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
                    for r in results if r.get("full_key") and r.get("skipped")]
         _batches.save(str(_dt.datetime.now().date()), {"processed": processed, "skipped": skipped})
         try:                                          # 假名新词自动入字典（先自动，人工后审）
-            _auto = _kana.auto_promote()
+            _auto = _lx.judge()
             if _auto:
-                print(f"[假名] 自动入字典 {len(_auto)} 条（人工可后审 data/kana_autopromoted.jsonl）", flush=True)
+                print(f"[术语] 自动判定入表 {len(_auto)} 条（人工可在「📚 术语表」审）", flush=True)
         except Exception:  # noqa: BLE001
             pass
 
