@@ -596,7 +596,7 @@ def _produce(cand, pkg, channel, first=None):
             "gate_exempt": mech.get("gate_exempt") or [], "score_obj": score}
 
 
-def write_one(cand, dry_run=True, force_channel=None):
+def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     """阶段3~5：编写(可 both 双版本)→门禁→评分→改稿→入库+验证。force_channel 用于指定渠道。
 
     AKB大TOP 晒照型（review 标 akb_type=bullet）→ **不写正文**，只设 preselected=1/publish_xhs=0。
@@ -624,7 +624,7 @@ def write_one(cand, dry_run=True, force_channel=None):
     _rels = classify_relations(cand, pkg)
     _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
     _KEEP = {"时间线补充", "人物呼应", "新角度"}
-    if any(r.get("type") == "纯重复" for r in _rels):
+    if any(r.get("type") == "纯重复" for r in _rels) and not split_mode:
         if not dry_run:
             _news.update_news(cand["key"], {"grade": "C", "grade_reason": "纯重复(历史已发)"})
         return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
@@ -911,7 +911,7 @@ def write_split_key(key, threshold=None, force_channel=None, dry_run=False):
         gkeys = [m["full_key"] for m in g["members"]]
         sub = {**(_news.get_by_key(gkeys[0]) or {}), "cluster_keys": ",".join(gkeys[1:])}
         try:
-            rr = write_one(sub, dry_run=True, force_channel=force_channel)   # 只生成内容，不写 news
+            rr = write_one(sub, dry_run=True, force_channel=force_channel, split_mode=True)   # 拆篇：合并不去重
         except Exception as e:                                              # noqa: BLE001
             skipped.append({"group": g["no"], "reason": f"{type(e).__name__}: {e}"})
             continue
@@ -971,8 +971,16 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
     if split_preview:
         _print_split_preview(cands)
         return []
-    if split_large:
-        cands = _split_candidates(cands, split_threshold)
+    if split_large:                                   # 超阈值者 → 拆多篇落 split_articles；其余正常写
+        from services import split_write as _spx
+        _st = {c["key"] for c in cands if _spx.should_split(c, split_threshold)}
+        for c in [x for x in cands if x["key"] in _st]:
+            _r = write_split_key(c["key"], split_threshold, force_channel, dry_run=dry_run)
+            if _r.get("ok"):
+                print(f"[拆篇] {c['key'][:12]} → 拆 {_r['count']} 篇（split_articles 表）", flush=True)
+            else:
+                print(f"[拆篇] {c['key'][:12]} {_r.get('msg')}", flush=True)
+        cands = [c for c in cands if c["key"] not in _st]
     def _emit(r):
         """逐篇即时打印（边写边打印）。"""
         if r.get("bullet"):
