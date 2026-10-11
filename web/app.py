@@ -2120,46 +2120,58 @@ function _qEditSave(){if(window._qEditSaveFn)window._qEditSaveFn();}
 
 function _lbl(t){return '<label style="display:block;font-size:11px;color:var(--text3);margin:8px 0 3px">'+t+'</label>';}
 function _sel(id,opts,val){return '<select id="'+id+'" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fff">'+opts.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';}
-var _lexFilter={type:'',status:'',q:''};
+function _fsel(id,opts,val,w){return '<select id="'+id+'" onchange="_lexApply()" style="width:'+(w||130)+'px;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fff">'+opts.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>';}
+var _lexFilter={type:'',status:'',q:'',page:1,page_size:50,sort_by:'updated_at',sort_dir:'desc'};
 function _qLoadLexicon(){
   var qb=document.getElementById('queueBody'); if(!qb) return;
   var types=[['','全部类型'],['person','人名'],['group','团体'],['work','作品'],['word','词汇'],['variant','形近字'],['font','新字体'],['keep','保留']];
   var stats=[['','全部状态'],['manual','人工'],['auto','自动'],['pending','待审'],['rejected','已撤回']];
   qb.innerHTML=_qHead('📚 术语表','日→中专名整体映射；自动判定 + 人工审（真源=DB，config 仅快照）')
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 2px 8px">'
-    +_qIn('lex_q','搜索 term / 中译…',220,_lexFilter.q)
-    +_sel('lex_type',types,_lexFilter.type)
-    +_sel('lex_status',stats,_lexFilter.status)
-    +'<button class="btn btn-outline btn-sm" onclick="_lexApply()">查询</button>'
-    +'<button class="btn btn-outline btn-sm" onclick="_lexNew()">➕ 新增</button>'
-    +'<button class="btn btn-outline btn-sm" onclick="_lexJudge()">🤖 自动判定待审</button>'
-    +'<button class="btn btn-outline btn-sm" onclick="_lexExport()">⬇ 导出快照</button>'
-    +'<span class="table-hdr-count" id="lex_cnt"></span></div>'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap;overflow-x:auto;padding:0 2px 8px">'
+    +_qIn('lex_q','搜索 term / 中译…',200,_lexFilter.q)
+    +_fsel('lex_type',types,_lexFilter.type,120)
+    +_fsel('lex_status',stats,_lexFilter.status,120)
+    +'<button class="btn btn-outline btn-sm" onclick="_lexApply()" style="flex:none">查询</button>'
+    +'<button class="btn btn-outline btn-sm" onclick="_lexNew()" style="flex:none">➕ 新增</button>'
+    +'<button class="btn btn-outline btn-sm" onclick="_lexJudge()" style="flex:none">🤖 自动判定待审</button>'
+    +'<button class="btn btn-outline btn-sm" onclick="_lexExport()" style="flex:none">⬇ 导出快照</button>'
+    +'<span class="table-hdr-count" id="lex_cnt" style="margin-left:auto"></span></div>'
     +_qCard('<div id="lexTable">'+_qWait()+'</div>');
   var e=document.getElementById('lex_q'); if(e){e.value=_lexFilter.q;e.addEventListener('keydown',function(ev){if(ev.key==='Enter')_lexApply();});}
-  document.getElementById('lex_type').onchange=_lexApply;
-  document.getElementById('lex_status').onchange=_lexApply;
   _lexRender();
 }
-function _lexApply(){_lexFilter.q=(document.getElementById('lex_q')||{}).value||'';_lexFilter.type=(document.getElementById('lex_type')||{}).value||'';_lexFilter.status=(document.getElementById('lex_status')||{}).value||'';_lexRender();}
+function _lexApply(){_lexFilter.q=(document.getElementById('lex_q')||{}).value||'';_lexFilter.type=(document.getElementById('lex_type')||{}).value||'';_lexFilter.status=(document.getElementById('lex_status')||{}).value||'';_lexFilter.page=1;_lexRender();}
+function _lexSort(col){if(_lexFilter.sort_by===col)_lexFilter.sort_dir=(_lexFilter.sort_dir==='asc'?'desc':'asc');else{_lexFilter.sort_by=col;_lexFilter.sort_dir='asc';}_lexFilter.page=1;_lexRender();}
+function _lexGo(p){_lexFilter.page=Math.max(1,p);_lexRender();}
+function _lth(label,col,w){var ar=_lexFilter.sort_by===col?(_lexFilter.sort_dir==='asc'?' ▲':' ▼'):'';return '<th style="width:'+w+';cursor:pointer;user-select:none" onclick="_lexSort(\''+col+'\')">'+label+ar+'</th>';}
 function _lexRender(){
-  var p=new URLSearchParams({type:_lexFilter.type,status:_lexFilter.status,q:_lexFilter.q});
+  var p=new URLSearchParams({type:_lexFilter.type,status:_lexFilter.status,q:_lexFilter.q,page:_lexFilter.page,page_size:_lexFilter.page_size,sort_by:_lexFilter.sort_by,sort_dir:_lexFilter.sort_dir});
   fetch('/api/lexicon?'+p.toString()).then(function(r){return r.json();}).then(function(d){
     var rows=d.rows||[]; window._lexRows=rows;
-    var c=document.getElementById('lex_cnt'); if(c)c.textContent=rows.length+' 条';
+    var total=d.total||0, ps=d.page_size||50, pg=d.page||1, lp=Math.max(1,Math.ceil(total/ps));
+    var c=document.getElementById('lex_cnt'); if(c)c.textContent='共 '+total+' 条';
     var tb=document.getElementById('lexTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('无匹配条目');return;}
     var badge=function(s){var m={manual:['#e8f5ee','#15803d','人工'],auto:['#eef2ff','#4f46e5','自动'],pending:['#fff7e6','#b45309','待审'],rejected:['#f3f4f6','#6b7280','撤回']}[s]||['#f3f4f6','#6b7280',s];return '<span class="badge" style="background:'+m[0]+';color:'+m[1]+'">'+m[2]+'</span>';};
-    tb.innerHTML='<table>'+_qTh([{t:'term',w:'170px'},{t:'中译 / 动作',w:'190px'},{t:'类型',w:'70px'},{t:'状态',w:'64px'},{t:'来源'},{t:'操作',w:'210px'}])+'<tbody>'+
-      rows.map(function(x,i){
+    var html='<table><thead><tr>'+_lth('term','term','170px')+'<th style="width:180px">中译 / 动作</th>'+_lth('类型','type','86px')+_lth('状态','status','78px')+_lth('入库时间','created_at','132px')+'<th>来源</th><th style="width:200px">操作</th></tr></thead><tbody>';
+    html+=rows.map(function(x,i){
         var zh=(x.action==='keep')?'<span style="color:#b45309">保留不译</span>':('<b style="color:#15803d">'+_qEsc(x.zh||'')+'</b>');
         var act='<button class="btn btn-outline btn-sm" onclick="_lexEdit('+i+')">编辑</button>';
         if(x.status==='pending'||x.status==='auto'){act+=' <button class="btn btn-outline btn-sm" onclick="_lexDo('+i+',\'promote\')">保留</button>';}
         if(x.status!=='rejected'){act+=' <button class="btn btn-outline btn-sm" onclick="_lexDo('+i+',\'revert\')">撤回</button>';}
         act+=' <button class="btn btn-outline btn-sm" onclick="_lexDo('+i+',\'delete\')">删除</button>';
         return '<tr><td style="font-family:ui-monospace,monospace;font-size:12px">'+_qEsc(x.term)+'</td><td>'+zh+'</td><td style="font-size:12px">'+_qEsc(x.type)+'</td>'+
-          '<td>'+badge(x.status)+'</td><td style="font-size:11px;color:#999">'+_qEsc(x.source||'')+'</td><td>'+act+'</td></tr>';
-      }).join('')+'</tbody></table>';
+          '<td>'+badge(x.status)+'</td><td style="font-size:11px;color:#999">'+_qEsc((x.created_at||'').slice(0,16))+'</td><td style="font-size:11px;color:#999">'+_qEsc(x.source||'')+'</td><td>'+act+'</td></tr>';
+      }).join('');
+    html+='</tbody></table>';
+    tb.innerHTML=html;
+    var foot=document.createElement('div'); foot.className='table-foot';
+    foot.innerHTML='<span class="table-foot-info">第 '+pg+' / '+lp+' 页 · 共 '+total+' 条</span>'+
+      '<button class="pg-btn" onclick="_lexGo(1)"'+(pg<=1?' disabled style="opacity:.4"':'')+'>«</button>'+
+      '<button class="pg-btn" onclick="_lexGo('+(pg-1)+')"'+(pg<=1?' disabled style="opacity:.4"':'')+'>‹</button>'+
+      '<button class="pg-btn" onclick="_lexGo('+(pg+1)+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>›</button>'+
+      '<button class="pg-btn" onclick="_lexGo('+lp+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>»</button>';
+    tb.appendChild(foot);
   });
 }
 function _lexNew(){_lexForm('',{});}
@@ -2188,13 +2200,9 @@ function _lexForm(term,x){
 }
 function _lexDo(i,op){
   var x=(window._lexRows||[])[i]; if(!x) return; var t=x.term;
-  if(op==='delete'){
-    showConfirm('彻底删除「'+t+'」？','','删除','btn-red','🗑️').then(function(ok){if(ok)_lexPost('delete',t);});
-  } else if(op==='revert'){
-    showConfirm('撤回「'+t+'」？','将从生效表移除（留档）','撤回','btn-red','🚫').then(function(ok){if(ok)_lexPost('revert',t);});
-  } else {
-    _lexPost('promote',t,function(){qToast('已保留为人工');});
-  }
+  if(op==='delete'){showConfirm('彻底删除「'+t+'」？','','删除','btn-red','🗑️').then(function(ok){if(ok)_lexPost('delete',t);});}
+  else if(op==='revert'){showConfirm('撤回「'+t+'」？','将从生效表移除（留档）','撤回','btn-red','🚫').then(function(ok){if(ok)_lexPost('revert',t);});}
+  else {_lexPost('promote',t,function(){qToast('已保留为人工');});}
 }
 function _lexPost(op,term,after){
   fetch('/api/lexicon/'+op,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({term:term})})
@@ -3921,9 +3929,22 @@ def write_failures_page():
 @app.route('/api/lexicon', methods=['GET'])
 def api_lexicon_list():
     from services import lexicon as _lx
-    return jsonify({"rows": _lx.all(type=request.args.get('type') or None,
-                                    status=request.args.get('status') or None,
-                                    q=(request.args.get('q') or '').strip())})
+    try:
+        page = max(1, int(request.args.get('page') or 1))
+    except Exception:
+        page = 1
+    try:
+        ps = min(200, max(1, int(request.args.get('page_size') or 50)))
+    except Exception:
+        ps = 50
+    rows = _lx.all(type=request.args.get('type') or None,
+                   status=request.args.get('status') or None,
+                   q=(request.args.get('q') or '').strip(),
+                   sort_by=request.args.get('sort_by') or 'updated_at',
+                   sort_dir=request.args.get('sort_dir') or 'desc')
+    total = len(rows)
+    start = (page - 1) * ps
+    return jsonify({"rows": rows[start:start + ps], "total": total, "page": page, "page_size": ps})
 
 
 @app.route('/api/lexicon', methods=['POST'])

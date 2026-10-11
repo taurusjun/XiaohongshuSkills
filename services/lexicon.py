@@ -275,7 +275,10 @@ def get(term):
     return dict(r) if r else None
 
 
-def all(type=None, status=None, q=""):
+_SORT_COLS = {"term", "type", "status", "action", "zh", "created_at", "updated_at", "source"}
+
+
+def all(type=None, status=None, q="", sort_by="updated_at", sort_dir="desc"):
     ensure()
     sql, args = "SELECT * FROM lexicon WHERE 1=1", []
     if type:
@@ -284,7 +287,9 @@ def all(type=None, status=None, q=""):
         sql += " AND status=?"; args.append(status)
     if q:
         sql += " AND (term LIKE ? OR zh LIKE ? OR aliases LIKE ?)"; args += [f"%{q}%"] * 3
-    sql += " ORDER BY updated_at DESC"
+    sb = sort_by if sort_by in _SORT_COLS else "updated_at"
+    d = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
+    sql += f" ORDER BY {sb} {d}, term ASC"
     with _db() as c:
         return [dict(r) for r in c.execute(sql, args).fetchall()]
 
