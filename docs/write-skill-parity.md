@@ -70,7 +70,7 @@
 3. **机械渠道预判接入**：`prepare_package` 用 `routing.route(title, content_ja)` 得 `pre_channel` 注入 prompt；LLM 输出非法渠道时回退 `pre_channel`。
 4. **export 长文正文入料放宽**到 20000 字（原 9000 会截断超长深访）。
 5. **拆多篇 fallback**：`split_write` 按内容体量把 cluster 粗分为 ≤3000 字的组，每组一个主 key；**默认关闭**（旧 skill 要求用户明确同意才拆），`--split-large` 开启。
-   单主稿拆篇走 `write_split_key`：cluster 各成员**合并**后按体量分组，每组生成一篇并写入 `split_articles(main_key,seq,group_keys,title,content,channel,method,score,status)`，**全部挂同一主稿 key（1 对多）**。拆篇走 `write_one(split_mode=True)`：**不做跨篇「纯重复」去重、不跳过**（A+B/C/D 是同一件事的合并素材）；仅当某组真正生成不出内容才跳过。
+   单主稿拆篇走 `write_split_key`：cluster 各成员**合并**后按体量分组，每组生成一篇并写入 `split_articles(main_key,seq,group_keys,title,content,channel,method,score,status)`，**全部挂同一主稿 key（1 对多）**。拆篇走 `write_one(split_mode=True)`：**不做跨篇「纯重复」去重、不跳过**（A+B/C/D 是同一件事的合并素材）。生成不出内容的组**静默不写**、**界面上不显示任何「跳过」**。
 6. **references 命中度**：检索词 5、结果 **6 篇**、摘录 900 字，常驻 `ai-taste-checklist`/`deep-interview-density`/`title-concreteness-over-category`/`gzh-review-criteria`/`content-type-data-profile`。
 
 ## 4. 口径说明
