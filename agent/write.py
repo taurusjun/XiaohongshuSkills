@@ -258,11 +258,26 @@ def _score_call(sysd, usr, max_tokens, dims, agg="sum", tries=2):
     return {**(last or {}), "total": 0}
 
 
+def _score_lenient(raw, dims):
+    """JSON 解析失败时的兜底：正则抓每维 score 与 total。"""
+    out = {}
+    for n in dims:
+        m = (re.search(rf'"{re.escape(n)}"\s*:\s*\{{\s*"score"\s*:\s*(\d+(?:\.\d+)?)', raw or "")
+             or re.search(rf'"{re.escape(n)}"\s*:\s*(\d+(?:\.\d+)?)', raw or ""))
+        if m:
+            out[n] = {"score": float(m.group(1))}
+    mt = re.search(r'"total"\s*:\s*(\d+(?:\.\d+)?)', raw or "")
+    if mt:
+        out["total"] = float(mt.group(1))
+    return out
+
+
 def score_content(title, body, max_tokens=4000):
     """5 维评分（各 0-2）+ 每维评语 + 整体修改建议（供改稿参考，对齐原 skill）。"""
     sysd = ("你是严格的中文内容评审。对 5 个维度各 0-2 打分并**给一句理由**，再给**整体修改建议**。"
             '只输出严格 JSON：{"爆发点":{"score":n,"reason":".."},"情绪价值":{...},"信息增量":{...},'
-            '"内容深度":{...},"标题质量":{...},"total":n,"建议":".."}（各0-2，total=五维之和）。')
+            '"内容深度":{...},"标题质量":{...},"total":n,"建议":".."}（各0-2，total=五维之和）。'
+            "**只输出 JSON 本身**：不要 ``` 代码块、不要多余文字；reason/建议 内**不要换行、不要英文双引号**。")
     usr = _read(REVIEW_PROMPT)[:3000] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
     _dims = ("爆发点", "情绪价值", "信息增量", "内容深度", "标题质量")
     last = {"total": 0, "error": "parse"}
@@ -275,6 +290,8 @@ def score_content(title, body, max_tokens=4000):
             last = {"total": 0, "error": str(e)}
             continue
         if not isinstance(d, dict):
+            d = _score_lenient(raw, _dims)      # 兜底：正则抓分
+        if not isinstance(d, dict) or not d:
             continue
         if not isinstance(d.get("total"), (int, float)):
             nums = []
