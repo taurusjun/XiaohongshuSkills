@@ -90,14 +90,15 @@ _DDL = """CREATE TABLE IF NOT EXISTS write_failures (
     updated_at    TEXT DEFAULT '',
     traceback     TEXT DEFAULT '',
     category      TEXT DEFAULT '',
-    level         TEXT DEFAULT 'error'
+    level         TEXT DEFAULT 'error',
+    note          TEXT DEFAULT ''
 )"""
 
 
 def ensure():
     with _db() as c:
         c.execute(_DDL)
-        for _col in ("traceback", "category", "level"):  # 老表补列（幂等）
+        for _col in ("traceback", "category", "level", "note"):  # 老表补列（幂等）
             try:
                 c.execute(f"ALTER TABLE write_failures ADD COLUMN {_col} TEXT DEFAULT ''")
             except sqlite3.OperationalError:
@@ -151,11 +152,11 @@ def warn(key, reason, category="gate_kana", title=""):
 
 
 def mark_resolved(key, note=""):
-    """重试成功/已写/素材不存在 → 标记 resolved（**保留记录，不删除**）。"""
+    """重试成功/已写 → 标记 resolved（**保留 reason 原始失败原因**，note 存说明）。"""
     ensure()
     sets, args = ["status='resolved'", "next_retry_at=''", "updated_at=?"], [_fmt(datetime.datetime.now())]
     if note:
-        sets.append("reason=?"); args.append(note)
+        sets.append("note=?"); args.append(note)          # 写 note，不覆盖 reason
     args.append(key)
     with _db() as c:
         c.execute(f"UPDATE write_failures SET {', '.join(sets)} WHERE key=?", args)

@@ -3402,7 +3402,7 @@ async function load(){const d=await(await fetch('/api/write-failures')).json();c
   <td style="font-size:12px">${esc((x.title||'—').slice(0,40))}</td>
   <td><span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}·${esc(x.level||'error')}]</span> <span class="r" style="font-size:12px">${esc(x.reason||'')}</span>
    ${x.traceback?`<details><summary style="cursor:pointer;font-size:11px;color:#7c3aed">报错堆栈</summary><pre>${esc(x.traceback)}</pre></details>`:''}</td>
-  <td><span class="badge ${x.status}">${x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已成功':'待重试')}</span></td>
+  <td><span class="badge ${x.status}">${x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已了结':'待重试')}</span>${x.note?`<div style="font-size:10px;color:#888">${esc(x.note)}</div>`:''}</td>
   <td>${x.retry_count||0}</td><td>${esc(x.next_retry_at||'—')}</td>
   <td>${x.status==='resolved'?'<span style=\"color:#15803d;font-size:11px\">✓</span>':`<button class="btn" onclick="retryNow('${x.key}')">立即重试</button> <button class="btn" onclick="dismiss('${x.key}')">忽略</button>`}</td></tr>`).join('');}
 async function loadStats(){try{const d=await(await fetch('/api/write-failures/stats')).json();
