@@ -1,4 +1,301 @@
 {
+ "ポチャッコ": {
+  "zh": "帕恰狗",
+  "source": "auto"
+ },
+ "クロちゃん": {
+  "zh": "小黑",
+  "source": "auto"
+ },
+ "トシ": {
+  "zh": "Toshi",
+  "source": "auto"
+ },
+ "ぱるる": {
+  "zh": "Paruru",
+  "source": "auto"
+ },
+ "こじはる": {
+  "zh": "小嶋阳菜",
+  "source": "auto"
+ },
+ "スナフキン": {
+  "zh": "Snufkin",
+  "source": "auto"
+ },
+ "バイきんぐ": {
+  "zh": "Viking",
+  "type": "group",
+  "source": "auto"
+ },
+ "のろゆう": {
+  "zh": "Noro Yuu",
+  "source": "auto"
+ },
+ "ふぉ～ゆ～": {
+  "zh": "Four You",
+  "type": "group",
+  "source": "auto"
+ },
+ "ひまり": {
+  "zh": "日葵",
+  "source": "auto"
+ },
+ "ぐるっぴー": {
+  "zh": "Guruppi",
+  "source": "auto"
+ },
+ "ジャンボたかお": {
+  "zh": "Jumbo Takao",
+  "source": "auto"
+ },
+ "レインボー": {
+  "zh": "Rainbow",
+  "type": "group",
+  "source": "auto"
+ },
+ "ヒロミ": {
+  "zh": "Hiromi",
+  "source": "auto"
+ },
+ "ヤジマリー": {
+  "zh": "Yajimary",
+  "source": "auto"
+ },
+ "おとさん": {
+  "zh": "爸爸",
+  "source": "auto"
+ },
+ "グーちゃん": {
+  "zh": "小咕",
+  "source": "auto"
+ },
+ "にこり": {
+  "zh": "Nikori",
+  "source": "auto"
+ },
+ "スカパー": {
+  "zh": "Sky PerfecTV",
+  "type": "group",
+  "source": "auto"
+ },
+ "きみとバンド": {
+  "zh": "与你乐队",
+  "type": "group",
+  "source": "auto"
+ },
+ "まつ": {
+  "zh": "松",
+  "source": "auto"
+ },
+ "ちよ": {
+  "zh": "千代",
+  "source": "auto"
+ },
+ "ググ": {
+  "zh": "Gugu",
+  "source": "auto"
+ },
+ "ザコシショウ": {
+  "zh": "Zakoshi Show",
+  "source": "auto"
+ },
+ "クッキーキス": {
+  "zh": "Cookie Kiss",
+  "type": "group",
+  "source": "auto"
+ },
+ "スペシャルズ": {
+  "zh": "Specials",
+  "type": "group",
+  "source": "auto"
+ },
+ "ぶいすぽっ！": {
+  "zh": "VSPO！",
+  "type": "group",
+  "source": "auto"
+ },
+ "ぼっちぼろまる": {
+  "zh": "Bocchi Boromaru",
+  "source": "auto"
+ },
+ "みちょぱ": {
+  "zh": "Micho Pa",
+  "source": "auto"
+ },
+ "コムドット": {
+  "zh": "Comdot",
+  "type": "group",
+  "source": "auto"
+ },
+ "ひゅうが": {
+  "zh": "日向",
+  "source": "auto"
+ },
+ "シュイ": {
+  "zh": "Shui",
+  "source": "auto"
+ },
+ "ジェジュン": {
+  "zh": "金在中",
+  "source": "auto"
+ },
+ "サカナクション": {
+  "zh": "鱼韵",
+  "type": "group",
+  "source": "auto"
+ },
+ "おーちゃん": {
+  "zh": "小大",
+  "source": "auto"
+ },
+ "あゆら": {
+  "zh": "Ayura",
+  "source": "auto"
+ },
+ "もな": {
+  "zh": "莫娜",
+  "source": "auto"
+ },
+ "ほのみく": {
+  "zh": "穗乃美久",
+  "source": "auto"
+ },
+ "しなこ": {
+  "zh": "品子",
+  "source": "auto"
+ },
+ "だーご": {
+  "zh": "Daago",
+  "source": "auto"
+ },
+ "ヤジマリー。": {
+  "zh": "Yajimary。",
+  "source": "auto"
+ },
+ "てつや": {
+  "zh": "哲也",
+  "source": "auto"
+ },
+ "あやなん": {
+  "zh": "Ayanan",
+  "source": "auto"
+ },
+ "ヒカル": {
+  "zh": "Hikaru",
+  "source": "auto"
+ },
+ "しばゆー": {
+  "zh": "Shibayu",
+  "source": "auto"
+ },
+ "シソンヌ": {
+  "zh": "Sissonne",
+  "type": "group",
+  "source": "auto"
+ },
+ "サバシスター": {
+  "zh": "Sabasister",
+  "type": "group",
+  "source": "auto"
+ },
+ "ふゆちゃん": {
+  "zh": "小冬",
+  "source": "auto"
+ },
+ "そら♨るる": {
+  "zh": "空♨露露",
+  "source": "auto"
+ },
+ "でんちゃん": {
+  "zh": "小电",
+  "source": "auto"
+ },
+ "アンジュルム": {
+  "zh": "ANGERME",
+  "type": "group",
+  "source": "auto"
+ },
+ "カリスマックス": {
+  "zh": "Charisma.com",
+  "type": "group",
+  "source": "auto"
+ },
+ "ミルクボーイ": {
+  "zh": "牛奶男孩",
+  "type": "group",
+  "source": "auto"
+ },
+ "とみもんた": {
+  "zh": "富本",
+  "source": "auto"
+ },
+ "キング・カズ": {
+  "zh": "King Kazu",
+  "source": "auto"
+ },
+ "あまぽち": {
+  "zh": "Amapochi",
+  "type": "group",
+  "source": "auto"
+ },
+ "ともちん": {
+  "zh": "小友",
+  "source": "auto"
+ },
+ "よにの": {
+  "zh": "Yonino",
+  "type": "group",
+  "source": "auto"
+ },
+ "ノーヘアMan": {
+  "zh": "无发男",
+  "source": "auto"
+ },
+ "ザ・マミィ": {
+  "zh": "The Mammy",
+  "type": "group",
+  "source": "auto"
+ },
+ "ヒコロヒー": {
+  "zh": "Hiccorohee",
+  "source": "auto"
+ },
+ "ハライチ": {
+  "zh": "Haraiichi",
+  "type": "group",
+  "source": "auto"
+ },
+ "こぺ": {
+  "zh": "小佩",
+  "source": "auto"
+ },
+ "ベビちん": {
+  "zh": "贝比亲",
+  "source": "auto"
+ },
+ "ドンちゃん": {
+  "zh": "小咚",
+  "source": "auto"
+ },
+ "アルノ": {
+  "zh": "阿尔诺",
+  "source": "auto"
+ },
+ "さとり": {
+  "zh": "悟",
+  "source": "auto"
+ },
+ "かのサンド": {
+  "zh": "Kanosa",
+  "type": "group",
+  "source": "auto"
+ },
+ "レピッシュ": {
+  "zh": "Lepish",
+  "type": "group",
+  "source": "auto"
+ },
  "峯岸みなみ": {
   "zh": "峯岸南"
  },

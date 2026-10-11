@@ -1,4 +1,59 @@
 {
+ "ともだちたまご": {
+  "zh": "朋友蛋",
+  "type": "work",
+  "source": "auto"
+ },
+ "たかみちホラー": {
+  "zh": "Takamichi恐怖",
+  "type": "work",
+  "source": "auto"
+ },
+ "ヤニねこ": {
+  "zh": "烟猫",
+  "type": "work",
+  "source": "auto"
+ },
+ "ぱわーオブらぶ": {
+  "zh": "爱的力量",
+  "type": "work",
+  "source": "auto"
+ },
+ "ビビデバ": {
+  "zh": "Bibideba",
+  "type": "work",
+  "source": "auto"
+ },
+ "サインはB": {
+  "zh": "信号是B",
+  "type": "work",
+  "source": "auto"
+ },
+ "それスノ": {
+  "zh": "那是雪",
+  "type": "work",
+  "source": "auto"
+ },
+ "レコメン！": {
+  "zh": "推荐！",
+  "type": "work",
+  "source": "auto"
+ },
+ "キョコロヒー": {
+  "zh": "Kyokorohee",
+  "type": "work",
+  "source": "auto"
+ },
+ "シューイチ": {
+  "zh": "Shuichi",
+  "type": "work",
+  "source": "auto"
+ },
+ "クイズフェス": {
+  "zh": "问答祭",
+  "type": "work",
+  "source": "auto"
+ },
  "東海オンエア・てつや": {
   "zh": "东海On Air的TETSUYA",
   "type": "work"

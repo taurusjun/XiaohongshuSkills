@@ -1,4 +1,134 @@
 {
+ "メンヘラ": {
+  "zh": "精神小妹",
+  "type": "word",
+  "source": "auto"
+ },
+ "ガチ": {
+  "zh": "认真",
+  "type": "word",
+  "source": "auto"
+ },
+ "ヤッホー": {
+  "zh": "呀吼",
+  "type": "word",
+  "source": "auto"
+ },
+ "ゾクスッ": {
+  "zh": "毛骨悚然",
+  "type": "word",
+  "source": "auto"
+ },
+ "きゅうけい": {
+  "zh": "休息",
+  "type": "word",
+  "source": "auto"
+ },
+ "ビリヤニ": {
+  "zh": "印度香饭",
+  "type": "word",
+  "source": "auto"
+ },
+ "おひさま": {
+  "zh": "太阳公公",
+  "type": "word",
+  "source": "auto"
+ },
+ "ムネアツ": {
+  "zh": "热血沸腾",
+  "type": "word",
+  "source": "auto"
+ },
+ "シュウォッチ": {
+  "zh": "Shuwatch",
+  "type": "word",
+  "source": "auto"
+ },
+ "センセーション": {
+  "zh": "轰动",
+  "type": "word",
+  "source": "auto"
+ },
+ "ゆきりんだるま": {
+  "zh": "由纪琳达摩",
+  "type": "word",
+  "source": "auto"
+ },
+ "コント": {
+  "zh": "短剧",
+  "type": "word",
+  "source": "auto"
+ },
+ "とくべチュ": {
+  "zh": "特别啾",
+  "type": "word",
+  "source": "auto"
+ },
+ "グッタイム": {
+  "zh": "好时机",
+  "type": "word",
+  "source": "auto"
+ },
+ "バッタイム": {
+  "zh": "坏时机",
+  "type": "word",
+  "source": "auto"
+ },
+ "イントロ": {
+  "zh": "前奏",
+  "type": "word",
+  "source": "auto"
+ },
+ "チートデイ": {
+  "zh": "作弊日",
+  "type": "word",
+  "source": "auto"
+ },
+ "マテムり": {
+  "zh": "等待中",
+  "type": "word",
+  "source": "auto"
+ },
+ "クリフハンガー": {
+  "zh": "悬念",
+  "type": "word",
+  "source": "auto"
+ },
+ "ノリツッコミ": {
+  "zh": "吐槽式装傻",
+  "type": "word",
+  "source": "auto"
+ },
+ "おバカちゃん": {
+  "zh": "小笨蛋",
+  "type": "word",
+  "source": "auto"
+ },
+ "キャバクラ": {
+  "zh": "夜店",
+  "type": "word",
+  "source": "auto"
+ },
+ "ギャル": {
+  "zh": "辣妹",
+  "type": "word",
+  "source": "auto"
+ },
+ "だっちゅーの": {
+  "zh": "Datchu-no",
+  "type": "word",
+  "source": "auto"
+ },
+ "ひなくり": {
+  "zh": "雏祭",
+  "type": "word",
+  "source": "auto"
+ },
+ "マジで": {
+  "zh": "真的",
+  "type": "word",
+  "source": "auto"
+ },
  "婚活": {
   "zh": "相亲",
   "type": "word"
