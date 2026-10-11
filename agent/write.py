@@ -582,7 +582,7 @@ def _produce(cand, pkg, channel, first=None):
     if mech.get("den_exempt"):
         _log(f"  密度豁免（{pkg.get('material_type')}）：{'; '.join(mech['den_exempt'])[:60]}")
     try:
-        _kana.log_pending(body, note=cand["key"][:12])
+        _kana.log_pending(body, note=cand["key"][:12], src=cand["key"])
     except Exception:  # noqa: BLE001
         pass
     try:

@@ -1915,9 +1915,12 @@ function _qLoadKana(){
   fetch('/api/kana-autopromoted').then(function(r){return r.json();}).then(function(d){
     var rows=d.rows||[]; var tb=document.getElementById('qTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('暂无自动入表词条 🎉');return;}
-    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'130px'},{t:'词条 → 中译',w:'180px'},{t:'语境'},{t:'操作',w:'70px'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc(x.ts||'')+'</td>'+
+    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'130px'},{t:'词条 → 中译',w:'180px'},{t:'来源文章',w:'130px'},{t:'语境'},{t:'操作',w:'70px'}])+'<tbody>'+
+      rows.map(function(x){
+        var srcCell=x.src?('<a href="/detail/'+_qEsc(x.src)+'" target="_blank" title="'+_qEsc(x.src)+'">'+_qEsc(x.src.slice(0,10))+'…</a>'):'<span style="color:#bbb">—</span>';
+        return '<tr><td style="font-size:11px;color:#666">'+_qEsc(x.ts||'')+'</td>'+
         '<td><span style="color:#7c3aed;font-family:ui-monospace,monospace">'+_qEsc(x.term)+'</span> → <b style="color:#15803d">'+_qEsc(x.zh)+'</b></td>'+
+        '<td style="font-size:12px">'+srcCell+'</td>'+
         '<td style="font-size:12px;color:#555">'+_qEsc((x.ctx||'').slice(0,80))+'</td>'+
         '<td><button class="btn btn-outline btn-sm" onclick="_qKanaRevert(\''+encodeURIComponent(x.term)+'\')">撤回</button></td></tr>';}).join('')+'</tbody></table>';
   });
@@ -3868,14 +3871,15 @@ th{background:#fafafa;color:#666;font-weight:600;font-size:12px}
 .btn{border:1px solid #ddd;background:#fff;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
 .btn:hover{background:#f0f0f0}.btn-red{color:#b91c1c;border-color:#fca5a5}.empty{color:#999;padding:30px;text-align:center}</style></head><body>
 <h2>🔤 假名自动入表 · 人工复核</h2><div class="sub">写稿时 LLM 自动中译入字典的词条（先自动、人工后审）。确认无误可保留；不对的点「撤回」从字典移除。</div>
-<table><thead><tr><th style="width:120px">时间</th><th style="width:150px">词条 → 中译</th><th>语境</th><th style="width:70px">操作</th></tr></thead>
-<tbody id="tb"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
+<table><thead><tr><th style="width:120px">时间</th><th style="width:150px">词条 → 中译</th><th style="width:130px">来源文章</th><th>语境</th><th style="width:70px">操作</th></tr></thead>
+<tbody id="tb"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody></table>
 <script>
 function esc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 async function load(){const d=await(await fetch('/api/kana-autopromoted')).json();const tb=document.getElementById('tb');
- if(!d.rows.length){tb.innerHTML='<tr><td colspan="4" class="empty">暂无自动入表词条 🎉</td></tr>';return;}
+ if(!d.rows.length){tb.innerHTML='<tr><td colspan="5" class="empty">暂无自动入表词条 🎉</td></tr>';return;}
  tb.innerHTML=d.rows.map(x=>`<tr><td>${esc(x.ts||'')}</td>
   <td><span class="k">${esc(x.term)}</span> → <span class="zh">${esc(x.zh)}</span></td>
+  <td>${x.src?('<a href="/detail/'+esc(x.src)+'" target="_blank">'+esc(x.src.slice(0,10))+'…</a>'):'<span style="color:#bbb">—</span>'}</td>
   <td class="ctx">${esc((x.ctx||'').slice(0,80))}</td>
   <td><button class="btn btn-red" onclick="revert('${encodeURIComponent(x.term)}')">撤回</button></td></tr>`).join('');}
 async function revert(t){if(!confirm('从字典移除该词条？'))return;await fetch('/api/kana-autopromoted/'+t+'/revert',{method:'POST'});load();}

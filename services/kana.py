@@ -73,7 +73,7 @@ def _pending_path():
     return paths.REPO_ROOT / PENDING
 
 
-def log_pending(text: str, note: str = ""):
+def log_pending(text: str, note: str = "", src: str = ""):
     """写稿时把新抓到的假名专名追加到候选文件（去重，供人工审核）。"""
     terms = new_terms(text)
     if not terms:
@@ -93,8 +93,10 @@ def log_pending(text: str, note: str = ""):
             if t in seen:
                 continue
             mol = re.search(rf"[^。！？\n]{{0,20}}{re.escape(t)}[^。！？\n]{{0,20}}", text or "")
-            f.write(json.dumps({"term": t, "note": note, "ctx": (mol.group(0) if mol else "")},
-                               ensure_ascii=False) + "\n")
+            rec = {"term": t, "note": note, "ctx": (mol.group(0) if mol else "")}
+            if src:
+                rec["src"] = src
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             seen.add(t); added.append(t)
     return added
 
@@ -155,6 +157,7 @@ def auto_promote(limit=40, dry_run=False):
     if not terms:
         return []
     ctx = {r["term"]: r.get("ctx", "") for r in rows}
+    src = {r["term"]: (r.get("src") or "") for r in rows}
     try:
         from agent import llm
         usr = ("把下列日文假名专名译成中文：人名按日本娱乐圈通用译法，作品/节目/曲名译成中文，"
@@ -181,6 +184,7 @@ def auto_promote(limit=40, dry_run=False):
         try:
             with open(audit, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"term": t, "zh": zh, "ctx": ctx.get(t, ""),
+                                    "src": src.get(t, ""),
                                     "ts": time.strftime("%Y-%m-%d %H:%M:%S")},
                                    ensure_ascii=False) + "\n")
         except Exception:  # noqa: BLE001
