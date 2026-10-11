@@ -1816,6 +1816,7 @@ function switchToWechatView(){
   var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView'),n=document.getElementById('wechatNavItem');
   // close config/tag modals first
   document.querySelectorAll('.nav-item.active').forEach(function(e){e.classList.remove('active');});
+  var qv=document.getElementById('queueView'); if(qv) qv.style.display='none';
   if(nv) nv.style.display='none';
   if(wv){wv.style.display='flex';wv.style.flexDirection='column';}
   if(n) n.classList.add('active');
@@ -1825,6 +1826,7 @@ function switchToWechatView(){
 function switchToNewsView(){
   var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView');
   var wn=document.getElementById('wechatNavItem'),nn=document.getElementById('newsNavItem');
+  var qv=document.getElementById('queueView'); if(qv) qv.style.display='none';
   if(wv) wv.style.display='none';
   if(nv){ nv.style.display='flex'; nv.style.flexDirection='column'; }
   if(wn) wn.classList.remove('active');
