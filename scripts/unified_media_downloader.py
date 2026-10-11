@@ -460,10 +460,68 @@ INSTAGRAM_JS = r"""
 """
 
 
-def _get_ig_tab(tab_list: list[dict]) -> dict | None:
-    t = next((t for t in tab_list
-              if t.get("type") == "page" and "instagram.com" in t.get("url", "")), None)
-    return t or next((t for t in tab_list if t.get("type") == "page"), None)
+def _ig_eval_in_new_tab(gallery_url: str, js_extract: str,
+                        cdp_host: str, cdp_port: int) -> list[dict]:
+    """新开专用 tab 导航到 IG 帖子，在同一个 tab 上执行提取 JS，最后一定关掉 tab。返回 [{url, type}]。
+    不借用用户已有的 tab：原先导航后按「第一个 instagram.com tab」重新查找，可能读到用户另开的
+    别的帖子；reel 补图时拦截用的 tab 已经关闭，更是必然读错或读空。"""
+    try:
+        import websocket
+    except ImportError:
+        print("  ⚠️ 需要安装: pip install websocket-client")
+        return []
+    try:
+        from sqlite_db import _log_db_error
+    except Exception:  # 单独运行、config 不在路径上时
+        def _log_db_error(msg): pass
+    from scrapers import cdp_new_tab
+
+    try:
+        with cdp_new_tab(cdp_host, cdp_port) as page_tab:
+            ws_url = page_tab["webSocketDebuggerUrl"]
+
+            # Phase 1: 导航（等待方式沿用原逻辑：等 load，超时/异常即继续）
+            ws = websocket.create_connection(ws_url, timeout=15)
+            try:
+                ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+                ws.recv()
+                ws.send(json.dumps({"id": 2, "method": "Page.navigate",
+                                    "params": {"url": gallery_url}}))
+                print(f"  🌐 导航到 Instagram: {gallery_url}")
+                start = time.time()
+                while time.time() - start < 20:
+                    try:
+                        msg = json.loads(ws.recv())
+                        if msg.get("method") == "Page.loadEventFired":
+                            break
+                    except Exception:
+                        break
+            finally:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+
+            # Phase 2: 在同一个 tab 上提取
+            time.sleep(3)
+            ws2 = websocket.create_connection(ws_url, timeout=15)
+            try:
+                ws2.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                                     "params": {"expression": js_extract}}))
+                while True:
+                    msg = json.loads(ws2.recv())
+                    if msg.get("id") == 1:
+                        val = msg.get("result", {}).get("result", {}).get("value", "[]")
+                        return json.loads(val) if val else []
+            finally:
+                try:
+                    ws2.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"  ⚠️ 新建 tab 或 CDP 导航/提取失败: {e}")
+        _log_db_error(f"instagram 新建 tab 或 CDP 导航/提取失败: {gallery_url}: {e}")
+        return []
 
 
 def _capture_ig_reel_via_network(gallery_url: str, cdp_host: str, cdp_port: int) -> list[str]:
@@ -525,34 +583,11 @@ def _capture_ig_reel_via_network(gallery_url: str, cdp_host: str, cdp_port: int)
 
 
 def _extract_ig_imgs_js(gallery_url: str, cdp_host: str, cdp_port: int, shortcode: str) -> list[dict]:
-    """导航到 IG 帖子后用 INSTAGRAM_JS 提取图片 URL（用于 reel 与视频一起返回）。"""
+    """新开 tab 导航到 IG 帖子后用 INSTAGRAM_JS 提取图片 URL（用于 reel：视频走 Network 拦截，图片走这里）。"""
     js_extract = INSTAGRAM_JS.replace("__SHORTCODE__", shortcode)
-    try:
-        import websocket
-    except ImportError:
-        return []
-    try:
-        tabs = requests.get(f"http://{cdp_host}:{cdp_port}/json", timeout=5).json()
-        ig_tab = next((t for t in tabs if t.get("type")=="page" and "instagram.com" in t.get("url","")), None)
-        if not ig_tab:
-            return []
-        ws = websocket.create_connection(ig_tab["webSocketDebuggerUrl"], timeout=15)
-        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": js_extract, "returnByValue": True}}))
-        ws.settimeout(10)
-        items = []
-        for _ in range(30):
-            try:
-                msg = json.loads(ws.recv())
-                if msg.get("id") == 1:
-                    val = msg.get("result", {}).get("result", {}).get("value", "[]")
-                    items = json.loads(val) if val else []
-                    break
-            except: break
-        ws.close()
-        # 只保留图片（视频已在 Network 拦截里）
-        return [{"url": it["url"], "type": "img"} for it in items if it.get("type") == "img"]
-    except Exception:
-        return []
+    items = _ig_eval_in_new_tab(gallery_url, js_extract, cdp_host, cdp_port)
+    # 只保留图片（视频已在 Network 拦截里）
+    return [{"url": it["url"], "type": "img"} for it in items if it.get("type") == "img"]
 
 
 def _extract_instagram_media_cdp(gallery_url: str,
@@ -599,82 +634,7 @@ def _extract_instagram_media_cdp(gallery_url: str,
         print("  ⚠️ 需要安装: pip install websocket-client")
         return []
 
-    try:
-        tabs = requests.get(f"http://{cdp_host}:{cdp_port}/json", timeout=5).json()
-    except Exception as e:
-        print(f"  ⚠️ 无法连接 Chrome CDP: {e}")
-        return []
-
-    # Phase 1: 创建新 tab（避免复用 extension 后台 tab）
-    try:
-        new_tab_resp = requests.put(f"http://{cdp_host}:{cdp_port}/json/new", timeout=5)
-        page_tab = new_tab_resp.json()
-    except Exception as e:
-        print(f"  ⚠️ 无法创建新 tab: {e}")
-        page_tab = _get_ig_tab(tabs)
-
-    if not page_tab:
-        print("  ⚠️ 找不到可用的 Chrome tab")
-        return []
-
-    _new_tab_id = page_tab.get("id", "")
-
-    try:
-        ws = websocket.create_connection(page_tab["webSocketDebuggerUrl"], timeout=15)
-        ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-        ws.recv()
-        ws.send(json.dumps({"id": 2, "method": "Page.navigate",
-                            "params": {"url": gallery_url}}))
-        print(f"  🌐 导航到 Instagram: {gallery_url}")
-        start = time.time()
-        while time.time() - start < 20:
-            try:
-                msg = json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
-                    break
-            except Exception:
-                break
-        try:
-            ws.close()
-        except Exception:
-            pass
-    except Exception as e:
-        print(f"  ⚠️ CDP 导航失败: {e}")
-        if _new_tab_id:
-            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
-            except: pass
-        return []
-
-    # Phase 2: 重连 + 提取
-    time.sleep(3)
-    try:
-        tabs2 = requests.get(f"http://{cdp_host}:{cdp_port}/json", timeout=5).json()
-        tab2 = _get_ig_tab(tabs2)
-        if not tab2:
-            print("  ⚠️ 导航后找不到 tab")
-            return []
-
-        ws2 = websocket.create_connection(tab2["webSocketDebuggerUrl"], timeout=15)
-        ws2.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
-                             "params": {"expression": js_extract}}))
-        media_items = []
-        while True:
-            msg = json.loads(ws2.recv())
-            if msg.get("id") == 1:
-                val = msg.get("result", {}).get("result", {}).get("value", "[]")
-                media_items = json.loads(val) if val else []
-                break
-        ws2.close()
-    except Exception as e:
-        print(f"  ⚠️ CDP 提取失败: {e}")
-        return []
-    finally:
-        if _new_tab_id:
-            try: requests.get(f"http://{cdp_host}:{cdp_port}/json/close/{_new_tab_id}", timeout=3)
-            except: pass
-
-    return media_items
-
+    return _ig_eval_in_new_tab(gallery_url, js_extract, cdp_host, cdp_port)
 
 def _download_instagram_ytdlp(gallery_url: str, output_dir: Path,
                                timeout: int = 300) -> list[str]:
