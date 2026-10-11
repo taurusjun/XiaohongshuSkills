@@ -905,8 +905,11 @@ def _fetch_html_via_cdp(url: str, wait_sec: float = 4.0) -> str:
             ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
             start = time.time()
             while time.time() - start < 20:
-                msg = json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
+                try:
+                    msg = json.loads(ws.recv())
+                except _ws_module.WebSocketTimeoutException:
+                    break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
+                if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
                     break
             time.sleep(wait_sec)  # 等 JS 懒加载
             ws.send(json.dumps({
