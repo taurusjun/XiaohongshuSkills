@@ -38,8 +38,8 @@ def _cand():
 def test_write_one_both_channels(monkeypatch):
     _patch(monkeypatch)
     st = _fake_db(monkeypatch)
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {
-        "channel": "both", "title": "X标题", "body": "xhs正文", "gzh_title": "G标题", "gzh_body": "gzh正文"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({
+        "channel": "both", "title": "X标题", "body": "xhs正文", "gzh_title": "G标题", "gzh_body": "gzh正文"}, []))
     r = w.write_one(_cand(), dry_run=False)
     assert r["channel"] == "both"
     assert [v["channel"] for v in r["versions"]] == ["xhs", "gzh"]
@@ -53,7 +53,7 @@ def test_write_one_both_channels(monkeypatch):
 def test_write_one_xhs_channel_empty(monkeypatch):
     _patch(monkeypatch)
     st = _fake_db(monkeypatch)
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "xhs", "title": "X", "body": "b"}, []))
     w.write_one(_cand(), dry_run=False)
     row = st["a" * 40]
     assert row.get("channel", "") == ""                   # xhs 独有 → 空（旧约定）
@@ -63,7 +63,7 @@ def test_write_one_xhs_channel_empty(monkeypatch):
 def test_write_one_gzh_channel(monkeypatch):
     _patch(monkeypatch)
     st = _fake_db(monkeypatch)
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "gzh", "title": "G", "body": "文"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "gzh", "title": "G", "body": "文"}, []))
     w.write_one(_cand(), dry_run=False)
     row = st["a" * 40]
     assert row["channel"] == "gzh" and row["wechat_title"] == "G"
@@ -74,7 +74,7 @@ def test_write_one_clears_stale_gzh(monkeypatch):
     """xhs 重写时若残留 channel='gzh' 但无 wechat 内容 → 清空。"""
     _patch(monkeypatch)
     st = _fake_db(monkeypatch, {"a" * 40: {"key": "a" * 40, "channel": "gzh"}})
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "xhs", "title": "X", "body": "b"}, []))
     w.write_one(_cand(), dry_run=False)
     assert st["a" * 40].get("channel", "") == ""
 
@@ -82,7 +82,7 @@ def test_write_one_clears_stale_gzh(monkeypatch):
 def test_write_one_channel_fallback(monkeypatch):
     _patch(monkeypatch)
     _fake_db(monkeypatch)
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "weird", "title": "X", "body": "b"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "weird", "title": "X", "body": "b"}, []))
     r = w.write_one(_cand(), dry_run=True)
     assert r["channel"] == "xhs" and len(r["versions"]) == 1
 
@@ -91,7 +91,7 @@ def test_write_one_channel_hint_forces_gzh(monkeypatch):
     """review 标注 channel_hint=gzh → 即使 LLM 判 xhs 也强制走 gzh。"""
     _patch(monkeypatch)
     st = _fake_db(monkeypatch)
-    monkeypatch.setattr(w, "compose", lambda *a, **k: {"channel": "xhs", "title": "X", "body": "b"})
+    monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "xhs", "title": "X", "body": "b"}, []))
     cand = _cand()
     cand["channel_hint"] = "gzh"
     r = w.write_one(cand, dry_run=False)
