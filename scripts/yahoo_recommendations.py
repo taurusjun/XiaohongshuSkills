@@ -30,59 +30,66 @@ from yahoo_common import (
 
 # ============ CDP 抓取「あなたにおすすめ」============
 
+def _li_title_source(li, a):
+    """按 DOM 结构取推荐条目的标题和来源（不写死 styled-components 哈希）。"""
+    t = li.find("time")
+    src_el = t.find_previous_sibling("span") if t else None
+    source = src_el.get_text(strip=True) if src_el else ""
+    title = ""
+    for el in a.find_all(True):
+        if el.find(True) or el is src_el or el.name == "time":
+            continue
+        txt = el.get_text(strip=True)
+        if txt:
+            title = txt
+            break
+    return (title or a.get_text(strip=True)), (source or "Yahoo Japan")
+
+
 def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
     """通过 CDP 强制导航到 Yahoo 首页并读取个性化推荐。"""
     import websocket as _ws_module
+    from scrapers import cdp_eval, cdp_navigate_and_wait
+    try:
+        from sqlite_db import _log_db_error
+    except Exception:
+        def _log_db_error(msg): pass
 
-    ws_url, _ = get_yahoo_tab_ws_url()
-    if not ws_url:
-        print("❌ 找不到可用的 page tab")
+    # 新开专用 tab、用完关掉，不复用/不导航用户已有的 tab（登录 cookie 全 tab 共享）
+    try:
+        tab = requests.put(f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10).json()
+        ws_url, tab_id = tab["webSocketDebuggerUrl"], tab["id"]
+    except Exception as e:
+        print(f"❌ 无法新建 Chrome tab: {e}")
+        _log_db_error(f"yahoo 首页推荐无法新建 Chrome tab: {e}")
         return []
 
     html = ""
     try:
-        # 始终导航到首页
         ws = _ws_module.create_connection(ws_url, timeout=15)
-        ws.settimeout(15)
-        ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-        ws.recv()
-        ws.send(json.dumps({
-            "id": 2, "method": "Page.navigate",
-            "params": {"url": YAHOO_HOME_URL},
-        }))
-        print("  导航到 Yahoo 首页...")
-        start = time.time()
-        while time.time() - start < 20:
-            try:
-                msg = json.loads(ws.recv())
-            except _ws_module.WebSocketTimeoutException:
-                break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-            if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                break
-        ws.close()
-
-        # 等待个性化内容渲染，然后重连读取
-        time.sleep(4)
-        ws_url2, _ = get_yahoo_tab_ws_url()
-        if not ws_url2:
-            print("❌ 无法重新获取 WebSocket URL")
-            return []
-        ws2 = _ws_module.create_connection(ws_url2, timeout=15)
-        ws2.settimeout(15)
-        ws2.send(json.dumps({
-            "id": 1, "method": "Runtime.evaluate",
-            "params": {"expression": "document.documentElement.outerHTML"},
-        }))
-        while True:
-            msg = json.loads(ws2.recv())
-            if msg.get("id") == 1:
-                html = msg.get("result", {}).get("result", {}).get("value", "")
-                break
-        ws2.close()
-
+        try:
+            print("  导航到 Yahoo 首页...")
+            status = cdp_navigate_and_wait(
+                ws, YAHOO_HOME_URL,
+                "document.querySelectorAll('#newsFeed li[data-ual-view-type=\"list\"]').length > 0",
+                timeout=20)
+            if status != "ok":
+                print(f"  ⚠️ Yahoo 首页推荐未就绪（{status}）")
+                _log_db_error(f"yahoo 首页推荐未就绪 status={status}")
+                return []
+            time.sleep(4)  # 个性化内容渲染
+            html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=15) or ""
+        finally:
+            ws.close()
     except Exception as e:
         print(f"抓取出错: {e}")
+        _log_db_error(f"yahoo 首页推荐抓取出错: {e}")
         return []
+    finally:
+        try:
+            requests.get(f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}", timeout=3)
+        except Exception:
+            pass
 
     if not html:
         print("❌ 获取页面 HTML 失败")
@@ -112,15 +119,9 @@ def fetch_recommendations_via_cdp(max_results: int = 20) -> List[Dict]:
             continue
         seen.add(href)
 
-        # 标题
-        title_el = li.find("div", class_=re.compile(r"sc-3ls169"))
-        title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
+        title, source = _li_title_source(li, a)   # 按 DOM 结构取（哈希会失效）
         if len(title) < 5:
             continue
-
-        # 来源
-        source_el = li.find("span", class_=re.compile(r"XhYZV"))
-        source = source_el.get_text(strip=True) if source_el else "Yahoo Japan"
 
         # 时间：统一为 YYYY.MM.DD，不用 Yahoo 原始格式如 "5/5(火) 21:00"
         pub_time = datetime.now().strftime('%Y.%m.%d')
@@ -182,13 +183,9 @@ def fetch_recommendations_fallback() -> List[Dict]:
                 continue
             seen.add(href)
 
-            title_el = li.find("div", class_=re.compile(r"sc-3ls169"))
-            title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
+            title, source = _li_title_source(li, a)
             if len(title) < 5:
                 continue
-
-            source_el = li.find("span", class_=re.compile(r"XhYZV"))
-            source   = source_el.get_text(strip=True) if source_el else "Yahoo Japan"
             pub_time = datetime.now().strftime('%Y.%m.%d')
 
             img_src = ""
