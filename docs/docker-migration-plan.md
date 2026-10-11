@@ -552,7 +552,11 @@ mv "$TMP" "$FINAL"                           # 校验通过才原子改名
 
 - **仍要**：保留「每小时 :05 重启主 Chrome 9222（让 cdp-keeper 重拉）」，**建议升级为「RSS 超阈值才重启」**（比固定每小时更精准，Mac/Linux 通用，待实现）。
 - **Linux 容器姿势**：
-  - `CHROME_EXTRA_FLAGS` **去掉 `--disable-gpu`**（改为挂 `/dev/dri` 硬加速）；`--no-sandbox`/`--disable-dev-shm-usage` 按风险 #7 再评估。
+  - `CHROME_EXTRA_FLAGS` 的 `--disable-gpu` **按「宿主有没有可用 GPU」定**，不是一律去掉：
+  - **有 GPU 且能直通**（宿主 `ls /dev/dri` 有节点、`nvidia-smi -L` 正常）→ 把 `/dev/dri` 挂进容器、**去掉 `--disable-gpu`**，走硬加速（CPU 更低）。
+  - **无 GPU 的服务器/云 VM**（`lspci | grep -iE "vga|3d|display"` 无真实 3D、`/dev/dri` 为空）→ **保留 `--disable-gpu`**。否则 Chrome GPU 初始化失败会落到 **SwiftShader/llvmpipe 软件 GL**，通常**更费 CPU**。迁移目标（腾讯云 Rocky，4C/7.5G）属此类。
+  - 判断命令：`lspci | grep -iE "vga|3d|display"; ls -l /dev/dri; nvidia-smi -L`。
+  - `--no-sandbox`/`--disable-dev-shm-usage` 按风险 #7 再评估。
   - `shm_size` 调大（≥2g）。
   - 给容器设 `mem_limit`（如 3–4g），让 Chrome 涨到顶被 OOM 掉单个进程，而不是拖垮宿主。
   - 只留必要 tab（profile + creator），定期清 `chrome://newtab` / `omnibox-popup` 等残留。
