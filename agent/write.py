@@ -906,20 +906,18 @@ def write_split_key(key, threshold=None, force_channel=None, dry_run=False):
     th = threshold or _sp.DEFAULT_THRESHOLD
     if not _sp.should_split(cand, th):
         return {"ok": False, "msg": f"cluster 体量未超阈值（{_sp.cluster_text_len(cand)} ≤ {th}），不拆"}
-    items, skipped = [], []
+    items = []
     for g in _sp.split_plan(cand, th):
         gkeys = [m["full_key"] for m in g["members"]]
         sub = {**(_news.get_by_key(gkeys[0]) or {}), "cluster_keys": ",".join(gkeys[1:])}
         try:
             rr = write_one(sub, dry_run=True, force_channel=force_channel, split_mode=True)   # 拆篇：合并不去重
-        except Exception as e:                                              # noqa: BLE001
-            skipped.append({"group": g["no"], "reason": f"{type(e).__name__}: {e}"})
-            continue
+        except Exception:                                                   # noqa: BLE001
+            continue                                                        # 生成异常 → 静默跳过（不显示）
         vs = rr.get("versions") or []
         v = vs[0] if vs else {}
-        if not (v.get("text") or "").strip():          # 纯重复/被跳过 → 不存空行
-            skipped.append({"group": g["no"], "reason": "；".join(rr.get("problems") or ["无内容"])})
-            continue
+        if not (v.get("text") or "").strip():
+            continue                                                        # 无内容 → 静默跳过（不显示）
         items.append({
             "seq": len(items) + 1, "group_keys": ",".join(gkeys),
             "title": v.get("title") or "", "content": v.get("text") or "",
@@ -929,7 +927,7 @@ def write_split_key(key, threshold=None, force_channel=None, dry_run=False):
         })
     if not dry_run:
         _sa.replace_for_main(cand["key"], items)
-    return {"ok": True, "count": len(items), "skipped": skipped, "items": items, "main_key": cand["key"]}
+    return {"ok": True, "count": len(items), "items": items, "main_key": cand["key"]}
 
 
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
@@ -941,8 +939,6 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             for it in res.get("items") or []:
                 print(f"  第{it['seq']}篇 《{it['title']}》 {len(it.get('content') or '')}字 "
                       f"[{it.get('channel')}] 评分={it.get('score')}", flush=True)
-            if res.get("skipped"):
-                print(f"  （跳过 {len(res['skipped'])} 组：{' | '.join(x['reason'] for x in res['skipped'])}）", flush=True)
         else:
             print(f"[拆篇] {res.get('msg')}", flush=True)
         return []
