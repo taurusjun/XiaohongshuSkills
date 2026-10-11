@@ -13,26 +13,26 @@ def test_extract_json_prose_and_balance():
 
 
 def test_score_content_with_reasons(monkeypatch):
-    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0: _GOOD)
+    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0, **kw: _GOOD)
     d = W.score_content("t", "b")
     assert d["total"] == 8 and d["建议"] == "加强开头"
     assert d["爆发点"]["reason"] == "r"
 
 
 def test_score_content_synth_total(monkeypatch):
-    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0:
+    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0, **kw:
                         '{"爆发点":%s,"情绪价值":%s,"信息增量":%s,"内容深度":%s,"标题质量":%s}'
                         % (_R(2), _R(1), _R(1), _R(1), _R(1)))       # 缺 total → 合成 6
     assert W.score_content("t", "b")["total"] == 6
 
 
 def test_score_all_fail_total_zero(monkeypatch):
-    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0: "not json")
+    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0, **kw: "not json")
     d = W.score_content("t", "b")
     assert d["total"] == 0 and "error" in d
 
 
 def test_score_gzh_avg(monkeypatch):
-    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0:
+    monkeypatch.setattr(W.llm, "chat", lambda m, max_tokens=0, **kw:
                         '{"标题吸引力":1,"叙事质量":0.5,"公众号适配度":1,"total":8.3}')
     assert W.score_gzh("t", "b")["total"] == 8.3
