@@ -195,8 +195,8 @@ def _compose_msgs(cand, pkg, force_channel=None):
     return msgs
 
 
-def compose(cand, pkg, force_channel=None, retry_ctx=None, max_tokens=16000, history=None, return_msgs=False):
-    """阶段3 撰写（LLM）。history 给定则续用（多轮对话）；返回 dict（或 (dict, msgs)）。"""
+def compose(cand, pkg, force_channel=None, retry_ctx=None, max_tokens=16000, history=None) -> tuple:
+    """阶段3 撰写（LLM）。history 给定则续用（多轮对话）。固定返回 (parsed_dict, msgs)。"""
     msgs = list(history) if history is not None else _compose_msgs(cand, pkg, force_channel)
     if retry_ctx:
         msgs = msgs + [{"role": "user", "content": retry_ctx}]
@@ -206,7 +206,7 @@ def compose(cand, pkg, force_channel=None, retry_ctx=None, max_tokens=16000, his
     except Exception:  # noqa: BLE001
         d = {}
     d = d if isinstance(d, dict) else {}
-    return (d, msgs) if return_msgs else d
+    return d, msgs
 
 
 def _extract_json(raw):
@@ -504,7 +504,7 @@ def _produce(cand, pkg, channel, first=None):
             _c0 = _t.time()
             _log(f"  撰写 尝试 {attempts}/3 [{channel}] 请求 LLM…")
             _msgs_in = history + ([{"role": "user", "content": ctx}] if ctx else [])
-            d, _ = compose(cand, pkg, force_channel=channel, history=_msgs_in, return_msgs=True)
+            d, _ = compose(cand, pkg, force_channel=channel, history=_msgs_in)
             history = _msgs_in + [{"role": "assistant", "content": json.dumps(d, ensure_ascii=False)}]
             _bt = (d.get("body") or d.get("gzh_body") or "")
             _log(f"  撰写完成 {int(_t.time() - _c0)}s | title={(d.get('title') or d.get('gzh_title') or '')[:18]} "
@@ -638,10 +638,10 @@ def write_one(cand, dry_run=True, force_channel=None):
     rk_s = ",".join(dict.fromkeys(r["key"] for r in pkg["relations"]))
     eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
     if eff:
-        d0 = compose(cand, pkg, force_channel=eff)
+        d0, _ = compose(cand, pkg, force_channel=eff)
         ch = eff
     else:
-        d0 = compose(cand, pkg)
+        d0, _ = compose(cand, pkg)
         ch = d0.get("channel") or pkg["pre_channel"]
         if ch not in ("xhs", "gzh", "both"):
             ch = pkg["pre_channel"]
