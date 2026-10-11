@@ -630,6 +630,10 @@
   "zh": "YONINO频道（罗马字）",
   "type": "work"
  },
+ "Mステ": {
+  "action": "keep",
+  "type": "work"
+ },
  "グッタイム/バッタイム": {
   "zh": "好时光/坏时光（意译）",
   "type": "work"

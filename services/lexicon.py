@@ -145,7 +145,9 @@ def discover(text, src_key="", from_="write"):
     for inner in brackets(text or ""):
         if inner in known or len(inner) < 2:
             continue
-        if not (_KANA.search(inner) or len(inner) >= 4):
+        if not _KANA.search(inner):          # 只收含假名的日文专名（排除中文引语）
+            continue
+        if len(inner) > 20 or re.search(r"[。！？]", inner):   # 排除整句
             continue
         if add(inner, status="pending", source=from_, src_key=src_key, note="auto:发现"):
             out.append(inner)
@@ -210,6 +212,8 @@ def add(term, zh=None, type="word", action="translate", aliases="", status="auto
     term = (term or "").strip()
     if not term:
         return False
+    if action == "translate" and zh and zh.strip() == term:   # 恒等翻译 = 保留
+        action, zh = "keep", ""
     ensure()
     with _db() as c:
         row = c.execute("SELECT * FROM lexicon WHERE term=?", (term,)).fetchone()

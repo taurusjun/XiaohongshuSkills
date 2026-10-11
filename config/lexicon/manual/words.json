@@ -129,6 +129,10 @@
   "type": "word",
   "source": "auto"
  },
+ "タイプロ": {
+  "action": "keep",
+  "type": "word"
+ },
  "婚活": {
   "zh": "相亲",
   "type": "word"
@@ -242,7 +246,7 @@
   "type": "word"
  },
  "普通": {
-  "zh": "普通",
+  "action": "keep",
   "type": "word"
  },
  "本当": {

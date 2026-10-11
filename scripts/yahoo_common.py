@@ -1365,6 +1365,18 @@ def generate_title_only(title_ja: str, content_ja: str,
     return title
 
 
+def _lexicon_polish(news: dict) -> None:
+    """术语表：归一化中文标题/正文（残留假名/译名）+ 发现新专名候选。"""
+    try:
+        from services import lexicon as _lx
+        for _k in ("title_zh", "content", "summary", "comment"):
+            if news.get(_k):
+                news[_k] = _lx.replace(news[_k])
+        _lx.discover((news.get("title_ja") or "") + "\n" + (news.get("content_ja") or ""), from_="fetch")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _build_final_tags(raw_tags: list[str]) -> list[str]:
     """生成最终标签：预处理 → 展开 keyword_tag_map → 必选标签 → 分类补足 → 去重。"""
     import random, re as _re
@@ -1499,6 +1511,7 @@ def _process_story_path(news: dict, keyword: str, extra_tags: list, angle: str =
     # 合并 auto_classify 标签 + LLM 提取的人物/团体标签
     person_tags = [p.strip() for p in story.get('persons', '').split(',') if p.strip()]
     news['tags'] = _build_final_tags(list({*tags, *person_tags, *extra_tags, *(news.get('tags') or [])}))
+    _lexicon_polish(news)
 
     # 封面图（与资讯体一致）
     if news.get('original_image_url') and not news.get('image_url'):
@@ -1990,6 +2003,7 @@ def process_news_item(news: dict, no_translate: bool = False,
                 tags.append(t)
     news['category'] = category
     news['tags']     = _build_final_tags(tags)
+    _lexicon_polish(news)
     news['source']   = news.get('source', 'Yahoo Japan')
 
     # 短配文（tags 确定后生成）
