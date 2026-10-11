@@ -266,7 +266,7 @@ def score_content(title, body, max_tokens=4000):
     usr = _read(REVIEW_PROMPT)[:3000] + f"\n\n=== 稿件 ===\n标题：{title}\n\n{body[:4000]}"
     _dims = ("爆发点", "情绪价值", "信息增量", "内容深度", "标题质量")
     last = {"total": 0, "error": "parse"}
-    for _ in range(2):
+    for _ in range(3):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
                             {"role": "user", "content": usr}], max_tokens=max_tokens)
@@ -529,18 +529,22 @@ def _produce(cand, pkg, channel, first=None):
             continue
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
         need = _need(cand, channel, mech.get("body_len") or len(body))    # 按长度分层
+        _err = bool(score.get("error"))
         _log(f"  评分 {score.get('total')}/{need}"
-             f"{'（通过）' if (score.get('total') or 0) >= need else '（偏低，继续改）'}")
-        if (score.get("total") or 0) >= need:
+             + ("（评分失败）" if _err else ("（通过）" if (score.get("total") or 0) >= need else "（偏低，继续改）")))
+        if _err or (score.get("total") or 0) >= need:
             break
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [
             f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"]
     # 3 轮改稿仍过不了门禁/评分 → **一律通过**（不阻断），问题记入错误表(warn)供后续调整
     _issues = list(mech.get("problems") or [])
-    _smsg = f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"
-    if (score.get("total") or 0) < need and _smsg not in _issues:
-        _issues.append(_smsg)
+    if score.get("error"):
+        _issues.append("评分失败（LLM 未返回合规评分）")
+    else:
+        _smsg = f"内容评分 {score.get('total')}/10 < 门槛 {need}（未达标）"
+        if (score.get("total") or 0) < need and _smsg not in _issues:
+            _issues.append(_smsg)
     _issues = list(dict.fromkeys(_issues))
     if (body or "").strip():                       # 有正文 → 一律通过（问题降级为 warn）
         ok = True
