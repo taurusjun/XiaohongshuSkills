@@ -1026,10 +1026,10 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
       <span class="ni">💬</span> 公众号
       <span class="nav-badge g" id="wechatBadge" style="display:none">0</span>
     </div>
-    <div class="nav-item" onclick="location.href='/topic-cache'">
+    <div class="nav-item" id="topicNavItem" onclick="switchToQueueView('topic')">
       <span class="ni">#️⃣</span> 话题缓存
     </div>
-    <div class="nav-item" onclick="location.href='/feedback-patterns'">
+    <div class="nav-item" id="feedbackNavItem" onclick="switchToQueueView('feedback')">
       <span class="ni">📈</span> 发布规律
     </div>
   </div>
@@ -1833,7 +1833,7 @@ function switchToQueueView(kind){
   if(nv) nv.style.display='none';
   if(wv) wv.style.display='none';
   if(qv) qv.style.display='flex';
-  var ids={manual:'manualNavItem',fail:'failNavItem',kana:'kanaNavItem',split:'splitNavItem'};
+  var ids={manual:'manualNavItem',fail:'failNavItem',kana:'kanaNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem'};
   var el=document.getElementById(ids[kind]); if(el) el.classList.add('active');
   renderQueue();
 }
@@ -1859,6 +1859,14 @@ function renderQueue(){
       +'<button class="btn btn-outline btn-sm" onclick="_qLoadSplit(1)">仅看超阈值</button></div>'
       +_qCard('<div id="qTable">'+_qWait()+'</div>');
     _qLoadSplit();
+  }
+  else if(_qKind==='topic'){
+    qb.innerHTML=_qHead('话题缓存','话题名 → topic_id 映射（发布时用）')
+      +'<iframe src="/topic-cache" style="width:100%;height:calc(100vh - 200px);border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>';
+  }
+  else if(_qKind==='feedback'){
+    qb.innerHTML=_qHead('发布规律','往期发布数据复盘（facets 结构化）')
+      +'<iframe src="/feedback-patterns" style="width:100%;height:calc(100vh - 200px);border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>';
   }
 }
 function _qLoadManual(){
