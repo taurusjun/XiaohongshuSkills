@@ -156,7 +156,7 @@ def extract_entities(items, max_tokens=4000):
     try:
         raw = llm.chat([{"role": "system", "content": ENT_SYS},
                         {"role": "user", "content": json.dumps(items, ensure_ascii=False)}],
-                       max_tokens=max_tokens)
+                       max_tokens=max_tokens, json_mode=True)
         m = re.search(r"\{.*\}", raw, re.S)
         return json.loads(m.group(0)) if m else {}
     except Exception:  # noqa: BLE001

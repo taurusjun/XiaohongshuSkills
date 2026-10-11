@@ -77,7 +77,7 @@ def _apply_thinking(body: dict, thinking):
     return body
 
 
-def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, thinking=None) -> str:
+def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, thinking=None, json_mode=False) -> str:
     timeout = timeout or _TIMEOUT
     url = _base_url() + "/chat/completions"
     # 推理模型会把 token 花在 reasoning_content 上；给足预算（默认取 LITELLM_MAX_TOKENS）
@@ -89,6 +89,8 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, t
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if json_mode:                                   # DeepSeek JSON Output：保证合法 JSON
+        body["response_format"] = {"type": "json_object"}
     _apply_thinking(body, thinking)
     data = _post(url, body, timeout)
     return data["choices"][0]["message"]["content"]

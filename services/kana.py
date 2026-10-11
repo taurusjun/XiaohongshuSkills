@@ -161,7 +161,7 @@ def auto_promote(limit=40, dry_run=False):
                "实在无法译的用罗马字。只输出严格 JSON：{\"<原文>\": \"<中译>\"}。\n"
                + "\n".join(f"- {t}   （语境：{ctx.get(t, '')[:50]}）" for t in terms))
         raw = llm.chat([{"role": "system", "content": "你是日娱名词翻译，只输出 JSON。"},
-                        {"role": "user", "content": usr}], max_tokens=2000)
+                        {"role": "user", "content": usr}], max_tokens=2000, json_mode=True)
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
         return []

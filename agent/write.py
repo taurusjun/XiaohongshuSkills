@@ -197,7 +197,7 @@ def compose(cand, pkg, force_channel=None, prev=None, retry_ctx=None, max_tokens
             {"key": cand["key"], "channel": prev[2], "title": prev[0], "body": prev[1]}, ensure_ascii=False)})
     if retry_ctx:
         msgs.append({"role": "user", "content": retry_ctx})
-    raw = llm.chat(msgs, max_tokens=max_tokens)
+    raw = llm.chat(msgs, max_tokens=max_tokens, json_mode=True)
     try:
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
@@ -240,7 +240,7 @@ def _score_call(sysd, usr, max_tokens, dims, agg="sum", tries=2):
     for _ in range(tries):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
-                            {"role": "user", "content": usr}], max_tokens=max_tokens)
+                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True)
         except Exception as e:  # noqa: BLE001
             last = {"error": str(e)}
             continue
@@ -284,7 +284,7 @@ def score_content(title, body, max_tokens=4000):
     for _ in range(3):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
-                            {"role": "user", "content": usr}], max_tokens=max_tokens)
+                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True)
             d = _extract_json(raw)
         except Exception as e:  # noqa: BLE001
             last = {"total": 0, "error": str(e)}
@@ -386,7 +386,7 @@ def classify_material(cand, max_tokens=200):
     _set_mat = (cand.get("title") or "") + "\n" + (cand.get("content_ja") or "")[:3000]
     try:
         raw = llm.chat([{"role": "system", "content": MAT_SYS},
-                        {"role": "user", "content": _set_mat}], max_tokens=max_tokens)
+                        {"role": "user", "content": _set_mat}], max_tokens=max_tokens, json_mode=True)
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
         return (d.get("type") or "normal").strip()
     except Exception:  # noqa: BLE001
@@ -402,7 +402,7 @@ def classify_relations(cand, pkg, max_tokens=2000):
             + "\n".join(f"[{c['k12']}] {c['title']}｜{c['excerpt']}" for c in cands))
     try:
         raw = llm.chat([{"role": "system", "content": REL_SYS}, {"role": "user", "content": user}],
-                       max_tokens=max_tokens)
+                       max_tokens=max_tokens, json_mode=True)
         m = re.search(r"\{.*\}", raw, re.S)
         d = json.loads(m.group(0)) if m else {}
         rels = d.get("relations") or []
