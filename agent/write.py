@@ -870,45 +870,6 @@ def _split_candidates(cands, threshold=None):
     return out
 
 
-def main_split_preview_content(argv=None):
-    """拆篇内容预览（dry-run，**不写库**）：对分组走真实写作流程，末尾打印 JSON。"""
-    import argparse
-    import json
-    import sqlite3
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--key", required=True)
-    ap.add_argument("--threshold", type=int, default=0)
-    a = ap.parse_args(argv)
-    conn = sqlite3.connect(paths.sqlite_path())
-    try:
-        r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (a.key[:40],)).fetchone()
-    finally:
-        conn.close()
-    if not r:
-        print("__SPLIT_JSON__ " + json.dumps({"ok": False, "msg": "key 不存在"}, ensure_ascii=False))
-        return 0
-    cand = _news.get_by_key(r[0])
-    cands = _split_candidates([cand], a.threshold or None)
-    results = []
-    for c in cands:
-        try:
-            rr = write_one(c, dry_run=True)          # dry-run：不落库
-        except Exception as e:                       # noqa: BLE001
-            results.append({"key": c["key"][:12], "error": f"{type(e).__name__}: {e}"})
-            continue
-        vs = rr.get("versions") or []
-        if not vs:
-            results.append({"key": c["key"][:12], "ok": False, "skipped": bool(rr.get("skipped")),
-                            "title": "", "body": "", "channel": "", "problems": rr.get("problems") or []})
-        for v in vs:
-            results.append({"key": c["key"][:12], "ok": bool(v.get("ok")), "channel": v.get("channel") or "",
-                            "title": v.get("title") or "", "body": v.get("text") or "",
-                            "score": v.get("score"), "problems": v.get("problems") or []})
-    print("__SPLIT_JSON__ " + json.dumps({"ok": True, "count": len(cands), "results": results},
-                                         ensure_ascii=False))
-    return 0
-
-
 def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb=""):
     """**确认放弃/跳过时**才把文章落入失败表（不在中间态写）。
 
@@ -926,8 +887,65 @@ def _enqueue_failure(cand, reason, stage, attempts=0, channel="", title="", tb="
         pass
 
 
+def write_split_key(key, threshold=None, force_channel=None, dry_run=False):
+    """按 cluster 体量把一个主稿拆多篇，写入 split_articles（1 主稿对多篇）；**不覆盖 news.rewritten_***。"""
+    import json
+    import sqlite3
+    from services import split_articles as _sa
+    from services import split_write as _sp
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (key[:40],)).fetchone()
+    finally:
+        conn.close()
+    if not r:
+        return {"ok": False, "msg": "key 不存在"}
+    cand = _news.get_by_key(r[0])
+    if not cand:
+        return {"ok": False, "msg": "素材不存在"}
+    th = threshold or _sp.DEFAULT_THRESHOLD
+    if not _sp.should_split(cand, th):
+        return {"ok": False, "msg": f"cluster 体量未超阈值（{_sp.cluster_text_len(cand)} ≤ {th}），不拆"}
+    items, skipped = [], []
+    for g in _sp.split_plan(cand, th):
+        gkeys = [m["full_key"] for m in g["members"]]
+        sub = {**(_news.get_by_key(gkeys[0]) or {}), "cluster_keys": ",".join(gkeys[1:])}
+        try:
+            rr = write_one(sub, dry_run=True, force_channel=force_channel)   # 只生成内容，不写 news
+        except Exception as e:                                              # noqa: BLE001
+            skipped.append({"group": g["no"], "reason": f"{type(e).__name__}: {e}"})
+            continue
+        vs = rr.get("versions") or []
+        v = vs[0] if vs else {}
+        if not (v.get("text") or "").strip():          # 纯重复/被跳过 → 不存空行
+            skipped.append({"group": g["no"], "reason": "；".join(rr.get("problems") or ["无内容"])})
+            continue
+        items.append({
+            "seq": len(items) + 1, "group_keys": ",".join(gkeys),
+            "title": v.get("title") or "", "content": v.get("text") or "",
+            "channel": v.get("channel") or "", "method": rr.get("method") or "",
+            "score": v.get("score") or 0,
+            "dims": json.dumps(v.get("score_obj") or {}, ensure_ascii=False) if v.get("score_obj") else "",
+        })
+    if not dry_run:
+        _sa.replace_for_main(cand["key"], items)
+    return {"ok": True, "count": len(items), "skipped": skipped, "items": items, "main_key": cand["key"]}
+
+
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
         verify_gallery=False, split_threshold=None, split_preview=False, rewrite_today=False):
+    if split_large and key:                       # 单主稿拆篇 → 落 split_articles 表（不覆盖改写文）
+        res = write_split_key(key, split_threshold, force_channel, dry_run=dry_run)
+        if res.get("ok"):
+            print(f"[拆篇] {key[:12]} → 拆 {res['count']} 篇（写入 split_articles 表；不覆盖 news.rewritten_*）", flush=True)
+            for it in res.get("items") or []:
+                print(f"  第{it['seq']}篇 《{it['title']}》 {len(it.get('content') or '')}字 "
+                      f"[{it.get('channel')}] 评分={it.get('score')}", flush=True)
+            if res.get("skipped"):
+                print(f"  （跳过 {len(res['skipped'])} 组：{' | '.join(x['reason'] for x in res['skipped'])}）", flush=True)
+        else:
+            print(f"[拆篇] {res.get('msg')}", flush=True)
+        return []
     if key:
         import sqlite3
         conn = sqlite3.connect(paths.sqlite_path())

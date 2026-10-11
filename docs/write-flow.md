@@ -14,7 +14,7 @@ flowchart TD
   B1 --> C
   B2 --> C
   B3 --> C
-  C["跨日漏写提示 + 拆篇(preview/split-large)"] --> D["逐篇 write_one"]
+  C["跨日漏写提示 + 拆篇(preview/split-large→split_articles 单表 1对多)"] --> D["逐篇 write_one"]
   D --> E{akb_type=bullet?}
   E -->|是| E1["只入库：preselected=1 / publish_xhs=0<br/>score_dims=akb-top-bullet"] --> Z
   E -->|否| F["prepare_package（写前准备）"]

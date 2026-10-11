@@ -53,7 +53,7 @@
 
 - **待人工**：命中门禁的素材照常写/入库，但打 `manual_review=1 + manual_reason`，在 admin UI `/manual-review` 人工处置；不阻断流程。
 - **跨日**：每次批量写稿落 `data/write_batches/<date>.json`（处理 + 跳过 keys），下次启动消费跳过清单（纯重复不重写）并提示「新/漏写候选」。
-- **拆篇手动入口**：`--split-large`（现对 `--key` 单篇也生效）、`--split-threshold N`、`--split-preview`（只读）；素材页另有「🧩 拆篇预览」按钮。
+- **拆篇手动入口**：`--split-large`（对 `--key` 单篇生效）、`--split-threshold N`、`--split-preview`（CLI 只读打印分组）。后台左侧「🧩 拆篇预览」页：**仅列 cluster 超阈值的候选 + 分页 + 已拆篇数**，可查看每篇、可重拆。**拆篇结果单独落 `split_articles` 表（1 主稿 key 对多篇），不覆盖 `news.rewritten_*`**（已取消旧的 LLM 内容预览）。
 
 ### 豁免（对齐原 skill `10-01`/`7-17`/`multi-artist-compilation-density-exemption`）
 
@@ -70,6 +70,7 @@
 3. **机械渠道预判接入**：`prepare_package` 用 `routing.route(title, content_ja)` 得 `pre_channel` 注入 prompt；LLM 输出非法渠道时回退 `pre_channel`。
 4. **export 长文正文入料放宽**到 20000 字（原 9000 会截断超长深访）。
 5. **拆多篇 fallback**：`split_write` 按内容体量把 cluster 粗分为 ≤3000 字的组，每组一个主 key；**默认关闭**（旧 skill 要求用户明确同意才拆），`--split-large` 开启。
+   单主稿拆篇走 `write_split_key`：每组生成一篇并写入 `split_articles(main_key,seq,group_keys,title,content,channel,method,score,status)`；**空内容组按「纯重复」跳过**不入表。
 6. **references 命中度**：检索词 5、结果 **6 篇**、摘录 900 字，常驻 `ai-taste-checklist`/`deep-interview-density`/`title-concreteness-over-category`/`gzh-review-criteria`/`content-type-data-profile`。
 
 ## 4. 口径说明
