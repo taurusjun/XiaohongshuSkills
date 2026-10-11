@@ -509,3 +509,51 @@ mv "$TMP" "$FINAL"                           # 校验通过才原子改名
 **删除/不迁移**：`~/gateway-watchdog.sh` · `~/cdp-keeper.sh`（被 `ops/cdp_keeper.py` 取代） · `com.xhs.caffeinate.plist`
 
 **实施顺序**：先 §八 的 0-9 步（**把扫码登录跑通**，核心诉求 + 验证整条 CDP 链路）→ 10-12（发布链路）→ 13-14（**Hermes 接入**）→ 15-17（切换）
+
+---
+
+## 十一、Chrome 资源占用与「容器/VM 放大」（迁移到 Linux 的收益）
+
+### 11.1 现象（macOS + colima 实测，2026-10-11）
+
+机器变慢的服务端根因是 **容器 → colima VM → 宿主** 这层放大。同机实测：
+
+| 观测 | 值 |
+|---|---|
+| 宿主 | 16 GB RAM / 8 核 |
+| colima VM 配置 | **4 vCPU / 8 GiB** |
+| **VM 进程占用** | **rss≈6.0 GB，CPU≈31%**（宿主第一大户）|
+| 宿主 swap | **已用 ≈1 GB**（在换页 → 变慢）|
+| 容器 Chrome | 15 进程，RSS 求和 ≈1.8 GB |
+| 空闲时单个渲染进程 | **CPU≈16%**（小红书长驻页真在跑）|
+| 宿主 load | ~0.9–1.0（间歇性飙高）|
+
+### 11.2 拆两层看
+
+**① 浏览器/页面自身的膨胀 —— 跨 OS，Linux 一样有**
+小红书是长驻 SPA：WebSocket 推送、心跳轮询、推荐流动画、常驻 Service Worker → **空闲也持续吃 CPU**；DOM / V8 堆 / SW 缓存**只增不减**，跑数小时就涨。
+→ **「定期/按阈值重启 9222」在任何 OS 上都得做。**
+
+**② 「整机变慢」的放大 —— macOS+colima 特有**
+
+| | macOS + colima | Linux 原生 Docker |
+|---|---|---|
+| 运行层 | 多一层 **VM（hypervisor）** | **共享宿主内核，无 VM** |
+| 内存放大 | VM 内存膨胀 → 宿主 **swap** | 无放大；可 `--memory` 设 cgroup 上限，超了 **OOM 杀 Chrome**，不拖整机 |
+| 文件系统 | virtiofs（慢） | overlayfs（快，I/O 开销低）|
+| GPU | 无直通 + `--disable-gpu` → **纯软件渲染**（更费 CPU）| 可挂 `/dev/dri` **硬件加速**，CPU 更低 |
+| /dev/shm | 需 `--disable-dev-shm-usage` | 调大 `shm_size` 即可 |
+
+生产（宿主直接跑 Chrome）没有 VM 层、有真 GPU，所以「感觉没事」；容器里多一层 VM，被放大后就把 16G 的 Mac 拖慢。
+
+### 11.3 迁到 Linux 后仍需保留 / 建议
+
+> 结论：**根问题（XHS 页长驻吃 CPU/内存）Linux 仍有；但「整机变慢」这层在 Linux 天生好很多**（无 VM 放大 + 可设内存上限 + 可 GPU 加速）。这也是与「网络漂移根治靠迁 Linux」同类的收益。
+
+- **仍要**：保留「每小时 :05 重启主 Chrome 9222（让 cdp-keeper 重拉）」，**建议升级为「RSS 超阈值才重启」**（比固定每小时更精准，Mac/Linux 通用，待实现）。
+- **Linux 容器姿势**：
+  - `CHROME_EXTRA_FLAGS` **去掉 `--disable-gpu`**（改为挂 `/dev/dri` 硬加速）；`--no-sandbox`/`--disable-dev-shm-usage` 按风险 #7 再评估。
+  - `shm_size` 调大（≥2g）。
+  - 给容器设 `mem_limit`（如 3–4g），让 Chrome 涨到顶被 OOM 掉单个进程，而不是拖垮宿主。
+  - 只留必要 tab（profile + creator），定期清 `chrome://newtab` / `omnibox-popup` 等残留。
+- **呼应既有条目**：见 §七.2（`CHROME_EXTRA_FLAGS`）、§九 风险 #19（Chrome 常驻内存与学生机现有占用叠加）。
