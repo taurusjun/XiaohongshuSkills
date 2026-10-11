@@ -56,7 +56,7 @@ def download_images(urls: list[str], out_dir: Path, referer_url: str = "") -> in
 
 def cdp_page_html(url: str, port: int = 9222, wait: float = 8.0) -> str:
     """用 CDP 真实 Chrome 拿渲染后的页面 HTML，用于拦截 requests 的站点（WAF 人机验证 / TLS 指纹）。
-    新开 tab 不复用已有 tab，取完关闭。失败返回空字符串。"""
+    新开 tab 不复用已有 tab，取完一定关闭（含异常）。失败返回空字符串。"""
     import json as _json
     import time as _time
     try:
@@ -65,35 +65,51 @@ def cdp_page_html(url: str, port: int = 9222, wait: float = 8.0) -> str:
         print("  ⚠️ 需要安装: pip install websocket-client")
         return ""
     try:
-        from urllib.parse import quote as _quote
-        r = requests.put(f"http://127.0.0.1:{port}/json/new?{_quote(url, safe='')}", timeout=10)
-        tab_id = r.json()["id"]
-        _time.sleep(wait)
-        tabs = requests.get(f"http://127.0.0.1:{port}/json", timeout=5).json()
-        tab = next((t for t in tabs if t["id"] == tab_id), None)
-        if not tab:
-            return ""
-        ws = websocket.create_connection(tab["webSocketDebuggerUrl"], timeout=15)
-        ws.send(_json.dumps({"id": 1, "method": "Runtime.evaluate",
-                             "params": {"expression": "document.documentElement.outerHTML"}}))
-        html = ""
-        while True:
-            msg = _json.loads(ws.recv())
-            if msg.get("id") == 1:
-                html = msg.get("result", {}).get("result", {}).get("value", "") or ""
-                break
-        ws.close()
-        try:
-            requests.get(f"http://127.0.0.1:{port}/json/close/{tab_id}", timeout=5)
-        except Exception:
-            pass
-        return html
+        with cdp_new_tab(port=port, url=url) as tab:
+            _time.sleep(wait)
+            ws = websocket.create_connection(tab["webSocketDebuggerUrl"], timeout=15)
+            try:
+                ws.send(_json.dumps({"id": 1, "method": "Runtime.evaluate",
+                                     "params": {"expression": "document.documentElement.outerHTML"}}))
+                while True:
+                    msg = _json.loads(ws.recv())
+                    if msg.get("id") == 1:
+                        return msg.get("result", {}).get("result", {}).get("value", "") or ""
+            finally:
+                ws.close()
     except Exception as e:
         print(f"  ⚠️ CDP 取页失败: {e}")
+        try:
+            from sqlite_db import _log_db_error
+            _log_db_error(f"CDP 取页失败: {url}: {e}")
+        except Exception:
+            pass
         return ""
 
 
 # ============ CDP 导航 + 等待（公共） ============
+from contextlib import contextmanager as _contextmanager
+
+
+@_contextmanager
+def cdp_new_tab(host: str = "127.0.0.1", port: int = 9222, url: str = ""):
+    """新开一个专用 tab，with 块结束时一定关闭（含异常、提前 return）。产出 tab 的 JSON
+    （含 id、webSocketDebuggerUrl）。新建失败直接抛异常，由调用方按失败处理。
+    注意 /json/close 是异步的（返回 'Target is closing'），关闭后短时间内 /json 里可能还看得到它。"""
+    from urllib.parse import quote as _quote
+    endpoint = f"http://{host}:{port}/json/new" + (f"?{_quote(url, safe='')}" if url else "")
+    tab = requests.put(endpoint, timeout=10).json()
+    try:
+        if not tab.get("webSocketDebuggerUrl"):
+            raise RuntimeError(f"新建 tab 缺少 webSocketDebuggerUrl: {tab}")
+        yield tab
+    finally:
+        if tab.get("id"):
+            try:
+                requests.get(f"http://{host}:{port}/json/close/{tab['id']}", timeout=5)
+            except Exception:
+                pass
+
 import itertools as _itertools
 _CDP_IDS = _itertools.count(100000)  # 与调用方手写的小 id（1~9）错开
 

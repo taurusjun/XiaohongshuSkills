@@ -70,7 +70,7 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        max_retries: int = 4) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
-    from scrapers import cdp_eval, cdp_navigate_and_wait
+    from scrapers import cdp_eval, cdp_navigate_and_wait, cdp_new_tab
     try:
         from sqlite_db import _log_db_error
     except Exception:  # 单独运行、config 不在路径上时
@@ -82,47 +82,29 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
             print(f"  🔄 重试 ({attempt}/{max_retries})...")
             time.sleep(_backoff[min(attempt - 1, len(_backoff) - 1)])
         try:
-            # 每次搜索创建新 tab，避免重连同一个 DevTools endpoint 导致 recv 超时
-            resp = requests.put(
-                f"http://{CDP_HOST}:{CDP_PORT}/json/new", timeout=10
-            )
-            if resp.status_code != 200:
-                print("❌ 无法创建新 tab")
-                return []
-            new_tab = resp.json()
-            tab_id = new_tab.get("id", "")
-            ws_url = new_tab.get("webSocketDebuggerUrl", "")
-            if not ws_url:
-                return []
-
-            ws = _ws_module.create_connection(ws_url, timeout=15)
-            try:
-                url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
-                print("等待页面加载...")
-                status = cdp_navigate_and_wait(
-                    ws, url, "document.querySelectorAll('a[href*=\"/articles/\"]').length > 0",
-                    timeout=20)
-                html = ""
-                if status == "ok":
-                    time.sleep(3)
-                    try:
-                        html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=10) or ""
-                    except _ws_module.WebSocketTimeoutException:
-                        html = ""
-                else:
-                    print(f"  ⚠️ 搜索页未就绪（{status}）")
-                    _log_db_error(f"yahoo 搜索页未就绪 status={status} keyword={keyword}")
-            finally:
+            # 每次搜索新开 tab（with 结束一定关闭，含异常），避免重连同一个 DevTools endpoint 导致 recv 超时
+            with cdp_new_tab(CDP_HOST, CDP_PORT) as new_tab:
+                ws = _ws_module.create_connection(new_tab["webSocketDebuggerUrl"], timeout=15)
                 try:
-                    ws.close()
-                except Exception:
-                    pass
-                if tab_id:
+                    url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
+                    print("等待页面加载...")
+                    # 等本次导航的新文档出现 /articles/ 链接（无结果页侧栏也有，不会白等）
+                    status = cdp_navigate_and_wait(
+                        ws, url, "document.querySelectorAll('a[href*=\"/articles/\"]').length > 0",
+                        timeout=20)
+                    html = ""
+                    if status == "ok":
+                        time.sleep(3)
+                        try:
+                            html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=10) or ""
+                        except _ws_module.WebSocketTimeoutException:
+                            html = ""
+                    else:
+                        print(f"  ⚠️ 搜索页未就绪（{status}）")
+                        _log_db_error(f"yahoo 搜索页未就绪 status={status} keyword={keyword}")
+                finally:
                     try:
-                        requests.get(
-                            f"http://{CDP_HOST}:{CDP_PORT}/json/close/{tab_id}",
-                            timeout=3
-                        )
+                        ws.close()
                     except Exception:
                         pass
 
