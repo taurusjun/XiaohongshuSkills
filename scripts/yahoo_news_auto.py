@@ -70,6 +70,11 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                        max_retries: int = 4) -> List[Dict]:
     """通过 CDP 导航到 Yahoo 搜索页并抓取新闻列表"""
     import websocket as _ws_module
+    from scrapers import cdp_eval, cdp_navigate_and_wait
+    try:
+        from sqlite_db import _log_db_error
+    except Exception:  # 单独运行、config 不在路径上时
+        def _log_db_error(msg): pass
 
     _backoff = [1, 2, 4, 8]
     for attempt in range(max_retries + 1):
@@ -92,40 +97,21 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
 
             ws = _ws_module.create_connection(ws_url, timeout=15)
             try:
-                ws.settimeout(15)
-                ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
-                ws.recv()
-
                 url = f"{YAHOO_SEARCH_URL}?p={keyword}&ei=UTF-8"
-                ws.send(json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": url}}))
-
                 print("等待页面加载...")
-                start = time.time()
-                while time.time() - start < 20:
-                    try:
-                        msg = json.loads(ws.recv())
-                    except _ws_module.WebSocketTimeoutException:
-                        break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
-                    if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
-                        break
-                time.sleep(3)
-
-                ws.send(json.dumps({
-                    "id": 3,
-                    "method": "Runtime.evaluate",
-                    "params": {"expression": "document.documentElement.outerHTML"},
-                }))
+                status = cdp_navigate_and_wait(
+                    ws, url, "document.querySelectorAll('a[href*=\"/articles/\"]').length > 0",
+                    timeout=20)
                 html = ""
-                start = time.time()
-                while time.time() - start < 10:
+                if status == "ok":
+                    time.sleep(3)
                     try:
-                        ws.settimeout(3)
-                        msg = json.loads(ws.recv())
-                        if msg.get("id") == 3:
-                            html = msg.get("result", {}).get("result", {}).get("value", "")
-                            break
-                    except Exception:
-                        pass
+                        html = cdp_eval(ws, "document.documentElement.outerHTML", timeout=10) or ""
+                    except _ws_module.WebSocketTimeoutException:
+                        html = ""
+                else:
+                    print(f"  ⚠️ 搜索页未就绪（{status}）")
+                    _log_db_error(f"yahoo 搜索页未就绪 status={status} keyword={keyword}")
             finally:
                 try:
                     ws.close()
@@ -149,10 +135,19 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
+            # 只解析主结果列表；右侧栏 #yjnSub 的访问/评论排行也有 /articles/ 链接，不能混进结果
+            results = soup.select_one("#contentsWrap ol.newsFeed_list")
+            if results is None:
+                if "見つかりませんでした" in soup.get_text():
+                    print(f"  ℹ️ [{keyword}] 无搜索结果")
+                    return []
+                print("  ⚠️ 未找到搜索结果列表（页面结构可能变化），重试")
+                _log_db_error(f"yahoo 搜索页未找到结果列表 keyword={keyword}")
+                continue
             news_list: list[dict] = []
             seen: set[str] = set()
 
-            for link in soup.find_all('a'):
+            for link in results.find_all('a'):
                 if len(news_list) >= max_results * 2:
                     break
                 href = link.get("href", "")
