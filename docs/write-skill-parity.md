@@ -53,7 +53,7 @@
 
 - **待人工**：命中门禁的素材照常写/入库，但打 `manual_review=1 + manual_reason`，在 admin UI `/manual-review` 人工处置；不阻断流程。
 - **跨日**：每次批量写稿落 `data/write_batches/<date>.json`（处理 + 跳过 keys），下次启动消费跳过清单（纯重复不重写）并提示「新/漏写候选」。
-- **拆篇手动入口**：`--split-large`（对 `--key` 单篇生效）、`--split-threshold N`、`--split-preview`（CLI 只读打印分组）。后台左侧「🧩 拆篇预览」页：**仅列 cluster 超阈值的候选 + 分页 + 已拆篇数**，可查看每篇、可重拆。**拆篇结果单独落 `split_articles` 表（1 主稿 key 对多篇），不覆盖 `news.rewritten_*`**（已取消旧的 LLM 内容预览）。
+- **拆篇手动入口**：`--split-large`（对 `--key` 单篇生效）、`--split-threshold N`、`--split-preview`（CLI 只读打印分组）。后台左侧「🧩 拆篇预览」页：**同 cluster 只列「主 key」一行**（与写稿选材一致：簇内 `title_score` 最高者代表整簇，其余成员吸收）+ **仅列 cluster 超阈值 + 分页 + 已拆篇数**，可查看每篇、可重拆。**拆篇结果单独落 `split_articles` 表（1 主稿 key 对多篇），不覆盖 `news.rewritten_*`**（已取消旧的 LLM 内容预览）。
 
 ### 豁免（对齐原 skill `10-01`/`7-17`/`multi-artist-compilation-density-exemption`）
 

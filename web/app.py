@@ -3705,10 +3705,18 @@ def api_split_preview():
     rows = query_news(status="active", limit=1000)
     if day:
         rows = [r for r in rows if (r.get('created_at') or '').startswith(day)]
-    out = []
-    for c in rows:
-        if not (c.get('cluster_keys') or '').strip():
+    # 同 cluster 只保留「主 key」一行（与写稿选材一致：簇内 title_score 最高者代表整簇，其余成员吸收）
+    reps, used = [], set()
+    for r in sorted(rows, key=lambda x: -(x.get('title_score') or 0)):
+        cl = {k.strip() for k in (r.get('cluster_keys') or '').split(',') if k.strip()}
+        if not cl:
             continue
+        if (cl | {r['key']}) & used:
+            continue
+        reps.append(r)
+        used |= cl | {r['key']}
+    out = []
+    for c in reps:
         L = _sp.cluster_text_len(c)
         if L <= th:
             continue
