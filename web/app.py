@@ -3327,7 +3327,7 @@ th{background:#fafafa;color:#666;font-weight:600;font-size:12px}
 .btn:hover{background:#f0f0f0}.empty{color:#999;padding:30px;text-align:center}</style></head><body>
 <h2>🚩 待人工清单</h2><div class="sub">成人产业/非赛道等内容门禁命中 → 需人工判断是否写、怎么写（不阻断流程）</div>
 <table><thead><tr><th style="width:90px">key</th><th>标题</th><th style="width:60px">体裁</th><th>命中原因</th><th style="width:90px">入库</th><th style="width:70px">操作</th></tr></thead>
-<tbody id="tb"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table>
+<tbody id="tb"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody></table>
 <script>
 async function load(){const r=await fetch('/api/manual-review');const d=await r.json();const tb=document.getElementById('tb');
  if(!d.rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">暂无待人工素材 🎉</td></tr>';return;}
@@ -3391,15 +3391,16 @@ pre{background:#1e1e2e;color:#e0e0e0;padding:10px;border-radius:6px;font-size:11
 .btn:hover{background:#f0f0f0}.empty{color:#999;padding:30px;text-align:center}.r{color:#b45309;font-size:12px}</style></head><body>
 <h2>❌ 写稿失败队列</h2><div class="sub">写稿失败（含 LLM 抖动）→ 1 小时后自动重试 → 再失败转「待人工」；成功则标记 resolved（保留记录）。</div>
 <div id="stats" style="margin-bottom:14px"></div>
-<table><thead><tr><th style="width:92px">key</th><th style="width:140px">时间</th><th>标题/原因</th><th style="width:60px">状态</th><th style="width:44px">重试</th><th style="width:120px">下次重试</th><th style="width:78px">操作</th></tr></thead>
-<tbody id="tb"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table>
+<table><thead><tr><th style="width:92px">key</th><th style="width:140px">时间</th><th style="width:180px">标题</th><th>原因</th><th style="width:60px">状态</th><th style="width:44px">重试</th><th style="width:120px">下次重试</th><th style="width:78px">操作</th></tr></thead>
+<tbody id="tb"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody></table>
 <script>
 function esc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 async function load(){const d=await(await fetch('/api/write-failures')).json();const tb=document.getElementById('tb');
- if(!d.rows.length){tb.innerHTML='<tr><td colspan="7" class="empty">队列为空 🎉</td></tr>';return;}
+ if(!d.rows.length){tb.innerHTML='<tr><td colspan="8" class="empty">队列为空 🎉</td></tr>';return;}
  tb.innerHTML=d.rows.map(x=>`<tr><td><a class="k" href="/detail/${x.key}" target="_blank" title="${x.key}">${x.key.slice(0,12)}</a></td>
   <td style="font-size:11px;color:#555">${esc(x.created_at||x.updated_at||'')}</td>
-  <td>${esc((x.title||'').slice(0,50))} <span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}·${esc(x.level||'error')}]</span><div class="r">${esc(x.reason||'')}</div>
+  <td style="font-size:12px">${esc((x.title||'—').slice(0,40))}</td>
+  <td><span style="color:#7c3aed;font-size:11px">[${esc(x.category||'')}·${esc(x.level||'error')}]</span> <span class="r" style="font-size:12px">${esc(x.reason||'')}</span>
    ${x.traceback?`<details><summary style="cursor:pointer;font-size:11px;color:#7c3aed">报错堆栈</summary><pre>${esc(x.traceback)}</pre></details>`:''}</td>
   <td><span class="badge ${x.status}">${x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已成功':'待重试')}</span></td>
   <td>${x.retry_count||0}</td><td>${esc(x.next_retry_at||'—')}</td>

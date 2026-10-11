@@ -138,16 +138,16 @@ def due(now=None):
             "ORDER BY next_retry_at", (_fmt(now),))]
 
 
-def warn(key, reason, category="gate_kana"):
+def warn(key, reason, category="gate_kana", title=""):
     """记一条 warn 级（不重试，仅留痕）：status=resolved, level=warn。"""
     ensure()
     now = _fmt(datetime.datetime.now())
     with _db() as c:
-        c.execute("INSERT INTO write_failures (key, reason, category, stage, level, status, "
-                  "created_at, updated_at) VALUES (?,?,?,'gate','warn','resolved',?,?) "
+        c.execute("INSERT INTO write_failures (key, reason, category, stage, level, status, title, "
+                  "created_at, updated_at) VALUES (?,?,?,'gate','warn','resolved',?,?,?) "
                   "ON CONFLICT(key) DO UPDATE SET reason=excluded.reason, category=excluded.category, "
-                  "level='warn', status='resolved', updated_at=excluded.updated_at",
-                  (key, reason, category, now, now))
+                  "level='warn', status='resolved', title=excluded.title, updated_at=excluded.updated_at",
+                  (key, reason, category, title, now, now))
 
 
 def mark_resolved(key, note=""):

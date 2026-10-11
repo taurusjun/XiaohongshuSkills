@@ -931,7 +931,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
                 from services import write_failures as _wf
                 if r.get("gate_exempt"):
                     _wf.warn(c["key"], "门禁/评分豁免：" + "；".join(r["gate_exempt"])[:150],
-                             category="gate_exempt")
+                             category="gate_exempt", title=(r.get("title") or c.get("title") or ""))
                 else:
                     _wf.mark_resolved(c["key"], "写稿成功")     # 清掉旧失败记录
             except Exception:  # noqa: BLE001
