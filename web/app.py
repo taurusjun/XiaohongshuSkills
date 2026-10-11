@@ -1268,6 +1268,19 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
   </div>
 </div>
 
+<!-- Queue edit modal (话题缓存/发布规律 编辑) -->
+<div class="modal" id="qEditModal" onclick="if(event.target===this)_qEditClose()">
+  <div class="modal-card" style="max-width:900px">
+    <h2 id="qEditTitle">编辑</h2>
+    <div id="qEditBody"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;align-items:center">
+      <span id="qEditMsg" style="flex:1;font-size:12px"></span>
+      <button class="btn btn-gray" onclick="_qEditClose()">取消</button>
+      <button class="btn btn-red" id="qEditSaveBtn" onclick="_qEditSave()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- Preview modal -->
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
 
@@ -1860,14 +1873,8 @@ function renderQueue(){
       +_qCard('<div id="qTable">'+_qWait()+'</div>');
     _qLoadSplit();
   }
-  else if(_qKind==='topic'){
-    qb.innerHTML=_qHead('话题缓存','话题名 → topic_id 映射（发布时用）')
-      +'<iframe src="/topic-cache" style="width:100%;height:calc(100vh - 200px);border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>';
-  }
-  else if(_qKind==='feedback'){
-    qb.innerHTML=_qHead('发布规律','往期发布数据复盘（facets 结构化）')
-      +'<iframe src="/feedback-patterns" style="width:100%;height:calc(100vh - 200px);border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>';
-  }
+  else if(_qKind==='topic'){ _qLoadTopic(); }
+  else if(_qKind==='feedback'){ _qLoadFeedback(); }
 }
 function _qLoadManual(){
   fetch('/api/manual-review').then(function(r){return r.json();}).then(function(d){
@@ -1936,6 +1943,154 @@ function _qLoadSplit(onlySplit){
   });
 }
 function _qSplitWrite(k){showConfirm('对该素材触发「拆篇写入」？','后台运行 write-full --split-large --key '+k+'，会真实入库','触发','btn-red','🧩').then(function(ok){if(!ok)return;fetch('/api/split-write/'+k,{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast(d.ok?('已触发拆篇写入（后台运行）'):('触发失败: '+(d.msg||'')));});});}
+
+
+// ── 话题缓存（原生应用内视图）──────────────────────────
+var _tc={page:1,size:50,sort_by:'name',sort_dir:'asc',q:'',total:0,rows:[]};
+function _qIn(id,ph,w,val){
+  var ws=(w>0)?('width:'+w+'px'):'width:100%';
+  return '<input id="'+id+'" placeholder="'+_qEsc(ph)+'" value="'+_qEsc(val==null?'':val)+'" style="'+ws+';font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:7px;outline:none;background:#fff;box-sizing:border-box">';
+}
+function _qLoadTopic(){
+  var qb=document.getElementById('queueBody'); if(!qb) return;
+  qb.innerHTML=_qHead('话题缓存','话题名 → 小红书话题 id 映射；发布时命中即用，免敲字')
+    +'<div class="table-card" style="flex:none;padding:12px 14px;margin-bottom:12px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    +_qIn('tc_name','话题名（不含 #）',170,'')+_qIn('tc_id','topic_id（24位）',220,'')+_qIn('tc_link','link（可空）',250,'')
+    +'<button class="btn btn-red btn-sm" onclick="_tcSave()">新增 / 更新</button><span id="tc_msg" style="font-size:12px"></span></div></div>'
+    +'<div class="table-card" style="flex:none"><div class="table-hdr">'
+    +_qIn('tc_q','搜索话题名 / topic_id…',240,'')
+    +'<button class="btn btn-outline btn-sm" onclick="_tcSearch()">搜索</button>'
+    +'<button class="btn btn-outline btn-sm" onclick="_tcClear()">清空</button>'
+    +'<span class="table-hdr-count" id="tc_count"></span></div>'
+    +'<div id="tc_table" style="overflow:auto">'+_qWait()+'</div>'
+    +'<div class="table-foot" id="tc_pager"></div></div>';
+  var qi=document.getElementById('tc_q'); if(qi){qi.value=_tc.q;qi.addEventListener('keydown',function(e){if(e.key==='Enter')_tcSearch();});}
+  _tcRender();
+}
+function _tcRender(){
+  var p=new URLSearchParams({page:_tc.page,page_size:_tc.size,sort_by:_tc.sort_by,sort_dir:_tc.sort_dir,q:_tc.q});
+  fetch('/api/topic-cache?'+p.toString()).then(function(r){return r.json();}).then(function(d){
+    _tc.total=d.total||0; _tc.rows=d.rows||[];
+    var lp=Math.max(1,Math.ceil(_tc.total/_tc.size));
+    if(_tc.page>lp){_tc.page=lp;return _tcRender();}
+    var tb=document.getElementById('tc_table'); if(!tb) return;
+    var sc=function(c){return _tc.sort_by===c?(_tc.sort_dir==='asc'?' ▲':' ▼'):'';};
+    tb.innerHTML=(_tc.rows.length?'<table><thead><tr>'
+      +'<th onclick="_tcSort(\'name\')">话题名'+sc('name')+'</th><th>topic_id</th>'
+      +'<th onclick="_tcSort(\'source\')">来源'+sc('source')+'</th>'
+      +'<th style="width:70px" onclick="_tcSort(\'hit_count\')">命中'+sc('hit_count')+'</th>'
+      +'<th style="width:130px" onclick="_tcSort(\'updated_at\')">更新时间'+sc('updated_at')+'</th>'
+      +'<th style="width:130px"></th></tr></thead><tbody>'
+      +_tc.rows.map(function(x,i){return '<tr>'
+        +'<td><b>'+_qEsc(x.name)+'</b></td>'
+        +'<td><code style="font-size:11px;color:var(--text2)">'+_qEsc(x.topic_id)+'</code></td>'
+        +'<td>'+_qEsc(x.source||'-')+'</td><td>'+_qEsc(x.hit_count||0)+'</td>'
+        +'<td style="font-size:11px;color:var(--text3)">'+_qEsc((x.updated_at||'').slice(0,16))+'</td>'
+        +'<td><button class="btn btn-outline btn-sm" onclick="_tcFill('+i+')">编辑</button> '
+        +'<button class="btn btn-outline btn-sm" onclick="_tcDel('+i+')">删除</button></td></tr>';}).join('')
+      +'</tbody></table>':_qEmpty('没有数据'));
+    var cnt=document.getElementById('tc_count'); if(cnt)cnt.textContent=_tc.total+' 条';
+    var pg=document.getElementById('tc_pager');
+    if(pg)pg.innerHTML='<span class="table-foot-info">第 '+_tc.page+' / '+lp+' 页 · 共 '+_tc.total+' 条</span>'
+      +'<button class="pg-btn" onclick="_tcGo(1)"'+(_tc.page<=1?' disabled style="opacity:.4"':'')+'>«</button>'
+      +'<button class="pg-btn" onclick="_tcGo('+(_tc.page-1)+')"'+(_tc.page<=1?' disabled style="opacity:.4"':'')+'>‹</button>'
+      +'<button class="pg-btn" onclick="_tcGo('+(_tc.page+1)+')"'+(_tc.page>=lp?' disabled style="opacity:.4"':'')+'>›</button>'
+      +'<button class="pg-btn" onclick="_tcGo('+lp+')"'+(_tc.page>=lp?' disabled style="opacity:.4"':'')+'>»</button>'
+      +'<select onchange="_tcSize(this.value)" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">'
+      +[50,100,200,500].map(function(n){return '<option value="'+n+'"'+(_tc.size===n?' selected':'')+'>'+n+' / 页</option>';}).join('')+'</select>';
+  });
+}
+function _tcGo(p){var lp=Math.max(1,Math.ceil(_tc.total/_tc.size));_tc.page=Math.min(Math.max(1,p),lp);_tcRender();}
+function _tcSize(s){_tc.size=parseInt(s,10);_tc.page=1;_tcRender();}
+function _tcSort(c){if(_tc.sort_by===c)_tc.sort_dir=(_tc.sort_dir==='asc'?'desc':'asc');else{_tc.sort_by=c;_tc.sort_dir='asc';}_tc.page=1;_tcRender();}
+function _tcSearch(){var e=document.getElementById('tc_q');_tc.q=e?e.value.trim():'';_tc.page=1;_tcRender();}
+function _tcClear(){_tc.q='';var e=document.getElementById('tc_q');if(e)e.value='';_tc.page=1;_tcRender();}
+function _tcFill(i){var x=_tc.rows[i];if(!x)return;var a=document.getElementById('tc_name'),b=document.getElementById('tc_id'),c=document.getElementById('tc_link');if(a)a.value=x.name||'';if(b)b.value=x.topic_id||'';if(c)c.value=x.link||'';qToast('已填入表单，可改后「新增 / 更新」');}
+function _tcMsg(t,ok){var m=document.getElementById('tc_msg');if(!m)return;m.textContent=t;m.style.color=ok?'#15803d':'#b91c1c';clearTimeout(window._tcMT);window._tcMT=setTimeout(function(){if(m)m.textContent='';},3000);}
+function _tcSave(){
+  var name=((document.getElementById('tc_name')||{}).value||'').trim().replace(/^#/,'');
+  var id=((document.getElementById('tc_id')||{}).value||'').trim();
+  var link=((document.getElementById('tc_link')||{}).value||'').trim();
+  if(!name||!id){_tcMsg('话题名和 topic_id 必填',false);return;}
+  fetch('/api/topic-cache',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,topic_id:id,link:link})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.ok){_tcMsg('已保存',true);var b=document.getElementById('tc_id'),c=document.getElementById('tc_link');if(b)b.value='';if(c)c.value='';_tcRender();}
+      else _tcMsg(d.msg||'保存失败',false);
+    });
+}
+function _tcDel(i){var x=_tc.rows[i];if(!x)return;showConfirm('删除话题「'+x.name+'」？','该操作不可撤销','删除','btn-red','🗑️').then(function(ok){if(!ok)return;fetch('/api/topic-cache/'+encodeURIComponent(x.name),{method:'DELETE'}).then(function(r){return r.json();}).then(function(d){if(d.ok){qToast('已删除');_tcRender();}else qToast('删除失败');});});}
+
+// ── 发布规律（原生应用内视图）──────────────────────────
+var _fb={rows:[],byNo:{}};
+var _FB_FACETS=['category','genre','title_style','publish_mode','direction','action','confidence','entities'];
+function _qLoadFeedback(){
+  var qb=document.getElementById('queueBody'); if(!qb) return;
+  qb.innerHTML=_qHead('发布规律','feedback_patterns 人工 review（facets 结构化，可编辑）')
+    +'<div class="table-card" style="flex:none"><div class="table-hdr">'
+    +_qIn('fb_q','搜索 标题/正文/题材/实体/对策…',300,'')
+    +'<select id="fb_cat" style="font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:#fff"><option value="">全部类目</option></select>'
+    +'<button class="btn btn-outline btn-sm" onclick="_fbLoad()">查询</button>'
+    +'<span class="table-hdr-count" id="fb_cnt"></span></div>'
+    +'<div id="fb_table" style="overflow:auto">'+_qWait()+'</div></div>';
+  var e=document.getElementById('fb_q'); if(e)e.addEventListener('keydown',function(ev){if(ev.key==='Enter')_fbLoad();});
+  _fbLoad();
+}
+function _fbLoad(){
+  var q=(document.getElementById('fb_q')||{}).value||'';
+  var cat=(document.getElementById('fb_cat')||{}).value||'';
+  fetch('/api/feedback-patterns?q='+encodeURIComponent(q)+'&category='+encodeURIComponent(cat))
+    .then(function(r){return r.json();}).then(function(d){
+      var rows=d.rows||[]; _fb.rows=rows; _fb.byNo={}; rows.forEach(function(x){_fb.byNo[x.no]=x;});
+      var sel=document.getElementById('fb_cat'); var v=sel?sel.value:cat;
+      var cats=[]; rows.forEach(function(x){if(x.category&&cats.indexOf(x.category)<0)cats.push(x.category);});cats.sort();
+      if(sel)sel.innerHTML='<option value="">全部类目</option>'+cats.map(function(c){return '<option'+(c===v?' selected':'')+'>'+_qEsc(c)+'</option>';}).join('');
+      var cnt=document.getElementById('fb_cnt');if(cnt)cnt.textContent='共 '+(d.total!=null?d.total:rows.length)+' 条';
+      var tb=document.getElementById('fb_table');if(!tb)return;
+      if(!rows.length){tb.innerHTML=_qEmpty('没有数据');return;}
+      tb.innerHTML='<table><thead><tr><th style="width:46px">#</th><th>类目</th><th>题材</th><th>标题类型</th><th>方向</th><th>对策</th><th>置信</th><th>实体</th><th>标题 / 正文</th><th style="width:70px"></th></tr></thead><tbody>'
+        +rows.map(function(x){
+          var dc=(x.direction==='零曝光')?'color:#b91c1c':((x.direction==='爆发')?'color:#15803d':'');
+          var ac=(x.action==='跳过'||x.action==='降级')?'color:#b91c1c':((x.action==='优先')?'color:#15803d':'');
+          return '<tr><td>'+x.no+'</td><td>'+_qEsc(x.category)+'</td><td>'+_qEsc(x.genre)+'</td><td>'+_qEsc(x.title_style)+'</td>'
+            +'<td style="'+dc+'">'+_qEsc(x.direction)+'</td><td style="'+ac+'">'+_qEsc(x.action)+'</td><td>'+_qEsc(x.confidence)+'</td><td>'+_qEsc(x.entities)+'</td>'
+            +'<td><b>'+_qEsc(x.title)+'</b><div style="color:var(--text3);margin-top:3px;white-space:pre-wrap;font-size:11px;max-width:420px">'+_qEsc((x.body||'').slice(0,220))+'</div></td>'
+            +'<td><button class="btn btn-outline btn-sm" onclick="_fbEdit('+x.no+')">编辑</button></td></tr>';}).join('')+'</tbody></table>';
+    });
+}
+function _fbEdit(no){
+  var x=_fb.byNo[no];if(!x)return;window._fbCur=x;
+  var html='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'
+    +_FB_FACETS.map(function(f){return '<div><label style="display:block;font-size:11px;color:var(--text3);margin-bottom:3px">'+f+'</label>'+_qIn('_fb_f_'+f,'',0,x[f]||'')+'</div>';}).join('')+'</div>'
+    +'<label style="display:block;font-size:11px;color:var(--text3);margin:10px 0 3px">tags</label>'+_qIn('_fb_f_tags','',0,x.tags||'')
+    +'<label style="display:block;font-size:11px;color:var(--text3);margin:10px 0 3px">title</label>'+_qIn('_fb_f_title','',0,x.title||'')
+    +'<label style="display:block;font-size:11px;color:var(--text3);margin:10px 0 3px">body (md)</label>'
+    +'<textarea id="_fb_f_body" style="width:100%;min-height:170px;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:7px;outline:none;box-sizing:border-box">'+_qEsc(x.body||'')+'</textarea>';
+  _qEditOpen('编辑 #'+no,html,_fbSave);
+}
+function _fbSave(){
+  var cur=window._fbCur;if(!cur)return;
+  var g=function(id){var e=document.getElementById(id);return e?e.value:'';};
+  var body={tags:g('_fb_f_tags'),title:g('_fb_f_title'),body:g('_fb_f_body')};
+  _FB_FACETS.forEach(function(f){body[f]=g('_fb_f_'+f);});
+  fetch('/api/feedback-patterns/'+cur.no,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json();}).then(function(d){
+      var m=document.getElementById('qEditMsg');
+      if(d.ok){if(m){m.textContent='✅ 已保存';m.style.color='#15803d';}qToast('已保存');_qEditClose();_fbLoad();}
+      else if(m){m.textContent='❌ 保存失败';m.style.color='#b91c1c';}
+    });
+}
+
+// ── 通用编辑 Modal ─────────────────────────────────────
+function _qEditOpen(title,html,onSave){
+  document.getElementById('qEditTitle').textContent=title;
+  document.getElementById('qEditBody').innerHTML=html;
+  document.getElementById('qEditMsg').textContent='';
+  window._qEditSaveFn=onSave;
+  document.getElementById('qEditModal').classList.add('active');
+}
+function _qEditClose(){var e=document.getElementById('qEditModal');if(e)e.classList.remove('active');}
+function _qEditSave(){if(window._qEditSaveFn)window._qEditSaveFn();}
+
 
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
