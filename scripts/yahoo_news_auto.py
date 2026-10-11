@@ -101,8 +101,11 @@ def fetch_news_via_cdp(keyword: str, max_results: int = 5,
                 print("等待页面加载...")
                 start = time.time()
                 while time.time() - start < 20:
-                    msg = json.loads(ws.recv())
-                    if msg.get("method") == "Page.loadEventFired":
+                    try:
+                        msg = json.loads(ws.recv())
+                    except _ws_module.WebSocketTimeoutException:
+                        break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
+                    if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
                         break
                 time.sleep(3)
 

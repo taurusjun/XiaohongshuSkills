@@ -1086,8 +1086,11 @@ def _scrape_abema_tv(gallery_url: str) -> list[str]:
             import time as _time
             start = _time.time()
             while _time.time() - start < 15:
-                msg = _json.loads(ws.recv())
-                if msg.get("method") == "Page.loadEventFired":
+                try:
+                    msg = _json.loads(ws.recv())
+                except websocket.WebSocketTimeoutException:
+                    break  # load 事件迟迟不来（广告等子资源卡住），DOM 通常早已就绪，直接往下读
+                if msg.get("method") in ("Page.domContentEventFired", "Page.loadEventFired"):
                     break
             ws.close()
 
