@@ -1036,6 +1036,26 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 
   <div class="sidebar-divider"></div>
 
+  <div class="sidebar-section">
+    <div class="sidebar-label">运营队列</div>
+    <div class="nav-item" id="manualNavItem" onclick="switchToQueueView('manual')">
+      <span class="ni">🚩</span> 待人工
+      <span class="nav-badge g" id="navBadgeManual" style="display:none">0</span>
+    </div>
+    <div class="nav-item" id="failNavItem" onclick="switchToQueueView('fail')">
+      <span class="ni">❌</span> 失败稿
+      <span class="nav-badge g" id="navBadgeFail" style="display:none">0</span>
+    </div>
+    <div class="nav-item" id="kanaNavItem" onclick="switchToQueueView('kana')">
+      <span class="ni">🔤</span> 假名词表
+    </div>
+    <div class="nav-item" id="splitNavItem" onclick="switchToQueueView('split')">
+      <span class="ni">🧩</span> 拆篇预览
+    </div>
+  </div>
+
+  <div class="sidebar-divider"></div>
+
   <div class="sidebar-stats">
     <div class="sidebar-stat-label">账号概况</div>
     <div class="sidebar-stat-row">
@@ -1132,10 +1152,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="filter-divider"></div>
     <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span><span id="loginAcct" style="margin-left:6px;color:#9fb0c8;font-size:11px"></span></button>
     <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
-    <button class="btn-ghost btn-sm" onclick="splitPreview()" title="拆篇预览（只读，不写库）">🧩 拆篇预览</button>
-    <button class="btn-ghost btn-sm" onclick="window.open('/manual-review','_blank')" title="待人工清单">🚩 待人工</button>
-    <button class="btn-ghost btn-sm" onclick="window.open('/write-failures','_blank')" title="写稿失败队列">❌ 失败稿</button>
-    <button class="btn-ghost btn-sm" onclick="window.open('/kana-autopromoted','_blank')" title="假名自动入表复核">🔤 假名词表</button>
   </div>
 
   <!-- Action bars -->
@@ -1200,6 +1216,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
 </div><!-- /newsView -->
 <div id="wechatView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
   <div id="wdBody" style="flex:1;overflow-y:auto;padding:8px 20px"></div>
+</div>
+<div id="queueView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+  <div id="queueBody" style="flex:1;overflow-y:auto;padding:8px 20px 24px"></div>
 </div>
 </div><!-- /main -->
 
@@ -1798,6 +1817,118 @@ function switchToNewsView(){
   if(wn) wn.classList.remove('active');
   if(nn) nn.classList.add('active');
 }
+// ── 运营队列视图（待人工 / 失败稿 / 假名词表 / 拆篇预览）──────────────────
+var _qKind='manual';
+function _qEsc(x){return (x==null?'':(''+x)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function qToast(msg){
+  var t=document.getElementById('qToast');
+  if(!t){t=document.createElement('div');t.id='qToast';document.body.appendChild(t);
+    t.style.cssText='position:fixed;left:50%;bottom:34px;transform:translateX(-50%);background:#1c1c2e;color:#fff;padding:9px 16px;border-radius:9px;font-size:12.5px;z-index:99999;opacity:0;transition:opacity .18s;box-shadow:0 6px 20px rgba(0,0,0,.3)';}
+  t.textContent=msg;t.style.opacity='1';clearTimeout(window._qTT);window._qTT=setTimeout(function(){t.style.opacity='0';},2200);
+}
+function switchToQueueView(kind){
+  _qKind=kind;
+  document.querySelectorAll('.nav-item.active').forEach(function(e){e.classList.remove('active');});
+  var nv=document.getElementById('newsView'),wv=document.getElementById('wechatView'),qv=document.getElementById('queueView');
+  if(nv) nv.style.display='none';
+  if(wv) wv.style.display='none';
+  if(qv) qv.style.display='flex';
+  var ids={manual:'manualNavItem',fail:'failNavItem',kana:'kanaNavItem',split:'splitNavItem'};
+  var el=document.getElementById(ids[kind]); if(el) el.classList.add('active');
+  renderQueue();
+}
+function _qHead(title,sub){
+  return '<div style="display:flex;align-items:baseline;gap:10px;padding:14px 2px 8px"><h2 style="margin:0;font-size:16px">'+title+'</h2><span style="color:var(--text3);font-size:12px">'+sub+'</span><span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="renderQueue()">🔄 刷新</button></div>';
+}
+function _qWait(){return '<div style="color:var(--text3);padding:24px;font-size:13px">加载中…</div>';}
+function _qEmpty(m){return '<div style="color:var(--text3);padding:34px;text-align:center;font-size:13px">'+m+'</div>';}
+function _qCard(inner){return '<div class="table-card" style="margin-bottom:12px;overflow:auto">'+inner+'</div>';}
+function _qTh(cols){return '<thead><tr>'+cols.map(function(c){return '<th'+(c.w?' style="width:'+c.w+'"':'')+'>'+c.t+'</th>';}).join('')+'</tr></thead>';}
+function _qSetBadge(id,n){var b=document.getElementById(id);if(b){b.textContent=n;b.style.display=n>0?'':'none';}}
+function renderQueue(){
+  var qb=document.getElementById('queueBody'); if(!qb) return;
+  if(_qKind==='manual'){ qb.innerHTML=_qHead('🚩 待人工','成人产业/非赛道等内容门禁命中，需人工判断是否写、怎么写')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadManual(); }
+  else if(_qKind==='fail'){ qb.innerHTML=_qHead('❌ 失败稿','写稿失败/异常；含「门禁/评分豁免」warn 留痕')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadFail(); }
+  else if(_qKind==='kana'){ qb.innerHTML=_qHead('🔤 假名词表','写稿时 LLM 自动中译入字典的词条（先自动、人工后审）')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadKana(); }
+  else if(_qKind==='split'){
+    qb.innerHTML=_qHead('🧩 拆篇预览','关联 cluster 体量 > 阈值时建议拆分；默认不拆')
+      +'<div style="display:flex;gap:10px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">'
+      +'阈值 <input id="qSplitTh" type="number" value="3000" style="width:84px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">'
+      +'日期 <input id="qSplitDay" type="date" style="padding:3px 6px;border:1px solid var(--border);border-radius:6px">'
+      +'<button class="btn btn-outline btn-sm" onclick="_qLoadSplit()">查询</button>'
+      +'<button class="btn btn-outline btn-sm" onclick="_qLoadSplit(1)">仅看超阈值</button></div>'
+      +_qCard('<div id="qTable">'+_qWait()+'</div>');
+    _qLoadSplit();
+  }
+}
+function _qLoadManual(){
+  fetch('/api/manual-review').then(function(r){return r.json();}).then(function(d){
+    var rows=d.rows||[]; _qSetBadge('navBadgeManual',rows.length);
+    var tb=document.getElementById('qTable'); if(!tb) return;
+    if(!rows.length){tb.innerHTML=_qEmpty('暂无待人工素材 🎉');return;}
+    tb.innerHTML='<table>'+_qTh([{t:'key',w:'96px'},{t:'时间',w:'130px'},{t:'标题'},{t:'命中原因'},{t:'操作',w:'70px'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td><a href="/detail/'+x.key+'" target="_blank">'+x.key.slice(0,12)+'</a></td>'+
+        '<td style="font-size:11px;color:#666">'+_qEsc(x.created_at||'')+'</td>'+
+        '<td>'+_qEsc((x.title||'').slice(0,44))+'</td>'+
+        '<td style="color:#b45309;font-size:12px">'+_qEsc(x.manual_reason||'')+'</td>'+
+        '<td><button class="btn btn-outline btn-sm" onclick="_qManualClear(\''+x.key+'\')">已处理</button></td></tr>';}).join('')+'</tbody></table>';
+  });
+}
+function _qManualClear(k){fetch('/api/manual-review/'+k+'/clear',{method:'POST'}).then(function(){qToast('已标记处理');_qLoadManual();});}
+function _qLoadFail(){
+  fetch('/api/write-failures').then(function(r){return r.json();}).then(function(d){
+    var rows=d.rows||[]; var need=rows.filter(function(x){return x.status==='needs_manual';}).length;
+    _qSetBadge('navBadgeFail',need);
+    var tb=document.getElementById('qTable'); if(!tb) return;
+    if(!rows.length){tb.innerHTML=_qEmpty('队列为空 🎉');return;}
+    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'时间',w:'128px'},{t:'级别',w:'56px'},{t:'标题',w:'170px'},{t:'原因'},{t:'状态',w:'72px'},{t:'下次重试',w:'120px'},{t:'操作',w:'132px'}])+'<tbody>'+
+      rows.map(function(x){
+        var lv=x.level||'error';
+        var lvb=lv==='warn'?'<span class="badge" style="background:#fff7e6;color:#b45309">warn</span>':'<span class="badge" style="background:#fee2e2;color:#b91c1c">error</span>';
+        var st=x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已了结':'待重试');
+        var act=(x.status==='resolved')?'<span style="color:#15803d;font-size:11px">✓</span>':'<button class="btn btn-outline btn-sm" onclick="_qFailRetry(\''+x.key+'\')">立即重试</button> <button class="btn btn-outline btn-sm" onclick="_qFailDismiss(\''+x.key+'\')">忽略</button>';
+        return '<tr><td><a href="/detail/'+x.key+'" target="_blank">'+x.key.slice(0,12)+'</a></td>'+
+          '<td style="font-size:11px;color:#666">'+_qEsc(x.created_at||x.updated_at||'')+'</td><td>'+lvb+'</td>'+
+          '<td>'+_qEsc((x.title||'—').slice(0,36))+'</td><td style="font-size:12px">'+_qEsc(x.reason||'')+'</td>'+
+          '<td style="font-size:12px">'+st+(x.note?'<div style="color:#999;font-size:10px">'+_qEsc(x.note)+'</div>':'')+'</td>'+
+          '<td style="font-size:11px;color:#666">'+_qEsc(x.next_retry_at||'—')+'</td><td>'+act+'</td></tr>';}).join('')+'</tbody></table>';
+  });
+}
+function _qFailRetry(k){fetch('/api/write-failures/'+k+'/retry',{method:'POST'}).then(function(){qToast('已置为立即重试');_qLoadFail();});}
+function _qFailDismiss(k){showConfirm('从失败队列移除该记录？','仅在确认不再处理时使用','移除','btn-red','🗑️').then(function(ok){if(!ok)return;fetch('/api/write-failures/'+k+'/dismiss',{method:'POST'}).then(function(){qToast('已移除');_qLoadFail();});});}
+function _qLoadKana(){
+  fetch('/api/kana-autopromoted').then(function(r){return r.json();}).then(function(d){
+    var rows=d.rows||[]; var tb=document.getElementById('qTable'); if(!tb) return;
+    if(!rows.length){tb.innerHTML=_qEmpty('暂无自动入表词条 🎉');return;}
+    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'130px'},{t:'词条 → 中译',w:'180px'},{t:'语境'},{t:'操作',w:'70px'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc(x.ts||'')+'</td>'+
+        '<td><span style="color:#7c3aed;font-family:ui-monospace,monospace">'+_qEsc(x.term)+'</span> → <b style="color:#15803d">'+_qEsc(x.zh)+'</b></td>'+
+        '<td style="font-size:12px;color:#555">'+_qEsc((x.ctx||'').slice(0,80))+'</td>'+
+        '<td><button class="btn btn-outline btn-sm" onclick="_qKanaRevert(\''+encodeURIComponent(x.term)+'\')">撤回</button></td></tr>';}).join('')+'</tbody></table>';
+  });
+}
+function _qKanaRevert(t){showConfirm('从字典移除该词条？','','撤回','btn-red','🗑️').then(function(ok){if(!ok)return;fetch('/api/kana-autopromoted/'+t+'/revert',{method:'POST'}).then(function(){qToast('已撤回');_qLoadKana();});});}
+function _qLoadSplit(onlySplit){
+  var day=(document.getElementById('qSplitDay')||{}).value||'';
+  var th=(document.getElementById('qSplitTh')||{}).value||'3000';
+  fetch('/api/split-preview?day='+encodeURIComponent(day)+'&threshold='+encodeURIComponent(th))
+    .then(function(r){return r.json();}).then(function(d){
+    var rows=d.rows||[]; if(onlySplit){rows=rows.filter(function(x){return x.should_split;});}
+    var tb=document.getElementById('qTable'); if(!tb) return;
+    if(!rows.length){tb.innerHTML=_qEmpty('当前无含关联 cluster 的素材');return;}
+    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'标题'},{t:'体裁',w:'64px'},{t:'cluster体量',w:'96px'},{t:'判定',w:'76px'},{t:'操作',w:'150px'}])+'<tbody>'+
+      rows.map(function(x,i){
+        var badge=x.should_split?'<span class="badge" style="background:#fee2e2;color:#b91c1c">SPLIT</span>':'<span class="badge" style="background:#eef2ff;color:#4f46e5">keep</span>';
+        var grp=(x.groups&&x.groups.length)?('<tr id="qSplitG'+i+'" style="display:none"><td></td><td colspan="5" style="font-size:11.5px;color:#555;background:#fafafe">'+x.groups.map(function(g,j){return '组'+(j+1)+': '+g.join(', ');}).join('　|　')+'</td></tr>'):'';
+        var act='<button class="btn btn-outline btn-sm" onclick="(function(){var g=document.getElementById(\'qSplitG'+i+'\');if(g)g.style.display=g.style.display===\'none\'?\'table-row\':\'none\';})()">分组</button>';
+        if(x.should_split){act+=' <button class="btn btn-red btn-sm" onclick="_qSplitWrite(\''+x.key+'\')">拆篇写入</button>';}
+        return '<tr><td><a href="/detail/'+x.full_key+'" target="_blank">'+x.key+'</a></td><td>'+_qEsc((x.title||'').slice(0,40))+'</td>'+
+          '<td style="font-size:12px">'+_qEsc(x.format||'')+'</td><td>'+x.len+' 字</td><td>'+badge+'</td><td>'+act+'</td></tr>'+grp;
+      }).join('')+'</tbody></table>';
+  });
+}
+function _qSplitWrite(k){showConfirm('对该素材触发「拆篇写入」？','后台运行 write-full --split-large --key '+k+'，会真实入库','触发','btn-red','🧩').then(function(ok){if(!ok)return;fetch('/api/split-write/'+k,{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast(d.ok?('已触发拆篇写入（后台运行）'):('触发失败: '+(d.msg||'')));});});}
+
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
   if(!wv||wv.querySelector('.wx-topbar')) return;
@@ -1995,7 +2126,6 @@ refreshLoginDot();setInterval(refreshLoginDot,8000);
 </div>
 <script>
 function openChrome(){var f=document.getElementById('chromeFrame');f.src='http://'+location.hostname+':16080/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=2000';document.getElementById('chromeModal').style.display='flex';}
-async function splitPreview(){try{const day=(document.getElementById('dateFrom')||{}).value||'';const r=await fetch('/api/split-preview'+(day?'?day='+day:''));const d=await r.json();if(!d.rows.length){alert('无含关联 cluster 的素材（阈值 '+d.threshold+' 字）');return;}const lines=d.rows.map(x=>(x.should_split?'SPLIT':'keep ')+' '+x.key+' 体量='+x.len+' 《'+x.title+'》'+(x.groups.length?'\n   '+x.groups.map((g,i)=>'组'+(i+1)+': '+g.join(',')).join('\n   '):''));alert('拆篇预览（阈值 '+d.threshold+' 字）:\n\n'+lines.join('\n'));}catch(e){alert('预览失败: '+e)}}
 function closeChrome(){document.getElementById('chromeModal').style.display='none';document.getElementById('chromeFrame').src='about:blank';}
 async function sendTextToChrome(enter){try{var t=document.getElementById('ctlText').value;var r=await fetch('/api/creator/type',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,enter:enter})});var d=await r.json();if(!d.ok)alert('发送失败: '+(d.error||''));}catch(e){alert('发送异常: '+e);}}
 </script>
@@ -3360,20 +3490,53 @@ def manual_review_page():
 def api_split_preview():
     from services import split_write as _sp
     day = (request.args.get('day') or '').strip()
+    try:
+        th = int(request.args.get('threshold') or _sp.DEFAULT_THRESHOLD)
+    except Exception:
+        th = _sp.DEFAULT_THRESHOLD
     rows = query_news(status="active", limit=300)
     if day:
         rows = [r for r in rows if (r.get('created_at') or '').startswith(day)]
     out = []
     for c in rows:
-        has_cluster = bool((c.get('cluster_keys') or '').strip())
-        if not has_cluster:
+        if not (c.get('cluster_keys') or '').strip():
             continue
         L = _sp.cluster_text_len(c)
-        hit = _sp.should_split(c)
-        out.append({"key": c['key'][:12], "title": c.get('title') or '', "len": L,
-                    "should_split": hit,
-                    "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c) if hit else [])]})
-    return jsonify({"day": day, "rows": out, "threshold": _sp.DEFAULT_THRESHOLD})
+        hit = _sp.should_split(c, th)
+        out.append({"key": c['key'][:12], "full_key": c['key'], "title": c.get('title') or '',
+                    "format": c.get('format') or '', "len": L, "should_split": hit,
+                    "groups": [[k[:8] for k in g] for g in (_sp.split_groups(c, th) if hit else [])]})
+    return jsonify({"day": day, "rows": out, "threshold": th})
+
+
+@app.route('/api/split-write/<key>', methods=['POST'])
+def api_split_write(key):
+    """后台触发「拆篇写入」（write-full --split-large --key）。"""
+    import datetime
+    import os
+    import sqlite3
+    import subprocess
+    import sys
+    from services import paths as _p
+    conn = sqlite3.connect(_p.sqlite_path())
+    try:
+        r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (key[:40],)).fetchone()
+        k = r[0] if r else None
+    finally:
+        conn.close()
+    if not k:
+        return jsonify({"ok": False, "msg": "key 不存在"})
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    logp = os.path.join(repo, "logs", "split_write.log")
+    try:
+        with open(logp, "a") as lf:
+            lf.write(f"\n=== {datetime.datetime.now()} split-write {k} ===\n")
+            lf.flush()
+            subprocess.Popen([sys.executable, "-m", "cli", "write-full", "--split-large", "--key", key],
+                             cwd=repo, stdout=lf, stderr=lf, start_new_session=True)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+    return jsonify({"ok": True})
 
 
 WRITE_FAILURES_HTML = r"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
