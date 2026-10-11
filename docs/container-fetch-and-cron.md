@@ -43,3 +43,30 @@ cron → fetch_runner.py（读 webapp keywords）
 ## 4. 主 Chrome / 媒体 tab / mcp
 - `ops/cdp_keeper.py`（每 60s）：若 www 标签停在 `/explore`（视频流、持续烧 CPU）→ 自动导航到该账户 profile 页（读 `data/accounts_meta.json` 的 `profile_id`；无则 `about:blank`）。
 - **mcp（fastmcp :5001）已从 supervisord 移除**（曾因 SOCKS 代理崩溃重启循环，持续烧一个核 → 风扇）。
+
+## 5. 定时重启容器（宿主 LaunchAgent）
+
+容器无法重启自身，故由**宿主机** launchd 触发（与 `com.xhs.db-backup-monthly` 同机制）。
+
+- 计划：**每天 23:00** 重启 `xhs` 容器。
+- 脚本：`ops/container_restart_daily.sh`（宿主运行）
+  - 健康检查 = 容器 `Running=true` **且** `http://127.0.0.1:15000/` 返回 200（每次等最多 ~90s 就绪）。
+  - **失败自动重试 3 次**；3 次均不通过 → 调 `ops/notify_feishu.py` **发飞书告警**。
+- 告警器：`ops/notify_feishu.py`（**仅标准库**，宿主机无 `requests` 也可用；读 `scripts/.env` 的 `FEISHU_APP_ID/SECRET/OPERATOR_OPEN_ID`，直连 `open.feishu.cn`）。
+- LaunchAgent：`ops/com.xhs.container-restart-daily.plist` → 安装到 `~/Library/LaunchAgents/` 并 `launchctl load -w`。
+- 日志：`logs/container_restart.log`。
+
+安装/更新：
+
+```bash
+cp ~/PG/xhs-docker-src/ops/com.xhs.container-restart-daily.plist ~/Library/LaunchAgents/
+launchctl unload ~/Library/LaunchAgents/com.xhs.container-restart-daily.plist 2>/dev/null
+launchctl load -w ~/Library/LaunchAgents/com.xhs.container-restart-daily.plist
+```
+
+手动测试：
+
+```bash
+bash ~/PG/xhs-docker-src/ops/container_restart_daily.sh     # 真重启+健康检查
+python3 ~/PG/xhs-docker-src/ops/notify_feishu.py "测试告警"  # 只测告警通道
+```
