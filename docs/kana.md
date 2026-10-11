@@ -41,3 +41,8 @@
 
 ## 测试
 `tests/services/test_kana.py`（replace/count/new_terms 整段作品名/auto_promote 片段防护）。
+
+## 来源（src）
+`auto_promote` 审计自 2026-10-11 起记录 `src`（该词条首次出现的主稿全长 key），假名词表页「来源文章」列点击跳 `/detail/<src>`。
+- 改造**之前**入表的词条没有 `src`（显示 `—`）；可用 `ops/backfill_kana_src.py` 按 词条/语境 在 news 里反查回填（一次性，幂等）。
+- `kana_pending` 里带 `note`(12 位) 的旧条目，`auto_promote` 也会回退用 `note` 解析成全长 key。
