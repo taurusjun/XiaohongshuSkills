@@ -65,7 +65,7 @@ def pick_candidates(n=0):
         pass
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
-    gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() == "gzh"]
+    gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() in ("gzh", "both")]
     pool = graded or base
     if gzh_hint:                      # review 标了 gzh 方向 → 也必须处理（旧 skill 阶段2）
         seen = {r["key"] for r in pool}
@@ -654,13 +654,17 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     # related_keys = 历史关联(KEEP) + 同事件簇成员（对齐生产：主条也链接簇成员，关联双向）
     _rk = [r["key"] for r in pkg["relations"]] + [k for k in (pkg.get("cluster_keys") or []) if k != cand["key"]]
     rk_s = ",".join(dict.fromkeys(_rk))
-    eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
+    # 渠道：显式 > review 标注(gzh) > 默认 xhs。无 channel_hint 时**不允许 LLM 改道 gzh**（回落 xhs）；both 仍允许。
+    _hint = (pkg.get("channel_hint") or "").strip().lower()
+    eff = force_channel or (_hint if _hint in ("gzh", "both") else None)
     if eff:
         d0, _ = compose(cand, pkg, force_channel=eff)
         ch = eff
     else:
         d0, _ = compose(cand, pkg)
         ch = d0.get("channel") or pkg["pre_channel"]
+        if ch == "gzh":                              # 无 channel_hint → 不允许改道 gzh
+            ch = "xhs"
         if ch not in ("xhs", "gzh", "both"):
             ch = pkg["pre_channel"]
     t0, b0 = d0.get("title") or "", d0.get("body") or ""

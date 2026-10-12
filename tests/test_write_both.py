@@ -64,7 +64,7 @@ def test_write_one_gzh_channel(monkeypatch):
     _patch(monkeypatch)
     st = _fake_db(monkeypatch)
     monkeypatch.setattr(w, "compose", lambda *a, **k: ({"channel": "gzh", "title": "G", "body": "文"}, []))
-    w.write_one(_cand(), dry_run=False)
+    w.write_one({**_cand(), "channel_hint": "gzh"}, dry_run=False)   # gzh 需 channel_hint
     row = st["a" * 40]
     assert row["channel"] == "gzh" and row["wechat_title"] == "G"
     assert "rewritten_title" not in row
