@@ -117,4 +117,4 @@ flowchart LR
 - 单篇写稿（含改稿）通常 3~6 次调用；多轮对话共享前缀 → 缓存命中率高。
 - 也可在代码里取：`from agent import llm; llm.usage()` / `llm.format_usage()` / `llm.reset_usage()`。
 - **落库/日志**：`services/token_usage` 把用量写入 `token_usage` 表（`scope=article` 按篇、`scope=run` 合计）+ 追加 `logs/token.log`；
-  查询：`GET /api/token-usage?days=30`（返回 `summary.by_run` 聚合 + `rows`）。表结构：`ts/run/scope/key/model/calls/prompt_tokens/completion_tokens/total_tokens/cache_hit_tokens`。
+  查询：`GET /api/token-usage?days=30`（返回 `summary.by_run` 聚合 + `rows`）；左侧菜单 **「💰 Token 用量」** 页可视（汇总 + 明细 + 天数筛选）。表结构：`ts/run/scope/key/model/calls/prompt_tokens/completion_tokens/total_tokens/cache_hit_tokens`。

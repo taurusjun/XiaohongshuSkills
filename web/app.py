@@ -1058,6 +1058,13 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     </div>
   </div>
 
+  <div class="sidebar-section">
+    <div class="sidebar-label">系统</div>
+    <div class="nav-item" id="tokenNavItem" onclick="switchToQueueView('token')">
+      <span class="ni">💰</span> Token 用量
+    </div>
+  </div>
+
   <div class="sidebar-divider"></div>
 
   <div class="sidebar-stats">
@@ -1852,7 +1859,7 @@ function switchToQueueView(kind){
   if(nv) nv.style.display='none';
   if(wv) wv.style.display='none';
   if(qv) qv.style.display='flex';
-  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem'};
+  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem',token:'tokenNavItem'};
   var el=document.getElementById(ids[kind]); if(el) el.classList.add('active');
   renderQueue();
 }
@@ -1869,6 +1876,7 @@ function renderQueue(){
   if(_qKind==='manual'){ qb.innerHTML=_qHead('🚩 待人工','成人产业/非赛道等内容门禁命中，需人工判断是否写、怎么写')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadManual(); }
   else if(_qKind==='fail'){ qb.innerHTML=_qHead('❌ 失败稿','写稿失败/异常；含「门禁/评分豁免」warn 留痕')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadFail(); }
   else if(_qKind==='lexicon'){ _qLoadLexicon(); }
+  else if(_qKind==='token'){ _qLoadToken(); }
   else if(_qKind==='split'){
     qb.innerHTML=_qHead('🧩 拆篇预览','仅列出 cluster 体量超阈值的候选；拆篇结果单独立表（1 主稿对多篇）')
       +'<div style="display:flex;gap:10px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">'
@@ -2210,6 +2218,28 @@ function _lexPost(op,term,after){
 }
 function _lexJudge(){qToast('自动判定中…（LLM）');fetch('/api/lexicon/judge',{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast('判定 '+(d.count||0)+' 条');_lexRender();});}
 function _lexExport(){fetch('/api/lexicon/export',{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast('已导出快照 '+(d.count||0)+' 条');});}
+
+
+function _qLoadToken(){
+  var qb=document.getElementById('queueBody'); if(!qb) return;
+  qb.innerHTML=_qHead('💰 Token 用量','LLM 调用 token 统计（按 run 汇总 + 明细）')
+    +'<div style="display:flex;gap:8px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">近'
+    +'<input id="tk_days" type="number" value="30" style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
+    +'<button class="btn btn-outline btn-sm" onclick="_qLoadToken()">查询</button></div>'
+    +_qCard('<div id="tk_sum">'+_qWait()+'</div>')
+    +_qCard('<div id="tk_rows">'+_qWait()+'</div>');
+  var days=(document.getElementById('tk_days')||{}).value||'30';
+  fetch('/api/token-usage?days='+encodeURIComponent(days)+'&limit=200').then(function(r){return r.json();}).then(function(d){
+    var by=(d.summary||{}).by_run||[];
+    var s=document.getElementById('tk_sum');
+    if(s) s.innerHTML=(by.length?'<table>'+_qTh([{t:'run',w:'90px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
+      by.map(function(x){return '<tr><td>'+_qEsc(x.run)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
+    var rows=d.rows||[];
+    var t=document.getElementById('tk_rows');
+    if(t) t.innerHTML=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'key',w:'110px'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px;font-family:ui-monospace,monospace">'+_qEsc(x.key||'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
+  });
+}
 
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
