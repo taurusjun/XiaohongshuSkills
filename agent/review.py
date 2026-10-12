@@ -198,7 +198,7 @@ def prepare_package(date, hist_k=6):
 
 
 CH_SYS = ("你是渠道判定器。对每篇候选判断该走 xhs / gzh / both，只输出严格 JSON："
-          "{\"<key前12位>\": \"xhs|gzh|both\"}。判据（对齐原 skill）：\n"
+          "{\"<key前12位>\": {\"channel\": \"xhs|gzh|both\", \"reason\": \"<一句话依据>\"}}。判据（对齐原 skill）：\n"
           "- 争议性话题（争议/对立/舆论撕扯/立场冲突）→ \"both\"（xhs+gzh 都写）；\n"
           "- 男团/男偶像的 行业·厂牌·销量·榜单·战略 类深度 → \"gzh\"；\n"
           "- 成人产业/风俗/AV 的「人物深度」（人物弧光/公共议题，非猎奇操作）→ \"gzh\"；\n"
@@ -268,12 +268,36 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
         return {}
-    out = {}
+    out, decisions = {}, []
     for k, v in (d.items() if isinstance(d, dict) else []):
-        v = str(v).strip().lower()
-        if v in ("gzh", "both"):
-            out[k] = v
+        if isinstance(v, dict):
+            ch = str(v.get("channel") or "").strip().lower()
+            reason = str(v.get("reason") or "").strip()
+        else:
+            ch, reason = str(v).strip().lower(), ""
+        if ch not in ("xhs", "gzh", "both"):
+            continue
+        decisions.append((k, ch, reason))
+        if ch in ("gzh", "both"):          # xhs 不列=默认
+            out[k] = ch
+    _log_channels(date, decisions)
     return out
+
+
+def _log_channels(date, decisions):
+    """渠道判定留痕：打印 + 追加 logs/channel.log。"""
+    import datetime as _dt
+    from services import paths as _p
+    try:
+        log = _p.REPO_ROOT / "logs" / "channel.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log, "a", encoding="utf-8") as f:
+            for k, ch, reason in decisions:
+                print(f"[渠道] {k} → {ch}（{reason}）", flush=True)
+                f.write(f"{now}\t{date}\t{k}\t{ch}\t{reason}\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def build_messages(date, pkg):

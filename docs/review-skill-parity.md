@@ -67,6 +67,7 @@
  "feedback":{"patterns":[…],"trend_row":"…"}}
 ```
 - `review.persist()` 取 `grades`(→`grade`)/`clusters`(→`keys`)/`channel_hint`/`akb_type`。
+- **渠道判定留痕**：每次判定把 `key → 渠道 → 依据` 打印并追加 `logs/channel.log`（TSV：ts/date/key/channel/reason）。
 - **渠道判定（2026-10-12）**：`channel_hint` **从主调用拆出，独立一次 LLM**（`review.judge_channels`）——输入=当日 S/A/AKB 候选 + 每篇实体的**近期发布序列 + 连续0曝光计数**（Python 预取，`_entity_pub`）；判据=口诀/强搁置改道/成人人物深度/**争议→both**/**连续0曝光≥3→gzh**；输出 `{k12: gzh|both}`（xhs 不列=默认）。主 review prompt 已移除 channel_hint。
 - 渲染：`services/review_render.render(data, titles)` → 二~六节 md；`_extract_machine_json` 保留作**兜底**（旧「md+末尾 json 块」格式）。
 - 收益：`grades/feedback` **格式有保证**（不再依赖 LLM 手写 md 的自觉）、省 token、可单测；代价：报告文风与生产（Hermes 手写 md）不同，但流水线只吃结构化数据。
