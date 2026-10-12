@@ -1063,9 +1063,6 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" id="tokenNavItem" onclick="switchToQueueView('token')">
       <span class="ni">💰</span> Token 用量
     </div>
-    <div class="nav-item" id="channelNavItem" onclick="switchToQueueView('channel')">
-      <span class="ni">🎯</span> 渠道判定
-    </div>
   </div>
 
   <div class="sidebar-divider"></div>
@@ -1871,7 +1868,7 @@ function switchToQueueView(kind){
   if(nv) nv.style.display='none';
   if(wv) wv.style.display='none';
   if(qv) qv.style.display='flex';
-  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem',token:'tokenNavItem',channel:'channelNavItem'};
+  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem',token:'tokenNavItem'};
   var el=document.getElementById(ids[kind]); if(el) el.classList.add('active');
   renderQueue();
 }
@@ -1889,7 +1886,6 @@ function renderQueue(){
   else if(_qKind==='fail'){ qb.innerHTML=_qHead('❌ 失败稿','写稿失败/异常；含「门禁/评分豁免」warn 留痕')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadFail(); }
   else if(_qKind==='lexicon'){ _qLoadLexicon(); }
   else if(_qKind==='token'){ _qLoadToken(); }
-  else if(_qKind==='channel'){ _qLoadChannel(); }
   else if(_qKind==='split'){
     qb.innerHTML=_qHead('🧩 拆篇预览','仅列出 cluster 体量超阈值的候选；拆篇结果单独立表（1 主稿对多篇）')
       +'<div style="display:flex;gap:10px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">'
@@ -1907,10 +1903,9 @@ function _qLoadManual(){
     var rows=d.rows||[]; _qSetBadge('navBadgeManual',rows.length);
     var tb=document.getElementById('qTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('暂无待人工素材 🎉');return;}
-    tb.innerHTML='<table>'+_qTh([{t:'key',w:'96px'},{t:'时间',w:'130px'},{t:'标题'},{t:'命中原因'},{t:'操作',w:'70px'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td><a href="/detail/'+x.key+'" target="_blank">'+x.key.slice(0,12)+'</a></td>'+
+    tb.innerHTML='<table>'+_qTh([{t:'标题'},{t:'时间',w:'130px'},{t:'命中原因'},{t:'操作',w:'70px'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td><a href="/detail/'+x.key+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a></td>'+
         '<td style="font-size:11px;color:#666">'+_qEsc(x.created_at||'')+'</td>'+
-        '<td>'+_qEsc((x.title||'').slice(0,44))+'</td>'+
         '<td style="color:#b45309;font-size:12px">'+_qEsc(x.manual_reason||'')+'</td>'+
         '<td><button class="btn btn-outline btn-sm" onclick="_qManualClear(\''+x.key+'\')">已处理</button></td></tr>';}).join('')+'</tbody></table>';
   });
@@ -1922,15 +1917,15 @@ function _qLoadFail(){
     _qSetBadge('navBadgeFail',need);
     var tb=document.getElementById('qTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('队列为空 🎉');return;}
-    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'时间',w:'128px'},{t:'级别',w:'56px'},{t:'标题',w:'170px'},{t:'原因'},{t:'状态',w:'72px'},{t:'下次重试',w:'120px'},{t:'操作',w:'132px'}])+'<tbody>'+
+    tb.innerHTML='<table>'+_qTh([{t:'标题',w:'180px'},{t:'时间',w:'128px'},{t:'级别',w:'56px'},{t:'原因'},{t:'状态',w:'72px'},{t:'下次重试',w:'120px'},{t:'操作',w:'132px'}])+'<tbody>'+
       rows.map(function(x){
         var lv=x.level||'error';
         var lvb=lv==='warn'?'<span class="badge" style="background:#fff7e6;color:#b45309">warn</span>':'<span class="badge" style="background:#fee2e2;color:#b91c1c">error</span>';
         var st=x.status==='needs_manual'?'待人工':(x.status==='resolved'?'已了结':'待重试');
         var act=(x.status==='resolved')?'<span style="color:#15803d;font-size:11px">✓</span>':'<button class="btn btn-outline btn-sm" onclick="_qFailRetry(\''+x.key+'\')">立即重试</button> <button class="btn btn-outline btn-sm" onclick="_qFailDismiss(\''+x.key+'\')">忽略</button>';
-        return '<tr><td><a href="/detail/'+x.key+'" target="_blank">'+x.key.slice(0,12)+'</a></td>'+
+        return '<tr><td><a href="/detail/'+x.key+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a></td>'+
           '<td style="font-size:11px;color:#666">'+_qEsc(x.created_at||x.updated_at||'')+'</td><td>'+lvb+'</td>'+
-          '<td>'+_qEsc((x.title||'—').slice(0,36))+'</td><td style="font-size:12px">'+_qEsc(x.reason||'')+'</td>'+
+          '<td style="font-size:12px">'+_qEsc(x.reason||'')+'</td>'+
           '<td style="font-size:12px">'+st+(x.note?'<div style="color:#999;font-size:10px">'+_qEsc(x.note)+'</div>':'')+'</td>'+
           '<td style="font-size:11px;color:#666">'+_qEsc(x.next_retry_at||'—')+'</td><td>'+act+'</td></tr>';}).join('')+'</tbody></table>';
   });
@@ -1948,11 +1943,11 @@ function _qLoadSplit(page){
     _qSplitRows=d.rows||[]; _qSplitMeta.total=d.total||0; _qSplitMeta.page=d.page||1; _qSplitMeta.page_size=d.page_size||50;
     var tb=document.getElementById('qTable'); if(!tb) return;
     if(!_qSplitRows.length){tb.innerHTML=_qEmpty('当前无 cluster 体量超阈值（'+d.threshold+' 字）的素材');return;}
-    tb.innerHTML='<table>'+_qTh([{t:'key',w:'92px'},{t:'标题'},{t:'体裁',w:'64px'},{t:'cluster体量',w:'100px'},{t:'已拆',w:'90px'},{t:'操作',w:'120px'}])+'<tbody>'+
+    tb.innerHTML='<table>'+_qTh([{t:'标题'},{t:'体裁',w:'64px'},{t:'cluster体量',w:'100px'},{t:'已拆',w:'90px'},{t:'操作',w:'120px'}])+'<tbody>'+
       _qSplitRows.map(function(x,i){
         var cnt=x.split_count||0;
         var cntCell=cnt?('<a href="javascript:;" onclick="_qSplitView('+i+')" style="color:#15803d">已拆 '+cnt+' 篇</a>'):'<span style="color:#bbb">未拆</span>';
-        return '<tr><td><a href="/detail/'+x.full_key+'" target="_blank">'+x.key+'</a></td><td>'+_qEsc((x.title||'').slice(0,40))+'</td>'+
+        return '<tr><td><a href="/detail/'+x.full_key+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a></td>'+
           '<td style="font-size:12px">'+_qEsc(x.format||'')+'</td><td>'+x.len+' 字</td><td style="font-size:12px">'+cntCell+'</td>'+
           '<td><button class="btn btn-red btn-sm" onclick="_qSplitWrite(\''+x.full_key+'\')">'+(cnt?'重新拆':'拆篇写入')+'</button></td></tr>';
       }).join('')+'</tbody></table>';
@@ -2249,26 +2244,11 @@ function _qLoadToken(){
       by.map(function(x){return '<tr><td>'+_qEsc(x.run)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
     var rows=d.rows||[];
     var t=document.getElementById('tk_rows');
-    if(t) t.innerHTML=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'key',w:'110px'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px;font-family:ui-monospace,monospace">'+_qEsc(x.key||'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
+    if(t) t.innerHTML=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px">'+(x.key?('<a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a>'):'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
   });
 }
 
-
-function _qLoadChannel(){
-  var qb=document.getElementById('queueBody'); if(!qb) return;
-  qb.innerHTML=_qHead('🎯 渠道判定','review 独立一次 LLM 的渠道判定（key → 渠道 → 依据；来自 logs/channel.log）')
-    +_qCard('<div id="chTable">'+_qWait()+'</div>');
-  fetch('/api/channel-log?limit=500').then(function(r){return r.json();}).then(function(d){
-    var rows=d.rows||[]; var tb=document.getElementById('chTable'); if(!tb) return;
-    if(!rows.length){tb.innerHTML=_qEmpty('暂无记录');return;}
-    var cb=function(c){var m={gzh:['#ede9fe','#6d28d9'],both:['#dcfce7','#15803d'],xhs:['#eef2ff','#4f46e5']}[c]||['#f3f4f6','#6b7280'];return '<span class="badge" style="background:'+m[0]+';color:'+m[1]+';font-weight:700">'+_qEsc(c)+'</span>';};
-    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'130px'},{t:'标题'},{t:'渠道',w:'70px'},{t:'依据'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,16))+'</td>'+
-        '<td><a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a></td>'+
-        '<td>'+cb(x.channel)+'</td><td style="font-size:12px">'+_qEsc(x.reason||'')+'</td></tr>';}).join('')+'</tbody></table>';
-  });
-}
 
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
@@ -2618,7 +2598,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
   {% if news.grade %}<span class="badge" style="flex-shrink:0;background:#eef2ff;color:#4338ca;font-weight:700">评级 {{news.grade}}</span>{% endif %}
-  {% if news.channel_hint %}<span class="badge" style="flex-shrink:0;background:#ede9fe;color:#6d28d9;font-weight:700" title="review 判定的渠道方向">🎯 {{news.channel_hint}}</span>{% endif %}
+  {% if channel_decision and channel_decision.channel %}<span class="badge" style="flex-shrink:0;background:#ede9fe;color:#6d28d9;font-weight:700" title="渠道判定依据：{{channel_decision.reason}}">🎯 {{channel_decision.channel}}</span>{% elif news.channel_hint %}<span class="badge" style="flex-shrink:0;background:#ede9fe;color:#6d28d9;font-weight:700">🎯 {{news.channel_hint}}</span>{% endif %}
   {% if news.material_type %}<span class="badge badge-gray" style="flex-shrink:0" title="素材类型（密度豁免判定：catalog/multi_artist/commentary 免密度）">{{news.material_type}}</span>{% endif %}
   {% if news.manual_review %}<span class="badge" style="flex-shrink:0;background:#fee2e2;color:#b91c1c" title="{{news.manual_reason}}">🚩 待人工</span>{% endif %}
   {% if scores and scores|length > 0 %}
@@ -4051,46 +4031,27 @@ def api_lexicon_export():
     return jsonify({"ok": True, "count": _lx.export_config()})
 
 
-@app.route('/api/channel-log', methods=['GET'])
-def api_channel_log():
-    from services import paths as _p
-    try:
-        limit = min(int(request.args.get('limit', 300)), 2000)
-    except Exception:
-        limit = 300
-    rows = []
-    f = _p.REPO_ROOT / "logs" / "channel.log"
-    if f.exists():
-        for ln in f.read_text(encoding="utf-8").splitlines()[-limit:]:
-            parts = ln.split("\t")
-            if len(parts) >= 5:
-                rows.append({"ts": parts[0], "date": parts[1], "key": parts[2],
-                             "channel": parts[3], "reason": "\t".join(parts[4:])})
-    if rows:                                    # 按 key 反查标题（供超链接显示标题）
-        import sqlite3 as _sq
-        conn = _sq.connect(_p.sqlite_path())
-        try:
-            keys = list({r["key"] for r in rows if r.get("key")})
-            tm = {}
-            if keys:
-                ph = ",".join("?" for _ in keys)
-                for k, t in conn.execute(
-                    f"SELECT substr(key,1,12), COALESCE(NULLIF(rewritten_title,''),title) FROM news "
-                    f"WHERE substr(key,1,12) IN ({ph})", keys):
-                    tm[k] = t or ""
-            for r in rows:
-                r["title"] = tm.get(r["key"], "")
-        finally:
-            conn.close()
-    return jsonify({"rows": list(reversed(rows))})
-
-
 @app.route('/api/token-usage', methods=['GET'])
 def api_token_usage():
     from services import token_usage as _tu
     days = int(request.args.get('days', 30))
     limit = min(int(request.args.get('limit', 100)), 500)
-    return jsonify({"summary": _tu.summary(days), "rows": _tu.list_recent(limit=limit)})
+    rows = _tu.list_recent(limit=limit)
+    from services import paths as _p
+    keys = list({r["key"] for r in rows if r.get("key")})
+    if keys:
+        import sqlite3 as _sq
+        conn = _sq.connect(_p.sqlite_path())
+        try:
+            ph = ",".join("?" for _ in keys)
+            tm = {k: (t or "") for k, t in conn.execute(
+                f"SELECT substr(key,1,12), COALESCE(NULLIF(rewritten_title,''),title) FROM news "
+                f"WHERE substr(key,1,12) IN ({ph})", keys)}
+        finally:
+            conn.close()
+        for r in rows:
+            r["title"] = tm.get(r["key"], "")
+    return jsonify({"summary": _tu.summary(days), "rows": rows})
 
 
 @app.route('/api/topic-cache', methods=['GET'])
@@ -4208,9 +4169,20 @@ def detail(key):
             rr = get_by_key(rk)
             related_articles.append({'key': rk, 'title': (rr.get('title','') or rk)[:40] if rr else rk[:16]})
 
+    # 渠道判定（读 logs/channel.log 最新一条）
+    channel_decision = {"channel": "", "reason": ""}
+    try:
+        cf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "channel.log")
+        if os.path.exists(cf):
+            for _ln in open(cf, encoding="utf-8"):
+                _pp = _ln.rstrip("\n").split("\t")
+                if len(_pp) >= 5 and key.startswith(_pp[2]):
+                    channel_decision = {"channel": _pp[3], "reason": "\t".join(_pp[4:])}
+    except Exception:  # noqa: BLE001
+        pass
     return rts(DETAIL_HTML, news=news, scores=scores,
                story_parts=story_parts, story_tweet_imgs=story_tweet_imgs,
-               related_articles=related_articles)
+               related_articles=related_articles, channel_decision=channel_decision)
 
 @app.route('/api/news')
 def api_list():
