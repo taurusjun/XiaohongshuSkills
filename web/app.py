@@ -2263,9 +2263,9 @@ function _qLoadChannel(){
     var rows=d.rows||[]; var tb=document.getElementById('chTable'); if(!tb) return;
     if(!rows.length){tb.innerHTML=_qEmpty('暂无记录');return;}
     var cb=function(c){var m={gzh:['#ede9fe','#6d28d9'],both:['#dcfce7','#15803d'],xhs:['#eef2ff','#4f46e5']}[c]||['#f3f4f6','#6b7280'];return '<span class="badge" style="background:'+m[0]+';color:'+m[1]+';font-weight:700">'+_qEsc(c)+'</span>';};
-    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'140px'},{t:'日期',w:'96px'},{t:'key',w:'110px'},{t:'渠道',w:'70px'},{t:'依据'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc(x.ts||'')+'</td><td style="font-size:11px">'+_qEsc(x.date||'')+'</td>'+
-        '<td><a href="/detail/'+_qEsc(x.key)+'" target="_blank" style="font-family:ui-monospace,monospace;font-size:11px">'+_qEsc(x.key)+'</a></td>'+
+    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'130px'},{t:'标题'},{t:'渠道',w:'70px'},{t:'依据'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,16))+'</td>'+
+        '<td><a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a></td>'+
         '<td>'+cb(x.channel)+'</td><td style="font-size:12px">'+_qEsc(x.reason||'')+'</td></tr>';}).join('')+'</tbody></table>';
   });
 }
@@ -4066,6 +4066,22 @@ def api_channel_log():
             if len(parts) >= 5:
                 rows.append({"ts": parts[0], "date": parts[1], "key": parts[2],
                              "channel": parts[3], "reason": "\t".join(parts[4:])})
+    if rows:                                    # 按 key 反查标题（供超链接显示标题）
+        import sqlite3 as _sq
+        conn = _sq.connect(_p.sqlite_path())
+        try:
+            keys = list({r["key"] for r in rows if r.get("key")})
+            tm = {}
+            if keys:
+                ph = ",".join("?" for _ in keys)
+                for k, t in conn.execute(
+                    f"SELECT substr(key,1,12), COALESCE(NULLIF(rewritten_title,''),title) FROM news "
+                    f"WHERE substr(key,1,12) IN ({ph})", keys):
+                    tm[k] = t or ""
+            for r in rows:
+                r["title"] = tm.get(r["key"], "")
+        finally:
+            conn.close()
     return jsonify({"rows": list(reversed(rows))})
 
 
