@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 from services import paths
 
-__all__ = ["ensure", "record", "diff", "summary", "list_recent"]
+__all__ = ["ensure", "record", "diff", "summary", "by_day", "detail", "detail_count", "list_recent"]
 
 _DDL = """CREATE TABLE IF NOT EXISTS token_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,3 +91,43 @@ def list_recent(limit=200, run=None):
     sql += " ORDER BY id DESC LIMIT ?"; args.append(limit)
     with _db() as c:
         return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+
+def by_day(days=30, run=None):
+    """按天汇总（近 days 天）。"""
+    ensure()
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    sql = ("SELECT substr(ts,1,10) d, COUNT(*) n, SUM(calls) calls, SUM(prompt_tokens) prompt_tokens, "
+           "SUM(completion_tokens) completion_tokens, SUM(total_tokens) total_tokens, "
+           "SUM(cache_hit_tokens) cache_hit_tokens FROM token_usage WHERE ts>=? ")
+    args = [cutoff]
+    if run:
+        sql += "AND run=? "; args.append(run)
+    sql += "GROUP BY d ORDER BY d DESC"
+    with _db() as c:
+        return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+
+def _detail_where(days, run):
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    sql, args = "FROM token_usage WHERE ts>=?", [cutoff]
+    if run:
+        sql += " AND run=?"; args.append(run)
+    return sql, args
+
+
+def detail_count(days=3, run=None):
+    ensure()
+    w, a = _detail_where(days, run)
+    with _db() as c:
+        return c.execute("SELECT COUNT(*) " + w, a).fetchone()[0]
+
+
+def detail(days=3, run=None, page=1, page_size=100):
+    """明细（近 days 天，按 run 过滤，分页）。"""
+    ensure()
+    w, a = _detail_where(days, run)
+    off = max(0, (int(page) - 1) * int(page_size))
+    with _db() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * " + w + " ORDER BY id DESC LIMIT ? OFFSET ?", a + [int(page_size), off]).fetchall()]

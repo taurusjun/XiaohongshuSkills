@@ -2230,26 +2230,46 @@ function _lexExport(){fetch('/api/lexicon/export',{method:'POST'}).then(function
 
 function _qLoadToken(){
   var qb=document.getElementById('queueBody'); if(!qb) return;
-  qb.innerHTML=_qHead('💰 Token 用量','LLM 调用 token 统计（按 run 汇总 + 明细）')
-    +'<div style="display:flex;gap:8px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">近'
-    +'<input id="tk_days" type="number" value="30" style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
+  qb.innerHTML=_qHead('💰 Token 用量','三层：按 run 汇总 / 按天汇总 / 明细（分页）')
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 2px 8px;font-size:12px;color:var(--text2)">汇总近'
+    +'<input id="tk_days" type="number" value="30" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
+    +'　明细近<input id="tk_ddays" type="number" value="3" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
+    +'　run <select id="tk_run" onchange="_qLoadToken()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px"><option value="">全部</option><option>write</option><option>review</option><option>split</option></select>'
     +'<button class="btn btn-outline btn-sm" onclick="_qLoadToken()">查询</button></div>'
-    +_qCard('<div id="tk_sum">'+_qWait()+'</div>')
+    +_qCard('<div id="tk_run"></div>')
+    +_qCard('<div id="tk_day"></div>')
     +_qCard('<div id="tk_rows">'+_qWait()+'</div>');
+  _tkFetch();
+}
+var _tkPage=1;
+function _tkFetch(){
   var days=(document.getElementById('tk_days')||{}).value||'30';
-  fetch('/api/token-usage?days='+encodeURIComponent(days)+'&limit=200').then(function(r){return r.json();}).then(function(d){
-    var by=(d.summary||{}).by_run||[];
-    var s=document.getElementById('tk_sum');
-    if(s) s.innerHTML=(by.length?'<table>'+_qTh([{t:'run',w:'90px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
-      by.map(function(x){return '<tr><td>'+_qEsc(x.run)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
-    var rows=d.rows||[];
+  var ddays=(document.getElementById('tk_ddays')||{}).value||'3';
+  var run=(document.getElementById('tk_run')||{}).value||'';
+  fetch('/api/token-usage?days='+encodeURIComponent(days)+'&detail_days='+encodeURIComponent(ddays)+'&run='+encodeURIComponent(run)+'&page='+_tkPage+'&page_size=100')
+    .then(function(r){return r.json();}).then(function(d){
+    var by=d.by_run||[], bd=d.by_day||[], rows=d.rows||[];
+    var rs=document.getElementById('tk_run');
+    if(rs) rs.innerHTML=(by.length?'<table>'+_qTh([{t:'run',w:'90px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
+      by.map(function(x){return '<tr><td>'+_qEsc(x.run)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
+    var ds=document.getElementById('tk_day');
+    if(ds) ds.innerHTML=(bd.length?'<table>'+_qTh([{t:'日期',w:'110px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
+      bd.map(function(x){return '<tr><td>'+_qEsc(x.d)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
     var t=document.getElementById('tk_rows');
-    if(t) t.innerHTML=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
-      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px">'+(x.key?('<a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a>'):'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无数据'));
+    var total=d.total||0, lp=Math.max(1,Math.ceil(total/(d.page_size||100))), pg=d.page||1;
+    if(t){
+      var html=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
+        rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px">'+(x.key?('<a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a>'):'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
+      html+='<div class="table-foot"><span class="table-foot-info">第 '+pg+' / '+lp+' 页 · 共 '+total+' 条</span>'
+        +'<button class="pg-btn" onclick="_tkGo(1)"'+(pg<=1?' disabled style="opacity:.4"':'')+'>«</button>'
+        +'<button class="pg-btn" onclick="_tkGo('+(pg-1)+')"'+(pg<=1?' disabled style="opacity:.4"':'')+'>‹</button>'
+        +'<button class="pg-btn" onclick="_tkGo('+(pg+1)+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>›</button>'
+        +'<button class="pg-btn" onclick="_tkGo('+lp+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>»</button></div>';
+      t.innerHTML=html;
+    }
   });
 }
-
-
+function _tkGo(p){_tkPage=Math.max(1,p);_tkFetch();}
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
   if(!wv||wv.querySelector('.wx-topbar')) return;
@@ -4034,10 +4054,20 @@ def api_lexicon_export():
 @app.route('/api/token-usage', methods=['GET'])
 def api_token_usage():
     from services import token_usage as _tu
-    days = int(request.args.get('days', 30))
-    limit = min(int(request.args.get('limit', 100)), 500)
-    rows = _tu.list_recent(limit=limit)
     from services import paths as _p
+    days = int(request.args.get('days', 30))
+    ddays = int(request.args.get('detail_days', 3))
+    run = (request.args.get('run') or '').strip() or None
+    try:
+        page = max(1, int(request.args.get('page') or 1))
+    except Exception:
+        page = 1
+    try:
+        ps = min(200, max(10, int(request.args.get('page_size') or 100)))
+    except Exception:
+        ps = 100
+    rows = _tu.detail(days=ddays, run=run, page=page, page_size=ps)
+    total = _tu.detail_count(days=ddays, run=run)
     keys = list({r["key"] for r in rows if r.get("key")})
     if keys:
         import sqlite3 as _sq
@@ -4045,13 +4075,14 @@ def api_token_usage():
         try:
             ph = ",".join("?" for _ in keys)
             tm = {k: (t or "") for k, t in conn.execute(
-                f"SELECT substr(key,1,12), COALESCE(NULLIF(rewritten_title,''),title) FROM news "
-                f"WHERE substr(key,1,12) IN ({ph})", keys)}
+                f"SELECT key, COALESCE(NULLIF(rewritten_title,''),title) FROM news "
+                f"WHERE key IN ({ph})", keys)}
         finally:
             conn.close()
         for r in rows:
             r["title"] = tm.get(r["key"], "")
-    return jsonify({"summary": _tu.summary(days), "rows": rows})
+    return jsonify({"by_run": _tu.summary(days).get("by_run", []), "by_day": _tu.by_day(days, run),
+                    "rows": rows, "total": total, "page": page, "page_size": ps})
 
 
 @app.route('/api/topic-cache', methods=['GET'])
