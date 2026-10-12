@@ -215,18 +215,24 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=False)         # 一、按来源分组（旧 skill 1d）
-    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens)   # 二~六 + 机器JSON
-    machine, out = _extract_machine_json(out)
+    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True)   # 单个 JSON 对象（结构化数据）
+    try:
+        machine = json.loads(out)
+    except Exception:                       # noqa: BLE001
+        machine, _ = _extract_machine_json(out)     # 兜底
     machine = machine or {}
-    grades = machine.get("grades") or {}
-    clusters = machine.get("clusters") or []
+    if not isinstance(machine, dict):
+        machine = {}
+    _raw_grades = machine.get("grades") or {}
+    grades = {k: (v.get("grade") if isinstance(v, dict) else v) for k, v in _raw_grades.items()}
+    clusters = [c.get("keys") for c in (machine.get("clusters") or [])
+                if isinstance(c, dict) and c.get("keys")]
     channel_hint = machine.get("channel_hint") or {}
     akb_type = machine.get("akb_type") or {}
     feedback = machine.get("feedback")
-    rest = out
-    idx = rest.find("## 二、")
-    if idx > 0:
-        rest = rest[idx:]
+    from services import review_render as _rr
+    _titles = {r["key"][:12]: (r.get("title") or "") for r in pkg["rows"]}
+    rest = _rr.render(machine, _titles)
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:

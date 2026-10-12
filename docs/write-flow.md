@@ -97,12 +97,12 @@ flowchart LR
   D --> E["LLM 返回新 title/body"]
   E --> B
   C -->|否| F[通过]
-  B --> G["log_pending：新词入 data/kana_pending.jsonl"]
-  G --> H["auto_promote：LLM 中译 → config/kana_replace.json<br/>(片段防护；审计 kana_autopromoted.jsonl)"]
+  B --> G["lexicon.discover：新专名入 pending"]
+  G --> H["lexicon.judge：LLM 判定 type/action/zh → lexicon 表(auto 生效)<br/>(📚 术语表 人工审)"]
   H --> I["人工复核 /kana-autopromoted（可撤回）"]
 ```
 
 ## 关键服务/配置
-- 机械：`precheck` `dunhao` `kana` `name_variants` `titles` `format_route` `routing` `renwei` `gzh_review` `content_gate` `split_write`
+- 机械：`precheck` `dunhao` `lexicon`（术语表）`titles` `format_route` `routing` `renwei` `gzh_review` `content_gate` `split_write`
 - 数据/RAG：`references` `feedback_patterns` `related` `batches` `write_failures`
-- 硬规则 config：`review_thresholds` `newfont` `kana_replace` `ja_localize` `name_variants` `adult_industry` `off_topic` `routing`
+- 硬规则 config：`review_thresholds` `adult_industry` `off_topic` `routing`；术语表=DB（`lexicon` 表，`config/lexicon/manual/*.json` 仅 seed/export）

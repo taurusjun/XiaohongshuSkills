@@ -55,15 +55,20 @@
 
 `related_keys` 由 **write** 阶段写（review 不写）。
 
-机器接口：LLM 在输末输出一个 ```json 块，`review._extract_machine_json` 返回 **(machine_dict, 去块文本)**：
+机器接口（**2026-10-12 重构**）：**LLM 只输出一个 JSON 对象**（`response_format=json_object`，**不写 Markdown/表格**）；**报告（二~六节 md）由程序模板渲染**（报告=数据的渲染，格式由代码保证、单一真相）：
 ```json
-{"grades": {"<key前12位>": "S|A|B|C|AKB大TOP"},
- "clusters": [["<key前12位>", "<key前12位>"]],
- "channel_hint": {"<key前12位>": "gzh"},
- "akb_type": {"<key前12位>": "event|bullet"},
- "feedback": {"pattern": "### <编号>. …", "trend_row": "| <日期> | … |"}}
+{"date_trap":[{"key":"<k12>","kind":"前日重复|前日已发|正常","note":"…"}],
+ "clusters":[{"keys":["<k12>",…],"main":"<k12>","note":"…","grade":"S"}],
+ "grades":{"<k12>":{"grade":"S|A|B|C|AKB大TOP","reason":"…"}},
+ "advice":{"<k12>":{"title_dir":"…","how":"…","richness":"…","priority":"P0","emotion":"…"}},
+ "cross_time":{"<k12>":[{"key":"<k12>","hit":"中日双查命中"}]},
+ "layer4":{"conclusion":"…","top":"…","low":"…","zero":"…","anomaly":"…"},
+ "channel_hint":{"<k12>":"gzh"}, "akb_type":{"<k12>":"event|bullet"},
+ "feedback":{"patterns":[…],"trend_row":"…"}}
 ```
-解析器取**最后一个** ```json 块并用括号配平（支持嵌套 `feedback`）。`channel_hint`/`akb_type` 的 write 侧用法见 [write-skill-parity.md](write-skill-parity.md) §8/§9。
+- `review.persist()` 取 `grades`(→`grade`)/`clusters`(→`keys`)/`channel_hint`/`akb_type`。
+- 渲染：`services/review_render.render(data, titles)` → 二~六节 md；`_extract_machine_json` 保留作**兜底**（旧「md+末尾 json 块」格式）。
+- 收益：`grades/feedback` **格式有保证**（不再依赖 LLM 手写 md 的自觉）、省 token、可单测；代价：报告文风与生产（Hermes 手写 md）不同，但流水线只吃结构化数据。
 
 ## 5. 运行与验收
 
@@ -79,7 +84,7 @@
 
 ## 6. 涉及文件
 
-- `agent/review.py` · `agent/prompts/review.md`
+- `agent/review.py` · `agent/prompts/review.md` · `services/review_render.py`（报告模板渲染）
 - `services/related.py` · `services/review_archive.py` · `services/validate_tables.py` · `services/feedback_patterns.py`
 - `skills/xhs-daily-material-review-layer4/scripts/layer4_aggregate.py`（第4层数据源，只读）
 - `skills/creative/xhs-daily-material-review/references/data-feedback-patterns.md`（跨会话累积，运行时更新）
