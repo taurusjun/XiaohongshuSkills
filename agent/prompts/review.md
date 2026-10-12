@@ -7,14 +7,6 @@
 - `advice`: {"<k12>":{"title_dir":"…","how":"…","richness":"…","priority":"P0|P1|P2","emotion":"…"}}（仅 S/A/AKB）
 - `cross_time`: {"<k12>":[{"key":"<k12>","hit":"中日双查命中|仅中文|仅日文"}]}（仅 S/A；用输入里的实体名历史候选）
 - `layer4`: {"conclusion":"<发布数据回顾结论>","top":"…","low":"…","zero":"…","anomaly":"…"}
-- `channel_hint`: 值 `"gzh"` 或 `"both"`（**不适合的不要列**）。判据（对齐原 skill）：
-  - **争议性话题（争议/对立/舆论撕扯/立场冲突）→ `"both"`**（xhs + gzh 两边都写）；
-  - 以下 → `"gzh"`：
-  ① review 明写「强搁置→改道公众号深度/降级」（如 xhs 侧连续多波 0 发布）；
-  ② **男团/男偶像的 行业·厂牌·销量·榜单·战略 类深度**；
-  ③ **成人产业/风俗/AV 的「人物深度」**（人物弧光/公共议题，非猎奇操作）→ gzh 长文、回避露骨。
-  口诀：**「给粉丝看的爆料/日常/现场」→ 不标（走 xhs）；「给路人看的人物/产业分析」→ 标 gzh**。
-  其余（含女团粉丝向现场/花絮/晒照）**一律不列**；**channel_hint 为空 → 默认 xhs**。
 - `akb_type`: {"<k12>":"event|bullet"}（**仅 AKB大TOP**）
 - `feedback`: {"patterns":[{…}],"trend_row":"…"}（见文末 facets）
 

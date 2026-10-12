@@ -194,7 +194,86 @@ def prepare_package(date, hist_k=6):
         fb_ctx = _fb.context()
     except Exception:  # noqa: BLE001
         fb_ctx = {"last_pattern_no": 0, "tail": ""}
-    return {"rows": rows, "prev": prev, "hist": hist, "pub": pub, "fb_ctx": fb_ctx}
+    return {"rows": rows, "prev": prev, "hist": hist, "pub": pub, "fb_ctx": fb_ctx, "entities": ent}
+
+
+CH_SYS = ("你是渠道判定器。对每篇候选判断该走 xhs / gzh / both，只输出严格 JSON："
+          "{\"<key前12位>\": \"xhs|gzh|both\"}。判据（对齐原 skill）：\n"
+          "- 争议性话题（争议/对立/舆论撕扯/立场冲突）→ \"both\"（xhs+gzh 都写）；\n"
+          "- 男团/男偶像的 行业·厂牌·销量·榜单·战略 类深度 → \"gzh\"；\n"
+          "- 成人产业/风俗/AV 的「人物深度」（人物弧光/公共议题，非猎奇操作）→ \"gzh\"；\n"
+          "- 该人物/题材**近期连续0曝光 ≥3 条**（见每条『连续0曝光N条』）→ \"gzh\"（改道深度）；\n"
+          "- 口诀：给粉丝看的爆料/日常/现场 → \"xhs\"；给路人看的人物/产业分析 → \"gzh\"；\n"
+          "- 拿不准 → \"xhs\"（默认）。")
+
+
+def _entity_pub(ents, m=8):
+    """每个实体近期发布：{实体: {recent:[(日期,浏览,标题)], zero_streak, zero_in_m, n}}（仅已发布）。"""
+    import sqlite3
+    from services import paths as _p
+    out = {}
+    conn = sqlite3.connect(_p.sqlite_path())
+    try:
+        for e in (ents or [])[:4]:
+            if not e or len(e) < 2:
+                continue
+            like = f"%{e}%"
+            rows = conn.execute(
+                "SELECT substr(COALESCE(xhs_pub_time,publish_time),1,10) d, COALESCE(xhs_views,0) v, "
+                "COALESCE(rewritten_title,title) t FROM news "
+                "WHERE COALESCE(publish_time,'')!='' AND (title LIKE ? OR rewritten_title LIKE ? OR content_ja LIKE ?) "
+                "ORDER BY COALESCE(xhs_pub_time,publish_time) DESC LIMIT ?",
+                (like, like, like, m)).fetchall()
+            recent = [(r[0], int(r[1] or 0), (r[2] or "")[:22]) for r in rows]
+            streak = 0
+            for _d, _v, _t in recent:
+                if _v == 0:
+                    streak += 1
+                else:
+                    break
+            out[e] = {"recent": recent, "zero_streak": streak,
+                      "zero_in_m": sum(1 for _, v, _ in recent if v == 0), "n": len(recent)}
+    finally:
+        conn.close()
+    return out
+
+
+def judge_channels(date, pkg, grades, max_tokens=4000):
+    """**独立一次 LLM**：对当日 S/A/AKB 候选判渠道，返回 {k12: gzh|both}（xhs 不列=默认）。
+
+    输入含 Python 预取的「实体近期发布序列 + 连续0曝光/近M条0曝光计数」，供 LLM 判「改道 gzh」。
+    """
+    rows = pkg.get("rows") or []
+    ents = pkg.get("entities") or {}
+    cands = [r for r in rows
+             if (grades.get(r["key"][:12]) or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
+    if not cands:
+        return {}
+    lines = []
+    for r in cands:
+        k = r["key"][:12]
+        e = ents.get(k) or []
+        pubs = _entity_pub(e)
+        parts = []
+        for ent, st in pubs.items():
+            rtxt = "；".join(f"{d} {v}阅《{t}》" for d, v, t in st["recent"][:4]) or "无历史发布"
+            parts.append(f"{ent}（近{st['n']}条中0曝光{st['zero_in_m']}条、**连续0曝光{st['zero_streak']}条**）: {rtxt}")
+        pubtxt = "  ||  ".join(parts) or "无历史发布"
+        lines.append(f"- [{k}] 《{r.get('title')}》 grade={grades.get(k)} 实体={'/'.join(e[:4])}"
+                     f"\n    近期发布: {pubtxt}")
+    try:
+        raw = llm.chat([{"role": "system", "content": CH_SYS},
+                        {"role": "user", "content": "当日候选：\n" + "\n".join(lines)}],
+                       max_tokens=max_tokens, json_mode=True)
+        d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for k, v in (d.items() if isinstance(d, dict) else []):
+        v = str(v).strip().lower()
+        if v in ("gzh", "both"):
+            out[k] = v
+    return out
 
 
 def build_messages(date, pkg):
@@ -228,6 +307,12 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     clusters = [c.get("keys") for c in (machine.get("clusters") or [])
                 if isinstance(c, dict) and c.get("keys")]
     channel_hint = machine.get("channel_hint") or {}
+    try:                                             # 独立一次 LLM 判渠道（覆盖主调用）
+        _ch = judge_channels(date, pkg, grades)
+        if _ch:
+            channel_hint = _ch
+    except Exception:  # noqa: BLE001
+        pass
     akb_type = machine.get("akb_type") or {}
     feedback = machine.get("feedback")
     from services import review_render as _rr
