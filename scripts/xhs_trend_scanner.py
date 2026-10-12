@@ -169,11 +169,19 @@ def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:
             recommended_keywords = []
             try:
                 lite_result = call_litellm(
-                    f"从以下 XHS 热门笔记标题中提炼 3-5 个推荐搜索关键词（JSON 字符串数组）：\n" + "\n".join(titles[:5]),
+                    "从以下 XHS 热门笔记标题中提炼 3-5 个推荐搜索关键词，只输出 JSON 对象："
+                    "{\"keywords\": [\"关键词1\", \"关键词2\"]}：\n" + "\n".join(titles[:5]),
                     temperature=0.3, max_tokens=200,
+                    response_format={"type": "json_object"},
                 )
                 if lite_result:
-                    recommended_keywords = json.loads(lite_result)
+                    _d = json.loads(lite_result)
+                    if isinstance(_d, dict):
+                        recommended_keywords = _d.get("keywords") or []
+                    elif isinstance(_d, list):
+                        recommended_keywords = _d
+                    else:
+                        recommended_keywords = [str(_d)]
                     if isinstance(recommended_keywords, str):
                         recommended_keywords = [recommended_keywords]
                     recommended_keywords = recommended_keywords[:5]

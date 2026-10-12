@@ -1319,7 +1319,8 @@ def generate_title_only(title_ja: str, content_ja: str,
                                  summary=summary, story_type=story_type,
                                  current_title=current_title, content_zh=content_zh,
                                  outro=outro)
-    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.7, thinking_disabled=True)
+    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.7,
+                          response_format={"type": "json_object"}, thinking_disabled=True)
     if not result:
         return ""
     # 占位符黑名单：prompt 模板示例值 + LLM 思考时常见垃圾占位符
