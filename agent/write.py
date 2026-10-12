@@ -694,11 +694,12 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
         v["ok"] = (got.get("wechat_title") == v["title"] and bool(got.get("wechat_content"))) \
             if v["channel"] == "gzh" else (got.get("rewritten_title") == v["title"]
                                            and len(got.get("rewritten_content") or "") > 50)
-    # 渠道不打架：非目标渠道的字段清空（只有 channel="both" 才两边都写）
+    # 渠道不打架：**仅当另一渠道有残留内容时**清空（只有 channel="both" 才两边都写）
     if not dry_run:
-        if ch == "xhs":
+        _got0 = _news.get_by_key(cand["key"]) or {}
+        if ch == "xhs" and (_got0.get("wechat_content") or _got0.get("wechat_title")):
             _news.update_news(cand["key"], {"wechat_title": "", "wechat_content": ""})
-        elif ch == "gzh":
+        elif ch == "gzh" and (_got0.get("rewritten_content") or _got0.get("rewritten_title")):
             _news.update_news(cand["key"], {"rewritten_title": "", "rewritten_content": ""})
     # 写后按字段实际存在情况判定 channel（xhs=空 / gzh=gzh / 两版共存=both）——避免残留旧标记
     if not dry_run:
