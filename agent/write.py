@@ -651,7 +651,9 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     _kept = {r["key"] for r in pkg["relations"]}                 # 只注入「合格类型」的同人物历史
     _he = pkg.get("hist_excerpts") or {}
     pkg["hist_text"] = "\n".join(_he[k] for k in _kept if k in _he)
-    rk_s = ",".join(dict.fromkeys(r["key"] for r in pkg["relations"]))
+    # related_keys = 历史关联(KEEP) + 同事件簇成员（对齐生产：主条也链接簇成员，关联双向）
+    _rk = [r["key"] for r in pkg["relations"]] + [k for k in (pkg.get("cluster_keys") or []) if k != cand["key"]]
+    rk_s = ",".join(dict.fromkeys(_rk))
     eff = force_channel or ("gzh" if pkg.get("channel_hint") == "gzh" else None)  # 显式 > review 标注
     if eff:
         d0, _ = compose(cand, pkg, force_channel=eff)
