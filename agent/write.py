@@ -968,6 +968,8 @@ def _print_usage(label="写稿"):
 
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
         verify_gallery=False, split_threshold=None, split_preview=False, rewrite_today=False):
+    from agent import llm as _llm
+    from services import token_usage as _tu
     if split_large and key:                       # 单主稿拆篇 → 落 split_articles 表（不覆盖改写文）
         res = write_split_key(key, split_threshold, force_channel, dry_run=dry_run)
         if res.get("ok"):
@@ -1035,6 +1037,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
     results = []
     for idx, c in enumerate(cands, 1):
         print(f"[{idx}/{len(cands)}] 处理 {c['key'][:12]} 《{(c.get('title') or '')[:24]}》...", flush=True)
+        _u0 = _llm.usage()
         try:
             r = write_one(c, dry_run=dry_run, force_channel=force_channel)
         except Exception as e:                        # noqa: BLE001 单篇异常不中断整批
@@ -1044,6 +1047,10 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
                 _enqueue_failure(c, f"{type(e).__name__}: {e}", "exception", tb=_tb.format_exc())
             r = {"key": c["key"][:12], "full_key": c["key"], "ok": False, "error": str(e),
                  "versions": [], "related": "", "channel": "", "problems": [f"{type(e).__name__}: {e}"]}
+            try:
+                _tu.record("write", "article", c["key"], _tu.diff(_u0, _llm.usage()))
+            except Exception:  # noqa: BLE001
+                pass
             results.append(r); _emit(r); continue
         if not dry_run and not r.get("ok") and not r.get("skipped") and not r.get("bullet"):
             _enqueue_failure(c, "；".join(r.get("problems") or ["未达标"]), "gate",   # 质量确认放弃
@@ -1059,6 +1066,10 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
                     _wf.mark_resolved(c["key"], "写稿成功")     # 清掉旧失败记录
             except Exception:  # noqa: BLE001
                 pass
+        try:
+            _tu.record("write", "article", c["key"], _tu.diff(_u0, _llm.usage()))
+        except Exception:  # noqa: BLE001
+            pass
         results.append(r); _emit(r)
     passed = sum(1 for r in results if r["ok"])
     print(f"\n写稿通过 {passed}/{len(results)}（机械门禁+renwei+评分）"
@@ -1112,6 +1123,10 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         if not okr:
             print("[delivery] 本次 0 篇达标，跳过飞书推送（无内容可审核）")
             _print_usage("写稿")
+            try:
+                _tu.record("write", "run", "", _llm.usage())
+            except Exception:  # noqa: BLE001
+                pass
             return results
         lines = [f"# 写稿结果（达标入库 {len(okr)} 篇）", ""]
         for r in okr:
@@ -1125,6 +1140,10 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             lines += ["", f"> 另有 {len(results)-len(okr)} 篇未达标（未入库，不列出）。"]
         print("[delivery]", _d("\n".join(lines), name="write-result.md"))
     _print_usage("写稿")
+    try:
+        _tu.record("write", "run", "", _llm.usage())
+    except Exception:  # noqa: BLE001
+        pass
     return results
 
 

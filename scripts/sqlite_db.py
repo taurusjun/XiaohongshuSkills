@@ -244,6 +244,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_lexicon_status ON lexicon(status);
             CREATE INDEX IF NOT EXISTS idx_lexicon_type ON lexicon(type);
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          TEXT DEFAULT '',
+                run         TEXT DEFAULT '',
+                scope       TEXT DEFAULT '',
+                key         TEXT DEFAULT '',
+                model       TEXT DEFAULT '',
+                calls       INTEGER DEFAULT 0,
+                prompt_tokens     INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens      INTEGER DEFAULT 0,
+                cache_hit_tokens  INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_token_ts ON token_usage(ts);
+
             CREATE TABLE IF NOT EXISTS lexicon_audit (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 term        TEXT,

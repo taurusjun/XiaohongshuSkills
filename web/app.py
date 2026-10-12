@@ -3990,6 +3990,14 @@ def api_lexicon_export():
     return jsonify({"ok": True, "count": _lx.export_config()})
 
 
+@app.route('/api/token-usage', methods=['GET'])
+def api_token_usage():
+    from services import token_usage as _tu
+    days = int(request.args.get('days', 30))
+    limit = min(int(request.args.get('limit', 100)), 500)
+    return jsonify({"summary": _tu.summary(days), "rows": _tu.list_recent(limit=limit)})
+
+
 @app.route('/api/topic-cache', methods=['GET'])
 def api_topic_cache_list():
     from sqlite_db import list_topic_ids_paged

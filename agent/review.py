@@ -271,6 +271,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     try:
         from agent import llm as _llm
         print(_llm.format_usage("review "), flush=True)
+        from services import token_usage as _tu
+        _tu.record("review", "run", "", _llm.usage())
     except Exception:  # noqa: BLE001
         pass
     return md
