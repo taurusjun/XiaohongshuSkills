@@ -1163,6 +1163,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <select id="scoreFilter" class="fs" onchange="page=0;loadList()"><option value="">全部评分</option><option value="5">≥5</option><option value="6">≥6</option><option value="7">≥7</option><option value="8">≥8</option></select>
     <div class="filter-divider"></div>
     <select id="preselectedFilter" class="fs" onchange="page=0;loadList()"><option value="">全部</option><option value="1">★ 已预选</option><option value="0">☆ 未预选</option></select>
+    <select id="gradeFilter" class="fs" onchange="page=0;loadList()"><option value="">全部评级</option><option value="S">S</option><option value="A">A</option><option value="AKB大TOP">AKB大TOP</option><option value="B">B</option><option value="C">C</option><option value="__none__">未评级</option></select>
     <div class="filter-divider"></div>
     <button class="btn-ghost btn-sm" onclick="openLogin()" title="小红书扫码登录">🔑 小红书登录<span id="loginDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#999;margin-left:6px;vertical-align:middle"></span><span id="loginAcct" style="margin-left:6px;color:#9fb0c8;font-size:11px"></span></button>
     <button class="btn-ghost btn-sm" onclick="openChrome()" title="查看容器内 Chrome 画面">🖥 查看 Chrome</button>
@@ -1407,7 +1408,7 @@ async function loadList(){
   const p=new URLSearchParams({sort_by:sortBy,sort_dir:sortDir,limit:pageSize,offset:page*pageSize,
     search:S('search').value,date_from:S('dateFrom').value,date_to:S('dateTo').value,
     fetch_by:S('fetchBy').value,status:S('status').value,publish_xhs:S('publishXhs').value,
-    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value,grade:S('gradeFilter').value});
   const r=await fetch('/api/news?'+p);const d=await r.json();
   S('tbody').innerHTML=d.rows.map((n,i)=>{
     const imgSrc=n.image_url?(n.image_url.startsWith('/')?'/local-image?path='+encodeURIComponent(n.image_url):n.image_url):'';
@@ -1508,7 +1509,7 @@ async function loadList(){
     date_from:S('dateFrom').value,date_to:S('dateTo').value,
     search:S('search').value,fetch_by:S('fetchBy').value,
     status:S('status').value,publish_xhs:S('publishXhs').value,
-    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value});
+    fmt:S('fmtFilter').value,score_min:S('scoreFilter').value,preselected:S('preselectedFilter').value,grade:S('gradeFilter').value});
   history.replaceState(null,'','/?'+up.toString());
   // Restore scroll position when returning from detail page
   const sy=sessionStorage.getItem('listScrollY');
@@ -1799,6 +1800,7 @@ async function loadCategories(){
 	S("fmtFilter").value=qp.get("fmt")||"";
 	S("scoreFilter").value=qp.get("score_min")||"";
 		S("preselectedFilter").value=qp.get("preselected")||"";
+	S("gradeFilter").value=qp.get("grade")||"";
 	S("dateFrom").value=qp.has("date_from")?qp.get("date_from"):today;
 	S("dateTo").value=qp.has("date_to")?qp.get("date_to"):today;
 	if(S("pageSizeSelect"))S("pageSizeSelect").value=pageSize;
@@ -4210,6 +4212,7 @@ def api_list():
         score_min=request.args.get('score_min',''),
         fetch_by=request.args.get('fetch_by',''),
         preselected=request.args.get('preselected',''),
+        grade=request.args.get('grade',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=min(int(request.args.get('limit',200)), 500),
@@ -4228,6 +4231,7 @@ def api_list():
         score_min=request.args.get('score_min',''),
         fetch_by=request.args.get('fetch_by',''),
         preselected=request.args.get('preselected',''),
+        grade=request.args.get('grade',''),
         sort_by=request.args.get('sort_by','created_at'),
         sort_dir=request.args.get('sort_dir','DESC'),
         limit=10000,

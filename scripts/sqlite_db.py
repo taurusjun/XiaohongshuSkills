@@ -529,7 +529,7 @@ def get_by_key(key: str) -> dict | None:
 def query_news(date_from: str = "", date_to: str = "", category: str = "",
                status: str = "active", search: str = "", publish_xhs: str = "",
                needs_review: bool = False, fmt: str = "", score_min: str = "",
-               fetch_by: str = "", preselected: str = "",
+               fetch_by: str = "", preselected: str = "", grade: str = "",
                limit: int = 200, offset: int = 0,
                sort_by: str = "created_at", sort_dir: str = "DESC") -> list[dict]:
     valid_sort = {'pub_time','created_at','title_score','content_score','title'}  # M-5: whitelist prevents injection — never add unquoted user-supplied columns
@@ -553,6 +553,11 @@ def query_news(date_from: str = "", date_to: str = "", category: str = "",
         sql += "AND fetch_by = ? "; params.append(fetch_by)
     if preselected:
         sql += "AND preselected = ? "; params.append(int(preselected == '1'))
+    if grade:
+        if grade == "__none__":
+            sql += "AND COALESCE(grade,'')='' "
+        else:
+            sql += "AND grade = ? "; params.append(grade)
     if fmt:
         sql += "AND n.format = ? " if needs_review else "AND format = ? "
         params.append(fmt)
