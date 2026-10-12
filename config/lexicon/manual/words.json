@@ -270,10 +270,6 @@
   "zh": "组合",
   "type": "word"
  },
- "普通": {
-  "action": "keep",
-  "type": "word"
- },
  "本当": {
   "zh": "真的",
   "type": "word"
