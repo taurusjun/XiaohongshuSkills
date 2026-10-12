@@ -1063,6 +1063,9 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
     <div class="nav-item" id="tokenNavItem" onclick="switchToQueueView('token')">
       <span class="ni">💰</span> Token 用量
     </div>
+    <div class="nav-item" id="channelNavItem" onclick="switchToQueueView('channel')">
+      <span class="ni">🎯</span> 渠道判定
+    </div>
   </div>
 
   <div class="sidebar-divider"></div>
@@ -1866,7 +1869,7 @@ function switchToQueueView(kind){
   if(nv) nv.style.display='none';
   if(wv) wv.style.display='none';
   if(qv) qv.style.display='flex';
-  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem',token:'tokenNavItem'};
+  var ids={manual:'manualNavItem',fail:'failNavItem',split:'splitNavItem',topic:'topicNavItem',feedback:'feedbackNavItem',lexicon:'lexiconNavItem',token:'tokenNavItem',channel:'channelNavItem'};
   var el=document.getElementById(ids[kind]); if(el) el.classList.add('active');
   renderQueue();
 }
@@ -1884,6 +1887,7 @@ function renderQueue(){
   else if(_qKind==='fail'){ qb.innerHTML=_qHead('❌ 失败稿','写稿失败/异常；含「门禁/评分豁免」warn 留痕')+_qCard('<div id="qTable">'+_qWait()+'</div>'); _qLoadFail(); }
   else if(_qKind==='lexicon'){ _qLoadLexicon(); }
   else if(_qKind==='token'){ _qLoadToken(); }
+  else if(_qKind==='channel'){ _qLoadChannel(); }
   else if(_qKind==='split'){
     qb.innerHTML=_qHead('🧩 拆篇预览','仅列出 cluster 体量超阈值的候选；拆篇结果单独立表（1 主稿对多篇）')
       +'<div style="display:flex;gap:10px;align-items:center;padding:0 2px 8px;font-size:12px;color:var(--text2)">'
@@ -2248,6 +2252,22 @@ function _qLoadToken(){
   });
 }
 
+
+function _qLoadChannel(){
+  var qb=document.getElementById('queueBody'); if(!qb) return;
+  qb.innerHTML=_qHead('🎯 渠道判定','review 独立一次 LLM 的渠道判定（key → 渠道 → 依据；来自 logs/channel.log）')
+    +_qCard('<div id="chTable">'+_qWait()+'</div>');
+  fetch('/api/channel-log?limit=500').then(function(r){return r.json();}).then(function(d){
+    var rows=d.rows||[]; var tb=document.getElementById('chTable'); if(!tb) return;
+    if(!rows.length){tb.innerHTML=_qEmpty('暂无记录');return;}
+    var cb=function(c){var m={gzh:['#ede9fe','#6d28d9'],both:['#dcfce7','#15803d'],xhs:['#eef2ff','#4f46e5']}[c]||['#f3f4f6','#6b7280'];return '<span class="badge" style="background:'+m[0]+';color:'+m[1]+';font-weight:700">'+_qEsc(c)+'</span>';};
+    tb.innerHTML='<table>'+_qTh([{t:'时间',w:'140px'},{t:'日期',w:'96px'},{t:'key',w:'110px'},{t:'渠道',w:'70px'},{t:'依据'}])+'<tbody>'+
+      rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc(x.ts||'')+'</td><td style="font-size:11px">'+_qEsc(x.date||'')+'</td>'+
+        '<td><a href="/detail/'+_qEsc(x.key)+'" target="_blank" style="font-family:ui-monospace,monospace;font-size:11px">'+_qEsc(x.key)+'</a></td>'+
+        '<td>'+cb(x.channel)+'</td><td style="font-size:12px">'+_qEsc(x.reason||'')+'</td></tr>';}).join('')+'</tbody></table>';
+  });
+}
+
 function _buildWechatView(){
   var wv=document.getElementById('wechatView');
   if(!wv||wv.querySelector('.wx-topbar')) return;
@@ -2596,6 +2616,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
   {% if news.grade %}<span class="badge" style="flex-shrink:0;background:#eef2ff;color:#4338ca;font-weight:700">评级 {{news.grade}}</span>{% endif %}
+  {% if news.channel_hint %}<span class="badge" style="flex-shrink:0;background:#ede9fe;color:#6d28d9;font-weight:700" title="review 判定的渠道方向">🎯 {{news.channel_hint}}</span>{% endif %}
   {% if news.material_type %}<span class="badge badge-gray" style="flex-shrink:0" title="素材类型（密度豁免判定：catalog/multi_artist/commentary 免密度）">{{news.material_type}}</span>{% endif %}
   {% if news.manual_review %}<span class="badge" style="flex-shrink:0;background:#fee2e2;color:#b91c1c" title="{{news.manual_reason}}">🚩 待人工</span>{% endif %}
   {% if scores and scores|length > 0 %}
@@ -4026,6 +4047,24 @@ def api_lexicon_judge():
 def api_lexicon_export():
     from services import lexicon as _lx
     return jsonify({"ok": True, "count": _lx.export_config()})
+
+
+@app.route('/api/channel-log', methods=['GET'])
+def api_channel_log():
+    from services import paths as _p
+    try:
+        limit = min(int(request.args.get('limit', 300)), 2000)
+    except Exception:
+        limit = 300
+    rows = []
+    f = _p.REPO_ROOT / "logs" / "channel.log"
+    if f.exists():
+        for ln in f.read_text(encoding="utf-8").splitlines()[-limit:]:
+            parts = ln.split("\t")
+            if len(parts) >= 5:
+                rows.append({"ts": parts[0], "date": parts[1], "key": parts[2],
+                             "channel": parts[3], "reason": "\t".join(parts[4:])})
+    return jsonify({"rows": list(reversed(rows))})
 
 
 @app.route('/api/token-usage', methods=['GET'])
