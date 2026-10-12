@@ -1207,6 +1207,7 @@ tbody td{padding:8px 12px;vertical-align:middle;font-size:12.5px}
             <th style="width:50px">封面</th>
             <th>标题</th>
             <th style="width:70px">体裁</th>
+            <th style="width:56px">评级</th>
             <th onclick="setSort('title_score')" style="width:64px">评分 ↕</th>
             <th style="width:60px">状态</th>
             <th style="width:50px">发布</th>
@@ -1386,6 +1387,11 @@ async function pollTaskLog(tid){
   if(sd.status==='running'){setTimeout(()=>pollTaskLog(tid),3000)}else{checkActiveTasks()}
 }
 
+function _gradeBadge(g){
+  if(!g) return '';
+  var m={'S':['#fee2e2','#b91c1c'],'A':['#ffedd5','#c2410c'],'AKB大TOP':['#ede9fe','#6d28d9'],'B':['#dbeafe','#1d4ed8'],'C':['#f3f4f6','#6b7280']}[g]||['#f3f4f6','#6b7280'];
+  return '<span class="badge" style="background:'+m[0]+';color:'+m[1]+';font-weight:700">'+esc(g)+'</span>';
+}
 function _fmtBadge(fs,cat){
   const f=fs||cat||'';
   if(f==='story')return`<span class="fmt fmt-story">长文</span>`;
@@ -1418,6 +1424,7 @@ async function loadList(){
       <div class="tc-snip">${esc((n.content||'').substring(0,60))}</div>
     </div></div></td>
     <td>${_fmtBadge(n.format,n.category)}</td>
+    <td>${_gradeBadge(n.grade)}</td>
     <td><span class="score ${scCls}">${ts.toFixed(1)}/${cs.toFixed(1)}</span></td>
     <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
     <td>${(()=>{
@@ -2588,6 +2595,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
   <a href="javascript:history.back()">← 返回</a>
   {% if news.fetch_by %}<span class="badge badge-gray" style="flex-shrink:0">{{news.fetch_by}}</span>{% endif %}
   <span class="badge {% if news.primary_format=='story' %}badge-purple{% else %}badge-blue{% endif %}" style="flex-shrink:0">{{news.format_label}}{% if news.is_long_form %} 长文{% endif %}</span>
+  {% if news.grade %}<span class="badge" style="flex-shrink:0;background:#eef2ff;color:#4338ca;font-weight:700">评级 {{news.grade}}</span>{% endif %}
   {% if news.material_type %}<span class="badge badge-gray" style="flex-shrink:0" title="素材类型（密度豁免判定：catalog/multi_artist/commentary 免密度）">{{news.material_type}}</span>{% endif %}
   {% if news.manual_review %}<span class="badge" style="flex-shrink:0;background:#fee2e2;color:#b91c1c" title="{{news.manual_reason}}">🚩 待人工</span>{% endif %}
   {% if scores and scores|length > 0 %}

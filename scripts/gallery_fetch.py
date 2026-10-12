@@ -110,6 +110,7 @@ GALLERY_SITES: dict[str, str] = {
     "itmedia.co.jp":      ".article-thumb, article",
     "nlab.itmedia.co.jp": ".article-thumb, article",
     "j-cast.com":         "article, .post-content",
+    "huffingtonpost.jp":   "article, body",
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
@@ -126,7 +127,8 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "bunshun.jp", "full-count.jp",
                          "itmedia.co.jp", "nlab.itmedia.co.jp",
                          "j-cast.com",
-                         "news.ntv.co.jp"}
+                         "news.ntv.co.jp",
+                         "huffingtonpost.jp"}
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
