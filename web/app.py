@@ -2234,7 +2234,7 @@ function _qLoadToken(){
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 2px 8px;font-size:12px;color:var(--text2)">汇总近'
     +'<input id="tk_days" type="number" value="30" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
     +'　明细近<input id="tk_ddays" type="number" value="3" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
-    +'　run <select id="tk_run" onchange="_qLoadToken()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px"><option value="">全部</option><option>write</option><option>review</option><option>split</option></select>'
+    +'　run <select id="tk_runsel" onchange="_qLoadToken()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px"><option value="">全部</option><option>write</option><option>review</option><option>split</option></select>'
     +'<button class="btn btn-outline btn-sm" onclick="_qLoadToken()">查询</button></div>'
     +_qCard('<div id="tk_run"></div>')
     +_qCard('<div id="tk_day"></div>')
@@ -2245,7 +2245,7 @@ var _tkPage=1;
 function _tkFetch(){
   var days=(document.getElementById('tk_days')||{}).value||'30';
   var ddays=(document.getElementById('tk_ddays')||{}).value||'3';
-  var run=(document.getElementById('tk_run')||{}).value||'';
+  var run=(document.getElementById('tk_runsel')||{}).value||'';
   fetch('/api/token-usage?days='+encodeURIComponent(days)+'&detail_days='+encodeURIComponent(ddays)+'&run='+encodeURIComponent(run)+'&page='+_tkPage+'&page_size=100')
     .then(function(r){return r.json();}).then(function(d){
     var by=d.by_run||[], bd=d.by_day||[], rows=d.rows||[];
