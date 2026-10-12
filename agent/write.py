@@ -958,6 +958,14 @@ def write_split_key(key, threshold=None, force_channel=None, dry_run=False):
     return {"ok": True, "count": len(items), "items": items, "main_key": cand["key"]}
 
 
+def _print_usage(label="写稿"):
+    try:
+        from agent import llm as _llm
+        print(_llm.format_usage(label), flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_channel=None,
         verify_gallery=False, split_threshold=None, split_preview=False, rewrite_today=False):
     if split_large and key:                       # 单主稿拆篇 → 落 split_articles 表（不覆盖改写文）
@@ -1103,6 +1111,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         okr = [r for r in results if r["ok"]]          # 只交付达标稿
         if not okr:
             print("[delivery] 本次 0 篇达标，跳过飞书推送（无内容可审核）")
+            _print_usage("写稿")
             return results
         lines = [f"# 写稿结果（达标入库 {len(okr)} 篇）", ""]
         for r in okr:
@@ -1115,6 +1124,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         if len(results) - len(okr):
             lines += ["", f"> 另有 {len(results)-len(okr)} 篇未达标（未入库，不列出）。"]
         print("[delivery]", _d("\n".join(lines), name="write-result.md"))
+    _print_usage("写稿")
     return results
 
 

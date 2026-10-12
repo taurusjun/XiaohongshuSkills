@@ -106,3 +106,13 @@ flowchart LR
 - 机械：`precheck` `dunhao` `lexicon`（术语表）`titles` `format_route` `routing` `renwei` `gzh_review` `content_gate` `split_write`
 - 数据/RAG：`references` `feedback_patterns` `related` `batches` `write_failures`
 - 硬规则 config：`review_thresholds` `adult_industry` `off_topic` `routing`；术语表=DB（`lexicon` 表，`config/lexicon/manual/*.json` 仅 seed/export）
+
+## Token 用量统计
+`agent/llm.py` 在每次 `chat`/`chat_raw` 累计 API `usage`（进程内），写稿/review 跑完各打印一行：
+```
+[token] 写稿调用=5 输入=14849 输出=804 合计=15653（缓存命中=10368 未命中=4481）
+[token] review 调用=… 输入=… 输出=… 合计=…
+```
+- 字段：`调用`=LLM 次数、`输入`/`输出`/`合计`=prompt/completion/total tokens、`缓存命中`=`prompt_cache_hit_tokens`（DeepSeek KV 缓存）。
+- 单篇写稿（含改稿）通常 3~6 次调用；多轮对话共享前缀 → 缓存命中率高。
+- 也可在代码里取：`from agent import llm; llm.usage()` / `llm.format_usage()` / `llm.reset_usage()`。

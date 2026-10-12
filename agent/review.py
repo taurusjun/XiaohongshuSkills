@@ -268,6 +268,11 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         print("[delivery]", _d(md, name=name or f"{date}-review-full.md"))
     else:
         print(md)
+    try:
+        from agent import llm as _llm
+        print(_llm.format_usage("review "), flush=True)
+    except Exception:  # noqa: BLE001
+        pass
     return md
 
 

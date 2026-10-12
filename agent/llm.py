@@ -20,11 +20,43 @@ try:
 except Exception:
     pass
 
-__all__ = ["chat", "LiteLLMError"]
+__all__ = ["chat", "chat_raw", "usage", "reset_usage", "LiteLLMError"]
 
 
 class LiteLLMError(RuntimeError):
     pass
+
+
+# ── token 用量统计（进程内累计；跑完打印）────────────────────────────
+_USAGE = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+          "cache_hit_tokens": 0, "cache_miss_tokens": 0}
+
+
+def usage() -> dict:
+    return dict(_USAGE)
+
+
+def reset_usage() -> None:
+    for k in _USAGE:
+        _USAGE[k] = 0
+
+
+def _add_usage(data: dict) -> None:
+    u = (data or {}).get("usage") or {}
+    _USAGE["calls"] += 1
+    _USAGE["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+    _USAGE["completion_tokens"] += int(u.get("completion_tokens") or 0)
+    _USAGE["total_tokens"] += int(u.get("total_tokens") or 0)
+    _USAGE["cache_hit_tokens"] += int(u.get("prompt_cache_hit_tokens")
+                                     or u.get("cache_read_input_tokens") or 0)
+    _USAGE["cache_miss_tokens"] += int(u.get("prompt_cache_miss_tokens")
+                                      or u.get("cache_creation_input_tokens") or 0)
+
+
+def format_usage(label="") -> str:
+    u = _USAGE
+    return (f"[token] {label}调用={u['calls']} 输入={u['prompt_tokens']} 输出={u['completion_tokens']} "
+            f"合计={u['total_tokens']}（缓存命中={u['cache_hit_tokens']} 未命中={u['cache_miss_tokens']}）")
 
 
 _RETRY_TRIES = int(os.environ.get("LITELLM_RETRY_TRIES", "3") or 3)
@@ -93,6 +125,7 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, t
         body["response_format"] = {"type": "json_object"}
     _apply_thinking(body, thinking)
     data = _post(url, body, timeout)
+    _add_usage(data)
     return data["choices"][0]["message"]["content"]
 
 
@@ -109,4 +142,5 @@ def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None,
         body["tool_choice"] = "auto"
     _apply_thinking(body, thinking)
     data = _post(url, body, timeout)
+    _add_usage(data)
     return data["choices"][0]["message"]
