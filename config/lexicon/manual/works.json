@@ -54,6 +54,41 @@
   "type": "work",
   "source": "auto"
  },
+ "虎に翼": {
+  "zh": "虎与翼",
+  "type": "work",
+  "source": "auto"
+ },
+ "ひよっこ": {
+  "zh": "雏鸟",
+  "type": "work",
+  "source": "auto"
+ },
+ "ひなたメドレータウン": {
+  "zh": "日向Medley Town",
+  "type": "work",
+  "source": "auto"
+ },
+ "豊臣兄弟！": {
+  "zh": "丰臣兄弟！",
+  "type": "work",
+  "source": "auto"
+ },
+ "GROTESQQQUE-グロテスク-": {
+  "zh": "GROTESQQQUE-怪诞-",
+  "type": "work",
+  "source": "auto"
+ },
+ "虎与翼": {
+  "action": "keep",
+  "type": "work",
+  "source": "auto"
+ },
+ "雏鸟": {
+  "action": "keep",
+  "type": "work",
+  "source": "auto"
+ },
  "東海オンエア・てつや": {
   "zh": "东海On Air的TETSUYA",
   "type": "work"

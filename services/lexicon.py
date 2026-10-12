@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 from services import paths
 
-__all__ = ["ensure", "inject", "replace", "normalize", "brackets", "keep_spans", "discover", "discover_names", "residual_terms",
+__all__ = ["ensure", "inject", "replace", "normalize", "brackets", "keep_spans", "discover", "discover_names", "looks_term", "residual_terms",
            "add", "update", "delete", "get", "all", "pending", "judge", "promote", "revert",
            "seed_from_config", "export_config", "reload", "main", "TYPES"]
 
@@ -95,8 +95,9 @@ def _build():
             a = a.strip()
             if a:
                 alias[a] = r
+    zhvals = {(r.get("zh") or "").strip() for r in rows if r.get("zh")}
     _index = {"ordered": sorted(rows, key=lambda r: -len(r["term"] or "")),
-              "by_term": {r["term"]: r for r in rows}, "alias": alias}
+              "by_term": {r["term"]: r for r in rows}, "alias": alias, "zh": zhvals}
     return _index
 
 
@@ -137,6 +138,21 @@ def keep_spans(text):
     return [r["term"] for r in idx["ordered"] if r.get("action") == "keep" and r["term"] in t]
 
 
+_BADP = re.compile(r"[。！？!?…;；:：,，\.\(\)\[\]【】]")
+_BADEND = re.compile(r"(する|した|してる|している|です|ます|ません|ください|としたら|行くぞ|だよ|だね|かな|だろう|いません)$")
+
+
+def looks_term(n):
+    """像专名/作品名（非短语/整句）。"""
+    if not n or not (2 <= len(n) <= 16):
+        return False
+    if not _KANA.search(n):
+        return False
+    if _BADP.search(n) or _BADEND.search(n):
+        return False
+    return True
+
+
 def discover(text, src_key="", from_="write"):
     """从文本发现候选专名（括号整体；未在表者）→ pending。返回新增 term。"""
     idx = _build()
@@ -145,9 +161,7 @@ def discover(text, src_key="", from_="write"):
     for inner in brackets(text or ""):
         if inner in known or len(inner) < 2:
             continue
-        if not _KANA.search(inner):          # 只收含假名的日文专名（排除中文引语）
-            continue
-        if len(inner) > 20 or re.search(r"[。！？]", inner):   # 排除整句
+        if not looks_term(inner):           # 像专名（非短语/整句）
             continue
         if add(inner, status="pending", source=from_, src_key=src_key, note="auto:发现"):
             out.append(inner)
@@ -157,12 +171,12 @@ def discover(text, src_key="", from_="write"):
 def discover_names(names, src_key="", from_="review"):
     """把实体名列表里未在表的 → pending（hint person）。"""
     idx = _build()
-    known = set(idx["by_term"]) | set(idx["alias"])
+    known = set(idx["by_term"]) | set(idx["alias"]) | idx["zh"]
     out = []
     for n in (names or []):
         n = (n or "").strip()
-        if len(n) < 2 or n in known or n in _SKIP:
-            continue
+        if n in known or n in _SKIP or not looks_term(n):
+            continue                                             # 像专名（含假名、非短语）
         if add(n, status="pending", source=from_, src_key=src_key, note="auto:实体"):
             out.append(n)
     return out
@@ -192,7 +206,7 @@ def normalize(names):
 
 
 _KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
-_BRACKET = re.compile(r"[《「【]([^》」】\n]{1,60})[》」】]")
+_BRACKET = re.compile(r"[《【]([^》】\n]{1,60})[》】]")
 
 
 def brackets(text):
@@ -299,42 +313,43 @@ def pending():
 
 
 # ── 自增长：LLM 判定 ───────────────────────────────────────────────
-def judge(limit=40, dry_run=False):
-    """对 pending 候选做 LLM 判定（type/action/zh），通过护栏后写 auto（**即生效**）+ 审计。"""
+def judge(limit=40, dry_run=False, chunk=40):
+    """对 pending 候选做 LLM 判定（分批）；通过护栏后写 auto（**即生效**）+ 审计。"""
     rows = pending()[:limit]
     if not rows:
         return []
     terms = [r["term"] for r in rows]
-    ctx = {r["term"]: (r.get("note") or "") for r in rows}
-    try:
-        from agent import llm
-        usr = ("对下列日娱词条判断并只输出严格 JSON：{\"<原文>\": {\"type\": \"person|group|work|word|keep\", "
-               "\"action\": \"translate|keep\", \"zh\": \"<中译，keep 时留空>\"}}\n"
-               "person=人名 group=团体 work=作品/剧/曲/节目/舞台 word=日式词汇 keep=拟声词或neta等不可译(原样保留)\n"
-               + "\n".join(f"- {t}" for t in terms))
-        raw = llm.chat([{"role": "system", "content": "你是日娱专有名词整理助手，只输出 JSON。"},
-                        {"role": "user", "content": usr}], max_tokens=3000, json_mode=True)
-        d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-    except Exception:  # noqa: BLE001
-        return []
     out = []
-    for t in terms:
-        v = d.get(t)
-        if not isinstance(v, dict):
+    for i in range(0, len(terms), chunk):
+        part = terms[i:i + chunk]
+        try:
+            from agent import llm
+            usr = ("对下列日娱词条判断并只输出严格 JSON：{\"<原文>\": {\"type\": \"person|group|work|word|keep\", "
+                   "\"action\": \"translate|keep\", \"zh\": \"<中译，keep 时留空>\"}}\n"
+                   "person=人名 group=团体 work=作品/剧/曲/节目/舞台 word=日式词汇 keep=拟声词或neta等不可译(原样保留)\n"
+                   + "\n".join(f"- {t}" for t in part))
+            raw = llm.chat([{"role": "system", "content": "你是日娱专有名词整理助手，只输出 JSON。"},
+                            {"role": "user", "content": usr}], max_tokens=4000, json_mode=True)
+            d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+        except Exception:  # noqa: BLE001
             continue
-        ty = (v.get("type") or "word").strip()
-        act = (v.get("action") or "translate").strip()
-        zh = (v.get("zh") or "").strip()
-        if len(t) < 2 or t in _SKIP:
-            continue
-        if act == "keep":
-            zh = ""
-        elif not zh or zh == t:
-            continue
-        if not dry_run:
-            add(t, zh=zh, type=ty if ty in TYPES else "word", action=act or "translate",
-                status="auto", source="auto")
-        out.append({"term": t, "type": ty, "action": act, "zh": zh})
+        for t in part:
+            v = d.get(t)
+            if not isinstance(v, dict):
+                continue
+            ty = (v.get("type") or "word").strip()
+            act = (v.get("action") or "translate").strip()
+            zh = (v.get("zh") or "").strip()
+            if len(t) < 2 or t in _SKIP:
+                continue
+            if act == "keep":
+                zh = ""
+            elif not zh or zh == t:
+                continue
+            if not dry_run:
+                add(t, zh=zh, type=ty if ty in TYPES else "word", action=act or "translate",
+                    status="auto", source="auto")
+            out.append({"term": t, "type": ty, "action": act, "zh": zh})
     return out
 
 

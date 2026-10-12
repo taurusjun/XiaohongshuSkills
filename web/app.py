@@ -3981,7 +3981,7 @@ def api_lexicon_revert():
 @app.route('/api/lexicon/judge', methods=['POST'])
 def api_lexicon_judge():
     from services import lexicon as _lx
-    return jsonify({"ok": True, "count": len(_lx.judge())})
+    return jsonify({"ok": True, "count": len(_lx.judge(limit=300))})
 
 
 @app.route('/api/lexicon/export', methods=['POST'])
