@@ -35,18 +35,29 @@ def parse_slots(raw):
     return slots
 
 
-def build_plan(day, slots, jitter, rng):
-    """返回 [(slot_str, 'YYYY-MM-DD HH:MM')]"""
+def build_plan(day, slots, jitter, rng, avoid=None):
+    """返回 [(slot_str, 'YYYY-MM-DD HH:MM')]。avoid=已占用时刻列表(datetime)，同段≥15min 内避让。"""
+    avoid = list(avoid or [])
     plan = []
     for (hh, mm) in slots:
-        while True:
+        target = None
+        for _ in range(60):
             off = rng.randint(-jitter, jitter)
-            if off != 0:
+            if off == 0:
+                continue
+            cand = dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=JST) \
+                + dt.timedelta(minutes=off)
+            if cand.minute == 0:
+                cand += dt.timedelta(minutes=1 if off > 0 else -1)
+            if all(abs((cand - a).total_seconds()) >= 6 * 60 for a in avoid):
+                target = cand
                 break
-        target = dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=JST) \
-            + dt.timedelta(minutes=off)
-        if target.minute == 0:
-            target += dt.timedelta(minutes=1 if off > 0 else -1)
+        if target is None:                       # 兜底
+            off = rng.randint(-jitter, jitter) or 1
+            target = dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=JST) \
+                + dt.timedelta(minutes=off)
+            if target.minute == 0:
+                target += dt.timedelta(minutes=1)
         plan.append((f"{hh:02d}:{mm:02d}", target.strftime("%Y-%m-%d %H:%M")))
     return plan
 

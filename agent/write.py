@@ -741,7 +741,7 @@ def recommend_and_schedule(n=5, seed=None):
     from agent import review as _rev
     today = dt.datetime.now(_sch.JST).date()
     tomorrow = today + dt.timedelta(days=1)
-    pool = _rec.candidates(days=3)
+    pool = _rec.candidates(days=2)
     busy = _rec.tomorrow_busy(tomorrow)
     items = [{"key": r["key"][:12], "title": r.get("title") or "", "ja": (r.get("title_ja") or "")[:60]}
              for r in (pool + busy)]
@@ -750,7 +750,17 @@ def recommend_and_schedule(n=5, seed=None):
     picks, backups, stat_by_key = _rec.stage6(pool, ents, busy_entities=busy_ents,
                                               n=n, seed=seed, today=today)
     rng = random.Random(seed)
-    plan = _sch.build_plan(tomorrow, _sch.parse_slots(",".join(_sch.DEFAULT_SLOTS)), 8, rng)
+    # 明天已占时段（时段级冲突：生产要求不挤同一时段）
+    _avoid = []
+    for _b in busy:
+        _t = (_b.get("xhs_pub_time") or "").strip()
+        try:
+            _avoid.append(dt.datetime.strptime(_t[:16], "%Y-%m-%d %H:%M").replace(tzinfo=_sch.JST))
+        except Exception:  # noqa: BLE001
+            pass
+    plan = _sch.build_plan(tomorrow, _sch.parse_slots(",".join(_sch.DEFAULT_SLOTS)), 8, rng, avoid=_avoid)
+    if _avoid:
+        print(f"  [冲突检查] 明天已排 {len(_avoid)} 条，预发布时间已避让其 ±6min", flush=True)
     keys = [r["key"] for r in picks][:len(plan)]
     ok, bad = _sch.apply_plan(paths.sqlite_path(), keys, plan, True)
     reasons = _rec.reasons(picks, stat_by_key, today)

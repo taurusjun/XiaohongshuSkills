@@ -26,7 +26,7 @@ def _day(s):
         return None
 
 
-def candidates(days=3, db=None):
+def candidates(days=2, db=None):
     """待推荐候选池：preselected=1 且 publish_xhs=0 且已有 rewritten_content。"""
     import sys
     sys.path.insert(0, str(paths.REPO_ROOT / "scripts"))
@@ -128,7 +128,8 @@ def stage6(pool, entities_by_key, busy_entities=None, n=5, seed=None, today=None
             break
     rest = [r for r in ordered if r["key"] not in used_keys]
     if rest:                                      # 1 篇随机探索
-        rnd = random.Random(seed).choice(rest)
+        rnd = dict(random.Random(seed).choice(rest))
+        rnd["_random"] = True
         picks.append(rnd); used_keys.add(rnd["key"])
     backups = [r for r in ordered if r["key"] not in used_keys][:2]
     return picks, backups, stat_by_key
@@ -153,5 +154,23 @@ def data_overview(today, pool, db=None):
             "pool": len(pool), "pending": pending}
 
 
+def _tier(cand, stat, med_all):
+    """牌型（对齐生产：分数最高但本人近期走低 → 质量牌）。"""
+    ts = cand.get("title_score") or 0
+    if not stat.get("n"):
+        return "新人（无历史发布）"
+    if ts >= 4.5 and (stat.get("median") or 0) < med_all:
+        return "质量牌"
+    return "流量牌"
+
+
 def reasons(picks, stat_by_key, today):
-    return [_reason(r, stat_by_key.get(r["key"], {}), today) for r in picks]
+    # 牌型参照：候选之间中位浏览量的中位
+    meds = [(stat_by_key.get(r["key"], {}) or {}).get("median") or 0 for r in picks]
+    med_all = statistics.median(meds) if meds else 0
+    out = []
+    for r in picks:
+        s = stat_by_key.get(r["key"], {}) or {}
+        tag = "[随机探索] " if r.get("_random") else ""
+        out.append(f"{tag}{_reason(r, s, today)}｜{_tier(r, s, med_all)}")
+    return out
