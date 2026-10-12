@@ -52,6 +52,7 @@
 | `routing.json` | 渠道判据关键词 | `routing.route_detail`（hint+confidence，低置信度交 LLM） |
 
 - **待人工**：命中门禁的素材照常写/入库，但打 `manual_review=1 + manual_reason`，在 admin UI `/manual-review` 人工处置；不阻断流程。
+- **关联口径（2026-10-12 修正）**：主条写稿时 `related_keys` = **历史关联(KEEP) + 同事件簇成员(`cluster_keys`)**（去重）；簇成员另经**回指**把主条写入自身 `related_keys` → **关联双向**（对齐生产）。
 - **纯重复跳过口径（2026-10-12 修正）**：仅当候选与**已发布**文章重复（该 dup 的 `publish_time` 非空）才 `skipped`；**同批同事件成员（未发布）不触发**（应合并，不应跳过）。且 **write 不再覆盖 review 的 `grade`**（此前 `update_news({grade:'C'})` 会把 review 判的 S/A 误改成 C，并连带丢关联）。
 - **跨日**：每次批量写稿落 `data/write_batches/<date>.json`（处理 + 跳过 keys），下次启动消费跳过清单（纯重复不重写）并提示「新/漏写候选」。
 - **拆篇手动入口**：`--split-large`（对 `--key` 单篇生效）、`--split-threshold N`、`--split-preview`（CLI 只读打印分组）。后台左侧「🧩 拆篇预览」页：**同 cluster 只列「主 key」一行**（与写稿选材一致：簇内 `title_score` 最高者代表整簇，其余成员吸收）+ **仅列 cluster 超阈值 + 分页 + 已拆篇数**，可查看每篇、可重拆。**拆篇结果单独落 `split_articles` 表（1 主稿 key 对多篇），不覆盖 `news.rewritten_*`**（已取消旧的 LLM 内容预览）。
