@@ -20,7 +20,7 @@ flowchart TD
   E -->|否| F["prepare_package（写前准备）"]
   F --> G["classify_material：LLM 通读 → material_type"]
   G --> H["classify_relations：LLM 判关联类型"]
-  H --> H1{含 纯重复?}
+  H --> H1{与已发文章重复?}
   H1 -->|是| H2["grade=C 跳过"] --> Z
   H1 -->|否| I["pkg.relations=合格类型；hist_text=仅合格节选"]
   I --> J["渠道路由：force > channel_hint > compose 自判"]

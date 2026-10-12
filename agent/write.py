@@ -634,13 +634,19 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     _rels = classify_relations(cand, pkg)
     _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
     _KEEP = {"时间线补充", "人物呼应", "新角度"}
-    if any(r.get("type") == "纯重复" for r in _rels) and not split_mode:
-        if not dry_run:
-            _news.update_news(cand["key"], {"grade": "C", "grade_reason": "纯重复(历史已发)"})
+    # 「纯重复→跳过」只在**与已发布文章重复**时成立；同批同事件成员（未发布）不触发。
+    # 且 **不覆盖 review 的 grade**（grade 由 review 产出，write 无权改）。
+    _dup_pub = []
+    for _r in _rels:
+        if _r.get("type") == "纯重复":
+            _rr = _news.get_by_key(_r["key"]) or {}
+            if (_rr.get("publish_time") or "").strip():
+                _dup_pub.append(_r)
+    if _dup_pub and not split_mode:
         return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
                 "attempts": 0, "channel": pkg.get("pre_channel") or "xhs", "title": "", "text": "",
                 "body": 0, "h2": 0, "kana": 0, "method": method, "score": 0, "related": "",
-                "problems": ["纯重复(历史已发)→跳过"], "versions": []}
+                "problems": ["纯重复(已发)→跳过"], "versions": []}
     pkg["relations"] = [r for r in _rels if r.get("type") in _KEEP and r["key"] != cand["key"]]
     _kept = {r["key"] for r in pkg["relations"]}                 # 只注入「合格类型」的同人物历史
     _he = pkg.get("hist_excerpts") or {}
