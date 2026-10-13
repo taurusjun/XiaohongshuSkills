@@ -23,6 +23,10 @@
     "market",
     "industry"
   ],
+  "force_xhs": [
+    "乃木坂", "欅坂", "けやき坂", "ひなた坂", "日向坂", "櫻坂", "樱坂", "坂道系", "坂道46"
+  ],
+  "_comment_force_xhs": "硬规则：坂道系（女性向偶像）→ xhs 门必过；由 review.judge_channels 强制（不跳过 gzh 判断，gzh 门也过则为 both）",
   "xhs_hint": [
     "私服",
     "同框",

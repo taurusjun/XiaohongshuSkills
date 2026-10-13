@@ -201,15 +201,16 @@ CH_SYS = ("你是渠道判定器。对每篇候选，**分别独立**判断它�
           "输出 channel ∈ \"xhs|gzh|both|skip\"：两门都过 → \"both\"；只过 xhs → \"xhs\"；只过 gzh → \"gzh\"；都不过 → \"xhs\"（默认）；命中跳过判据 → \"skip\"。"
           "只输出严格 JSON：{\"<key前12位>\": {\"channel\": \"xhs|gzh|both|skip\", \"reason\": \"<一句话依据>\"}}。\n"
           "【xhs 门｜给粉丝看：有趣/有画面/有情绪】艺人日常/趣闻/穿搭/反差萌/亲子/怀旧；**争议/八卦/恋爱/爆笑短讯**/同框/私物/综艺花絮"
-          "（争议型素材在小红书天然有流量；男团粉丝争议/私物/同框/综艺花絮也走 xhs）；坂道系/女艺人/AKB大TOP；"
+          "（争议型素材在小红书天然有流量；男团粉丝争议/私物/同框/综艺花絮也走 xhs）；**坂道系（乃木坂46/欅坂46/日向坂46/櫻坂46 及其成员）/女艺人（女性向）**/AKB大TOP；"
           "偶像成长/逆袭/**人物心路**（粉丝向情感共鸣，有画面感）；简单事件（一句话能说清，有事件/时间/引语）。\n"
           "【gzh 门｜给路人看：有深度/需思考】深度分析（电影/音乐/摄影/美学等专业解读）；行业分析（娱乐产业/经纪/厂牌/销量/榜单/战略）；"
           "**人物深度**长访（完整叙事弧/公共议题）；跨文化分析（日本娱乐现象→中国语境）；多人物对照/行业历史梳理；"
           "该人物/题材**近期连续0曝光 ≥3 条**（见每条『连续0曝光N条』）→ 改道深度 gzh；"
           "成人产业/风俗/AV 的**人物弧光/公共议题**（歧视/权利/职业选择；非猎奇操作）→ gzh。\n"
-          "【明确 both】① **人物心路（xhs）＋ 人物深度（gzh）兼有**（既有情感共鸣，又有完整叙事弧/背景分析）；② 其他同时满足两门的。\n"
+          "【明确 both】① **人物深度**（完整人物叙事弧/深度长访）→ \"both\"（gzh 深度稿同时出 xhs 版）；② **人物心路＋人物深度兼有** → \"both\"；③ 其他同时满足两门的。\n"
           "【skip（不写稿）】纯榜单/列表无上下文；品牌合作软文（>50%产品参数）；セクシー女優写真宣传；与日娱无关（体育/经济/政治无关）；"
           "夜店/风俗/AV 的**行业操作细节/猎奇本身**（非人物弧光）。\n"
+          "【硬规则】坂道系（乃木坂/欅坂/日向坂/櫻坂…）与女艺人（女性向）→ **xhs 门必过**（由程序强制；仍判 gzh 门，gzh 门也过则为 both）。\n"
           "口诀：给粉丝看的爆料/日常/心路/争议 → xhs；给路人看的人物/产业分析 → gzh；两者都占 → both；命中 skip 判据 → skip；拿不准 → \"xhs\"（默认）。")
 
 
@@ -274,6 +275,9 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
         return {}
+    from services import routing as _routing
+    _txt = {r["key"][:12]: " ".join([r.get("title") or "", r.get("ja") or "",
+                                     (r.get("body") or "")[:800]]) for r in cands}
     out, decisions = {}, []
     for k, v in (d.items() if isinstance(d, dict) else []):
         if isinstance(v, dict):
@@ -283,6 +287,13 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
             ch, reason = str(v).strip().lower(), ""
         if ch not in ("xhs", "gzh", "both", "skip"):
             continue
+        # 硬规则：坂道系 → xhs 门必过（**不跳过 gzh 判断**；gzh 门也过 → both；skip 不覆盖）
+        if ch != "skip" and _routing.force_xhs(_txt.get(k, "")):
+            if ch in ("gzh", "both"):
+                ch = "both"
+                reason = (reason + "；坂道系硬规则→xhs 门必过").strip("；")
+            else:
+                ch = "xhs"
         decisions.append((k, ch, reason))
         if ch in ("gzh", "both", "skip"):   # xhs 不列=默认
             out[k] = ch

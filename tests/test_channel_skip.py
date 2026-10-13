@@ -35,3 +35,27 @@ def test_write_one_skip_short_circuit():
     r = w.write_one(cand, dry_run=True)
     assert r.get("skipped") is True and r.get("channel") == "skip"
     assert any("skip" in p for p in r.get("problems") or [])
+
+
+def test_judge_channels_sakamichi_hard_rule(monkeypatch):
+    """坂道系 → xhs 门必过：LLM 判 gzh 时升级为 both（不跳过 gzh 判断）。"""
+    import json
+    k = "a" * 40
+    pkg = {"rows": [{"key": k, "title": "齐藤京子出道10年转身当歌手",
+                     "ja": "元日向坂46・齊藤京子 芸能活動10周年", "body": ""}], "entities": {}}
+    monkeypatch.setattr(review.llm, "chat",
+                        lambda *a, **kw: json.dumps({"aaaaaaaaaaaa": {"channel": "gzh", "reason": "人物深度"}}))
+    monkeypatch.setattr(review, "_log_channels", lambda *a, **kw: None)
+    out = review.judge_channels("2026-10-13", pkg, {"aaaaaaaaaaaa": "A"})
+    assert out.get("aaaaaaaaaaaa") == "both", out
+
+
+def test_judge_channels_skip_not_overridden_by_sakamichi(monkeypatch):
+    import json
+    k = "a" * 40
+    pkg = {"rows": [{"key": k, "title": "乃木坂46 纯榜单", "ja": "乃木坂46", "body": ""}], "entities": {}}
+    monkeypatch.setattr(review.llm, "chat",
+                        lambda *a, **kw: json.dumps({"aaaaaaaaaaaa": {"channel": "skip", "reason": "纯榜单"}}))
+    monkeypatch.setattr(review, "_log_channels", lambda *a, **kw: None)
+    out = review.judge_channels("2026-10-13", pkg, {"aaaaaaaaaaaa": "A"})
+    assert out.get("aaaaaaaaaaaa") == "skip", out
