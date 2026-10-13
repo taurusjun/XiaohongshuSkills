@@ -52,9 +52,11 @@ def diff(before, after):
 
 
 def record(run, scope, key, usage, model=""):
+    u = usage or {}
+    if int(u.get("calls") or 0) == 0 and int(u.get("total_tokens") or 0) == 0:
+        return                                   # 0 用量不落（避免测试/mock 噪音）
     ensure()
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    u = usage or {}
     with _db() as c:
         c.execute("INSERT INTO token_usage (ts,run,scope,key,model,calls,prompt_tokens,"
                   "completion_tokens,total_tokens,cache_hit_tokens) VALUES (?,?,?,?,?,?,?,?,?,?)",
