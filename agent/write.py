@@ -49,7 +49,8 @@ def pick_candidates(n=0):
             and not (r.get("rewritten_content") or "")
             and not (r.get("wechat_content") or "")        # gzh-only 已写稿 → 不再重跑
             # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑
-            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
+            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))
+            and (r.get("channel_hint") or "").strip().lower() != "skip"]   # review 判 skip → 不写
     try:                                             # 消费跳过清单：纯重复不再重写
         _sk = _batches.skipped_map(_batches.recent())
         if _sk:
@@ -618,6 +619,11 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
         return {"key": cand["key"][:12], "full_key": cand["key"], "ok": True, "bullet": True,
                 "attempts": 0, "channel": "xhs", "title": "", "text": "", "body": 0, "h2": 0,
                 "kana": 0, "method": "bullet", "score": 0, "related": "", "problems": [], "versions": []}
+    if (cand.get("channel_hint") or "").strip().lower() == "skip":
+        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
+                "attempts": 0, "channel": "skip", "title": "", "text": "", "body": 0, "h2": 0,
+                "kana": 0, "method": "", "score": 0, "related": "",
+                "problems": ["渠道判定=skip（不写稿）"], "versions": []}
     _log(f"▶ {cand['key'][:12]} 《{(cand.get('title') or '')[:20]}》 fmt={cand.get('format')} lf={cand.get('is_long_form')}")
     pkg = prepare_package(cand)
     method = pkg["method"]
@@ -868,7 +874,8 @@ def pick_rewrite_today():
     base = [r for r in rows if (r.get("created_at") or "").startswith(today)
             and (r.get("content_ja") or "")
             and r.get("format") in ("story", "news", "ranking", "comparison")
-            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))]
+            and not ((r.get("akb_type") or "") == "bullet" and r.get("preselected"))
+            and (r.get("channel_hint") or "").strip().lower() != "skip"]   # review 判 skip → 不写
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     picks, used = [], set()
     for r in sorted(graded, key=lambda x: -(x.get("title_score") or 0)):

@@ -197,18 +197,20 @@ def prepare_package(date, hist_k=6):
     return {"rows": rows, "prev": prev, "hist": hist, "pub": pub, "fb_ctx": fb_ctx, "entities": ent}
 
 
-CH_SYS = ("你是渠道判定器。xhs 与 gzh 是**两条互相独立**的适配判断——对每篇候选，**分别**判断它是否适合 xhs、"
-          "是否适合 gzh（两门互不排斥）：两门都过 → \"both\"；只过 xhs → \"xhs\"；只过 gzh → \"gzh\"；都不过 → \"xhs\"（默认）。"
-          "只输出严格 JSON：{\"<key前12位>\": {\"channel\": \"xhs|gzh|both\", \"reason\": \"<一句话依据>\"}}。\n"
-          "【xhs 门｜给粉丝看：有趣/有画面/有情绪】艺人日常/趣闻/穿搭/反差萌/亲子/怀旧；争议/八卦/恋爱/同框/私物/综艺花絮；"
+CH_SYS = ("你是渠道判定器。对每篇候选，**分别独立**判断它是否适合 xhs、是否适合 gzh（两门互不排斥），并判断是否应当**跳过**。"
+          "输出 channel ∈ \"xhs|gzh|both|skip\"：两门都过 → \"both\"；只过 xhs → \"xhs\"；只过 gzh → \"gzh\"；都不过 → \"xhs\"（默认）；命中跳过判据 → \"skip\"。"
+          "只输出严格 JSON：{\"<key前12位>\": {\"channel\": \"xhs|gzh|both|skip\", \"reason\": \"<一句话依据>\"}}。\n"
+          "【xhs 门｜给粉丝看：有趣/有画面/有情绪】艺人日常/趣闻/穿搭/反差萌/亲子/怀旧；**争议/八卦/恋爱/爆笑短讯**/同框/私物/综艺花絮"
+          "（争议型素材在小红书天然有流量；男团粉丝争议/私物/同框/综艺花絮也走 xhs）；坂道系/女艺人/AKB大TOP；"
           "偶像成长/逆袭/**人物心路**（粉丝向情感共鸣，有画面感）；简单事件（一句话能说清，有事件/时间/引语）。\n"
           "【gzh 门｜给路人看：有深度/需思考】深度分析（电影/音乐/摄影/美学等专业解读）；行业分析（娱乐产业/经纪/厂牌/销量/榜单/战略）；"
           "**人物深度**长访（完整叙事弧/公共议题）；跨文化分析（日本娱乐现象→中国语境）；多人物对照/行业历史梳理；"
           "该人物/题材**近期连续0曝光 ≥3 条**（见每条『连续0曝光N条』）→ 改道深度 gzh；"
           "成人产业/风俗/AV 的**人物弧光/公共议题**（歧视/权利/职业选择；非猎奇操作）→ gzh。\n"
-          "【明确 both】① 争议性话题（争议/对立/舆论撕扯/立场冲突）——既是 xhs 看点又是 gzh 公共议题；"
-          "② **人物心路（xhs）＋ 人物深度（gzh）兼有**（既有情感共鸣，又有完整叙事弧/背景分析）；③ 其他同时满足两门的。\n"
-          "口诀：给粉丝看的爆料/日常/心路 → xhs；给路人看的人物/产业分析 → gzh；两者都占 → both；拿不准 → \"xhs\"（默认）。")
+          "【明确 both】① **人物心路（xhs）＋ 人物深度（gzh）兼有**（既有情感共鸣，又有完整叙事弧/背景分析）；② 其他同时满足两门的。\n"
+          "【skip（不写稿）】纯榜单/列表无上下文；品牌合作软文（>50%产品参数）；セクシー女優写真宣传；与日娱无关（体育/经济/政治无关）；"
+          "夜店/风俗/AV 的**行业操作细节/猎奇本身**（非人物弧光）。\n"
+          "口诀：给粉丝看的爆料/日常/心路/争议 → xhs；给路人看的人物/产业分析 → gzh；两者都占 → both；命中 skip 判据 → skip；拿不准 → \"xhs\"（默认）。")
 
 
 def _entity_pub(ents, m=8):
@@ -279,10 +281,10 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
             reason = str(v.get("reason") or "").strip()
         else:
             ch, reason = str(v).strip().lower(), ""
-        if ch not in ("xhs", "gzh", "both"):
+        if ch not in ("xhs", "gzh", "both", "skip"):
             continue
         decisions.append((k, ch, reason))
-        if ch in ("gzh", "both"):          # xhs 不列=默认
+        if ch in ("gzh", "both", "skip"):   # xhs 不列=默认
             out[k] = ch
     _log_channels(date, decisions)
     return out
