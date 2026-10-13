@@ -163,6 +163,39 @@ def is_china_related(title: str) -> bool:
 
 
 
+_USAGE = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+          "cache_hit_tokens": 0, "cache_miss_tokens": 0}
+
+
+def usage() -> dict:
+    return dict(_USAGE)
+
+
+def format_usage(label="fetch") -> str:
+    u = _USAGE
+    return (f"[token] {label} 调用={u['calls']} 输入={u['prompt_tokens']} 输出={u['completion_tokens']} "
+            f"合计={u['total_tokens']}（缓存命中={u['cache_hit_tokens']}）")
+
+
+def _add_usage(u) -> None:
+    u = u or {}
+    _USAGE["calls"] += 1
+    _USAGE["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+    _USAGE["completion_tokens"] += int(u.get("completion_tokens") or 0)
+    _USAGE["total_tokens"] += int(u.get("total_tokens") or 0)
+    _USAGE["cache_hit_tokens"] += int(u.get("prompt_cache_hit_tokens") or 0)
+    _USAGE["cache_miss_tokens"] += int(u.get("prompt_cache_miss_tokens") or 0)
+
+
+def record_usage(run="fetch") -> None:
+    """把本次进程累计的 token 用量落 token_usage（run=fetch）。"""
+    try:
+        from services import token_usage as _tu
+        _tu.record(run, "run", "", _USAGE)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
                  response_format: dict | None = None, temperature: float = 0.7,
                  thinking_disabled: bool = False) -> str:
@@ -192,7 +225,9 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
                 timeout=(30, 600),
             )
             if resp.status_code == 200:
-                msg = resp.json().get("choices", [{}])[0].get("message", {})
+                _j = resp.json()
+                _add_usage(_j.get("usage"))
+                msg = _j.get("choices", [{}])[0].get("message", {})
                 content = msg.get("content", "").strip()
                 if not content:
                     reasoning = msg.get("reasoning_content", "").strip()

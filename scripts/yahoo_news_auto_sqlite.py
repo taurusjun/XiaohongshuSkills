@@ -221,6 +221,12 @@ def _run_fetch(args):
 
     run_parallel(keywords, args.workers)
 
+    try:
+        from yahoo_common import record_usage, format_usage
+        record_usage("fetch")
+        print(format_usage("fetch"), flush=True)
+    except Exception:  # noqa: BLE001
+        pass
 
 if __name__ == '__main__':
     main()
