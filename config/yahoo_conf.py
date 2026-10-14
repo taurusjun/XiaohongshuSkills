@@ -71,3 +71,7 @@ def get_proxy_env() -> dict:
 
 # 封面图视觉评分开关（需 VISION_MODEL 支持图片输入，暂不可用）
 VISION_ENABLED = False
+
+# 代理断开时，对不需要代理的域名自动改走直连重试（requests 全局生效，见 config/net_fallback.py）
+from config import net_fallback as _net_fallback
+_net_fallback.install()
