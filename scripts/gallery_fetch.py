@@ -2706,6 +2706,12 @@ def _scrape_ddnavi(gallery_url: str) -> list[str]:
     return scrape(gallery_url)
 
 
+def _scrape_rollingstonejapan(gallery_url: str) -> list[str]:
+    """rollingstonejapan.com 图集（独立脚本 scripts/scrapers/rollingstonejapan_dl.py）"""
+    from scrapers.rollingstonejapan_dl import scrape
+    return scrape(gallery_url)
+
+
 def _scrape_bunshun(gallery_url: str) -> list[str]:
     """bunshun.jp 图集（独立脚本 scripts/scrapers/bunshun_dl.py）"""
     from scrapers.bunshun_dl import scrape
@@ -3080,6 +3086,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "news-postseven.com" in domain:
         images = _scrape_postseven(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "rollingstonejapan.com" in domain:
+        images = _scrape_rollingstonejapan(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "ddnavi.com" in domain:
