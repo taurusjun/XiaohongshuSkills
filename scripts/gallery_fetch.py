@@ -1550,17 +1550,21 @@ def _scrape_thefirsttimes_sns(gallery_url: str) -> list[str]:
     """
     import re
     from urllib.parse import urlparse
+    from sqlite_db import _log_db_error
 
     p = urlparse(gallery_url)
     base = f"{p.scheme}://{p.netloc}"
-    article_id_m = re.search(r'/news/(\d+)/', p.path)
+    # 栏目不止 /news/，还有 /report/ 等：/{section}/{article_id}/attachment-sns/...
+    article_id_m = re.search(r'^/([a-z]+)/(\d+)/', p.path)
     if not article_id_m:
+        print(f"  ⚠️ thefirsttimes 无法识别的 URL 结构: {gallery_url}")
+        _log_db_error(f"thefirsttimes 无法识别的 URL 结构: {gallery_url}")
         return []
-    article_id = article_id_m.group(1)
+    section, article_id = article_id_m.group(1), article_id_m.group(2)
 
     # 获取总页数
     headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
-    base_sns = f"{base}/news/{article_id}/attachment-sns"
+    base_sns = f"{base}/{section}/{article_id}/attachment-sns"
     page_infos: list[tuple[str, str]] = []  # (page_url, instagram_post_id)
     try:
         r = requests.get(f"{base_sns}/1/", headers=headers, proxies=_get_proxies(), timeout=15)
@@ -1641,14 +1645,18 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
     """
     import re
     from urllib.parse import urlparse
+    from sqlite_db import _log_db_error
 
     headers = {**HEADERS, "Referer": "https://www.thefirsttimes.jp/"}
     p = urlparse(gallery_url)
-    m_article = re.search(r'/news/(\d+)/', p.path)
+    # 栏目不止 /news/，还有 /report/ 等：/{section}/{article_id}/attachment(-sns)/...
+    m_article = re.search(r'^/([a-z]+)/(\d+)/', p.path)
     if not m_article:
+        print(f"  ⚠️ thefirsttimes 无法识别的 URL 结构: {gallery_url}")
+        _log_db_error(f"thefirsttimes 无法识别的 URL 结构: {gallery_url}")
         return []
-    article_id = m_article.group(1)
-    article_url = f"{p.scheme}://{p.netloc}/news/{article_id}/"
+    section, article_id = m_article.group(1), m_article.group(2)
+    article_url = f"{p.scheme}://{p.netloc}/{section}/{article_id}/"
 
     # ── SNS embed 路径 ────────────────────────────────────
     if "attachment-sns" in gallery_url:
@@ -1673,14 +1681,14 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
         try:
             r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
-            slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+            slug_pattern = re.compile(rf"/{section}/{article_id}/attachment/([^/]+)/?$")
             for a in s.find_all("a", href=True):
                 if "attachment-sns" in a["href"]:
                     continue
                 m = slug_pattern.search(a["href"])
                 if m:
                     first_slug = m.group(1)
-                    real_url = f"{p.scheme}://{p.netloc}/news/{article_id}/attachment/{first_slug}/"
+                    real_url = f"{p.scheme}://{p.netloc}/{section}/{article_id}/attachment/{first_slug}/"
                     print(f"  🔄 找到图片版入口: {real_url}")
                     return _scrape_thefirsttimes(real_url)
         except Exception as e:
@@ -1696,7 +1704,7 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
         print(f"  ⚠️ thefirsttimes 抓取文章页失败: {e}")
         return []
 
-    slug_pattern = re.compile(rf"/news/{article_id}/attachment/([^/]+)/?$")
+    slug_pattern = re.compile(rf"/{section}/{article_id}/attachment/([^/]+)/?$")
     slugs: list[str] = []
     seen: set[str] = set()
     for a in s.find_all("a", href=True):
@@ -1716,9 +1724,10 @@ def _scrape_thefirsttimes(gallery_url: str) -> list[str]:
     images: list[str] = []
     base = f"{p.scheme}://{p.netloc}"
     for slug in slugs[:MAX_IMAGES]:
-        page_url = f"{base}/news/{article_id}/attachment/{slug}/"
-        imgs = _scrape_thefirsttimes_page(page_url, headers)
-        images.extend(imgs)
+        page_url = f"{base}/{section}/{article_id}/attachment/{slug}/"
+        for u in _scrape_thefirsttimes_page(page_url, headers):
+            if u not in images:  # 有的排版每个附件页都列出整组图片，跨页去重
+                images.append(u)
         if len(images) >= MAX_IMAGES:
             break
         time.sleep(0.2)
