@@ -2229,44 +2229,60 @@ function _lexJudge(){qToast('自动判定中…（LLM）');fetch('/api/lexicon/j
 function _lexExport(){fetch('/api/lexicon/export',{method:'POST'}).then(function(r){return r.json();}).then(function(d){qToast('已导出快照 '+(d.count||0)+' 条');});}
 
 
+function _tkToday(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function _qLoadToken(){
   var qb=document.getElementById('queueBody'); if(!qb) return;
-  qb.innerHTML=_qHead('💰 Token 用量','三层：按 run 汇总 / 按天汇总 / 明细（分页）')
+  qb.innerHTML=_qHead('💰 Token 用量','三层：按 run 汇总 / 按天汇总 / 明细（默认当天，点日期切换；write article 折叠在 write run 下）')
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 2px 8px;font-size:12px;color:var(--text2)">汇总近'
     +'<input id="tk_days" type="number" value="30" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
-    +'　明细近<input id="tk_ddays" type="number" value="3" style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">天'
-    +'　run <select id="tk_runsel" onchange="_qLoadToken()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px"><option value="">全部</option><option>write</option><option>review</option><option>split</option></select>'
-    +'<button class="btn btn-outline btn-sm" onclick="_qLoadToken()">查询</button></div>'
+    +'　明细日期<input id="tk_date" type="date" value="'+_tkToday()+'" onchange="_tkFetch()" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px">'
+    +'　run <select id="tk_runsel" onchange="_tkFetch()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px"><option value="">全部</option><option>write</option><option>review</option><option>fetch</option><option>split</option></select>'
+    +'<button class="btn btn-outline btn-sm" onclick="_tkFetch()">查询</button></div>'
     +_qCard('<div id="tk_run"></div>')
     +_qCard('<div id="tk_day"></div>')
     +_qCard('<div id="tk_rows">'+_qWait()+'</div>');
   _tkFetch();
 }
-var _tkPage=1;
+function _tkPickDate(d){var e=document.getElementById('tk_date');if(e)e.value=d;_tkFetch();}
+function _tkToggle(rid){
+  var rows=document.querySelectorAll('tr[data-parent="'+rid+'"]'); if(!rows.length) return;
+  var open=rows[0].style.display!=='none';
+  Array.prototype.forEach.call(rows,function(r){r.style.display=open?'none':'';});
+  var c=document.querySelector('tr[data-rid="'+rid+'"] .tk-caret'); if(c) c.textContent=open?'▶':'▼';
+}
+function _tkCells(x){
+  return '<td>'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td>'
+    +'<td style="font-size:11px">'+(x.key?('<a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a>'):'')+'</td>'
+    +'<td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td>';
+}
 function _tkFetch(){
   var days=(document.getElementById('tk_days')||{}).value||'30';
-  var ddays=(document.getElementById('tk_ddays')||{}).value||'3';
+  var date=(document.getElementById('tk_date')||{}).value||_tkToday();
   var run=(document.getElementById('tk_runsel')||{}).value||'';
-  fetch('/api/token-usage?days='+encodeURIComponent(days)+'&detail_days='+encodeURIComponent(ddays)+'&run='+encodeURIComponent(run)+'&page='+_tkPage+'&page_size=100')
+  fetch('/api/token-usage?days='+encodeURIComponent(days)+'&date='+encodeURIComponent(date)+'&run='+encodeURIComponent(run))
     .then(function(r){return r.json();}).then(function(d){
-    var by=d.by_run||[], bd=d.by_day||[], rows=d.rows||[];
+    var by=d.by_run||[], bd=d.by_day||[], gs=d.groups||[];
     var rs=document.getElementById('tk_run');
     if(rs) rs.innerHTML=(by.length?'<table>'+_qTh([{t:'run',w:'90px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
       by.map(function(x){return '<tr><td>'+_qEsc(x.run)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
     var ds=document.getElementById('tk_day');
-    if(ds) ds.innerHTML=(bd.length?'<table>'+_qTh([{t:'日期',w:'110px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
-      bd.map(function(x){return '<tr><td>'+_qEsc(x.d)+'</td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
+    if(ds) ds.innerHTML=(bd.length?'<table>'+_qTh([{t:'日期',w:'120px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
+      bd.map(function(x){var sel=(x.d===date);return '<tr'+(sel?' style="background:#eef4ff"':'')+'><td><a href="#" data-d="'+x.d+'" onclick="_tkPickDate(this.getAttribute(\'data-d\'));return false" style="color:#2563eb">'+_qEsc(x.d)+'</a></td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
     var t=document.getElementById('tk_rows');
-    var total=d.total||0, lp=Math.max(1,Math.ceil(total/(d.page_size||100))), pg=d.page||1;
     if(t){
-      var html=(rows.length?'<table>'+_qTh([{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>'+
-        rows.map(function(x){return '<tr><td style="font-size:11px;color:#666">'+_qEsc((x.ts||'').slice(0,19))+'</td><td>'+_qEsc(x.run)+'</td><td>'+_qEsc(x.scope)+'</td><td style="font-size:11px">'+(x.key?('<a href="/detail/'+_qEsc(x.key)+'" target="_blank" title="'+_qEsc(x.key)+'">'+_qEsc(x.title||x.key)+'</a>'):'')+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
-      html+='<div class="table-foot"><span class="table-foot-info">第 '+pg+' / '+lp+' 页 · 共 '+total+' 条</span>'
-        +'<button class="pg-btn" onclick="_tkGo(1)"'+(pg<=1?' disabled style="opacity:.4"':'')+'>«</button>'
-        +'<button class="pg-btn" onclick="_tkGo('+(pg-1)+')"'+(pg<=1?' disabled style="opacity:.4"':'')+'>‹</button>'
-        +'<button class="pg-btn" onclick="_tkGo('+(pg+1)+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>›</button>'
-        +'<button class="pg-btn" onclick="_tkGo('+lp+')"'+(pg>=lp?' disabled style="opacity:.4"':'')+'>»</button></div>';
-      t.innerHTML=html;
+      var head='<table>'+_qTh([{t:'',w:'28px'},{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>';
+      var body='';
+      gs.forEach(function(g){
+        var p=g.row, kids=g.children||[];
+        if(p){
+          body+='<tr data-rid="'+p.id+'" '+(kids.length?'onclick="_tkToggle('+p.id+')" style="cursor:pointer"':'')+'>'
+            +'<td class="tk-caret" style="text-align:center;color:#888">'+(kids.length?'▶':'')+'</td>'+_tkCells(p)+'</tr>';
+          kids.forEach(function(k){body+='<tr data-parent="'+p.id+'" style="display:none;background:#fafafa"><td></td>'+_tkCells(k)+'</tr>';});
+        } else {
+          kids.forEach(function(k){body+='<tr><td></td>'+_tkCells(k)+'</tr>';});
+        }
+      });
+      t.innerHTML=(gs.length?head+body+'</tbody></table>':_qEmpty('暂无'))+'<div class="table-foot"><span class="table-foot-info">'+_qEsc(date)+' · 共 '+(d.total||0)+' 条</span></div>';
     }
   });
 }
@@ -4056,19 +4072,12 @@ def api_lexicon_export():
 def api_token_usage():
     from services import token_usage as _tu
     from services import paths as _p
+    import datetime as _dt
+    from collections import defaultdict as _dd
     days = int(request.args.get('days', 30))
-    ddays = int(request.args.get('detail_days', 3))
+    date = (request.args.get('date') or '').strip() or _dt.datetime.now().strftime("%Y-%m-%d")
     run = (request.args.get('run') or '').strip() or None
-    try:
-        page = max(1, int(request.args.get('page') or 1))
-    except Exception:
-        page = 1
-    try:
-        ps = min(200, max(10, int(request.args.get('page_size') or 100)))
-    except Exception:
-        ps = 100
-    rows = _tu.detail(days=ddays, run=run, page=page, page_size=ps)
-    total = _tu.detail_count(days=ddays, run=run)
+    rows = _tu.detail_on(date, run)          # 当天全部明细（id 升序）
     keys = list({r["key"] for r in rows if r.get("key")})
     if keys:
         import sqlite3 as _sq
@@ -4082,8 +4091,19 @@ def api_token_usage():
             conn.close()
         for r in rows:
             r["title"] = tm.get(r["key"], "")
+    # 分组：scope=run 的行作父，其同名 run 的 scope=article 行作子（article 记录在 run 之前）
+    groups, pending = [], _dd(list)
+    for r in rows:
+        if (r.get("scope") or "") == "run":
+            groups.append({"row": r, "children": pending.pop(r.get("run") or "", [])})
+        else:
+            pending[r.get("run") or ""].append(r)
+    for _rn, _kids in pending.items():          # 无父的散条
+        if _kids:
+            groups.append({"row": None, "children": _kids})
+    groups.reverse()                             # 新在前
     return jsonify({"by_run": _tu.summary(days).get("by_run", []), "by_day": _tu.by_day(days, run),
-                    "rows": rows, "total": total, "page": page, "page_size": ps})
+                    "date": date, "groups": groups, "total": len(rows)})
 
 
 @app.route('/api/topic-cache', methods=['GET'])

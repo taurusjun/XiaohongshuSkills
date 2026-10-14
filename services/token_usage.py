@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 from services import paths
 
-__all__ = ["ensure", "record", "diff", "summary", "by_day", "detail", "detail_count", "list_recent"]
+__all__ = ["ensure", "record", "diff", "summary", "by_day", "detail", "detail_on", "detail_count", "list_recent"]
 
 _DDL = """CREATE TABLE IF NOT EXISTS token_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +116,18 @@ def _detail_where(days, run):
     if run:
         sql += " AND run=?"; args.append(run)
     return sql, args
+
+
+def detail_on(date, run=None):
+    """某一天的**全部**明细（id 升序，供「run 折叠 article」分组）。"""
+    ensure()
+    sql = "SELECT * FROM token_usage WHERE substr(ts,1,10)=?"
+    args = [date]
+    if run:
+        sql += " AND run=?"; args.append(run)
+    sql += " ORDER BY id ASC"
+    with _db() as c:
+        return [dict(r) for r in c.execute(sql, args).fetchall()]
 
 
 def detail_count(days=3, run=None):
