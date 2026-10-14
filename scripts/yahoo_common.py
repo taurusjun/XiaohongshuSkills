@@ -187,12 +187,13 @@ def _add_usage(u) -> None:
     _USAGE["cache_miss_tokens"] += int(u.get("prompt_cache_miss_tokens") or 0)
 
 
-_CUR_KEY = {"k": ""}
+import threading as _threading
+_CUR = _threading.local()      # 并行抓取：每线程独立的当前 key
 
 
 def set_current_key(k) -> None:
-    """设置当前处理的文章 key（每次调用落库时带上，便于「每篇评分次数」统计）。"""
-    _CUR_KEY["k"] = (k or "")[:12]
+    """设置当前线程处理的文章 key（每次调用落库时带上，便于「每篇评分次数」统计）。"""
+    _CUR.key = (k or "")[:12]
 
 
 def _record_call(u, stage: str = "") -> None:
@@ -201,7 +202,7 @@ def _record_call(u, stage: str = "") -> None:
         return
     try:
         from services import token_usage as _tu
-        _tu.record("fetch", "call", _CUR_KEY["k"], {
+        _tu.record("fetch", "call", getattr(_CUR, "key", ""), {
             "calls": 1,
             "prompt_tokens": u.get("prompt_tokens"),
             "completion_tokens": u.get("completion_tokens"),
