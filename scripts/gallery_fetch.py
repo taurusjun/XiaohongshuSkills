@@ -111,6 +111,7 @@ GALLERY_SITES: dict[str, str] = {
     "nlab.itmedia.co.jp": ".article-thumb, article",
     "j-cast.com":         "article, .post-content",
     "huffingtonpost.jp":   "article, body",
+    "rollingstonejapan.com": "article, body",   # 专用 scraper：图集是 CSS background-image
 }
 
 # 这些站点的链接即使不含图集关键词也应被识别（如 /article/XXXXXX 形式）
