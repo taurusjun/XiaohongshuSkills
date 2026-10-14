@@ -2248,7 +2248,7 @@ function _tkPickDate(d){var e=document.getElementById('tk_date');if(e)e.value=d;
 function _tkFmt(v){v=Math.round(v||0); if(v>=1000000) return (v/1000000).toFixed(1)+'M'; if(v>=1000) return (v/1000).toFixed(0)+'k'; return ''+v;}
 function _tkChart(rows){
   if(!rows||!rows.length) return _qEmpty('暂无');
-  var data=rows.slice().reverse();                 // 旧→新
+  var data=rows.slice().reverse(); window._tkData=data;
   var W=800,H=220,PL=54,PR=16,PT=16,PB=34, iw=W-PL-PR, ih=H-PT-PB, n=data.length;
   var max=Math.max.apply(null,data.map(function(x){return x.total_tokens||0;})); if(!max) max=1;
   var X=function(i){return PL+(n<=1?iw/2:iw*i/(n-1));};
@@ -2258,10 +2258,29 @@ function _tkChart(rows){
     grid+='<line x1="'+PL+'" y1="'+gy+'" x2="'+(W-PR)+'" y2="'+gy+'" stroke="#eee"/>'
       +'<text x="'+(PL-6)+'" y="'+(gy+3)+'" text-anchor="end" font-size="10" fill="#999">'+_tkFmt(gv)+'</text>';}
   var pts=data.map(function(x,i){return X(i)+','+Y(x.total_tokens);}).join(' ');
-  var dots=data.map(function(x,i){return '<circle cx="'+X(i)+'" cy="'+Y(x.total_tokens)+'" r="3" fill="#2563eb"><title>'+x.d+'：合计 '+x.total_tokens+'（'+x.calls+' 调用，'+x.n+' 次）</title></circle>';}).join('');
+  var dots=data.map(function(x,i){return '<circle cx="'+X(i)+'" cy="'+Y(x.total_tokens)+'" r="3" fill="#2563eb"/>';}).join('');
+  var hits=data.map(function(x,i){return '<circle cx="'+X(i)+'" cy="'+Y(x.total_tokens)+'" r="14" fill="transparent"/>';}).join('');
   var xl=data.map(function(x,i){return '<text x="'+X(i)+'" y="'+(H-10)+'" text-anchor="middle" font-size="9" fill="#999">'+x.d.slice(5)+'</text>';}).join('');
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;max-height:240px">'+grid
-    +'<polyline points="'+pts+'" fill="none" stroke="#2563eb" stroke-width="2"/>'+dots+xl+'</svg>';
+  return '<div style="position:relative"><svg id="tk_svg" viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;max-height:240px;cursor:crosshair">'
+    +grid+'<polyline points="'+pts+'" fill="none" stroke="#2563eb" stroke-width="2"/>'+dots+hits+xl+'</svg>'
+    +'<div id="tk_tip" style="position:absolute;display:none;pointer-events:none;background:rgba(17,24,39,.92);color:#fff;font-size:11px;line-height:1.5;padding:4px 8px;border-radius:6px;white-space:nowrap;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.25)"></div></div>';
+}
+function _tkBind(){
+  var svg=document.getElementById('tk_svg'), tip=document.getElementById('tk_tip');
+  if(!svg||!tip||!window._tkData) return;
+  var W=800,PL=54,PR=16,iw=W-PL-PR;
+  svg.addEventListener('mousemove',function(e){
+    var r=svg.getBoundingClientRect(), n=window._tkData.length;
+    var vx=(e.clientX-r.left)/r.width*W;
+    var i=Math.round(n<=1?0:(vx-PL)/iw*(n-1)); i=Math.max(0,Math.min(n-1,i));
+    var x=window._tkData[i];
+    tip.innerHTML='<b>'+x.d+'</b>　合计 '+x.total_tokens+'　'+x.calls+' 调用　'+x.n+' 条';
+    tip.style.display='block';
+    var rx=e.clientX-r.left, tw=tip.offsetWidth;
+    tip.style.left=Math.max(0,Math.min(r.width-tw, rx-tw/2))+'px';
+    tip.style.top=(e.clientY-r.top-40)+'px';
+  });
+  svg.addEventListener('mouseleave',function(){tip.style.display='none';});
 }
 function _tkToggle(rid){
   var rows=document.querySelectorAll('tr[data-parent="'+rid+'"]'); if(!rows.length) return;
@@ -2288,7 +2307,7 @@ function _tkFetch(){
     if(ds) ds.innerHTML=(bd.length?'<table>'+_qTh([{t:'日期',w:'120px'},{t:'次数',w:'70px'},{t:'调用',w:'70px'},{t:'输入',w:'110px'},{t:'输出',w:'90px'},{t:'合计',w:'110px'},{t:'缓存命中',w:'110px'}])+'<tbody>'+
       bd.map(function(x){var sel=(x.d===date);return '<tr'+(sel?' style="background:#eef4ff"':'')+'><td><a href="#" data-d="'+x.d+'" onclick="_tkPickDate(this.getAttribute(\'data-d\'));return false" style="color:#2563eb">'+_qEsc(x.d)+'</a></td><td>'+x.n+'</td><td>'+x.calls+'</td><td>'+x.prompt_tokens+'</td><td>'+x.completion_tokens+'</td><td><b>'+x.total_tokens+'</b></td><td>'+x.cache_hit_tokens+'</td></tr>';}).join('')+'</tbody></table>':_qEmpty('暂无'));
     var cs=document.getElementById('tk_chart');
-    if(cs) cs.innerHTML='<div style="font-size:12px;color:var(--text2);padding:0 2px 6px">近 '+days+' 天 · 每日 token 合计（悬停看明细）</div>'+_tkChart(bd);
+    if(cs){cs.innerHTML='<div style="font-size:12px;color:var(--text2);padding:0 2px 6px">近 '+days+' 天 · 每日 token 合计（悬停看明细）</div>'+_tkChart(bd);_tkBind();}
     var t=document.getElementById('tk_rows');
     if(t){
       var head='<table>'+_qTh([{t:'',w:'28px'},{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>';
