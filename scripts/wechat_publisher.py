@@ -382,7 +382,8 @@ def _resolve_cover_path(row, gallery: list) -> str:
                  (row["original_image_url"] or "").strip()):
         if not cand:
             continue
-        p = _download_cover(cand) if cand.startswith("http") else cand
+        from config.yahoo_conf import resolve_image_path as _rip
+        p = _download_cover(cand) if cand.startswith("http") else _rip(cand)
         if p and os.path.exists(p):
             return p
     return next(
@@ -455,6 +456,8 @@ def publish_article(article_key: str,
     content = r["wechat_content"] or r["content"]
     gallery_raw = r["gallery_images"]
     gallery = json.loads(gallery_raw) if isinstance(gallery_raw, str) and gallery_raw else []
+    from config.yahoo_conf import resolve_image_path as _rip
+    gallery = [_rip(x) for x in (gallery or [])]
 
     resolved_theme = _resolve_theme(theme_name)
     theme_data = load_theme(resolved_theme)

@@ -268,6 +268,8 @@ def export_to_md(news_key: str):
     gallery = row.get('gallery_images', [])
     if isinstance(gallery, str):
         gallery = json.loads(gallery)
+    from config.yahoo_conf import resolve_image_path as _rip
+    gallery = [_rip(x) for x in (gallery or [])]
     publish_mode = row.get('publish_mode', 'normal')
     rewritten = row.get('rewritten_content', '') or ''
 
@@ -409,6 +411,8 @@ def main():
     if isinstance(gallery, str):
         try: gallery = json.loads(gallery)
         except: gallery = []
+    from config.yahoo_conf import resolve_image_path as _rip
+    gallery = [_rip(x) for x in (gallery or [])]
 
     # 改写长文模式：用 rewritten 字段
     publish_mode = row.get('publish_mode', 'normal')

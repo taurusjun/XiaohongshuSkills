@@ -12,6 +12,24 @@ DB_PATH = os.environ.get("SQLITE_PATH",
 # 图集下载缓存目录
 GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.cache/xhs_images"))
 
+
+def resolve_image_path(p: str) -> str:
+    """把 DB 里存的图片绝对路径，按**当前** GALLERY_CACHE_DIR 归一化。
+
+    迁移场景：宿主写的 /Users/user/.cache/xhs_images/<key>/x.jpg 进容器后路径失效。
+    这里取「/xhs_images/」之后的相对部分，重新拼到当前缓存目录（配置化）。
+    存在的原路径原样返回；否则返回归一化后的候选（调用方再判存在）。
+    """
+    if not p:
+        return p
+    if os.path.exists(p):
+        return p
+    marker = "/xhs_images/"
+    if marker in p:
+        rel = p.split(marker, 1)[1]
+        return os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), rel)
+    return p
+
 # 多关键词并行抓取数量（默认 3）
 FETCH_PARALLEL = int(os.environ.get("FETCH_PARALLEL", "3"))
 

@@ -626,8 +626,9 @@ def api_metrics_history(key):
 
 @app.route('/local-image')
 def local_image():
-    """代理本地图片文件"""
-    path = request.args.get('path', '')
+    """代理本地图片文件（按当前 GALLERY_CACHE_DIR 归一化迁移来的绝对路径）"""
+    from config.yahoo_conf import resolve_image_path
+    path = resolve_image_path(request.args.get('path', ''))
     if not path or not os.path.exists(path):
         return '', 404
     return send_file(path)
