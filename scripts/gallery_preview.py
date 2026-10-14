@@ -19,7 +19,11 @@ from pathlib import Path
 import requests
 from flask import Flask, jsonify, render_template_string, request, send_file
 
-CACHE_DIR = Path.home() / ".cache" / "xhs_images"
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from config.yahoo_conf import GALLERY_CACHE_DIR
+CACHE_DIR = Path(os.path.expanduser(GALLERY_CACHE_DIR))
 
 app = Flask(__name__)
 _shutdown_event = threading.Event()

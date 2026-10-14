@@ -24,6 +24,11 @@ import os
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from config.yahoo_conf import GALLERY_CACHE_DIR
+CACHE_DIR = Path(os.path.expanduser(GALLERY_CACHE_DIR))
 
 
 def run(script: str, extra_args: list[str] = None, check=True) -> int:
@@ -40,7 +45,7 @@ def run(script: str, extra_args: list[str] = None, check=True) -> int:
 
 def has_pending_gallery() -> bool:
     """是否有待预览的图集（有 meta.json 且无 uploaded.flag）"""
-    cache_dir = Path.home() / ".cache" / "xhs_images"
+    cache_dir = CACHE_DIR
     if not cache_dir.exists():
         return False
     for d in cache_dir.iterdir():
@@ -51,7 +56,7 @@ def has_pending_gallery() -> bool:
 
 def has_pending_upload() -> bool:
     """是否有已勾选待上传（有 selected.json 且无 uploaded.flag）"""
-    cache_dir = Path.home() / ".cache" / "xhs_images"
+    cache_dir = CACHE_DIR
     if not cache_dir.exists():
         return False
     for d in cache_dir.iterdir():

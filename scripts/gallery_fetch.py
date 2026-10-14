@@ -24,7 +24,7 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-from config.yahoo_conf import get_proxies as _get_proxies
+from config.yahoo_conf import get_proxies as _get_proxies, GALLERY_CACHE_DIR
 
 import sys as _sys
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +46,7 @@ NOTION_HEADERS = {
     "Notion-Version": "2022-06-28",
 }
 
-CACHE_DIR = Path.home() / ".cache" / "xhs_images"
+CACHE_DIR = Path(os.path.expanduser(GALLERY_CACHE_DIR))
 MAX_IMAGES = 20
 BURN_SUBTITLES = True  # 可通过 --no-subtitles 关闭
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}

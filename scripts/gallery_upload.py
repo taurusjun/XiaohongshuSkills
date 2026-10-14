@@ -24,7 +24,11 @@ try:
 except ImportError:
     pass
 
-CACHE_DIR = Path.home() / ".cache" / "xhs_images"
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from config.yahoo_conf import GALLERY_CACHE_DIR
+CACHE_DIR = Path(os.path.expanduser(GALLERY_CACHE_DIR))
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",

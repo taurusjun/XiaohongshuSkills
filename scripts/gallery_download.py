@@ -9,14 +9,20 @@
 
 import argparse
 import subprocess
+import os
 import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from config.yahoo_conf import GALLERY_CACHE_DIR
+CACHE_DIR = Path(os.path.expanduser(GALLERY_CACHE_DIR))
 
 
 def has_pending_gallery() -> bool:
-    cache_dir = Path.home() / ".cache" / "xhs_images"
+    cache_dir = CACHE_DIR
     if not cache_dir.exists():
         return False
     return any(

@@ -13,7 +13,11 @@ import requests
 import websocket
 
 CDP = "http://127.0.0.1:9222"
-GALLERY_BASE = os.path.expanduser("~/.cache/xhs_images")
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from config.yahoo_conf import GALLERY_CACHE_DIR
+GALLERY_BASE = os.path.expanduser(GALLERY_CACHE_DIR)
 
 def find_xhs_tab():
     """找到小红书创作页的 CDP tab"""
