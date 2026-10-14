@@ -187,6 +187,32 @@ def _add_usage(u) -> None:
     _USAGE["cache_miss_tokens"] += int(u.get("prompt_cache_miss_tokens") or 0)
 
 
+_CUR_KEY = {"k": ""}
+
+
+def set_current_key(k) -> None:
+    """设置当前处理的文章 key（每次调用落库时带上，便于「每篇评分次数」统计）。"""
+    _CUR_KEY["k"] = (k or "")[:12]
+
+
+def _record_call(u, stage: str = "") -> None:
+    """每次 LLM 调用落一行 token_usage（run=fetch / scope=call / stage）。"""
+    if not u:
+        return
+    try:
+        from services import token_usage as _tu
+        _tu.record("fetch", "call", _CUR_KEY["k"], {
+            "calls": 1,
+            "prompt_tokens": u.get("prompt_tokens"),
+            "completion_tokens": u.get("completion_tokens"),
+            "total_tokens": u.get("total_tokens"),
+            "cache_hit_tokens": u.get("prompt_cache_hit_tokens"),
+            "cache_miss_tokens": u.get("prompt_cache_miss_tokens"),
+        }, stage=stage)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def record_usage(run="fetch") -> None:
     """把本次进程累计的 token 用量落 token_usage（run=fetch）。"""
     try:
@@ -198,7 +224,7 @@ def record_usage(run="fetch") -> None:
 
 def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
                  response_format: dict | None = None, temperature: float = 0.7,
-                 thinking_disabled: bool = False) -> str:
+                 thinking_disabled: bool = False, stage: str = "") -> str:
     """调用 DeepSeek API，返回文本；未配置或失败时返回空字符串"""
     if not LITELLM_API_KEY:
         return ""
@@ -226,7 +252,9 @@ def call_litellm(prompt: str, system_prompt: str = "", max_tokens: int = 1000,
             )
             if resp.status_code == 200:
                 _j = resp.json()
-                _add_usage(_j.get("usage"))
+                _u = _j.get("usage")
+                _add_usage(_u)
+                _record_call(_u, stage)
                 msg = _j.get("choices", [{}])[0].get("message", {})
                 content = msg.get("content", "").strip()
                 if not content:
@@ -276,7 +304,7 @@ def generate_video_caption(title_zh: str, summary: str, content: str, tags: list
 最后一句：互动召唤，≤10字，如"你怎么看？""你知道吗？"。
 全文80-120字，口语化，不要新闻腔。）"""
 
-    result = call_litellm(prompt, system_prompt="只输出短配文正文，不要任何分析、推理过程、字数检查。", max_tokens=3000, thinking_disabled=True)
+    result = call_litellm(prompt, system_prompt="只输出短配文正文，不要任何分析、推理过程、字数检查。", max_tokens=3000, thinking_disabled=True, stage="caption")
     if not result:
         return ""
 
@@ -391,6 +419,7 @@ def translate_and_classify(title_ja: str, body_ja: str = "") -> dict:
         prompt, max_tokens=300, temperature=0.2,
         response_format={"type": "json_object"},
         thinking_disabled=True,
+        stage="translate",
     ) if LITELLM_API_KEY else None
 
     title_zh = ""
@@ -436,6 +465,7 @@ def translate_title(title_ja: str) -> str:
             prompt=f"日译中，只输出一行中文译文，不要任何解释：\n\n{title_ja}\n\n译文：",
             max_tokens=300,
             thinking_disabled=True,
+            stage="translate",
         )
         if result and len(result) > 2 and result != title_ja:
             result = result.strip()
@@ -491,7 +521,7 @@ SEARCH_KEYWORD_TITLE_MAP: dict[str, str] = {
 def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str = "",
                                   keyword: str = "", body_text: str = "",
                                   hint: str = "", content_format: str = "news",
-                                  angle: str = "") -> Tuple[str, str, str, str, str, list]:
+                                  angle: str = "", stage: str = "generate") -> Tuple[str, str, str, str, str, list]:
     """生成 SEO标题、总结、新闻要点、我的解读、N1/N2词汇、话题标签列表
 
     Args:
@@ -566,7 +596,7 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 禁止使用：#看新闻学日语 #日语学习（这是偶像内容账号，非语言学习账号）
 再根据文章中的具体人名/团体名补充精准标签）"""
 
-    result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000), thinking_disabled=True)
+    result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000), thinking_disabled=True, stage=stage)
     if not result:
         return None  # LLM 调用失败，由调用方决定是否跳过
 
@@ -744,7 +774,7 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
                 return _json.loads(_m.group(0))
             raise
 
-    result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
+    result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True, stage="score")
     raw = None
     _perr = None
     for _try in range(2):
@@ -755,7 +785,7 @@ def evaluate_quality(title_zh: str, content: str, comment: str,
             break
         except Exception as _e:  # noqa: BLE001
             _perr = _e
-            result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True)
+            result = call_litellm(prompt, system_prompt=_SYS_SCORE, max_tokens=4000, response_format={"type": "json_object"}, temperature=0.1, thinking_disabled=True, stage="score_retry")
     if raw is None:
         print(f"    ⚠️ 评分JSON解析失败: {_perr} | 输出: {(result or '')[:150]}")
         try:
@@ -1266,6 +1296,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
         max_tokens=6000,
         temperature=0.4,
         response_format={"type": "json_object"},
+        stage="story",
         thinking_disabled=True,
     )
     if not result:
@@ -1355,7 +1386,7 @@ def generate_title_only(title_ja: str, content_ja: str,
                                  current_title=current_title, content_zh=content_zh,
                                  outro=outro)
     result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.7,
-                          response_format={"type": "json_object"}, thinking_disabled=True)
+                          response_format={"type": "json_object"}, thinking_disabled=True, stage="title_pass2")
     if not result:
         return ""
     # 占位符黑名单：prompt 模板示例值 + LLM 思考时常见垃圾占位符
@@ -1840,6 +1871,7 @@ def process_news_item(news: dict, no_translate: bool = False,
     
     原地修改并返回 news dict。
     """
+    set_current_key(extract_key_from_url(news.get('link', '')))
     # 1. 翻译 + AI 生成
     details = {}  # 默认空，当不翻译时 pub_time 可用 now()
     if LITELLM_API_KEY and not no_translate:
@@ -1981,6 +2013,7 @@ def process_news_item(news: dict, no_translate: bool = False,
                     body_text=news.get('body_text', ''),
                     hint=regen_hint,
                     angle=news.get('_angle', ''),
+                    stage="regen",
                 )
                 if generated is None:
                     print("    ⚠️ 重生成失败，保留当前内容")

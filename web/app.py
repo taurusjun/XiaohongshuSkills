@@ -2313,11 +2313,26 @@ function _tkFetch(){
       var head='<table>'+_qTh([{t:'',w:'28px'},{t:'时间',w:'140px'},{t:'run',w:'64px'},{t:'scope',w:'64px'},{t:'标题'},{t:'调用',w:'56px'},{t:'输入',w:'96px'},{t:'输出',w:'80px'},{t:'合计',w:'96px'},{t:'缓存',w:'96px'}])+'<tbody>';
       var body='';
       gs.forEach(function(g){
-        var p=g.row, kids=g.children||[];
+        var p=g.row, kids=g.children||[], stages=g.stages||[];
         if(p){
-          body+='<tr data-rid="'+p.id+'" '+(kids.length?'onclick="_tkToggle('+p.id+')" style="cursor:pointer"':'')+'>'
-            +'<td class="tk-caret" style="text-align:center;color:#888">'+(kids.length?'▶':'')+'</td>'+_tkCells(p)+'</tr>';
-          kids.forEach(function(k){body+='<tr data-parent="'+p.id+'" style="display:none;background:#fafafa"><td></td>'+_tkCells(k)+'</tr>';});
+          var nch=stages.length?stages.length:kids.length;
+          body+='<tr data-rid="'+p.id+'" '+(nch?'onclick="_tkToggle('+p.id+')" style="cursor:pointer"':'')+'>'
+            +'<td class="tk-caret" style="text-align:center;color:#888">'+(nch?'▶':'')+'</td>'+_tkCells(p)+'</tr>';
+          if(stages.length){
+            var rt=g.retry||{};
+            var pct=rt.total?Math.round(rt.n*100/rt.total):0;
+            body+='<tr data-parent="'+p.id+'" style="display:none;background:#fafafa"><td></td>'
+              +'<td colspan="9" style="font-size:11px;color:'+(rt.n?'#b45309':'#888')+'">⚠️ 重试 '+rt.n+' / 共 '+rt.total+' 次 = '+pct+'%，浪费 ~'+rt.tokens+' token</td></tr>';
+            stages.forEach(function(s){
+              var warn=(s.stage==='score_retry'||s.stage==='regen');
+              body+='<tr data-parent="'+p.id+'" style="display:none;background:#fafafa"><td></td>'
+                +'<td style="font-size:11px;color:'+(warn?'#b45309':'#888')+'">'+(warn?'⚠️ ':'')+_qEsc(s.stage)+'</td>'
+                +'<td style="font-size:11px;color:#888">'+s.n+' 次</td>'
+                +'<td colspan="2"></td><td>'+s.calls+'</td><td>'+s.prompt_tokens+'</td><td>'+s.completion_tokens+'</td><td><b>'+s.total_tokens+'</b></td><td>'+s.cache_hit_tokens+'</td></tr>';
+            });
+          } else {
+            kids.forEach(function(k){body+='<tr data-parent="'+p.id+'" style="display:none;background:#fafafa"><td></td>'+_tkCells(k)+'</tr>';});
+          }
         } else {
           kids.forEach(function(k){body+='<tr><td></td>'+_tkCells(k)+'</tr>';});
         }
@@ -4131,11 +4146,33 @@ def api_token_usage():
             conn.close()
         for r in rows:
             r["title"] = tm.get(r["key"], "")
-    # 分组：scope=run 的行作父，其同名 run 的 scope=article 行作子（article 记录在 run 之前）
+    # 分组：scope=run 的行作父，其同名 run 的子行作子（子行记录在 run 之前）
+    # fetch：子行按 stage 聚合 + 重试摘要；write：子行=逐篇 article
+    _RETRY_STAGES = {"score_retry", "regen"}
+
+    def _stage_agg(calls):
+        agg = {}
+        for c in calls:
+            st = (c.get("stage") or "").strip() or "(未标注)"
+            a = agg.setdefault(st, {"stage": st, "n": 0, "calls": 0, "prompt_tokens": 0,
+                                    "completion_tokens": 0, "total_tokens": 0, "cache_hit_tokens": 0})
+            a["n"] += 1
+            for f in ("calls", "prompt_tokens", "completion_tokens", "total_tokens", "cache_hit_tokens"):
+                a[f] += int(c.get(f) or 0)
+        return sorted(agg.values(), key=lambda x: -x["total_tokens"])
+
     groups, pending = [], _dd(list)
     for r in rows:
         if (r.get("scope") or "") == "run":
-            groups.append({"row": r, "children": pending.pop(r.get("run") or "", [])})
+            kids = pending.pop(r.get("run") or "", [])
+            g = {"row": r, "children": kids}
+            if (r.get("run") or "") == "fetch":
+                g["stages"] = _stage_agg(kids)
+                g["retry"] = {"n": sum(1 for c in kids if (c.get("stage") or "") in _RETRY_STAGES),
+                              "total": len(kids),
+                              "tokens": sum(int(c.get("total_tokens") or 0) for c in kids
+                                            if (c.get("stage") or "") in _RETRY_STAGES)}
+            groups.append(g)
         else:
             pending[r.get("run") or ""].append(r)
     for _rn, _kids in pending.items():          # 无父的散条

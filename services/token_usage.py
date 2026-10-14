@@ -22,7 +22,8 @@ _DDL = """CREATE TABLE IF NOT EXISTS token_usage (
   prompt_tokens INTEGER DEFAULT 0,
   completion_tokens INTEGER DEFAULT 0,
   total_tokens INTEGER DEFAULT 0,
-  cache_hit_tokens INTEGER DEFAULT 0
+  cache_hit_tokens INTEGER DEFAULT 0,
+  stage TEXT DEFAULT ''        -- fetch 阶段：translate|generate|story|title_pass2|score|score_retry|regen
 )"""
 
 
@@ -42,6 +43,10 @@ def ensure():
         c.execute(_DDL)
         c.execute("CREATE INDEX IF NOT EXISTS idx_token_ts ON token_usage(ts)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_token_key ON token_usage(key)")
+        try:                                  # 兼容旧库：补 stage 列
+            c.execute("ALTER TABLE token_usage ADD COLUMN stage TEXT DEFAULT ''")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def diff(before, after):
@@ -51,7 +56,7 @@ def diff(before, after):
     return {k: int((after or {}).get(k, 0)) - int((before or {}).get(k, 0)) for k in keys}
 
 
-def record(run, scope, key, usage, model=""):
+def record(run, scope, key, usage, model="", stage=""):
     u = usage or {}
     if int(u.get("calls") or 0) == 0 and int(u.get("total_tokens") or 0) == 0:
         return                                   # 0 用量不落（避免测试/mock 噪音）
@@ -59,16 +64,17 @@ def record(run, scope, key, usage, model=""):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _db() as c:
         c.execute("INSERT INTO token_usage (ts,run,scope,key,model,calls,prompt_tokens,"
-                  "completion_tokens,total_tokens,cache_hit_tokens) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                  "completion_tokens,total_tokens,cache_hit_tokens,stage) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                   (now, run, scope, key or "", model, u.get("calls", 0), u.get("prompt_tokens", 0),
-                   u.get("completion_tokens", 0), u.get("total_tokens", 0), u.get("cache_hit_tokens", 0)))
+                   u.get("completion_tokens", 0), u.get("total_tokens", 0), u.get("cache_hit_tokens", 0),
+                   stage or ""))
     try:
         log = paths.REPO_ROOT / "logs" / "token.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"{now}\t{run}\t{scope}\t{(key or '')[:12]}\t{u.get('calls',0)}\t"
                     f"{u.get('prompt_tokens',0)}\t{u.get('completion_tokens',0)}\t"
-                    f"{u.get('total_tokens',0)}\t{u.get('cache_hit_tokens',0)}\n")
+                    f"{u.get('total_tokens',0)}\t{u.get('cache_hit_tokens',0)}\t{stage or ''}\n")
     except Exception:  # noqa: BLE001
         pass
 
