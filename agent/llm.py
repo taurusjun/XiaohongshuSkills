@@ -103,7 +103,10 @@ def _base_url() -> str:
 def _apply_thinking(body: dict, thinking):
     """注入 {"thinking": {"type": enabled|disabled}}；默认 disabled（避免推理占用输出预算）。"""
     if thinking is None:
-        thinking = os.environ.get("LITELLM_THINKING", "disabled")
+        # 注意：环境变量「存在但为空串」时 os.environ.get(k, default) 会返回 ""，
+        # 之前 `if thinking:` 判假 → thinking 字段被丢弃 → 模型走默认（思考模式默认开）→
+        # 内容全进 reasoning_content、content 为空。这里用 or 兜底成 disabled。
+        thinking = (os.environ.get("LITELLM_THINKING") or "disabled").strip()
     if thinking:
         body["thinking"] = {"type": thinking}
     return body
@@ -126,7 +129,23 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, t
     _apply_thinking(body, thinking)
     data = _post(url, body, timeout)
     _add_usage(data)
-    return data["choices"][0]["message"]["content"]
+    ch0 = data["choices"][0]
+    msg = ch0["message"]
+    content = (msg.get("content") or "").strip()
+    if not content:
+        # 推理模型偶发把内容全放进 reasoning_content（content 为空）→ 兜底提取
+        reasoning = (msg.get("reasoning_content") or "").strip()
+        if reasoning:
+            import re as _re
+            m = _re.search(r"\{.*\}", reasoning, _re.S)
+            content = (m.group(0) if m else reasoning).strip()
+        if not content:
+            try:
+                from services import error_log as _elog
+                _elog.log(f"LLM 返回空 content（finish_reason={ch0.get('finish_reason')}）")
+            except Exception:  # noqa: BLE001
+                pass
+    return content
 
 
 def chat_raw(messages, model=None, temperature=0.0, max_tokens=None, tools=None, timeout=None, thinking=None) -> dict:

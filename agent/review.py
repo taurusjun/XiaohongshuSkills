@@ -343,6 +343,27 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     machine = machine or {}
     if not isinstance(machine, dict):
         machine = {}
+    if not (machine.get("grades")) and pkg.get("rows"):
+        # 偶发空响应（如推理模型 content 为空）→ 重试一次，别静默评出 0 条
+        print("[review] ⚠️ 主调用未产出 grades → 重试一次")
+        try:
+            out2 = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True)
+            try:
+                m2 = json.loads(out2)
+            except Exception:                       # noqa: BLE001
+                m2, _ = _extract_machine_json(out2)
+            if isinstance(m2, dict) and m2.get("grades"):
+                machine = m2
+                print("[review] 重试成功，已取回 grades")
+            else:
+                print("[review] ⚠️⚠️ 主调用与重试均无 grades（本次可能评出 0 条）")
+                try:
+                    from services import error_log as _elog
+                    _elog.log(f"review {date} 两次调用均未产出 grades")
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as e:                      # noqa: BLE001
+            print(f"[review] 重试异常: {e}")
     _raw_grades = machine.get("grades") or {}
     grades = {k: (v.get("grade") if isinstance(v, dict) else v) for k, v in _raw_grades.items()}
     clusters = [c.get("keys") for c in (machine.get("clusters") or [])
