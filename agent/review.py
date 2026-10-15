@@ -8,6 +8,7 @@
 - 收尾跑 validate-tables（表格铁律）。
 """
 import json
+import os
 import re
 import sys
 
@@ -335,7 +336,9 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=False)         # 一、按来源分组（旧 skill 1d）
-    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True)   # 单个 JSON 对象（结构化数据）
+    # review 的输入很大（当日全量 ~60-70k token），60s 默认超时不够 → 单独放宽
+    _to = int(os.environ.get("REVIEW_LLM_TIMEOUT", "300") or 300)
+    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True, timeout=_to)   # 单个 JSON 对象（结构化数据）
     try:
         machine = json.loads(out)
     except Exception:                       # noqa: BLE001
@@ -347,7 +350,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         # 偶发空响应（如推理模型 content 为空）→ 重试一次，别静默评出 0 条
         print("[review] ⚠️ 主调用未产出 grades → 重试一次")
         try:
-            out2 = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True)
+            out2 = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True, timeout=_to)
             try:
                 m2 = json.loads(out2)
             except Exception:                       # noqa: BLE001
