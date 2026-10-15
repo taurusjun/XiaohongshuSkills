@@ -27,11 +27,12 @@ def test_post_retries_then_success(monkeypatch):
             calls["n"] += 1
             if calls["n"] < 3:
                 raise urllib.error.URLError("boom")
-            return _Resp({"ok": True})
+            # 合法 completion（_post 现在会把「无 choices」当可重试）
+            return _Resp({"choices": [{"message": {"content": "ok"}}]})
 
     monkeypatch.setattr(L, "_NO_PROXY_OPENER", Opener())
     monkeypatch.setattr(L, "_RETRY_BACKOFF", 0)
-    assert L._post("http://x/y", {"a": 1}, 5) == {"ok": True}
+    assert L._post("http://x/y", {"a": 1}, 5)["choices"][0]["message"]["content"] == "ok"
     assert calls["n"] == 3
 
 
