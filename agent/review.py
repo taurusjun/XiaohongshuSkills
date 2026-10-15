@@ -198,6 +198,10 @@ def prepare_package(date, hist_k=6):
     return {"rows": rows, "prev": prev, "hist": hist, "pub": pub, "fb_ctx": fb_ctx, "entities": ent}
 
 
+# review 的输入很大（当日全量 ~60-70k token）、输出长 → 默认 60s 贴线超时；单独放宽
+_REVIEW_LLM_TO = int(os.environ.get("REVIEW_LLM_TIMEOUT", "600") or 600)
+
+
 CH_SYS = ("你是渠道判定器。对每篇候选，**分别独立**判断它是否适合 xhs、是否适合 gzh（两门互不排斥），并判断是否应当**跳过**。"
           "输出 channel ∈ \"xhs|gzh|both|skip\"：两门都过 → \"both\"；只过 xhs → \"xhs\"；只过 gzh → \"gzh\"；都不过 → \"xhs\"（默认）；命中跳过判据 → \"skip\"。"
           "只输出严格 JSON：{\"<key前12位>\": {\"channel\": \"xhs|gzh|both|skip\", \"reason\": \"<一句话依据>\"}}。\n"
@@ -272,7 +276,7 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     try:
         raw = llm.chat([{"role": "system", "content": CH_SYS},
                         {"role": "user", "content": "当日候选：\n" + "\n".join(lines)}],
-                       max_tokens=max_tokens, json_mode=True)
+                       max_tokens=max_tokens, json_mode=True, timeout=_REVIEW_LLM_TO)
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
         return {}
@@ -336,9 +340,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     from services.review_archive import build_archive
     pkg = prepare_package(date)
     part1 = build_archive(date, single_table=False)         # 一、按来源分组（旧 skill 1d）
-    # review 的输入很大（当日全量 ~60-70k token），60s 默认超时不够 → 单独放宽
-    _to = int(os.environ.get("REVIEW_LLM_TIMEOUT", "300") or 300)
-    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True, timeout=_to)   # 单个 JSON 对象（结构化数据）
+    out = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True,
+                   timeout=_REVIEW_LLM_TO)   # 单个 JSON 对象（结构化数据）
     try:
         machine = json.loads(out)
     except Exception:                       # noqa: BLE001
@@ -350,7 +353,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         # 偶发空响应（如推理模型 content 为空）→ 重试一次，别静默评出 0 条
         print("[review] ⚠️ 主调用未产出 grades → 重试一次")
         try:
-            out2 = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True, timeout=_to)
+            out2 = llm.chat(build_messages(date, pkg), max_tokens=max_tokens, json_mode=True,
+                            timeout=_REVIEW_LLM_TO)
             try:
                 m2 = json.loads(out2)
             except Exception:                       # noqa: BLE001

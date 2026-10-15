@@ -30,7 +30,7 @@ __all__ = ["pick_candidates", "prepare_package", "compose", "score_content", "wr
 
 
 # 写稿的 LLM 调用较大（写作包+历史），默认 60s 贴线超时 → 单独放宽
-_LLM_TO = int(os.environ.get("WRITE_LLM_TIMEOUT", "300") or 300)
+_LLM_TO = int(os.environ.get("WRITE_LLM_TIMEOUT", "600") or 600)
 
 def _read(rel):
     p = paths.REPO_ROOT / rel

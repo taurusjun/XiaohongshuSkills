@@ -129,8 +129,11 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, t
     _apply_thinking(body, thinking)
     data = _post(url, body, timeout)
     _add_usage(data)
-    ch0 = data["choices"][0]
-    msg = ch0["message"]
+    _ch = (data or {}).get("choices")
+    if not _ch:                     # 200 但无 choices（错误体/限流）→ 明确报错，别 KeyError
+        raise LiteLLMError(f"响应缺少 choices（可能限流/错误体）: {str(data)[:300]}")
+    ch0 = _ch[0]
+    msg = ch0.get("message") or {}
     content = (msg.get("content") or "").strip()
     if not content:
         # 推理模型偶发把内容全放进 reasoning_content（content 为空）→ 兜底提取
