@@ -64,8 +64,12 @@ _TIMEOUT = int(os.environ.get("LITELLM_TIMEOUT", "60") or 60)
 _RETRY_BACKOFF = float(os.environ.get("LITELLM_RETRY_BACKOFF", "3") or 3)
 
 
+class _BadBody(Exception):
+    """200 但响应体不可用（空/非 JSON/无 choices）→ 可重试。"""
+
+
 def _post(url, body, timeout):
-    """POST + 网络抖动重试（超时/连接失败/HTTP 5xx），指数退避；4xx 直接抛。"""
+    """POST + 重试（超时/连接失败/HTTP 5xx/**空体·非JSON·无choices**），指数退避；4xx 直接抛。"""
     data = json.dumps(body).encode("utf-8")
     headers = {"Content-Type": "application/json",
                "Authorization": f"Bearer {os.environ.get('LITELLM_API_KEY', '')}"}
@@ -74,14 +78,21 @@ def _post(url, body, timeout):
         try:
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             with _NO_PROXY_OPENER.open(req, timeout=timeout) as resp:
-                return json.loads(resp.read())
+                raw = resp.read()
+            try:
+                j = json.loads(raw)
+            except Exception as e:                   # 空 body / 非 JSON（网关/限流）→ 可重试
+                raise _BadBody(f"响应非 JSON（{len(raw)}B）: {raw[:120]!r}") from e
+            if isinstance(j, dict) and "choices" not in j:
+                raise _BadBody(f"响应无 choices: {str(j)[:200]}")
+            return j
         except urllib.error.HTTPError as e:          # 子类，须先于 URLError
             if getattr(e, "code", 0) and e.code < 500:
                 raise
             last = e
         except urllib.error.URLError as e:
             last = e
-        except (TimeoutError, socket.timeout, ConnectionError, OSError) as e:
+        except (TimeoutError, socket.timeout, ConnectionError, OSError, _BadBody) as e:
             last = e
         if i < _RETRY_TRIES - 1:
             time.sleep(_RETRY_BACKOFF * (2 ** i))
@@ -133,6 +144,13 @@ def chat(messages, model=None, temperature=0.0, max_tokens=None, timeout=None, t
     if not _ch:                     # 200 但无 choices（错误体/限流）→ 明确报错，别 KeyError
         raise LiteLLMError(f"响应缺少 choices（可能限流/错误体）: {str(data)[:300]}")
     ch0 = _ch[0]
+    fr = ch0.get("finish_reason")
+    if fr and fr != "stop":          # length / content_filter / insufficient_system_resource / aborted
+        try:
+            from services import error_log as _elog
+            _elog.log(f"LLM finish_reason={fr}")
+        except Exception:  # noqa: BLE001
+            pass
     msg = ch0.get("message") or {}
     content = (msg.get("content") or "").strip()
     if not content:
