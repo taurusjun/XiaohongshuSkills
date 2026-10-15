@@ -390,6 +390,18 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇（仅当日；related_keys 留给 write）")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
+    # 产出校验告警：当日有素材却评出 0 条 grade（静默失败兜底；如 LLM 空响应/超时/思考模式未关）
+    try:
+        _n_rows = len(pkg.get("rows") or [])
+        if _n_rows and not grades:
+            from scripts.feishu_bot import send_alert
+            _ok = send_alert(f"⚠️ review {date} 产出异常：当日 {_n_rows} 条素材，但评出 0 条 grade"
+                             f"（可能 LLM 空响应/超时/思考模式未关）。请检查。")
+            print(f"[review] ⚠️ 产出校验失败（grade=0 / 素材={_n_rows}）→ 飞书告警{'已发' if _ok else '未发(未配置)'}")
+        elif _n_rows and len(grades) < _n_rows * 0.5:
+            print(f"[review] ⚠️ 分级覆盖率偏低：{len(grades)}/{_n_rows}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[review] 产出校验告警失败: {e}")
     # 表格铁律：收尾校验
     try:
         from services import validate_tables as _vt
