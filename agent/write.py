@@ -5,6 +5,7 @@
 用法: python -m cli write-full [--n 3] [--deliver] [--dry-run] [--split-large]
 """
 import json
+import os
 import re
 import sys
 
@@ -26,6 +27,10 @@ SYS = ('你是小红书日娱写稿助手。只输出严格 JSON 对象：'
 __all__ = ["pick_candidates", "prepare_package", "compose", "score_content", "write_one",
            "recommend_and_schedule", "run", "main"]
 
+
+
+# 写稿的 LLM 调用较大（写作包+历史），默认 60s 贴线超时 → 单独放宽
+_LLM_TO = int(os.environ.get("WRITE_LLM_TIMEOUT", "300") or 300)
 
 def _read(rel):
     p = paths.REPO_ROOT / rel
@@ -213,7 +218,7 @@ def compose(cand, pkg, force_channel=None, retry_ctx=None, max_tokens=16000, his
     msgs = list(history) if history is not None else _compose_msgs(cand, pkg, force_channel)
     if retry_ctx:
         msgs = msgs + [{"role": "user", "content": retry_ctx}]
-    raw = llm.chat(msgs, max_tokens=max_tokens, json_mode=True)
+    raw = llm.chat(msgs, max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
     try:
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
     except Exception:  # noqa: BLE001
@@ -257,7 +262,7 @@ def _score_call(sysd, usr, max_tokens, dims, agg="sum", tries=2):
     for _ in range(tries):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
-                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True)
+                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
         except Exception as e:  # noqa: BLE001
             last = {"error": str(e)}
             continue
@@ -301,7 +306,7 @@ def score_content(title, body, max_tokens=4000):
     for _ in range(3):
         try:
             raw = llm.chat([{"role": "system", "content": sysd},
-                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True)
+                            {"role": "user", "content": usr}], max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
             d = _extract_json(raw)
         except Exception as e:  # noqa: BLE001
             last = {"total": 0, "error": str(e)}
@@ -362,7 +367,7 @@ def _fit_title(title, channel="xhs"):
             raw = llm.chat([{"role": "system", "content":
                              f"把给定标题改写到 {limit} 字以内，保留钩子/数字/矛盾点，不做标题党，"
                              "只输出标题本身（不要引号、不要解释）。"},
-                            {"role": "user", "content": title}], max_tokens=300)
+                            {"role": "user", "content": title}], max_tokens=300, timeout=_LLM_TO)
             cand_t = (raw or "").strip().strip('"').splitlines()[0].strip() if raw else ""
             if cand_t and _pc.title_len(cand_t) <= limit:
                 t = cand_t
@@ -403,7 +408,7 @@ def classify_material(cand, max_tokens=200):
     _set_mat = (cand.get("title") or "") + "\n" + (cand.get("content_ja") or "")[:3000]
     try:
         raw = llm.chat([{"role": "system", "content": MAT_SYS},
-                        {"role": "user", "content": _set_mat}], max_tokens=max_tokens, json_mode=True)
+                        {"role": "user", "content": _set_mat}], max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
         return (d.get("type") or "normal").strip()
     except Exception:  # noqa: BLE001
@@ -419,7 +424,7 @@ def classify_relations(cand, pkg, max_tokens=2000):
             + "\n".join(f"[{c['k12']}] {c['title']}｜{c['excerpt']}" for c in cands))
     try:
         raw = llm.chat([{"role": "system", "content": REL_SYS}, {"role": "user", "content": user}],
-                       max_tokens=max_tokens, json_mode=True)
+                       max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
         m = re.search(r"\{.*\}", raw, re.S)
         d = json.loads(m.group(0)) if m else {}
         rels = d.get("relations") or []
