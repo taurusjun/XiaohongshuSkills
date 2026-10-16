@@ -540,11 +540,8 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
         context = f"\n新闻摘要：{ja_summary[:600]}\n"
 
     from config.prompts import TITLE_RULES_NEWS, TITLE_QUALITY
-    prompt = f"""你是小红书日语学习博主。请根据以下新闻内容，严格按照下方格式输出全部6个字段。
+    prompt = f"""你是小红书日语学习博主。请根据「素材」部分，严格按照下方格式输出全部6个字段。
 
-新闻标题：{title_zh}
-日文原文：{title_ja}{context}
-{f"【内容角度】今日重点关注：{angle}" if angle else ""}{chr(10) if angle else ""}{f"【修正要求】{hint}" if hint else ""}
 输出格式（必须包含全部6个字段）：
 
 【标题】
@@ -595,7 +592,12 @@ def generate_content_and_comment(title_ja: str, title_zh: str, ja_summary: str =
 写真/グラビア类：#日本写真 #グラビア #日本模特
 仅当内容明确涉及时，才可使用：#日本新闻 #日本文化 #日本生活
 禁止使用：#看新闻学日语 #日语学习（这是偶像内容账号，非语言学习账号）
-再根据文章中的具体人名/团体名补充精准标签）"""
+再根据文章中的具体人名/团体名补充精准标签）
+
+===== 素材 =====
+新闻标题：{title_zh}
+日文原文：{title_ja}{context}
+{f"【内容角度】今日重点关注：{angle}" if angle else ""}{chr(10) if angle else ""}{f"【修正要求】{hint}" if hint else ""}"""
 
     result = call_litellm(prompt, max_tokens=max(LITELLM_MAX_TOKENS, 8000), thinking_disabled=True, stage=stage)
     if not result:
@@ -1251,8 +1253,8 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
     angle_note = f"\n【内容角度】今日重点关注：{angle}\n" if angle else ""
     from config.prompts import TITLE_RULES_STORY, TITLE_QUALITY
     prompt = f"""你是一名专业翻译和新闻编辑，风格对标《财新》《36氪》《澎湃》等严肃媒体。
-{angle_note}
-请将以下日文新闻长文翻译并改写为适合中文读者的故事体文章。
+
+请将「素材」中的日文新闻长文翻译并改写为适合中文读者的故事体文章。
 
 【第一步：判断文章类型】
 阅读原文后，判断属于以下哪种类型，并将类型名写入 JSON 的 "story_type" 字段：
@@ -1262,7 +1264,6 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 - 评介型：对作品（专辑、歌单、影视、书籍）进行介绍或分析
 
 【第二步：按类型生成标题】
-参考原标题：{title_zh}
 
 {TITLE_RULES_STORY}
 
@@ -1274,7 +1275,7 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 不得是对标题的重复或扩写，不得是"欢迎阅读"等套话。
 
 【正文要求】
-完整翻译原文，保留叙事结构、因果逻辑和原文的小标题。原文中以 ## 开头的行是小标题（section header），翻译时在对应位置保留并用 ## 前缀标记（如 ## 小标题译文）。用简洁有力的句子，避免口语化。{img_note}
+完整翻译原文，保留叙事结构、因果逻辑和原文的小标题。原文中以 ## 开头的行是小标题（section header），翻译时在对应位置保留并用 ## 前缀标记（如 ## 小标题译文）。用简洁有力的句子，避免口语化。
 
 【结语要求】
 1-2句话，点睛式收尾。可以是作者的判断、对行业的启示、或留给读者的问题。不得是「欢迎评论」等套话。
@@ -1282,14 +1283,16 @@ def generate_story_article(title_ja: str, title_zh: str, body_ja: str,
 【人物/团体标签】
 提取文章涉及的所有主要人物姓名、偶像团体名（用中文名或通用译名），以逗号分隔字符串输出。
 
+严格按如下 JSON 格式输出（body 中图片占位符示例：【图片1：橋本環奈14岁现场照爆红】）：
+{{"story_type": "对谈型|叙事型|对比型|评介型", "title": "标题", "intro": "导语", "body": "正文（有图片时含【图片N：描述】占位符）", "outro": "结语", "persons": "人物1,人物2,团体名"}}
+
+===== 素材 =====
+{angle_note}参考原标题：{title_zh}
+{img_note}
 ---
 日文原文标题：{title_ja}
 日文正文：
-{body_ja}
----
-
-严格按如下 JSON 格式输出（body 中图片占位符示例：【图片1：橋本環奈14岁现场照爆红】）：
-{{"story_type": "对谈型|叙事型|对比型|评介型", "title": "标题", "intro": "导语", "body": "正文（有图片时含【图片N：描述】占位符）", "outro": "结语", "persons": "人物1,人物2,团体名"}}"""
+{body_ja}"""
 
     result = call_litellm(
         prompt,
