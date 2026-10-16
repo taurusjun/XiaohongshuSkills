@@ -10,7 +10,10 @@ requests.Session.request 外包一层：请求「实际走了代理」且失败�
 - 需要代理才能访问的域名（X / Instagram / YouTube / Google / TikTok / Telegram 等）：直连必然失败，只会白等；
 - 本来就没走代理的请求（如 CDP 的 127.0.0.1、NO_PROXY 里的域名、显式 proxies={"http": None, ...}）。
 
-关闭：环境变量 NET_DIRECT_FALLBACK=0。
+关闭自动回退：环境变量 NET_DIRECT_FALLBACK=0。
+
+另外，DIRECT_ONLY_DOMAINS 里的域名一律强制直连（不受上面的开关影响）：这些站的 WAF 拦的是代理出口 IP，
+代理正常时返回的是 405 验证页（不抛异常，自动回退兜不住），只有直连能拿到内容。
 """
 import os
 from urllib.parse import urlparse
@@ -26,8 +29,19 @@ PROXY_REQUIRED_DOMAINS = (
 )
 
 
+# 必须直连的域名（WAF 拦代理出口 IP；本机直连无 WAF）
+DIRECT_ONLY_DOMAINS = (
+    "realsound.jp",
+)
+_DIRECT = {"http": None, "https": None}  # None 会覆盖环境变量里的代理
+
+
+def _match(host: str, domains) -> bool:
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
 def _needs_proxy(host: str) -> bool:
-    return any(host == d or host.endswith("." + d) for d in PROXY_REQUIRED_DOMAINS)
+    return _match(host, PROXY_REQUIRED_DOMAINS)
 
 
 def _proxy_in_effect(session, url: str, proxies) -> bool:
@@ -46,22 +60,25 @@ def install() -> None:
     import requests
     from requests import exceptions as rex
 
-    if os.environ.get("NET_DIRECT_FALLBACK", "1") == "0":
-        return
     if getattr(requests.Session.request, "_xhs_direct_fallback", False):
         return  # 已安装
+    fallback_on = os.environ.get("NET_DIRECT_FALLBACK", "1") != "0"
     orig = requests.Session.request
 
     def request(self, method, url, *args, **kwargs):
+        host = (urlparse(url).hostname or "").lower()
+        if not args and host and _match(host, DIRECT_ONLY_DOMAINS):
+            kwargs["proxies"] = dict(_DIRECT)
+            return orig(self, method, url, **kwargs)
         try:
             return orig(self, method, url, *args, **kwargs)
         except (rex.ConnectionError, rex.Timeout) as e:
-            host = (urlparse(url).hostname or "").lower()
-            if args or not host or _needs_proxy(host) or not _proxy_in_effect(self, url, kwargs.get("proxies")):
+            if (not fallback_on or args or not host or _needs_proxy(host)
+                    or not _proxy_in_effect(self, url, kwargs.get("proxies"))):
                 raise
             print(f"  ↪ 代理请求失败（{type(e).__name__}），改走直连重试: {host}")
             direct = dict(kwargs)
-            direct["proxies"] = {"http": None, "https": None}  # None 会覆盖环境变量里的代理
+            direct["proxies"] = dict(_DIRECT)
             try:
                 return orig(self, method, url, **direct)
             except Exception as e2:
