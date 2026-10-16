@@ -12,6 +12,7 @@
 | [known-issues.md](known-issues.md) | 已证实的稳定性问题清单（含证据、复现命令、修法选项、当前状态） |
 | [wechat-editor-image-block.md](wechat-editor-image-block.md) | 公众号编辑器图片块：3 个 bug（块类型无工具 / 官方 ImageTool 不可换图 / 素材库混入远程封面 URL）+ 2 个坑（EditorJS 异步加载 vs 类声明求值顺序、CDP 探测触发 4s 自动保存污染数据） |
 | [keyboard-free-topic-tags.md](keyboard-free-topic-tags.md) | 话题标签写入方案：Tiptap 事务直插（Tier 1）+ 敲字兜底（Tier 2）+ `topic_cache` 表 |
+| [llm-cache-and-prompts.md](llm-cache-and-prompts.md) | **LLM 前缀缓存 & prompt 布局**：固定块必须前置；实测「128-token 块 + 最小前缀门槛」；fetch 各 stage 改造前后命中率 |
 
 ## 迁移
 
