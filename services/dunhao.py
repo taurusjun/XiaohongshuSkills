@@ -1,7 +1,10 @@
 """顿号行归零 —— 唯一实现（合并 normalize-dunhao.py 与 fix_dunhao_lines.py 的重复逻辑）。
 
-行内第 2 个及以后的「、」替换为中文间隔号 U+00B7；只留第 1 个（单顿号是正常用法，
-人名两连「A、B」不被破坏）。
+行内**顿号 ≥2 个**（= ≥3 项枚举）→ **全部**替换为中文间隔号 U+00B7；
+单顿号（2 项「A、B」）保持不动（renwei 真条件要求 ≥2 个顿号，2 项不触发）。
+
+对齐原 skill（8/6/8/7/9/15）：「≥3 项真实清单/人名一律用间隔号 ·」，
+之前「只换第 2 个及以后」会产出「A、B·C」这种 `、`/`·` 混用。
 """
 import argparse
 import glob
@@ -14,12 +17,9 @@ MIDDOT = "\u00b7"
 
 
 def fix_line(line: str) -> str:
-    if line.count("、") < 2:
+    if line.count("、") < 2:                 # 2 项（单顿号）不触发 renwei，保持原样
         return line
-    idx = [i for i, c in enumerate(line) if c == "、"]
-    for j in reversed(idx[1:]):          # 从后往前替换，避免位移
-        line = line[:j] + MIDDOT + line[j + 1:]
-    return line
+    return line.replace("、", MIDDOT)        # ≥3 项：全部换 ·（不混用 、/·）
 
 
 def fix_text(text: str):
