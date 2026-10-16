@@ -1,4 +1,4 @@
-"""Skill 一致性审计：把 skill 文档逐条抽出规则，用 GLM 判「实现是否一致」。
+r"""Skill 一致性审计：把 skill 文档逐条抽出规则，用 GLM 判「实现是否一致」。
 
 流程：extract_items（GLM 抽条目）→ gather_evidence（仓库关键词取证）→ judge（GLM 逐条判）→ render。
 审计用 GLM（不同厂商），不用被审的 DeepSeek。
@@ -217,3 +217,147 @@ def render(items: list[dict], skill_name: str, date: str) -> str:
             loc=(x.get("impl_loc") or "—"), v=x.get("verdict"), r=(x.get("reason") or "")[:60]))
     lines += ["", "---", "> 「一致」条目已省略（见 JSON）。完整清单：`config/skill_audit/items.json`。"]
     return "\n".join(lines)
+
+
+# ============ v2：代码索引定位 + 校准判据 ============
+
+_LOC_SYS = "你是代码定位器。只输出严格 JSON。"
+_LOC_TPL = """下面是本仓库的代码索引（`文件 | 说明 | 主要函数`）。请判断哪 1-3 个文件**最可能**实现了下面这条 skill 规则。
+
+【skill 规则】{rule}
+【期望】{expectation}
+
+【代码索引】
+{index}
+
+只输出 JSON：{{"files": ["相对路径", ...], "why": "一句话"}}"""
+
+_JUDGE2_SYS = "你是严格的代码审计员。只输出严格 JSON。"
+_JUDGE2_TPL = """判断「实现」是否满足「skill 规则」。**先看实现文件片段，再下结论。**
+
+【skill 规则】{rule}
+【期望】{expectation}
+
+【候选实现文件】{files}
+【实现片段（带 文件:行）】
+{evidence}
+
+判定口径（严格遵守）：
+- **一致**：实现完整满足该规则（哪怕实现方式与人工流程不同，只要效果达标）。
+- **部分一致**：实现了主体，但缺细节/有例外/边界未覆盖。
+- **偏离**：实现与该规则**直接冲突**（做了相反的事）。
+- **缺失**：在候选文件里**确实找不到**任何相关实现。
+- **不适用**：该规则属于「人工 agent 操作流程/工具纪律」，自动化流水线**不需要**实现（如 read_file 截断、工具调用次数、汇报时机、key 前缀位数、查存档文件等）。
+
+⚠️ 特别注意：
+- 不要因为「没看到同名字符串」就判缺失——先看片段里**语义等价**的实现（如「假名计数」可能写成 `KANA_MAX`/`kana`）。
+- 规则说的是**日媒原文**的某种形态，而实现是**产出物**的另一种形态时，**不要**判偏离（如「删原文注音括号」vs「解读里加注音」不是一回事）。
+- 若实现是「机械/简化版」但**效果达标**，判「一致」或「部分一致」，**不要**判偏离。
+
+只输出 JSON：{{"verdict":"一致|部分一致|偏离|缺失|不适用","impl_loc":"<文件:行>","reason":"<一句话依据>"}}"""
+
+
+def build_index(repo_root) -> str:
+    """代码索引：`文件 | 模块首行说明 | 主要函数/类名`。"""
+    import ast
+    root = Path(repo_root)
+    out = []
+    for d in ("agent", "services", "config", "scripts", "web"):
+        p = root / d
+        if not p.exists():
+            continue
+        for f in sorted(p.rglob("*.py")):
+            if "__pycache__" in str(f) or ".venv" in str(f):
+                continue
+            try:
+                tree = ast.parse(f.read_text(encoding="utf-8", errors="ignore"))
+            except Exception:  # noqa: BLE001
+                continue
+            doc = (ast.get_docstring(tree) or "").split("\n")[0][:90]
+            names = [n.name for n in tree.body
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))][:8]
+            out.append(f"{f.relative_to(root)} | {doc} | {', '.join(names)}")
+    # 2) prompt .md —— 大量规则其实写在提示词里（索引必须含，否则一律误判「缺失」）
+    for f in sorted((root / "agent" / "prompts").glob("*.md")):
+        txt = f.read_text(encoding="utf-8", errors="ignore")
+        heads = [l.lstrip("# ").strip()[:36] for l in txt.splitlines() if l.startswith("#")][:6]
+        out.append(f"{f.relative_to(root)} | prompt（写稿/审读提示词与规则） | {', '.join(heads)}")
+    # 3) config/*.json —— 阈值/规则
+    import json as _j
+    for f in sorted((root / "config").glob("*.json")):
+        try:
+            _d = _j.loads(f.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            _d = {}
+        keys = list(_d.keys())[:6] if isinstance(_d, dict) else []
+        out.append(f"{f.relative_to(root)} | config JSON | {', '.join(map(str, keys))}")
+    return "\n".join(out)
+
+
+def locate(item: dict, index: str) -> list[str]:
+    try:
+        d = _glm.chat_json(_LOC_TPL.format(rule=item["rule"], expectation=item.get("expectation", ""),
+                                           index=index), system=_LOC_SYS, max_tokens=1200)
+        return [f for f in (d.get("files") or []) if isinstance(f, str)][:3]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def gather_v2(item: dict, files: list[str], repo_root) -> str:
+    """在候选文件里按关键词取片段（带行号）；找不到关键词就取文件头 40 行。"""
+    root = Path(repo_root)
+    kws = _keywords(item["rule"], k=10)
+    lines = []
+    for rel in files:
+        f = root / rel
+        if not f.exists() or not f.is_file():
+            continue
+        try:
+            txt = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:  # noqa: BLE001
+            continue
+        fl = txt.splitlines()
+        picked = []
+        for i, line in enumerate(fl, 1):
+            if any(k in line for k in kws):
+                picked.append(f"[{rel}:{i}] {line.strip()[:120]}")
+                if len(picked) >= 6:
+                    break
+        if not picked:                      # 关键词没命中 → 给文件头（含 docstring/函数名）
+            picked = [f"[{rel}:{i}] {l.strip()[:120]}" for i, l in enumerate(fl[:30], 1) if l.strip()][:12]
+        lines.append("\n".join(picked))
+    return "\n".join(lines) if lines else "(候选文件里未检索到相关片段)"
+
+
+def judge_v2(item: dict, files: list[str], evidence: str) -> dict:
+    try:
+        d = _glm.chat_json(_JUDGE2_TPL.format(rule=item["rule"], expectation=item.get("expectation", ""),
+                                              files=", ".join(files) or "(无)", evidence=evidence),
+                           system=_JUDGE2_SYS, max_tokens=1500)
+    except Exception as e:  # noqa: BLE001
+        return {"verdict": "ERR", "impl_loc": "", "reason": str(e)[:80]}
+    return {"verdict": (d.get("verdict") or "ERR").strip(),
+            "impl_loc": (d.get("impl_loc") or "").strip(),
+            "reason": (d.get("reason") or "").strip()}
+
+
+def judge_all_v2(items: list[dict], repo_root, redo: set | None = None) -> None:
+    index = build_index(repo_root)
+    print(f"[v2] 代码索引 {len(index.splitlines())} 行", flush=True)
+    for it in items:
+        if redo is not None and it.get("verdict") not in redo:
+            continue                      # 只重判指定结论的条目
+        if it.get("kind") == "process":
+            it["verdict"] = "不适用"
+            it["impl_loc"] = ""
+            it["reason"] = "人工 agent 流程（自动化流水线已取代）"
+            continue
+        files = locate(it, index)
+        ev = gather_v2(it, files, repo_root)
+        j = judge_v2(it, files, ev)
+        it["v2_files"] = files
+        it["verdict"] = j["verdict"]
+        it["impl_loc"] = j["impl_loc"]
+        it["reason"] = j["reason"]
+        it["evidence"] = ev
+        print("  #%s %s | %s | %s" % (it["id"], it["verdict"], (it["rule"] or "")[:36], ",".join(files)[:50]), flush=True)

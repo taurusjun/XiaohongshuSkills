@@ -22,6 +22,8 @@ def main(argv=None):
     j.add_argument("--items", default="config/skill_audit/items.json")
     j.add_argument("--out", default=None)
     j.add_argument("--skill", default="xhs-write-publish-flow/SKILL.md")
+    j.add_argument("--v2", action="store_true")
+    j.add_argument("--redo", default="", help="只重判这些结论（逗号分隔，如 缺失,偏离）")
     a = ap.parse_args(argv)
     root = Path(__file__).resolve().parent.parent
     if a.cmd == "extract":
@@ -29,10 +31,14 @@ def main(argv=None):
     elif a.cmd == "judge":
         import datetime as _dt, json as _json
         items = _json.loads((root / a.items).read_text(encoding="utf-8"))
-        SA.judge_all(items, root)
+        if a.v2:
+            SA.judge_all_v2(items, root, redo=set(x for x in a.redo.split(",") if x) or None)
+        else:
+            SA.judge_all(items, root)
         (root / a.items).write_text(_json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
         md = SA.render(items, a.skill, _dt.date.today().isoformat())
-        out = root / (a.out or f"data/audits/{_dt.date.today().isoformat()}-skill-conformance.md")
+        _suf = "-v2" if a.v2 else ""
+        out = root / (a.out or f"data/audits/{_dt.date.today().isoformat()}-skill-conformance{_suf}.md")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md, encoding="utf-8")
         print(f"[skill_audit] 报告 → {out}")
