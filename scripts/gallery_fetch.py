@@ -910,22 +910,69 @@ def _scrape_lasisa(gallery_url: str) -> list[str]:
         return []
 
 
+def _realsound_first_photo(gallery_url: str, headers: dict) -> str:
+    """回到文章页，返回文章里第一个 /photo/<slug> 页的 URL（找不到返回空串）。"""
+    import re
+    from urllib.parse import urljoin, urlparse
+    from sqlite_db import _log_db_error
+    article_url = gallery_url.split("/photo/")[0]
+    if article_url == gallery_url:
+        return ""
+    try:
+        r = requests.get(article_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        path = urlparse(article_url).path
+        m = re.search(re.escape(path) + r"/photo/([\w-]+)", r.text)
+        if not m:
+            return ""
+        first = urljoin("https://realsound.jp", f"{path}/photo/{m.group(1)}")
+        # 文章里最先出现的照片链接不一定是图集第一张（实测为 -04），顺着「前のページ」退回第一张
+        visited = {first}
+        for _ in range(MAX_IMAGES):
+            ps = BeautifulSoup(requests.get(first, headers=headers, proxies=_get_proxies(), timeout=15).text,
+                               "html.parser")
+            prev_a = next((a for a in ps.select("a") if "前のページ" in a.get_text()), None)
+            if not prev_a:
+                break
+            prev_url = urljoin("https://realsound.jp", prev_a.get("href", ""))
+            if "/photo/" not in prev_url or prev_url in visited:
+                break
+            visited.add(prev_url)
+            first = prev_url
+        return first
+    except Exception as e:
+        print(f"  ⚠️ realsound 回溯文章页失败: {e}")
+        _log_db_error(f"realsound 回溯文章页失败: {article_url}: {e}")
+        return ""
+
+
 def _scrape_realsound(gallery_url: str) -> list[str]:
-    """realsound.jp 图集：跟随「次のページ」链抓取 figure img，过滤侧栏缩略图"""
+    """realsound.jp 图集：跟随「次のページ」链抓取 figure img，过滤侧栏缩略图。
+    起始照片页拿不到图时（realsound 发布后会改照片 slug，旧链接 404 / 跳首页），
+    回到文章页，从文章里第一个 /photo/ 链接重新开始。
+    注：realsound 的 WAF 拦代理出口 IP，请求已在 config/net_fallback.py 中强制直连。"""
     import re
     from urllib.parse import urljoin
+    from sqlite_db import _log_db_error
     headers = {**HEADERS, "Referer": "https://realsound.jp/"}
 
     images: list[str] = []
     seen: set[str] = set()
     url = gallery_url
+    tried_article = False
 
-    for _ in range(MAX_IMAGES):
+    for _ in range(MAX_IMAGES + 1):
         try:
             r = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=15)
             s = BeautifulSoup(r.text, "html.parser")
 
             img = s.select_one("figure img")
+            if not img and not images and not tried_article:
+                tried_article = True
+                first = _realsound_first_photo(gallery_url, headers)
+                if first and first != url:
+                    print(f"  🔄 起始照片页无图（slug 可能已改），改从文章第一张开始: {first}")
+                    url = first
+                    continue
             if img:
                 src = img.get("src") or img.get("data-src") or ""
                 if src:
@@ -950,10 +997,10 @@ def _scrape_realsound(gallery_url: str) -> list[str]:
             time.sleep(0.3)
         except Exception as e:
             print(f"  ⚠️ realsound 抓取失败: {e}")
+            _log_db_error(f"realsound 抓取失败: {url}: {e}")
             break
 
-    return images
-
+    return images[:MAX_IMAGES]
 
 def _scrape_encount(gallery_url: str) -> list[str]:
     from scrapers.encount_dl import scrape
