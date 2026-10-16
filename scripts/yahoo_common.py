@@ -1361,11 +1361,10 @@ def _build_title_prompt(title_ja: str, content_ja: str,
     current_title_line = f"当前标题（不要和它太像，必须有明显差异）：{current_title}" if current_title else ""
     extra = "\n".join(x for x in [summary_line, outro_line, story_type_line, current_title_line] if x)
     from config.prompts import TITLE_RULES_NEWS, TITLE_RULES_STORY, TITLE_QUALITY
-    return f"""你是专业新闻编辑。根据以下素材，生成一个适合小红书发布的中文标题。
-
-日文原标题：{title_ja}
-{content_block}
-{extra}
+    # ⚠️ 固定块（角色+规则+输出格式）必须排在**最前面**，变化内容放最后：
+    #    前缀缓存只认「从头连续相同的前缀」，固定块若排在变化内容之后则永不命中
+    #    （实测：固定块在后 → title_pass2 缓存命中 0%）。
+    return f"""你是专业新闻编辑。根据素材生成一个适合小红书发布的中文标题。
 
 {TITLE_RULES_NEWS}
 
@@ -1373,7 +1372,12 @@ def _build_title_prompt(title_ja: str, content_ja: str,
 
 {TITLE_QUALITY}
 
-严格只输出一行JSON。格式：{{"title":"生成的中文标题"}}"""
+严格只输出一行JSON。格式：{{"title":"生成的中文标题"}}
+
+===== 素材 =====
+日文原标题：{title_ja}
+{content_block}
+{extra}"""
 
 
 def generate_title_only(title_ja: str, content_ja: str,
