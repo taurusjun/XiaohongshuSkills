@@ -26,9 +26,11 @@
 | metrics | 每小时 **:37** | :00 |
 | reflection | **周一 00:00** | 周日 23:00 |
 | db-backup | 每小时 **:47** | :17 |
+| 重启主 Chrome(9222) | 每小时 **:05** | 每小时 :05（2026-10-17 新增，见 §6）|
 
 - 定义在 `ops/crontab`（entrypoint 安装到 user crontab）。
 - 所有 job **直接跑命令，无 `wait_idle`、无随机 sleep**（对齐生产）。
+- ⚠️ 上表「生产」列的 **review 01:30 / write 03:00 实际没有定时任务**：宿主 `~/Library/LaunchAgents/com.xhs.*.plist`（11 个）与 `crontab -l` 里都**没有** review/write（2026-10-17 核对），自动化只到 `fetch-runner 00:30`；这两步在生产是人工/Web UI 触发。
 - ⚠️ crontab 里 **`%` 必须转义成 `\%`**（如 `$(date +\%F)`）：否则 cron 把 `%` 当换行 → 命令被截断、**静默不执行**。（fetch 曾因 `RANDOM%1800` 未转义而从未执行。）
 
 ## 3. fetch 执行链
@@ -42,6 +44,7 @@ cron → fetch_runner.py（读 webapp keywords）
 
 ## 4. 主 Chrome / 媒体 tab / mcp
 - `ops/cdp_keeper.py`（每 60s）：若 www 标签停在 `/explore`（视频流、持续烧 CPU）→ 自动导航到该账户 profile 页（读 `data/accounts_meta.json` 的 `profile_id`；无则 `about:blank`）。
+- 宿主 `~/cdp-keeper.sh`（每 300s，LaunchAgent `com.xhs.cdp-keeper`）同样做「`/explore` → 创作者首页」+ **关掉多余的 `chrome://newtab/` · `about:blank`（保留 ≥1 页）**（2026-10-17 补）。两个必须项：plist 带 **`AbandonProcessGroup=true`**（否则 launchd 在本任务退出时**杀掉**它拉起的 Chrome：日志写 `alive=1` 但端口随即又关）、脚本带 **`CHROME_PROFILE_DIR="Profile 1"`**（否则 Chrome 开到 `Local State.last_used`，可能不是有登录态的那个 profile）。
 - **mcp（fastmcp :5001）已从 supervisord 移除**（曾因 SOCKS 代理崩溃重启循环，持续烧一个核 → 风扇）。
 
 ## 5. 定时重启容器（宿主 LaunchAgent）
@@ -70,3 +73,34 @@ launchctl load -w ~/Library/LaunchAgents/com.xhs.container-restart-daily.plist
 bash ~/PG/xhs-docker-src/ops/container_restart_daily.sh     # 真重启+健康检查
 python3 ~/PG/xhs-docker-src/ops/notify_feishu.py "测试告警"  # 只测告警通道
 ```
+
+## 6. 定时重启宿主主 Chrome(9222)（宿主 LaunchAgent）
+
+参考容器 `ops/restart_main_chrome.sh`，宿主侧有两处**必须**不同（2026-10-17 实测确认）：
+
+- 计划：**每小时 :05**（与容器同点）。
+- 脚本：`ops/restart_host_chrome.sh`（宿主运行）
+  - `pkill -f "[r]emote-debugging-port=9222"` → 只动 9222，不影响代理 Chrome(9223)。
+  - 随后**立刻** `launchctl kickstart -k gui/501/com.xhs.cdp-keeper`：
+    - 容器 keeper 是 60s 巡检，宿主是 **300s** → 不主动 kickstart 会有最多 5 分钟空窗；
+    - **必须由 GUI 域的 keeper 去拉 Chrome**：从脚本自身会话直接起 Chrome 拿不到 macOS Keychain 的「Chrome Safe Storage」密钥 → cookies 只能放内存（`Profile 1/Cookies` 表 **0 行**）→ 一重启就丢登录。实测 GUI 域拉起后 cookies **落盘**（16~19 行），重启后登录仍在 ✅。
+  - **护栏**：`GET /api/active-tasks` 的 `active` / `fetch_running` / `publish_running` 任一为真 → **跳过本次**。
+    - 容器 fetch 用独立的 9333 Chrome，而**宿主 fetch 用的就是 9222** → 宿主更需要这道护栏（否则会在抓取中途把 Chrome 杀掉）。
+- LaunchAgent：`ops/com.xhs.restart-main-chrome.plist`（`StartCalendarInterval` → `Minute=5`）。
+- 日志：`~/.hermes/logs/restart-main-chrome.log`。
+
+安装/更新：
+
+```bash
+cp ~/PG/xhs-docker-src/ops/com.xhs.restart-main-chrome.plist ~/Library/LaunchAgents/
+launchctl bootout gui/501/com.xhs.restart-main-chrome 2>/dev/null
+launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.xhs.restart-main-chrome.plist
+```
+
+手动测试：
+
+```bash
+bash ~/PG/xhs-docker-src/ops/restart_host_chrome.sh     # 真重启 9222，并等端口回来（有任务在跑则跳过）
+```
+
+> 计划文档提到的「升级为 **RSS 超阈值才重启**」（比固定每小时更精准）仍是待实现项。
