@@ -54,6 +54,7 @@ sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路�
 | `LITELLM_MAX_TOKENS` | `3000`（各调用会覆盖：review 20000 / compose 16000 / 评分 4000…） |
 | `temperature` | `0.0` |
 | `LITELLM_THINKING` | 未设 → 默认 **`disabled`** |
+| `CHROME_PROFILE_DIR` | **仅宿主多 profile 时设**（如 `Profile 1`）。`chrome_launcher` 会传 `--profile-directory`；不设时 Chrome 开到 `Local State.last_used`，**可能不是有登录态的那个**。容器单 profile 不用设 |
 
 > **fetch 抓取同款**：`fetch_runner`/抓取链路也用 `deepseek-flash`（日志 `模型=deepseek-flash | 后端=sqlite`）。
 > 换模型/端点：改 `scripts/.env` 的 `LITELLM_MODEL`/`LITELLM_URL`/`LITELLM_MAX_TOKENS`。
