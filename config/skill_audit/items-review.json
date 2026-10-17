@@ -1,0 +1,1959 @@
+[
+ {
+  "id": 1,
+  "lines": "1-160",
+  "rule": "技能里写了多少步就执行多少步，不能做80%跳20%；每步完成后自查所有子步骤是否完成",
+  "expectation": "每条步骤的子步骤全部执行，不提前进入下一步",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 2,
+  "lines": "1-160",
+  "rule": "用户说\"开始review\"等触发词时，第一步必须skill_view加载本skill，不要跳过加载直接查数据",
+  "expectation": "触发后先加载skill再执行流程",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 3,
+  "lines": "1-160",
+  "rule": "用户触发review时，先检查当天存档文件是否存在，存在则直接读取发送，不重新拉API跑四层",
+  "expectation": "存档存在即复用，不重复跑流程",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 4,
+  "lines": "1-160",
+  "rule": "不要向用户展示中间步骤；拉数据、聚类、分析都在后台完成，存档完成后一次性发结果",
+  "expectation": "用户只收到最终完整结果",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 5,
+  "lines": "1-160",
+  "rule": "未确认最终产出前不得说\"跑完了/完成了\"；须确认存档写入成功、segment发送成功或cron last_status=ok之一",
+  "expectation": "有实际产出确认才可汇报完成",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 6,
+  "lines": "1-160",
+  "rule": "用户问结果时绝对禁止说\"往上翻\"\"之前的消息里有\"；必须重新读取存档或重跑并直接贴内容",
+  "expectation": "内容直接贴在回复中，不假设用户翻历史",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 7,
+  "lines": "1-160",
+  "rule": "用户说\"停止/不要触发\"时立即停止触发性操作，不找理由、不说\"已经跑完了\"",
+  "expectation": "立即停止并承认，不做解释性辩驳",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 8,
+  "lines": "1-160",
+  "rule": "cron跑完后用户问结果：先查存档→存在则直接发→不存在则重跑cron→cron报错且用户急则主进程直做四层",
+  "expectation": "按优先级顺序处理结果追问",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 9,
+  "lines": "1-160",
+  "rule": "delegate_task子agent内禁止写稿、直接DB写入、标记发布；这些只允许主进程或用户明确指令下执行",
+  "expectation": "子agent只做review层流程，不做写稿/写库/发布",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 10,
+  "lines": "1-160",
+  "rule": "交互模式下主进程直做四层，不用delegate_task；cron模式可分发子agent",
+  "expectation": "按模式选择执行方式",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 11,
+  "lines": "1-160",
+  "rule": "读取关键素材必须看内容详情，不能只看标题（story类、title_score≥4.0、目标赛道、争议标题条目）",
+  "expectation": "关键条目均查看内容详情",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 12,
+  "lines": "1-160",
+  "rule": "过滤素材优先按fetch_by而非category字段；category可能误标（如グラビア被标为体育）",
+  "expectation": "用fetch_by分布判断素材结构",
+  "kind": "code",
+  "v2_files": [
+   "services/review_archive.py",
+   "agent/review.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/review_archive.py:15,29,42,49",
+  "reason": "实现按 fetch_by 统计分布、分组排序与展示，未依赖 category，符合规则要求。",
+  "evidence": "[services/review_archive.py:15] return Counter((r.get(\"fetch_by\") or \"?\").strip() or \"?\" for r in rows)\n[services/review_archive.py:29] f\"**fetch_by 分布：** {dist_str} = **{n}**（== total {n} ✅ 无漏组）\"\n[services/review_archive.py:30] if dist_str else f\"**fetch_by 分布：** （空）\",\n[services/review_archive.py:42] for r in sorted(rows, key=lambda x: ((x.get(\"fetch_by\") or \"?\"), -(x.get(\"title_score\") or 0))):\n[services/review_archive.py:43] lines.append(f\"| {r.get('fetch_by') or '?'} | `{r.get('key','')}` | {r.get('title_score','-')} | \"\n[services/review_archive.py:49] lines.append(f\"### fetch_by = {fb}（{cnt}条）\")\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:50] \"src\": r.get(\"fetch_by\"), \"pub\": r.get(\"publish_xhs\")}\n[agent/review.py:328] f\"=== 当日全量素材（JSON，字段含 body=content_ja 日文正文，请逐条阅读）===\\n\""
+ },
+ {
+  "id": 13,
+  "lines": "1-160",
+  "rule": "同事件条目先聚类再分级，保留1-2条最丰富的，其余合并跳过并标注聚类原因",
+  "expectation": "先聚类后分级，同事件不重复处理",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "agent/review.py",
+   "services/split_write.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:5",
+  "reason": "clusters 字段实现了同事件聚类（keys/main/note/grade），但片段未见「保留1-2条最丰富、其余合并跳过并标注聚类原因」的明确规则，细节未覆盖",
+  "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys\n[services/split_write.py:1] \"\"\"关联素材体量过大 → 拆多篇写（密度极限 fallback）。\n[services/split_write.py:3] 旧 skill 明确：默认**不拆**（用户要「一篇」就不拆）；仅当用户允许或体量确实过大时走。\n[services/split_write.py:4] 本模块提供判定与分组；`cli write-full --split-large` 显式开启。\n[services/split_write.py:5] \"\"\"\n[services/split_write.py:6] from services.news import get_by_key\n[services/split_write.py:7] from services.word_count import content_len\n[services/split_write.py:9] DEFAULT_THRESHOLD = 3000\n[services/split_write.py:10] __all__ = [\"cluster_text_len\", \"should_split\", \"split_groups\", \"split_plan\"]\n[services/split_write.py:13] def _keys(cand):\n[services/split_write.py:14] return list(dict.fromkeys([cand[\"key\"]] + [k.strip() for k in (cand.get(\"cluster_keys\") or \"\").split(\",\") if k.strip()])\n[services/split_write.py:17] def cluster_text_len(cand):\n[services/split_write.py:18] \"\"\"main + cluster 全部 content_ja 的 xhs 字数合计。\"\"\""
+ },
+ {
+  "id": 14,
+  "lines": "1-160",
+  "rule": "聚类时注意日期陷阱：检查前一天已发布素材，避免同事件重复入库",
+  "expectation": "聚类范围包含前一天已发布条目",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "agent/review.py",
+   "services/batches.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "agent/review.py:330",
+  "reason": "review 输入明确包含前一天素材 JSON 并在 prompts/review.md:16 要求对照前一天已发布同事件素材去重，满足聚类范围包含前一天的规则。",
+  "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:16] 对照前一天已出现/已发布的**同事件**素材，标注处理（前日重复→降 C / 前日已发 / 正常）。\n[agent/prompts/review.md:22] **硬约束：S级 ≤ 当日素材总数 × 15%**（如 53 条 → S ≤ 8）。\n[agent/prompts/review.md:32] 对 S/A/AKB 每条：标题方向、写法建议、素材充实度、优先级(P0/P1/P2)、情绪预期。\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:25] ENT_SYS = (\"你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**：\"\n[agent/review.py:126] # channel_hint（gzh 方向，旧 skill 阶段2「从 review 提取 gzh 方向素材」）\n[agent/review.py:209] \"（争议型素材在小红书天然有流量；男团粉丝争议/私物/同框/综艺花絮也走 xhs）；**坂道系（乃木坂46/欅坂46/日向坂46/櫻坂46 及其成员）/女艺人（女性向）**/AKB大TOP；\"\n[agent/review.py:328] f\"=== 当日全量素材（JSON，字段含 body=content_ja 日文正文，请逐条阅读）===\\n\"\n[agent/review.py:330] f\"=== 前一天素材（JSON，用于日期陷阱；无 body）===\\n{json.dumps(pkg['prev'], ensure_ascii=False)}\\n\\n\"\n[services/batches.py:1] \"\"\"批次 manifest + 跨日漏写检测（硬规则=config+服务）。\n[services/batches.py:3] 每次写稿落 data/write_batches/<date>.json：本次处理的 keys + 结果 + 跳过清单(keys+reason)。\n[services/batches.py:4] 下次启动读最近 manifest：消费跳过清单（不重写纯重复/待人工），并对缺失 manifest 的近期日期告警（疑似漏写日）。\n[services/batches.py:5] \"\"\"\n[services/batches.py:6] import json\n[services/batches.py:7] from datetime import datetime, timedelta\n[services/batches.py:9] from services import paths, rules\n[services/batches.py:11] __all__ = [\"save\", \"load\", \"recent\", \"covered_keys\", \"skipped_map\", \"missed_days\"]\n[services/batches.py:13] _DIRNAME = \"write_batches\"\n[services/batches.py:16] def _cfg():\n[services/batches.py:17] return rules.thresholds().get(\"batch\", {})\n[services/batches.py:20] def _dir():"
+ },
+ {
+  "id": 15,
+  "lines": "1-160",
+  "rule": "输出顺序：先按来源分组全量列表，再聚类分析，再分级结果",
+  "expectation": "按固定顺序输出三层内容",
+  "kind": "code",
+  "v2_files": [
+   "agent/review.py",
+   "agent/prompts/review.md",
+   "services/review_render.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "agent/prompts/review.md:3-11, services/review_render.py:16-20",
+  "reason": "prompt 要求先输出全量分组结构化数据（date_trap/clusters/grades 等），再由 render 按固定 _ORDER 聚类分级渲染成报告，满足先列表后聚类再分级的三层顺序",
+  "evidence": "[agent/review.py:216] \"【skip（不写稿）】纯榜单/列表无上下文；品牌合作软文（>50%产品参数）；セクシー女優写真宣传；与日娱无关（体育/经济/政治无关）；\"\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):"
+ },
+ {
+  "id": 16,
+  "lines": "1-160",
+  "rule": "AKB大TOP分流：事件型写全文preselected=1；晒照型以summary bullet入库（rewritten留空）",
+  "expectation": "按事件型/晒照型分别处理",
+  "kind": "code",
+  "v2_files": [
+   "agent/write.py",
+   "agent/prompts/write.md",
+   "services/import_drafts.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/write.py:56-57; services/import_drafts.py:69",
+  "reason": "实现区分了晒照型bullet（preselected=1且无正文则跳过重跑）与事件型入库preselected=1，但未见晒照型以summary bullet入库且rewritten留空的明确处理细节",
+  "evidence": "[agent/write.py:4] → 3 编写 → 4 入库+验证 → 5 renwei(六类信号) + xhs 5维 / gzh 3维 + 改稿 → 6 待发布推荐。\n[agent/write.py:56] # AKB 晒照型 bullet 已处理（preselected=1 且无正文）→ 不再重跑\n[agent/write.py:57] and not ((r.get(\"akb_type\") or \"\") == \"bullet\" and r.get(\"preselected\"))\n[agent/write.py:72] # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底\n[agent/write.py:73] graded = [r for r in base if (r.get(\"grade\") or \"\").upper() in (\"S\", \"A\", \"AKB\", \"AKB大TOP\")]\n[agent/write.py:93] \"\"\"阶段1 写前准备（机械）：写作包 — 全文原文 + 同事件关联 + 相关知识 + 体裁/字数路由 + 机械渠道预判。\"\"\"\n[agent/prompts/write.md:1] 你是资深小红书日娱内容编辑。输出严格 JSON，不要任何多余文字。\n[agent/prompts/write.md:3] 【渠道】\n[agent/prompts/write.md:4] - 男团/男偶像的 **产业·厂牌·销量·榜单·战略·行业分析** 类 → channel=\"gzh\"\n[agent/prompts/write.md:5] - **粉丝向爆料/日常/同框/综艺花絮/写真** → channel=\"xhs\"\n[agent/prompts/write.md:6] - 同一素材 xhs 与 gzh 都合适 → channel=\"both\"，并同时给 `gzh_title`/`gzh_body`\n[agent/prompts/write.md:7] - 拿不准选 \"xhs\"。\n[agent/prompts/write.md:9] 【标题】\n[agent/prompts/write.md:10] - 有钩子/矛盾/数字，但不做标题党。字数上限由程序按平台规则兜底。\n[agent/prompts/write.md:12] 【结构（长文 story 必检）】\n[agent/prompts/write.md:13] - 若素材是 story 长文：正文必须是分段长文，**≥2 个 `## ` 二级小标题**（不是 `###`、更不是 `**加粗**`）；每段一个主题，小标题=具体信息点+轻微钩子。\n[agent/prompts/write.md:14] - news 短稿**不要**用 `##`，用自然过渡句。\n[agent/prompts/write.md:16] 【正文】\n[services/import_drafts.py:1] \"\"\"批量入库 —— 唯一实现（迁移自 batch_import_drafts.py 模板，改为参数化）。\n[services/import_drafts.py:4] 入库后按 rewritten_title 精确比对 + 正文长度>50 验证；gzh 稿走 wechat_ 字段、preselected=0。\n[services/import_drafts.py:54] \"preselected=0, publish_xhs=0 WHERE key=?\", (title, body, key))\n[services/import_drafts.py:69] \"publish_mode='rewritten', preselected=1, publish_xhs=0, \"\n[services/import_drafts.py:89] ap = argparse.ArgumentParser(description=\"批量入库草稿\")"
+ },
+ {
+  "id": 17,
+  "lines": "161-320",
+  "rule": "查同关键词/同人物旧记录必须用API的search参数，不能用limit全量拉回后过滤",
+  "expectation": "search覆盖全部记录，旧文章不被limit截断漏掉",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 18,
+  "lines": "161-320",
+  "rule": "search查询中文参数用-G --data-urlencode传递，不用shell变量嵌python3 -c",
+  "expectation": "无URL编码错误和JSONDecodeError",
+  "kind": "process",
+  "v2_files": [
+   "scripts/yahoo_news_auto.py",
+   "scripts/yahoo_news_auto_sqlite.py",
+   "scripts/fetch_runner.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：shell 参数写法——人工操作",
+  "evidence": "[scripts/yahoo_news_auto.py:1] #!/usr/bin/env python3\n[scripts/yahoo_news_auto.py:155] if (2 < len(t) < 30 and not date_re.search(t)\n[scripts/yahoo_news_auto_sqlite.py:1] #!/usr/bin/env python3\n[scripts/fetch_runner.py:1] #!/usr/bin/env python3\n[scripts/fetch_runner.py:150] \"xiaohongshu.com/explore\", \"xiaohongshu.com/search_result\","
+ },
+ {
+  "id": 19,
+  "lines": "161-320",
+  "rule": "search未命中时不得直接判定无旧记录，需拉全量再查一次确认",
+  "expectation": "确认无关联后标记「无关联」而非「待补充」",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 20,
+  "lines": "161-320",
+  "rule": "写稿前必须完成第3层跨时间关联查询，第3层与写稿是因果关系",
+  "expectation": "写稿内容不与已发布旧素材重复",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 21,
+  "lines": "161-320",
+  "rule": "关联类型按五类处置：纯重复跳过、时间线补充合并、人物呼应写续篇、新角度写新篇、无关联新选题",
+  "expectation": "每条关联有对应处置",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 22,
+  "lines": "161-320",
+  "rule": "第4层分析published数据前必须先检查publish_mode、rewritten_title、rewritten_content三字段",
+  "expectation": "分析基于实际发布标题而非原始title",
+  "kind": "code",
+  "v2_files": [
+   "agent/review.py",
+   "agent/prompts/review.md",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/review.py:235-236",
+  "reason": "SQL 查询用 COALESCE(rewritten_title,title) 并检索 rewritten_title/content_ja，但未见对 publish_mode 字段的显式检查，三字段前置检查仅覆盖标题/正文。",
+  "evidence": "[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:27] \"（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。\"\n[agent/review.py:235] \"COALESCE(rewritten_title,title) t FROM news \"\n[agent/review.py:236] \"WHERE COALESCE(publish_time,'')!='' AND (title LIKE ? OR rewritten_title LIKE ? OR content_ja LIKE ?) \"\n[agent/prompts/review.md:41] - `patterns`：**仅新增**模式。除 `title/body/tags` 外必须给结构化 facets：`category(娱乐|经济|体育|社会|其他)`、`genre`、`title_style`、`publish_mode\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:25] FACETS = (\"category\", \"genre\", \"title_style\", \"publish_mode\", \"direction\", \"action\",\n[services/feedback_patterns.py:110] \"\"\"patterns:[{title,body,tags,category,genre,title_style,publish_mode,direction,action,confidence,entities}]\n[services/feedback_patterns.py:156] \"publish_mode\", \"direction\", \"action\", \"confidence\", \"entities\")"
+ },
+ {
+  "id": 23,
+  "lines": "161-320",
+  "rule": "发布不足24h的数据不得用作否定性结论（爆款/冷门）的证据",
+  "expectation": "<24h只记录原始数据，不下结论",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py",
+   "scripts/xhs_trend_scanner.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:38",
+  "reason": "【人工裁定】三段分层已入 prompt；「<24h 不下否定结论」未显式",
+  "evidence": "[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[scripts/xhs_trend_scanner.py:82] # 截尾均值（去掉最高值防单篇爆款拉高）"
+ },
+ {
+  "id": 24,
+  "lines": "161-320",
+  "rule": "24-48h数据只能做初动趋势参考，不可做最终定论",
+  "expectation": "仅趋势判断",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py",
+   "agent/prompts/review.md",
+   "services/recommend.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:9",
+  "reason": "实现了 layer4 发布数据回顾（conclusion/top/low/zero/anomaly），但片段中未见『24-48h 数据仅作初动趋势参考、不可作最终定论』的限定表述，边界约束未覆盖。",
+  "evidence": "[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[services/recommend.py:1] \"\"\"待发布推荐（机械，对齐原 skill 阶段6）。\n[services/recommend.py:3] - 选篇：**4 篇数据驱动**（时效 + 人物历史发布数据 + 分数）+ **1 篇随机探索**；+ 2 条备选。\n[services/recommend.py:4] - 数据总览：断更天数 / 本月每日发布量 / 候选池规模 / 待发队列条数。\n[services/recommend.py:5] - 冲突检查：避开明天已排期的人/题材；同人物/同事件不挤同一天。\n[services/recommend.py:6] - 只选篇 + 给时段；**不发布**（写库由 services.schedule.apply_plan 完成）。\n[services/recommend.py:7] \"\"\"\n[services/recommend.py:8] import datetime as dt\n[services/recommend.py:9] import random\n[services/recommend.py:10] import sqlite3\n[services/recommend.py:11] import statistics\n[services/recommend.py:13] from services import paths\n[services/recommend.py:15] JST = dt.timezone(dt.timedelta(hours=9))"
+ },
+ {
+  "id": 25,
+  "lines": "161-320",
+  "rule": "强IP（OG级人物）素材即使<48h也慎重下零阅读/冷门结论，标注待观察",
+  "expectation": "OG级放宽一个时间段",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "agent/review.py",
+   "services/recommend.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:38",
+  "reason": "【人工裁定】同上",
+  "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys\n[services/recommend.py:1] \"\"\"待发布推荐（机械，对齐原 skill 阶段6）。\n[services/recommend.py:3] - 选篇：**4 篇数据驱动**（时效 + 人物历史发布数据 + 分数）+ **1 篇随机探索**；+ 2 条备选。\n[services/recommend.py:4] - 数据总览：断更天数 / 本月每日发布量 / 候选池规模 / 待发队列条数。\n[services/recommend.py:5] - 冲突检查：避开明天已排期的人/题材；同人物/同事件不挤同一天。\n[services/recommend.py:6] - 只选篇 + 给时段；**不发布**（写库由 services.schedule.apply_plan 完成）。\n[services/recommend.py:7] \"\"\"\n[services/recommend.py:8] import datetime as dt\n[services/recommend.py:9] import random\n[services/recommend.py:10] import sqlite3\n[services/recommend.py:11] import statistics\n[services/recommend.py:13] from services import paths\n[services/recommend.py:15] JST = dt.timezone(dt.timedelta(hours=9))"
+ },
+ {
+  "id": 26,
+  "lines": "161-320",
+  "rule": "写反馈闭环前自查四项：发布时长、是否OG级IP、标题争议性、category匹配度",
+  "expectation": "四项检查完成后再写结论",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 27,
+  "lines": "161-320",
+  "rule": "xhs_pub_time解析需兼容空值、10字符纯日期、16字符标准格式三种情况",
+  "expectation": "分层数字正确，异常记录不错桶",
+  "kind": "code",
+  "v2_files": [
+   "scripts/xhs_trend_scanner.py",
+   "scripts/xhs_util.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "agent/review.py:234 + services/feedback_patterns.py",
+  "reason": "【人工裁定】xhs_pub_time 解析兼容（COALESCE/切片）",
+  "evidence": "[scripts/xhs_trend_scanner.py:1] #!/usr/bin/env python3\n[scripts/xhs_trend_scanner.py:2] \"\"\"xhs_trend_scanner.py — XHS 话题热门内容趋势扫描\"\"\"\n[scripts/xhs_trend_scanner.py:4] import sys\n[scripts/xhs_trend_scanner.py:5] from pathlib import Path\n[scripts/xhs_trend_scanner.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/xhs_trend_scanner.py:8] import re\n[scripts/xhs_trend_scanner.py:9] import json\n[scripts/xhs_trend_scanner.py:10] import logging\n[scripts/xhs_trend_scanner.py:11] from datetime import datetime, timedelta\n[scripts/xhs_trend_scanner.py:13] logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [trend] %(message)s\")\n[scripts/xhs_trend_scanner.py:14] logger = logging.getLogger(\"trend_scanner\")\n[scripts/xhs_trend_scanner.py:17] def _is_recent(text: str, hours: int = 48) -> bool:\n[scripts/xhs_util.py:1] \"\"\"纯辅助函数/格式化 —— 从 cdp_publish.py 抽出（P6 拆分）。\"\"\"\n[scripts/xhs_util.py:2] import csv\n[scripts/xhs_util.py:3] import os\n[scripts/xhs_util.py:4] from datetime import datetime, timedelta\n[scripts/xhs_util.py:5] from typing import Any\n[scripts/xhs_util.py:6] from zoneinfo import ZoneInfo\n[scripts/xhs_util.py:8] from feed_explorer import SearchFilters\n[scripts/xhs_util.py:9] from xhs_constants import MAX_TIMING_JITTER_RATIO\n[scripts/xhs_util.py:12] def _normalize_timing_jitter(value: float) -> float:\n[scripts/xhs_util.py:13] \"\"\"Clamp timing jitter to a safe range.\"\"\"\n[scripts/xhs_util.py:14] return max(0.0, min(MAX_TIMING_JITTER_RATIO, value))\n[scripts/xhs_util.py:17] def _is_local_host(host: str) -> bool:"
+ },
+ {
+  "id": 28,
+  "lines": "161-320",
+  "rule": "分层数字变动时必须同步更新趋势行，不能只改正文表",
+  "expectation": "趋势行与正文一致",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 29,
+  "lines": "161-320",
+  "rule": "xhs_ctr字段可能缺失或为空串，解析需同时接受两种情况，可用xhs_click_rate作替代口径",
+  "expectation": "不因None/KeyError崩溃，CTR缺位需标注",
+  "kind": "code",
+  "v2_files": [
+   "scripts/metrics_collector.py",
+   "services/feedback_patterns.py",
+   "scripts/xhs_util.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/feedback_patterns.py",
+  "reason": "【人工裁定】click_rate 有替代口径；xhs_ctr 缺失兼容未显式",
+  "evidence": "[scripts/metrics_collector.py:174] xhs_shares=?, xhs_fans_gained=?, xhs_impression=?, xhs_click_rate=?,\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[scripts/xhs_util.py:1] \"\"\"纯辅助函数/格式化 —— 从 cdp_publish.py 抽出（P6 拆分）。\"\"\"\n[scripts/xhs_util.py:2] import csv\n[scripts/xhs_util.py:3] import os\n[scripts/xhs_util.py:4] from datetime import datetime, timedelta\n[scripts/xhs_util.py:5] from typing import Any\n[scripts/xhs_util.py:6] from zoneinfo import ZoneInfo\n[scripts/xhs_util.py:8] from feed_explorer import SearchFilters\n[scripts/xhs_util.py:9] from xhs_constants import MAX_TIMING_JITTER_RATIO\n[scripts/xhs_util.py:12] def _normalize_timing_jitter(value: float) -> float:\n[scripts/xhs_util.py:13] \"\"\"Clamp timing jitter to a safe range.\"\"\"\n[scripts/xhs_util.py:14] return max(0.0, min(MAX_TIMING_JITTER_RATIO, value))\n[scripts/xhs_util.py:17] def _is_local_host(host: str) -> bool:"
+ },
+ {
+  "id": 30,
+  "lines": "161-320",
+  "rule": "data-feedback-patterns.md更新时模式节必须插在跨会话趋势表之前，趋势行插在表内最后一行后",
+  "expectation": "趋势表节唯一，无孤悬行",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/feedback_patterns.py",
+  "reason": "【人工裁定】模式节+趋势行的插入位置由服务保证",
+  "evidence": "[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:18] __all__ = [\"aggregate\", \"context\", \"update\", \"relevant\", \"insert_patterns\",\n[services/feedback_patterns.py:19] \"all_patterns\", \"update_facets\", \"get_pattern\", \"update_row\"]\n[services/feedback_patterns.py:21] FEEDBACK_SEED_REL = \"skills/creative/xhs-daily-material-review/references/data-feedback-patterns.md\"\n[services/feedback_patterns.py:22] FEEDBACK_RUNTIME_REL = \"data/feedback/data-feedback-patterns.md\""
+ },
+ {
+  "id": 31,
+  "lines": "161-320",
+  "rule": "写入反馈模式的结论必须经得起反例检验，存在干扰变量时不断言单一因果",
+  "expectation": "结论考虑时间、IP流量、反例、类目匹配等干扰",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 32,
+  "lines": "161-320",
+  "rule": "发现反例后修改模式的边界条件本身，不添加例外条款",
+  "expectation": "模式被修正而非打补丁",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 33,
+  "lines": "161-320",
+  "rule": "同人物其他素材有过不错数据（阅读300+）时，不得断言该人物不行",
+  "expectation": "结论前查人物历史数据",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py",
+   "services/recommend.py",
+   "services/related.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/recommend.py:3",
+  "reason": "选篇已纳入人物历史发布数据作为评分依据，但片段未见针对『阅读300+不得断言人物不行』的显式保护/阈值判断，边界未覆盖。",
+  "evidence": "[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[services/recommend.py:1] \"\"\"待发布推荐（机械，对齐原 skill 阶段6）。\n[services/recommend.py:3] - 选篇：**4 篇数据驱动**（时效 + 人物历史发布数据 + 分数）+ **1 篇随机探索**；+ 2 条备选。\n[services/recommend.py:4] - 数据总览：断更天数 / 本月每日发布量 / 候选池规模 / 待发队列条数。\n[services/recommend.py:5] - 冲突检查：避开明天已排期的人/题材；同人物/同事件不挤同一天。\n[services/recommend.py:6] - 只选篇 + 给时段；**不发布**（写库由 services.schedule.apply_plan 完成）。\n[services/recommend.py:7] \"\"\"\n[services/recommend.py:8] import datetime as dt\n[services/recommend.py:9] import random\n[services/recommend.py:10] import sqlite3\n[services/recommend.py:11] import statistics\n[services/recommend.py:13] from services import paths\n[services/recommend.py:15] JST = dt.timezone(dt.timedelta(hours=9))\n[services/related.py:1] \"\"\"关联候选（机械，全历史无窗口）：**按实体名检索**（人物/团体/作品/系列名）。\n[services/related.py:3] 实体由 LLM 抽取，**中日双形**（日语汉字 + 简体中文）；本模块再补 zhconv 简繁/地区字形变体。\n[services/related.py:4] 全库历史以简体中文为主、content_ja 为日文，故用只读 DB 三字段 OR（title/content_ja/rewritten_title），\n[services/related.py:5] 比 API search= 更全（API search= 不索引 content_ja 日文正文）。\n[services/related.py:6] \"\"\"\n[services/related.py:7] import sqlite3\n[services/related.py:9] from services import paths\n[services/related.py:11] __all__ = [\"find_related\", \"variants\"]\n[services/related.py:14] def variants(e):\n[services/related.py:15] \"\"\"把一个实体扩展为检索变体：原样 + zhconv 简繁/地区字形。\"\"\"\n[services/related.py:16] out = []\n[services/related.py:17] e = str(e).strip()"
+ },
+ {
+  "id": 34,
+  "lines": "161-320",
+  "rule": "跨类目发布是强警告信号，但对强IP需加需观察24-48h的定性标注",
+  "expectation": "跨类目结论带边界标注",
+  "kind": "code",
+  "v2_files": [
+   "services/content_gate.py",
+   "config/off_topic.json",
+   "agent/prompts/write.md"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/content_gate.py:10-16",
+  "reason": "实现了跨类目命中→标 manual_review 的定性标注，但未见对强IP加24-48h观察期的边界标注逻辑",
+  "evidence": "[services/content_gate.py:1] \"\"\"写前内容门禁（硬规则=config+服务）：成人产业/非赛道命中 → 标待人工（不阻断写稿）。\"\"\"\n[services/content_gate.py:2] from services import rules\n[services/content_gate.py:4] __all__ = [\"check\"]\n[services/content_gate.py:6] _AD = rules.load(\"adult_industry.json\")\n[services/content_gate.py:7] _OT = rules.load(\"off_topic.json\")\n[services/content_gate.py:10] def check(title=\"\", body=\"\"):\n[services/content_gate.py:11] \"\"\"命中成人产业/非赛道 → 返回 {manual_review:1, manual_reason:...}；否则 None（不阻断）。\"\"\"\n[services/content_gate.py:12] text = f\"{title} {body}\"\n[services/content_gate.py:13] ad = [k for k in _AD.get(\"keywords\", []) if k and k in text]\n[services/content_gate.py:14] ot = [k for k in _OT.get(\"keywords\", []) if k and k in text]\n[services/content_gate.py:15] reasons = []\n[services/content_gate.py:16] if ad:\n[config/off_topic.json:1] {\n[config/off_topic.json:2] \"_comment\": \"非娱乐赛道（商务/理财/区块链等）：命中→标 manual_review（不阻断）\",\n[config/off_topic.json:3] \"action\": \"pending_manual\",\n[config/off_topic.json:4] \"keywords\": [\n[config/off_topic.json:5] \"ビジネス\",\n[config/off_topic.json:6] \"マナー\",\n[config/off_topic.json:7] \"オンライン会議\",\n[config/off_topic.json:8] \"ブロックチェーン\",\n[config/off_topic.json:9] \"仮想通貨\",\n[config/off_topic.json:10] \"投资\",\n[config/off_topic.json:11] \"理财\",\n[config/off_topic.json:12] \"股票\",\n[agent/prompts/write.md:1] 你是资深小红书日娱内容编辑。输出严格 JSON，不要任何多余文字。\n[agent/prompts/write.md:3] 【渠道】\n[agent/prompts/write.md:4] - 男团/男偶像的 **产业·厂牌·销量·榜单·战略·行业分析** 类 → channel=\"gzh\"\n[agent/prompts/write.md:5] - **粉丝向爆料/日常/同框/综艺花絮/写真** → channel=\"xhs\"\n[agent/prompts/write.md:6] - 同一素材 xhs 与 gzh 都合适 → channel=\"both\"，并同时给 `gzh_title`/`gzh_body`\n[agent/prompts/write.md:7] - 拿不准选 \"xhs\"。\n[agent/prompts/write.md:9] 【标题】\n[agent/prompts/write.md:10] - 有钩子/矛盾/数字，但不做标题党。字数上限由程序按平台规则兜底。\n[agent/prompts/write.md:12] 【结构（长文 story 必检）】\n[agent/prompts/write.md:13] - 若素材是 story 长文：正文必须是分段长文，**≥2 个 `## ` 二级小标题**（不是 `###`、更不是 `**加粗**`）；每段一个主题，小标题=具体信息点+轻微钩子。\n[agent/prompts/write.md:14] - news 短稿**不要**用 `##`，用自然过渡句。\n[agent/prompts/write.md:16] 【正文】"
+ },
+ {
+  "id": 35,
+  "lines": "161-320",
+  "rule": "每轮第4层完成后自查：结论若有反例是否已处理",
+  "expectation": "反例已被识别并处理",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 36,
+  "lines": "161-320",
+  "rule": "存档必须包含节标题含「全量素材一览」的全量列表节，不得压缩为仅聚类分析",
+  "expectation": "审计Step 2 grep可匹配到该节",
+  "kind": "code",
+  "v2_files": [
+   "services/review_archive.py",
+   "agent/review.py",
+   "agent/prompts/review.md"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/review_archive.py:38",
+  "reason": "存档生成含「全量素材一览」节标题（两种格式均含），grep 可匹配，满足规则。",
+  "evidence": "[services/review_archive.py:38] lines.append(f\"## 一、全量素材一览（单张合并表，{n}条）\")\n[services/review_archive.py:46] lines.append(f\"## 一、全量素材一览（按来源分组，{n}条）\")\n[agent/review.py:211] \"【gzh 门｜给路人看：有深度/需思考】深度分析（电影/音乐/摄影/美学等专业解读）；行业分析（娱乐产业/经纪/厂牌/销量/榜单/战略）；\"\n[agent/review.py:212] \"**人物深度**长访（完整叙事弧/公共议题）；跨文化分析（日本娱乐现象→中国语境）；多人物对照/行业历史梳理；\"\n[agent/review.py:219] \"口诀：给粉丝看的爆料/日常/心路/争议 → xhs；给路人看的人物/产业分析 → gzh；两者都占 → both；命中 skip 判据 → skip；拿不准 → \\\"xhs\\\"（默认）。\")\n[agent/review.py:328] f\"=== 当日全量素材（JSON，字段含 body=content_ja 日文正文，请逐条阅读）===\\n\"\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史"
+ },
+ {
+  "id": 37,
+  "lines": "161-320",
+  "rule": "存档中表格前必须用##标题，不能用粗体；表格|必须在行首无前导空格",
+  "expectation": "表格在Telegram正确渲染",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "services/review_archive.py",
+   "services/review_render.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:42",
+  "reason": "校验器明确检查表格前必须是#标题且禁止粗体引导，与规则语义一致",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:25] problems.append(f\"{tag}: 分隔行上方不是表头行（表格缺表头）\")\n[services/validate_tables.py:36] problems.append(f\"{tag}: 表格前缺空行\")\n[services/validate_tables.py:42] problems.append(f\"{tag}: 表格前不是 # 标题 -> \\\"{prev[:50]}\\\"\"\n[services/validate_tables.py:43] f\"（用 **粗体行** 引导会让表格退化为纯文本）\")\n[services/validate_tables.py:45] problems.append(f\"L{j + 1}: 表格后缺空行\")\n[services/review_archive.py:1] \"\"\"每日 review 存档 —— 按 TG 模板确定性生成 Markdown（元信息 + 全量分组表格）。\n[services/review_render.py:71] parts.append(_tbl([\"key\", \"标题\", \"标题方向\", \"写法建议\", \"充实度\", \"优先级\", \"情绪\"],"
+ },
+ {
+  "id": 38,
+  "lines": "321-480",
+  "rule": "Markdown 表格必须包含分隔行 |---|---|，否则不被识别为表格",
+  "expectation": "每个表格有分隔行",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py",
+  "reason": "【人工裁定】分隔行/表头/列数校验已实现",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[agent/tools.py:87] _fn(\"validate_tables\", \"Markdown 表格格式校验\","
+ },
+ {
+  "id": 39,
+  "lines": "321-480",
+  "rule": "表格列数必须一致：表头、分隔、数据行的 | 数量相等",
+  "expectation": "各行列数一致",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:27",
+  "reason": "实现了表头与分隔行列数一致性校验，效果满足规则。",
+  "evidence": "[services/validate_tables.py:25] problems.append(f\"{tag}: 分隔行上方不是表头行（表格缺表头）\")\n[services/validate_tables.py:27] problems.append(f\"{tag}: 表头/分隔行列数不一致（{cols(header)} vs {cols(line)}）\"\n[agent/tools.py:1] \"\"\"编排器工具集 —— 把 services 暴露为 LLM 可调用的函数（function calling）。\n[agent/tools.py:3] 三张皮的第三种用法：内置编排器通过本模块调用 services。\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:5] \"\"\"\n[agent/tools.py:6] import datetime as dt\n[agent/tools.py:7] import json\n[agent/tools.py:8] import random\n[agent/tools.py:10] from services import (\n[agent/tools.py:11] word_count as _wc, precheck as _pc, schedule as _sch,\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:13] )\n[agent/tools.py:15] __all__ = [\"TOOL_SCHEMAS\", \"TOOL_FUNCS\", \"dispatch\"]"
+ },
+ {
+  "id": 40,
+  "lines": "321-480",
+  "rule": "表格前后各留一个空行",
+  "expectation": "表格前后有空行",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py",
+   "services/review_render.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:36,45",
+  "reason": "validate_tables 明确检查表格前缺空行与表格后缺空行并报告问题，语义与规则完全对应。",
+  "evidence": "[services/validate_tables.py:36] problems.append(f\"{tag}: 表格前缺空行\")\n[services/validate_tables.py:45] problems.append(f\"L{j + 1}: 表格后缺空行\")\n[agent/tools.py:1] \"\"\"编排器工具集 —— 把 services 暴露为 LLM 可调用的函数（function calling）。\n[agent/tools.py:3] 三张皮的第三种用法：内置编排器通过本模块调用 services。\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:5] \"\"\"\n[agent/tools.py:6] import datetime as dt\n[agent/tools.py:7] import json\n[agent/tools.py:8] import random\n[agent/tools.py:10] from services import (\n[agent/tools.py:11] word_count as _wc, precheck as _pc, schedule as _sch,\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:13] )\n[agent/tools.py:15] __all__ = [\"TOOL_SCHEMAS\", \"TOOL_FUNCS\", \"dispatch\"]\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):"
+ },
+ {
+  "id": 41,
+  "lines": "321-480",
+  "rule": "表头行和分隔行不能写在同一行",
+  "expectation": "表头与分隔行分行",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/validate_tables.py:5-18",
+  "reason": "片段中可见 SEP 分隔行正则与逐行校验循环，但未展示表头行与分隔行是否同行的具体检查逻辑，无法确认该规则完整覆盖。",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:2] import re\n[services/validate_tables.py:3] import sys\n[services/validate_tables.py:5] SEP = re.compile(r\"^\\|[\\s\\-:|]+\\|$\")\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:10] def cols(row: str) -> int:\n[services/validate_tables.py:11] return len(row.strip().strip(\"|\").split(\"|\"))\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:16] lines = text.split(\"\\n\")\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:18] for i, line in enumerate(lines):\n[agent/tools.py:1] \"\"\"编排器工具集 —— 把 services 暴露为 LLM 可调用的函数（function calling）。\n[agent/tools.py:3] 三张皮的第三种用法：内置编排器通过本模块调用 services。\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:5] \"\"\"\n[agent/tools.py:6] import datetime as dt\n[agent/tools.py:7] import json\n[agent/tools.py:8] import random\n[agent/tools.py:10] from services import (\n[agent/tools.py:11] word_count as _wc, precheck as _pc, schedule as _sch,\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:13] )\n[agent/tools.py:15] __all__ = [\"TOOL_SCHEMAS\", \"TOOL_FUNCS\", \"dispatch\"]"
+ },
+ {
+  "id": 42,
+  "lines": "321-480",
+  "rule": "单个表格内容建议不超过 25 行，避免分段时表格跨段",
+  "expectation": "单表≤25行",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py",
+   "services/review_render.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:46",
+  "reason": "【人工裁定】单表 >25 行 → problems",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:2] import re\n[services/validate_tables.py:3] import sys\n[services/validate_tables.py:5] SEP = re.compile(r\"^\\|[\\s\\-:|]+\\|$\")\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:10] def cols(row: str) -> int:\n[services/validate_tables.py:11] return len(row.strip().strip(\"|\").split(\"|\"))\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:16] lines = text.split(\"\\n\")\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:18] for i, line in enumerate(lines):\n[agent/tools.py:1] \"\"\"编排器工具集 —— 把 services 暴露为 LLM 可调用的函数（function calling）。\n[agent/tools.py:3] 三张皮的第三种用法：内置编排器通过本模块调用 services。\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:5] \"\"\"\n[agent/tools.py:6] import datetime as dt\n[agent/tools.py:7] import json\n[agent/tools.py:8] import random\n[agent/tools.py:10] from services import (\n[agent/tools.py:11] word_count as _wc, precheck as _pc, schedule as _sch,\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:13] )\n[agent/tools.py:15] __all__ = [\"TOOL_SCHEMAS\", \"TOOL_FUNCS\", \"dispatch\"]\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):"
+ },
+ {
+  "id": 43,
+  "lines": "321-480",
+  "rule": "第4层反馈闭环表必须出现字面「阅读」字样（列头写「实际数据（阅读/互动）」或数值旁标注）",
+  "expectation": "grep -q \"阅读\" 能命中",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "services/feedback_patterns.py",
+   "agent/review.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:13",
+  "reason": "候选文件中确有字面「阅读」（review.md:13、review.py:328），grep 可命中，但第4层反馈闭环实现 services/feedback_patterns.py 的表/报告结构中未见「阅读」字样或「实际数据（阅读/互动）」列头，规则针对第4层闭环表的字面要求未在该层落实。",
+  "evidence": "[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:16] 对照前一天已出现/已发布的**同事件**素材，标注处理（前日重复→降 C / 前日已发 / 正常）。\n[agent/prompts/review.md:38] 依据输入「已发布数据聚合」的三段分层（>48h / 24-48h / <24h）写结论（曝光/观看/互动、Top/最低/零曝光/v>imp 异常），**不要编造数据**；无数据写「本期无发布数据」。\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[agent/review.py:328] f\"=== 当日全量素材（JSON，字段含 body=content_ja 日文正文，请逐条阅读）===\\n\""
+ },
+ {
+  "id": 44,
+  "lines": "321-480",
+  "rule": "表格单元格内禁止出现 | 字符，即使 \\| 转义也不行；含竖线内容改写为纯文字",
+  "expectation": "单元格无竖线，列数不错位",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py",
+   "services/review_render.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/review_render.py:6",
+  "reason": "_c 将单元格内容中的 | 替换为全角｜，保证单元格无竖线、列数不错位，效果满足规则",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:2] import re\n[services/validate_tables.py:3] import sys\n[services/validate_tables.py:5] SEP = re.compile(r\"^\\|[\\s\\-:|]+\\|$\")\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:10] def cols(row: str) -> int:\n[services/validate_tables.py:11] return len(row.strip().strip(\"|\").split(\"|\"))\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:16] lines = text.split(\"\\n\")\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:18] for i, line in enumerate(lines):\n[agent/tools.py:1] \"\"\"编排器工具集 —— 把 services 暴露为 LLM 可调用的函数（function calling）。\n[agent/tools.py:3] 三张皮的第三种用法：内置编排器通过本模块调用 services。\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:5] \"\"\"\n[agent/tools.py:6] import datetime as dt\n[agent/tools.py:7] import json\n[agent/tools.py:8] import random\n[agent/tools.py:10] from services import (\n[agent/tools.py:11] word_count as _wc, precheck as _pc, schedule as _sch,\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:13] )\n[agent/tools.py:15] __all__ = [\"TOOL_SCHEMAS\", \"TOOL_FUNCS\", \"dispatch\"]\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):"
+ },
+ {
+  "id": 45,
+  "lines": "321-480",
+  "rule": "表格正上方不能是粗体引导句，必须用 # 级标题（#### 也行）压住表格",
+  "expectation": "表格前紧邻行为 # 标题",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "services/skill_audit.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "services/validate_tables.py:1-18",
+  "reason": "候选实现是 Python 校验/审计代码（validate_tables.py 校验表格列数、skill_audit.py 为审计流程），并非含表格的 Markdown 文档，无表格-标题相邻结构可审计，该文档排版规则不适用于此实现文件。",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:2] import re\n[services/validate_tables.py:3] import sys\n[services/validate_tables.py:5] SEP = re.compile(r\"^\\|[\\s\\-:|]+\\|$\")\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:10] def cols(row: str) -> int:\n[services/validate_tables.py:11] return len(row.strip().strip(\"|\").split(\"|\"))\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:16] lines = text.split(\"\\n\")\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:18] for i, line in enumerate(lines):\n[services/skill_audit.py:1] r\"\"\"Skill 一致性审计：把 skill 文档逐条抽出规则，用 GLM 判「实现是否一致」。\n[services/skill_audit.py:3] 流程：extract_items（GLM 抽条目）→ gather_evidence（仓库关键词取证）→ judge（GLM 逐条判）→ render。\n[services/skill_audit.py:4] 审计用 GLM（不同厂商），不用被审的 DeepSeek。\n[services/skill_audit.py:5] \"\"\"\n[services/skill_audit.py:6] import json\n[services/skill_audit.py:7] import re\n[services/skill_audit.py:8] from pathlib import Path\n[services/skill_audit.py:10] from services import glm_client as _glm\n[services/skill_audit.py:12] __all__ = [\"extract_items\", \"dedup\", \"classify\", \"judge_all\", \"render\", \"run\"]\n[services/skill_audit.py:14] _EXTRACT_SYS = \"你是 skill 文档结构化助手。只输出严格 JSON。\"\n[services/skill_audit.py:15] _EXTRACT_TPL = \"\"\"以下是一个「小红书写稿/发布」skill 文档的第 {i}/{n} 段（行 {a}-{b}）。\n[services/skill_audit.py:16] 请把它拆成**可逐条审计的规则条目**。只抽「规则 / 判据 / 铁律 / 禁止项 / 教训结论」；"
+ },
+ {
+  "id": 46,
+  "lines": "321-480",
+  "rule": "标题必须紧邻表格，中间不能夹任何正文行（含 blockquote > 行）；说明文字上移到标题之前",
+  "expectation": "标题与表格间无正文行",
+  "kind": "code",
+  "v2_files": [
+   "services/review_render.py",
+   "services/review_archive.py",
+   "services/validate_tables.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:41",
+  "reason": "【人工裁定】表格前必须是 # 标题（禁粗体引导）",
+  "evidence": "[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):\n[services/review_archive.py:1] \"\"\"每日 review 存档 —— 按 TG 模板确定性生成 Markdown（元信息 + 全量分组表格）。\n[services/review_archive.py:3] LLM 的 L2~L4 价值建议可后续 append；本模块保证**存档骨架与历史 TG 存档同格式**。\n[services/review_archive.py:4] \"\"\"\n[services/review_archive.py:5] import argparse\n[services/review_archive.py:6] import sys\n[services/review_archive.py:8] from services import news as _news\n[services/review_archive.py:10] __all__ = [\"build_archive\", \"main\"]\n[services/review_archive.py:13] def _dist(rows):\n[services/review_archive.py:14] from collections import Counter\n[services/review_archive.py:15] return Counter((r.get(\"fetch_by\") or \"?\").strip() or \"?\" for r in rows)\n[services/review_archive.py:18] def build_archive(date: str, rows=None, single_table: bool = True) -> str:\n[services/review_archive.py:19] if rows is None:\n[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:2] import re\n[services/validate_tables.py:3] import sys\n[services/validate_tables.py:5] SEP = re.compile(r\"^\\|[\\s\\-:|]+\\|$\")\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:10] def cols(row: str) -> int:\n[services/validate_tables.py:11] return len(row.strip().strip(\"|\").split(\"|\"))\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:16] lines = text.split(\"\\n\")\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:18] for i, line in enumerate(lines):"
+ },
+ {
+  "id": 47,
+  "lines": "321-480",
+  "rule": "「标题→说明/引用行→表格」三明治结构写时就改成「说明行→标题→表格」，不等校验器抓",
+  "expectation": "无三明治结构",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/write.py",
+   "services/precheck.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:42",
+  "reason": "校验器要求表格前必须是 # 标题行（否则报错），即强制「说明行→标题→表格」结构，与规则要求的目标形态一致。",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:25] problems.append(f\"{tag}: 分隔行上方不是表头行（表格缺表头）\")\n[services/validate_tables.py:36] problems.append(f\"{tag}: 表格前缺空行\")\n[services/validate_tables.py:42] problems.append(f\"{tag}: 表格前不是 # 标题 -> \\\"{prev[:50]}\\\"\"\n[services/validate_tables.py:43] f\"（用 **粗体行** 引导会让表格退化为纯文本）\")\n[services/validate_tables.py:45] problems.append(f\"L{j + 1}: 表格后缺空行\")\n[agent/write.py:185] \"全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不合并正文。）\\n\\n\"\n[agent/write.py:198] user += (\"\\n\\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；\"\n[agent/write.py:301] '\"内容深度\":{...},\"标题质量\":{...},\"total\":n,\"建议\":\"..\"}（各0-2，total=五维之和）。'\n[agent/write.py:303] usr = _read(REVIEW_PROMPT)[:3000] + f\"\\n\\n=== 稿件 ===\\n标题：{title}\\n\\n{body[:4000]}\"\n[agent/write.py:304] _dims = (\"爆发点\", \"情绪价值\", \"信息增量\", \"内容深度\", \"标题质量\")\n[agent/write.py:333] sysd = '你是公众号内容评审。只输出 JSON：{\"标题吸引力\":n,\"叙事质量\":n,\"公众号适配度\":n,\"total\":n}（各1-10，合格线7）。'\n[services/precheck.py:3] - **xhs**：标题≤20；story lf=1 正文≥800 且 `##`≥2；news 无 `##`；无 `###`；顿号行 0；\n[services/precheck.py:5] - **gzh**：标题≤30；**不套** 30% 密度门、不套 story/news 结构门（公众号长文排版自由）；\n[services/precheck.py:52] \"\"\"返回 (标题|None, 正文)。首行必须带 `## `；缺首行时按整文件当正文。\"\"\"\n[services/precheck.py:75] problems.append(\"缺首行 `## 标题`（入库会把正文第一句当 rewritten_title）\")\n[services/precheck.py:77] problems.append(f\"标题残留编号前缀: {title[:20]}\")\n[services/precheck.py:83] problems.append(f\"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）\")"
+ },
+ {
+  "id": 48,
+  "lines": "321-480",
+  "rule": "写完存档必须跑 validate-tables.py 校验，problems: 0 才算通过，不靠肉眼判断",
+  "expectation": "校验输出 problems: 0",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 49,
+  "lines": "321-480",
+  "rule": "写存档前自查高频复发 TOP3：标题紧邻表格、单元格无竖线、粗体行不压表格",
+  "expectation": "三条均通过",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 50,
+  "lines": "321-480",
+  "rule": "第4层必须含「rewritten_title 抽检证据」子节：### 标题+3条「原始title→rewritten_title，mode=，pub=」对照，置于数据聚合小节后、分层表前",
+  "expectation": "审计Step1能确认用了rewritten_title+publish_mode",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "agent/review.py",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "缺失",
+  "impl_loc": "",
+  "reason": "【人工裁定】第4层「rewritten_title 抽检证据」子节未实现（review_render 无该节）",
+  "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:16] 对照前一天已出现/已发布的**同事件**素材，标注处理（前日重复→降 C / 前日已发 / 正常）。\n[agent/prompts/review.md:32] 对 S/A/AKB 每条：标题方向、写法建议、素材充实度、优先级(P0/P1/P2)、情绪预期。\n[agent/prompts/review.md:41] - `patterns`：**仅新增**模式。除 `title/body/tags` 外必须给结构化 facets：`category(娱乐|经济|体育|社会|其他)`、`genre`、`title_style`、`publish_mode\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:25] ENT_SYS = (\"你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**：\"\n[agent/review.py:27] \"（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。\"\n[agent/review.py:47] d = {\"key\": r[\"key\"][:12], \"title\": r.get(\"title\"), \"ja\": (r.get(\"title_ja\") or \"\")[:40],\n[agent/review.py:48] \"fmt\": r.get(\"format\"), \"lf\": r.get(\"is_long_form\"), \"ts\": r.get(\"title_score\"),\n[agent/review.py:50] \"src\": r.get(\"fetch_by\"), \"pub\": r.get(\"publish_xhs\")}\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:25] FACETS = (\"category\", \"genre\", \"title_style\", \"publish_mode\", \"direction\", \"action\",\n[services/feedback_patterns.py:67] no INTEGER PRIMARY KEY, date TEXT, title TEXT, body TEXT, tags TEXT, created_at TEXT)\"\"\")\n[services/feedback_patterns.py:85] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})\n[services/feedback_patterns.py:91] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})"
+ },
+ {
+  "id": 51,
+  "lines": "321-480",
+  "rule": "列数少（≤3列）且每行数据量大时，用 Markdown 列表代替表格更安全易读",
+  "expectation": "符合条件时用列表",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "services/review_render.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/validate_tables.py",
+  "reason": "【人工裁定】有列数一致校验；未实现「少列改列表」的建议",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\""
+ },
+ {
+  "id": 52,
+  "lines": "321-480",
+  "rule": "segment-send.py 只在存档后 Step 5 调用，不在写稿、入库或其他流程调用",
+  "expectation": "仅 Step 5 调用",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 53,
+  "lines": "321-480",
+  "rule": "segment-send.py 失败时首选 curl fallback 脚本（保留表格渲染），不要重试 Python urllib 路径（socks 未装必失败）",
+  "expectation": "失败即切 curl fallback",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 54,
+  "lines": "321-480",
+  "rule": "发送前用 curl 测代理连通性（返回 302 即健康），以 curl 实测为准，不以 lsof 无输出为判据",
+  "expectation": "curl 得 302 才发",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 55,
+  "lines": "321-480",
+  "rule": "收到 Errno 61 Connection refused 时先 curl 测代理：通则直接切 curl fallback，不改端口、不重试 urllib、不改 config",
+  "expectation": "Connection refused→curl验证→fallback",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 56,
+  "lines": "321-480",
+  "rule": "macOS 无 timeout 命令，不要写 timeout 90 python3 ...；用工具自带 timeout 参数",
+  "expectation": "不调用 timeout 命令",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 57,
+  "lines": "321-480",
+  "rule": "macOS 不要用 grep -P 手搓提取 bot_token（BSD grep 不支持 -P 会静默失败）；直接跑 fallback 脚本或用 sed/grep -o",
+  "expectation": "不用 grep -P 提取 token",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 58,
+  "lines": "321-480",
+  "rule": "代理判据分级：单端口 000 其它端口 302=端口漂移→切该端口 fallback；全部候选端口 000+lsof 无监听+直连 000=代理进程未运行→直接终极 Fallback，不轮询不重试不改 config",
+  "expectation": "按判据分级处置",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 59,
+  "lines": "321-480",
+  "rule": "终极 Fallback：所有发送路径失败时，存档内容作为 cron 最终响应直接输出，由系统 deliver 投递；存档仍正常落盘",
+  "expectation": "响应含存档内容且存档已写",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 60,
+  "lines": "321-480",
+  "rule": "cron 模式下 execute_code / from hermes_tools 被 BLOCK，Python 处理一律用内联 python3 -c 在 terminal 中完成",
+  "expectation": "无 execute_code 调用",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 61,
+  "lines": "321-480",
+  "rule": "并行子 agent 共享 /tmp，临时文件必须用层前缀命名（/tmp/l1_* /tmp/l23_* /tmp/l4_*）或层专属子目录，防 sibling 覆写",
+  "expectation": "临时文件均带层前缀",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 62,
+  "lines": "321-480",
+  "rule": "并行模式下 Layer1 与 Layer23 作用域可能不对称（目标赛道 vs 全量），需在 goal 中明确范围并在存档中标注差异，不合并为一份 S/A 表",
+  "expectation": "存档标注两条线数据集差异",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 63,
+  "lines": "321-480",
+  "rule": "子 agent toolsets 限定 terminal/file/web；禁止调用 delegate_task、write_file 到 DB、update.sh",
+  "expectation": "子 agent 无越权调用",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 64,
+  "lines": "321-480",
+  "rule": "cron prompt 中 segment-send 用完整展开的绝对路径，不用 ~/ 缩写，不用 segment-send.sh",
+  "expectation": "prompt 用绝对路径",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 65,
+  "lines": "481-640",
+  "rule": "主进程汇总时禁止用 execute_code 读取子 agent workspace 文件或做批量数据处理",
+  "expectation": "主进程汇总阶段无 execute_code 文件读取/批处理调用",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 66,
+  "lines": "481-640",
+  "rule": "Layer2-3 分类对齐验证必须用 read_file 而非 execute_code 读取 layer23 报告日期",
+  "expectation": "验证代码使用 read_file",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 67,
+  "lines": "481-640",
+  "rule": "永远不要依赖 execute_code 作为 cron 流程中的关键路径",
+  "expectation": "cron 关键路径无 execute_code 依赖",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 68,
+  "lines": "481-640",
+  "rule": "audit 脚本中的 Python 操作必须同步适配，from hermes_tools 在 cron 下不可用",
+  "expectation": "审计脚本在 cron 下可运行",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 69,
+  "lines": "481-640",
+  "rule": "子 agent 获取素材时 ts 字段可能全为 0，主进程汇总应优先信任 layer1 的分级结果",
+  "expectation": "S/A 分级以 layer1 为准",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 70,
+  "lines": "481-640",
+  "rule": "layer23 报告标注 ts 均为 0 时，其 S/A 阈值偏宽松，引用其价值建议须注明「基于自行分级」",
+  "expectation": "引用处带自行分级标注",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 71,
+  "lines": "481-640",
+  "rule": "layer23 报告 ts=0 时主进程不必再 curl 验证，确认其使用 cj_len+事件性降级标准即可",
+  "expectation": "无重复 curl 验证",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 72,
+  "lines": "481-640",
+  "rule": "子 agent 报告头部计数可能与正文列表不符，主进程汇总必须以正文列表实际条目数为准，不能照抄标题计数",
+  "expectation": "存档数字与实际列表条数一致",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 73,
+  "lines": "481-640",
+  "rule": "子 agent 不一定能 skill_view 加载 layer skill，delegate 时必须把该层核心步骤内联进 goal/context，不能只写「加载 skill X 执行」",
+  "expectation": "goal 含拉取命令、date_from 铁则、分级阈值、禁止项、输出格式",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 74,
+  "lines": "481-640",
+  "rule": "goal 里保留 skill_view 为第一选择，加载不到不阻塞，按内联步骤执行",
+  "expectation": "子 agent 无 skill 时仍能完成产出",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 75,
+  "lines": "481-640",
+  "rule": "验收不依赖子 agent 声称加载了 skill，用输出完整性校验（如 key 全覆盖比对）",
+  "expectation": "以输出完整性为验收标准",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 76,
+  "lines": "481-640",
+  "rule": "子 agent 无 skill_view 时可用 read_file 直接读取该 layer 的 SKILL.md 作为 fallback",
+  "expectation": "fallback 路径可取得 skill 全文",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 77,
+  "lines": "481-640",
+  "rule": "layer skill 路径前缀不对称：layer1 在 creative/ 子目录下，layer23 与 layer4 不在；写路径后须自查有无多余目录层",
+  "expectation": "delegate context 中路径无多余 creative/ 前缀",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 78,
+  "lines": "481-640",
+  "rule": "不要把「能 read_file 到 skill」当作前提，内联步骤仍是第一保证",
+  "expectation": "read_file 失败时流程仍可执行",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 79,
+  "lines": "481-640",
+  "rule": "主进程不应依赖读取子 agent workspace 文件作为数据传递主通道，应从 delegate_task 返回的 summary 提取结果",
+  "expectation": "汇总数据来自 summary",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 80,
+  "lines": "481-640",
+  "rule": "summary 缺精确 key 时可读当日 review_l1_report_* 文件补全，只读当日文件，禁止读历史日期文件",
+  "expectation": "仅读取当日日期的报告文件",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 81,
+  "lines": "481-640",
+  "rule": "workspace 报告文件应视为取全 key 的默认路径：L1 delegate 一返回，主进程立刻 read_file 当日报告文件再构造存档与 L23 context",
+  "expectation": "L1 返回后立即读取报告文件",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 82,
+  "lines": "481-640",
+  "rule": "报告文件路径以 L1 summary 里报出的为准（可能在 /tmp 或 workspace），不要硬编码 workspace 路径去 search_files；找不到再 search 兜底",
+  "expectation": "先按 summary 报告路径读取",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 83,
+  "lines": "481-640",
+  "rule": "delegate 时必须将 layer1 的显式分级结果（S/A 列表含 key 和标题）放入 layer23 的 context 字段",
+  "expectation": "context 含 S/A 列表",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 84,
+  "lines": "481-640",
+  "rule": "layer23 goal 须写明：基于第1层 S/A 列表分析、不重新分类、不通过 search_files 查找旧报告文件",
+  "expectation": "goal 含禁重分类与禁搜旧文件指令",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 85,
+  "lines": "481-640",
+  "rule": "layer23 可拉今日素材取 content_ja 全文，但不得自行重定 S/A 阈值",
+  "expectation": "S/A 阈值沿用 layer1",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 86,
+  "lines": "481-640",
+  "rule": "layer23 发现值得关注的未评级素材，只能以「补充建议」提及，不改变原有分级",
+  "expectation": "原分级不被改动",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 87,
+  "lines": "481-640",
+  "rule": "主进程汇总时必须验证 layer23 报告引用的素材日期是否为今日；若用了旧数据须自行补做第2~3层分析",
+  "expectation": "layer23 报告素材均为今日日期",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 88,
+  "lines": "481-640",
+  "rule": "cron 表达式使用系统本地时区 CST，不要改成 UTC 修正形式（如 0 2 * * *）",
+  "expectation": "next_run_at 显示 +08:00 正确时间",
+  "kind": "process",
+  "v2_files": [
+   "services/schedule.py",
+   "scripts/agent_runner.py",
+   "scripts/fetch_runner.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：cron 时区写法——Hermes cron 配置",
+  "evidence": "[services/schedule.py:1] \"\"\"待发布推荐 · 预发布时间生成器 —— 唯一实现（迁移自 pub_time_plan.py）。\n[services/schedule.py:3] 「明天」= 东京时区明天；每个时段 [-jitter,+jitter] 随机偏移、排除 0、分钟绝不为 :00；\n[services/schedule.py:4] --apply 只 UPDATE news（xhs_pub_time / 可选 publish_xhs=1），**不触发发布**。\n[services/schedule.py:5] DB 路径走 services.paths.sqlite_path()。\n[services/schedule.py:6] \"\"\"\n[services/schedule.py:7] import argparse\n[services/schedule.py:8] import datetime as dt\n[services/schedule.py:9] import random\n[services/schedule.py:10] import sys\n[services/schedule.py:12] from services import paths\n[services/schedule.py:14] DEFAULT_SLOTS = [\"09:00\", \"12:00\", \"15:00\", \"18:00\", \"20:00\"]\n[services/schedule.py:15] JST = dt.timezone(dt.timedelta(hours=9))\n[scripts/agent_runner.py:1] #!/usr/bin/env python3\n[scripts/agent_runner.py:2] \"\"\"agent_runner.py — 智能体主循环（每日 07:00 触发）\"\"\"\n[scripts/agent_runner.py:4] import sys\n[scripts/agent_runner.py:5] from pathlib import Path\n[scripts/agent_runner.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/agent_runner.py:8] import os\n[scripts/agent_runner.py:9] import json\n[scripts/agent_runner.py:10] import logging\n[scripts/agent_runner.py:11] from datetime import datetime, timedelta\n[scripts/agent_runner.py:12] from dataclasses import asdict\n[scripts/agent_runner.py:14] logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [agent] %(message)s\")\n[scripts/agent_runner.py:15] logger = logging.getLogger(\"agent_runner\")\n[scripts/fetch_runner.py:1] #!/usr/bin/env python3\n[scripts/fetch_runner.py:2] \"\"\"fetch_runner.py — 每日定时抓取，从 DB 读 keywords 后调用 /api/trigger-fetch。\"\"\"\n[scripts/fetch_runner.py:4] import sys\n[scripts/fetch_runner.py:5] import json\n[scripts/fetch_runner.py:6] import time\n[scripts/fetch_runner.py:7] import logging\n[scripts/fetch_runner.py:8] import requests\n[scripts/fetch_runner.py:9] from datetime import datetime\n[scripts/fetch_runner.py:10] from pathlib import Path\n[scripts/fetch_runner.py:12] sys.path.insert(0, str(Path(__file__).resolve().parent))\n[scripts/fetch_runner.py:13] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/fetch_runner.py:15] logging.basicConfig("
+ },
+ {
+  "id": 89,
+  "lines": "481-640",
+  "rule": "cron 健康检查除 last_run_at 外还要看所有 job 的 next_run_at；多个 job 的 next_run_at 停在同一时刻说明调度器整体停 tick，而非单 job 失败",
+  "expectation": "多 job next_run_at 停滞即判定调度器挂",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 90,
+  "lines": "481-640",
+  "rule": "调度器停 tick 导致当日 review 未跑时，主进程须补跑（补 L1/L3 → 补存档 L2/L4 → 审计 → segment-send）",
+  "expectation": "当日存档与审计补齐",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 91,
+  "lines": "481-640",
+  "rule": "排查 cron 故障向用户汇报时必须先数据后结论，每步结论附原始日志/命令输出，禁止推测性语言",
+  "expectation": "汇报含证据行，无「可能/大概」措辞",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 92,
+  "lines": "481-640",
+  "rule": "手动重跑 cron 后须确认 last_run_at 更新、output 目录有新文件、用户收到 deliver",
+  "expectation": "三项确认均通过",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 93,
+  "lines": "481-640",
+  "rule": "测试 job 的 prompt 必须模拟真实 cron 完整流程，不能跳过任何步骤（如 segment-send）",
+  "expectation": "测试含全部步骤且用户收到输出",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 94,
+  "lines": "481-640",
+  "rule": "不要直接修改主 cron prompt 来测试，须创建独立 one-shot 测试 job，且用 ISO 时间戳（now+1m 等语法不支持）",
+  "expectation": "测试用独立 job + ISO schedule",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 95,
+  "lines": "481-640",
+  "rule": "测试新 cron 架构前必须清理旧状态（删除同日期存档），测试后清理测试 job",
+  "expectation": "测试前删同日存档，测试后删 job",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 96,
+  "lines": "481-640",
+  "rule": "测试 job 与主 cron 同时跑会输出混淆（都 deliver=origin 发到同一对话），须注意区分",
+  "expectation": "测试期间输出可区分",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 97,
+  "lines": "481-640",
+  "rule": "delegate_task 分发前必须确认被引用的 layer skill 真实存在，否则子 agent 卡死在 skill_view 导致流超时死循环",
+  "expectation": "引用的 layer skill 均已创建",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 98,
+  "lines": "481-640",
+  "rule": "layer23 分类膨胀问题持续存在（倾向将商务/经济新闻升格为 S），主进程汇总应优先信任 layer1 分级，layer23 价值建议按「建议」而非「判定」引用",
+  "expectation": "S 级判定以 layer1 为准",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 99,
+  "lines": "481-640",
+  "rule": "layer4 子 agent 有 600s 超时风险（大量反馈闭环分析消耗 tool call 配额），主进程须准备 fallback",
+  "expectation": "layer4 超时时主进程可接管",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 100,
+  "lines": "641-724",
+  "rule": "Layer 4 delegate_task 超时时主进程必须补做：curl拉published→时间分层→反馈闭环→append data-feedback-patterns.md→更新趋势表",
+  "expectation": "超时后补做完成且审计全PASS",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 101,
+  "lines": "641-724",
+  "rule": "补做第4层后主进程仍需跑完整审计（Step 3 data-feedback-patterns.md更新审计），不能跳过",
+  "expectation": "审计步骤完整执行",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 102,
+  "lines": "641-724",
+  "rule": "cron prompt 引用 layer skill 前必须先 skill_view 确认该 skill 真实存在",
+  "expectation": "skill_view 成功返回后才可引用",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 103,
+  "lines": "641-724",
+  "rule": "新创建的 layer skill 必须经测试 job 验证后才可挂到 cron prompt",
+  "expectation": "未验证的 skill 不得上 cron",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 104,
+  "lines": "641-724",
+  "rule": "主 cron 的 enabled_toolsets 不要设置，让子 agent 自行决定所需工具",
+  "expectation": "enabled_toolsets 留空",
+  "kind": "process",
+  "v2_files": [
+   "agent/__init__.py",
+   "agent/orchestrator.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：enabled_toolsets——Hermes 子agent 配置",
+  "evidence": "[agent/__init__.py:1] \"\"\"agent —— 项目内置编排器（取代 Hermes cron + delegate_task）。\"\"\"\n[agent/orchestrator.py:3] 取代 Hermes 的 skill_view + cron。任务定义见 TASKS；提示词=仓库里的 SKILL.md。\n[agent/orchestrator.py:11] from agent import llm\n[agent/orchestrator.py:12] from agent import tools as _tools\n[agent/orchestrator.py:44] __all__ = [\"build_messages\", \"run_task\", \"run_agent\", \"main\"]\n[agent/orchestrator.py:76] def run_agent(task: str, context: str = \"\", chat_raw_fn=None, max_iters: int = 8,\n[agent/orchestrator.py:117] ap.add_argument(\"--agent\", action=\"store_true\", help=\"用工具循环（function calling）而非单轮\")"
+ },
+ {
+  "id": 105,
+  "lines": "641-724",
+  "rule": "HTTP_PROXY 全局代理会使 DeepSeek API 连接不稳（国内服务不需代理），导致 stale stream 和 .tick.lock 残留、调度跳过",
+  "expectation": "诊断 stale stream 时先查代理设置",
+  "kind": "code",
+  "v2_files": [
+   "config/net_fallback.py",
+   "config/yahoo_conf.py",
+   "scripts/yahoo_common.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "scripts/yahoo_common.py:28",
+  "reason": "实现将 DeepSeek API 改为不走系统代理的直连 session，并在 yahoo_common.py:103 检查/清理 HTTP_PROXY 等代理变量，从根源上消除了代理导致的 stale stream 问题，效果达标。",
+  "evidence": "[config/net_fallback.py:3] 背景：本机代理（scripts/.env 的 HTTP_PROXY）时好时坏，断的时候所有走代理的请求都在连接 / TLS 握手\n[config/yahoo_conf.py:37] # 代理地址统一在 scripts/.env 维护（HTTP_PROXY=http://127.0.0.1:20808）\n[config/yahoo_conf.py:53] # PROXY_URL 从 .env 的 HTTP_PROXY 读取，无硬编码默认值\n[config/yahoo_conf.py:56] os.environ.get(\"HTTP_PROXY\") or\n[config/yahoo_conf.py:85] \"HTTP_PROXY\": PROXY_URL, \"HTTPS_PROXY\": PROXY_URL,\n[scripts/yahoo_common.py:28] # 直连 session：Notion API + DeepSeek API 不走系统代理\n[scripts/yahoo_common.py:53] os.environ['HTTP_PROXY'] = PROXY_URL\n[scripts/yahoo_common.py:103] for k in (\"HTTP_PROXY\", \"HTTPS_PROXY\", \"http_proxy\", \"https_proxy\"):\n[scripts/yahoo_common.py:109] NOTION_API_KEY    = os.environ.get(\"NOTION_API_KEY\", \"\")\n[scripts/yahoo_common.py:115] LITELLM_API_KEY    = os.environ.get(\"LITELLM_API_KEY\", \"\")\n[scripts/yahoo_common.py:229] \"\"\"调用 DeepSeek API，返回文本；未配置或失败时返回空字符串\"\"\""
+ },
+ {
+  "id": 106,
+  "lines": "641-724",
+  "rule": "当日 total=0 时先区分「抓取失败」vs「真无新闻」：查 fetch_runner.log，全关键词 timeout+未找到新闻=抓取失败",
+  "expectation": "先诊断再决定是否3日扩展",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 107,
+  "lines": "641-724",
+  "rule": "抓取失败且近期素材已 review 过时，不做3日扩展重审，只交付故障报告+第4层发布回顾，不含S/A清单",
+  "expectation": "存档不含第1~3层和S/A清单",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 108,
+  "lines": "641-724",
+  "rule": "故障报告若误列旧素材为S/A，写稿cron会重写旧稿并把已发布条 publish_xhs 回退为0，导致重复发文",
+  "expectation": "严禁在故障报告中列S/A清单",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 109,
+  "lines": "641-724",
+  "rule": "ingest 与 publish 是解耦链路：素材断供≠发布停摆，故障报告须同时给出发布管道状态（MAX_PUB+队列条数）",
+  "expectation": "报告含发布管道对照信息",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 110,
+  "lines": "641-724",
+  "rule": "仅当三者齐备才扩展日期范围：当日0条+抓取只是延迟未跑（无timeout证据）+近期素材未被review过",
+  "expectation": "三者不齐不扩展",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 111,
+  "lines": "641-724",
+  "rule": "第3层查DB必须用 search= 参数，不要 limit=200 全量拉回过滤，会漏旧记录",
+  "expectation": "用 --data-urlencode search= 查询",
+  "kind": "code",
+  "v2_files": [
+   "services/related.py",
+   "services/feedback_patterns.py",
+   "scripts/agent_tools.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/related.py:46-55",
+  "reason": "实现用 SQL LIKE 直接查 DB 多字段匹配并带 limit，效果等同/优于 search= 参数查询，未做全量拉回后过滤。",
+  "evidence": "[services/related.py:5] 比 API search= 更全（API search= 不索引 content_ja 日文正文）。\n[services/related.py:34] def find_related(key, entities, limit=8, db=None):\n[services/related.py:46] search = [c for c in (\"title\", \"title_ja\", \"content_ja\", \"rewritten_title\") if c in cols] or [\"title\"]\n[services/related.py:49] where = \" OR \".join(f\"{c} LIKE ?\" for c in search)\n[services/related.py:55] (key, *([like] * len(search)))):\n[services/related.py:63] return out[:limit]\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[scripts/agent_tools.py:24] def fetch_by_keywords(keywords: list, limit: int = 5) -> list[dict]:\n[scripts/agent_tools.py:32] feeds = pub.search_feeds(keyword=kw, sort=\"最多收藏\", limit=limit)"
+ },
+ {
+  "id": 112,
+  "lines": "641-724",
+  "rule": "第4层必须先查 rewritten_title 再分析，原始title与实际发布标题可能完全不同",
+  "expectation": "分析前先取发布标题",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py",
+   "agent/review.py",
+   "agent/prompts/review.md"
+  ],
+  "verdict": "一致",
+  "impl_loc": "agent/review.py:6",
+  "reason": "检索采用 title/content_ja/rewritten_title 三字段 OR，明确包含 rewritten_title，满足先查发布标题再分析的规则。",
+  "evidence": "[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:25] FACETS = (\"category\", \"genre\", \"title_style\", \"publish_mode\", \"direction\", \"action\",\n[services/feedback_patterns.py:67] no INTEGER PRIMARY KEY, date TEXT, title TEXT, body TEXT, tags TEXT, created_at TEXT)\"\"\")\n[services/feedback_patterns.py:85] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})\n[services/feedback_patterns.py:91] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:25] ENT_SYS = (\"你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**：\"\n[agent/review.py:27] \"（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。\"\n[agent/review.py:47] d = {\"key\": r[\"key\"][:12], \"title\": r.get(\"title\"), \"ja\": (r.get(\"title_ja\") or \"\")[:40],\n[agent/review.py:48] \"fmt\": r.get(\"format\"), \"lf\": r.get(\"is_long_form\"), \"ts\": r.get(\"title_score\"),\n[agent/review.py:154] \"\"\"items:[{key,title,ja}] → {key12: [实体,...]}（LLM 抽取，中日双形）。\"\"\"\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:41] - `patterns`：**仅新增**模式。除 `title/body/tags` 外必须给结构化 facets：`category(娱乐|经济|体育|社会|其他)`、`genre`、`title_style`、`publish_mode"
+ },
+ {
+  "id": 113,
+  "lines": "641-724",
+  "rule": "第3层与写稿是因果关系：写稿前必须先做第3层，否则写出重复内容",
+  "expectation": "先第3层后写稿",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 114,
+  "lines": "641-724",
+  "rule": "执行纪律：skill 写了多少步就做多少步，不做80%跳20%",
+  "expectation": "步骤完整执行",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 115,
+  "lines": "641-724",
+  "rule": "存档表格格式：表格前用 ## 标题而非粗体，| 在行首，必须有分隔行",
+  "expectation": "表格渲染正常",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "services/review_render.py",
+   "services/review_archive.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:25",
+  "reason": "validate_tables.py 专门校验表格格式（表头、分隔行、列数、粗体行退化），语义上完整覆盖规则要求。",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:25] problems.append(f\"{tag}: 分隔行上方不是表头行（表格缺表头）\")\n[services/validate_tables.py:27] problems.append(f\"{tag}: 表头/分隔行列数不一致（{cols(header)} vs {cols(line)}）\"\n[services/validate_tables.py:43] f\"（用 **粗体行** 引导会让表格退化为纯文本）\")\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_archive.py:3] LLM 的 L2~L4 价值建议可后续 append；本模块保证**存档骨架与历史 TG 存档同格式**。"
+ },
+ {
+  "id": 116,
+  "lines": "641-724",
+  "rule": "大表格（>25行）拆成小表或用列表，避免表格跨段；最优解是写存档时不跨段",
+  "expectation": "表格不跨段",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "services/review_render.py",
+   "agent/review.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/validate_tables.py:48",
+  "reason": "有校验单表>25行并提示跨段风险，但片段未见自动拆表/分段处理，仅检测报告，拆表细节未覆盖",
+  "evidence": "[services/validate_tables.py:48] problems.append(f\"{tag}: 单表 {n_rows} 行（>25，分段时可能跨段）\")\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys"
+ },
+ {
+  "id": 117,
+  "lines": "641-724",
+  "rule": "代理端口不定期漂移，遇 Connection Refused 先 echo $http_proxy 确认当前端口",
+  "expectation": "先确认端口再排查",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 118,
+  "lines": "641-724",
+  "rule": "segment-send.py 的 socks 代理 fallback 因 socks 包未安装总是失败，推荐用 curl 手动发送",
+  "expectation": "发送失败时改用 curl fallback",
+  "kind": "process",
+  "v2_files": [
+   "services/delivery.py",
+   "config/yahoo_conf.py",
+   "config/net_fallback.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：segment-send socks——已被 services/delivery 取代",
+  "evidence": "[services/delivery.py:1] \"\"\"交付层 —— 唯一实现（替代 Telegram segment-send）。\n[services/delivery.py:16] \"feishu_send\", \"deliver\", \"web_save\", \"main_legacy\"]\n[services/delivery.py:155] def feishu_send(text: str) -> bool:\n[services/delivery.py:164] return bool(feishu_bot.send_alert(text))\n[services/delivery.py:170] ok = bool(feishu_bot.send_card(open_id, card)) and ok\n[services/delivery.py:173] ok = bool(feishu_bot.send_card(open_id, card)) and ok\n[config/yahoo_conf.py:36] # 代理配置\n[config/yahoo_conf.py:37] # 代理地址统一在 scripts/.env 维护（HTTP_PROXY=http://127.0.0.1:20808）\n[config/yahoo_conf.py:64] \"\"\"返回 requests 格式的代理字典，无代理时返回空字典。\"\"\"\n[config/yahoo_conf.py:70] def get_socks_proxy() -> str:\n[config/yahoo_conf.py:71] \"\"\"返回 SOCKS5 代理 URL（供 Telegram/yt-dlp 等使用）。\"\"\"\n[config/yahoo_conf.py:76] url = \"socks5h://\" + url[len(\"http://\"):]\n[config/net_fallback.py:1] \"\"\"requests 代理失败自动改走直连重试（进程级，安装一次全局生效）。\n[config/net_fallback.py:3] 背景：本机代理（scripts/.env 的 HTTP_PROXY）时好时坏，断的时候所有走代理的请求都在连接 / TLS 握手\n[config/net_fallback.py:5] requests.Session.request 外包一层：请求「实际走了代理」且失败在连接/握手/超时阶段时，对不需要代理的\n[config/net_fallback.py:10] - 需要代理才能访问的域名（X / Instagram / YouTube / Google / TikTok / Telegram 等）：直连必然失败，只会白等；\n[config/net_fallback.py:11] - 本来就没走代理的请求（如 CDP 的 127.0.0.1、NO_PROXY 里的域名、显式 proxies={\"http\": None, ...}）。\n[config/net_fallback.py:15] 另外，DIRECT_ONLY_DOMAINS 里的域名一律强制直连（不受上面的开关影响）：这些站的 WAF 拦的是代理出口 IP，"
+ },
+ {
+  "id": 119,
+  "lines": "641-724",
+  "rule": "主进程汇总时应自行用 curl 验证一次，防 layer23 子 agent 错误断言 search 不查历史数据或引用旧 workspace 文件",
+  "expectation": "主进程独立核实子agent结论",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 120,
+  "lines": "641-724",
+  "rule": "L4/L23 子 agent 报告中的数字是记录 id 不是 key 前缀，按 str(r.get('id')) 过滤，不要按 key startswith 匹配",
+  "expectation": "用 id 字段匹配记录",
+  "kind": "process",
+  "v2_files": [
+   "agent/review.py",
+   "agent/orchestrator.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：L4/L23 子agent 报告 id——流水线无子agent",
+  "evidence": "[agent/review.py:15] from agent import llm\n[agent/review.py:29] '只输出严格 JSON：{\"<key前12位>\": [\"实体1\",\"实体1简体\", ...]}。')\n[agent/review.py:40] return re.sub(r\"\\s+\", \" \", (s or \"\")).strip()[:cap]\n[agent/review.py:47] d = {\"key\": r[\"key\"][:12], \"title\": r.get(\"title\"), \"ja\": (r.get(\"title_ja\") or \"\")[:40],\n[agent/review.py:48] \"fmt\": r.get(\"format\"), \"lf\": r.get(\"is_long_form\"), \"ts\": r.get(\"title_score\"),\n[agent/review.py:49] \"cs\": r.get(\"content_score\"), \"cj\": len(r.get(\"content_ja\") or \"\"),\n[agent/orchestrator.py:11] from agent import llm\n[agent/orchestrator.py:12] from agent import tools as _tools\n[agent/orchestrator.py:23] \"instruction\": (\n[agent/orchestrator.py:31] \"调用工具（news_list/news_get 等）拿到的 JSON 只是中间数据，不要原样输出。\"\n[agent/orchestrator.py:37] \"instruction\": (\n[agent/orchestrator.py:44] __all__ = [\"build_messages\", \"run_task\", \"run_agent\", \"main\"]"
+ },
+ {
+  "id": 121,
+  "lines": "641-724",
+  "rule": "published 接口 DESC 排序不可靠，客户端须按 xhs_pub_time 自行重排再分层",
+  "expectation": "不信任接口排序",
+  "kind": "code",
+  "v2_files": [
+   "scripts/xhs_trend_scanner.py",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/review.py:234",
+  "reason": "【人工裁定】按 xhs_pub_time 排序聚合；未显式「DESC 不可靠」",
+  "evidence": "[scripts/xhs_trend_scanner.py:1] #!/usr/bin/env python3\n[scripts/xhs_trend_scanner.py:2] \"\"\"xhs_trend_scanner.py — XHS 话题热门内容趋势扫描\"\"\"\n[scripts/xhs_trend_scanner.py:4] import sys\n[scripts/xhs_trend_scanner.py:5] from pathlib import Path\n[scripts/xhs_trend_scanner.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/xhs_trend_scanner.py:8] import re\n[scripts/xhs_trend_scanner.py:9] import json\n[scripts/xhs_trend_scanner.py:10] import logging\n[scripts/xhs_trend_scanner.py:11] from datetime import datetime, timedelta\n[scripts/xhs_trend_scanner.py:13] logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [trend] %(message)s\")\n[scripts/xhs_trend_scanner.py:14] logger = logging.getLogger(\"trend_scanner\")\n[scripts/xhs_trend_scanner.py:17] def _is_recent(text: str, hours: int = 48) -> bool:\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys"
+ },
+ {
+  "id": 122,
+  "lines": "641-724",
+  "rule": "limit=50 页面可能漏掉真实最新发布，「管道停摆起点」等结论必须用分页聚合后 max(xhs_pub_time) 核对",
+  "expectation": "结论基于全量聚合",
+  "kind": "code",
+  "v2_files": [
+   "scripts/xhs_trend_scanner.py",
+   "scripts/cdp_feed.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/feedback_patterns.py",
+  "reason": "【人工裁定】聚合取 max(xhs_pub_time)；未显式分页核对",
+  "evidence": "[scripts/xhs_trend_scanner.py:105] def scan_topic_trends(keywords: list[str], limit: int = 10) -> list[dict]:\n[scripts/xhs_trend_scanner.py:174] temperature=0.3, max_tokens=200,\n[scripts/xhs_trend_scanner.py:277] p.add_argument(\"--limit\", type=int, default=10)\n[scripts/xhs_trend_scanner.py:281] trends = scan_topic_trends(keywords, limit=args.limit)\n[scripts/cdp_feed.py:113] max_suggestions: int,\n[scripts/cdp_feed.py:185] return [item[2] for item in ranked[: max(1, max_suggestions)]]\n[scripts/cdp_feed.py:191] max_suggestions: int = 12,\n[scripts/cdp_feed.py:197] self._send(\"Network.enable\", {\"maxPostDataSize\": 65536})\n[scripts/cdp_feed.py:205] deadline = time.time() + max(2.0, float(wait_seconds))\n[scripts/cdp_feed.py:211] timeout = min(1.0, max(0.1, deadline - time.time()))"
+ },
+ {
+  "id": 123,
+  "lines": "641-724",
+  "rule": "published 接口 page 参数被忽略，用 offset 分页（0/250/500）聚合全量",
+  "expectation": "用 offset 而非 page",
+  "kind": "code",
+  "v2_files": [
+   "web/app.py",
+   "services/news.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/feedback_patterns.py",
+  "reason": "【人工裁定】聚合口径统一；未显式 offset 分页",
+  "evidence": "[web/app.py:663] .pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:12px;color:#7878a0}\n[web/app.py:664] .pager .pinfo{margin:0 8px}\n[web/app.py:698] <div class=\"pager\">\n[web/app.py:700] <button class=\"gray\" id=\"b_prev\" onclick=\"go(state.page-1)\">‹ 上一页</button>\n[web/app.py:702] <button class=\"gray\" id=\"b_next\" onclick=\"go(state.page+1)\">下一页 ›</button>\n[web/app.py:714] const state = {page:1, size:50, sort_by:'name', sort_dir:'asc', q:''};\n[services/news.py:1] \"\"\"news 读写入口 —— 收敛所有对 news 表的访问到 services（唯一模块）。\n[services/news.py:3] MCP / CLI / 薄壳都应从这里取 DB 访问，而不是各自 import scripts.sqlite_db。\n[services/news.py:4] 底层仍是 scripts.sqlite_db（WAL + busy_timeout=30000，见 P1 改动）。\n[services/news.py:5] \"\"\"\n[services/news.py:6] import sys\n[services/news.py:8] from services import paths\n[services/news.py:10] sys.path.insert(0, str(paths.REPO_ROOT / \"scripts\"))\n[services/news.py:12] from sqlite_db import (  # noqa: E402,F401  re-export\n[services/news.py:13] query_news, get_by_key, update_news,\n[services/news.py:14] get_score_dims, load_active_dimensions,\n[services/news.py:15] get_top_topics, get_config, set_config,\n[services/news.py:16] rollback_dimension_version, commit_dimension_version,"
+ },
+ {
+  "id": 124,
+  "lines": "641-724",
+  "rule": "layer23 可能把定时发布队列误报为已发布：子agent称已发布时先查 xhs_pub_time 是否未来时间，措辞用「已排定定时发布」",
+  "expectation": "区分已发布与定时队列",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 125,
+  "lines": "641-724",
+  "rule": "layer23 可能把「pub_time 已排定但 publish_xhs 未归位」的记录当作最新已发布，MAX_PUB 必须由主进程以 published 聚合为准",
+  "expectation": "MAX_PUB 以主进程聚合为准",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 126,
+  "lines": "641-724",
+  "rule": "L23 报的 MAX_PUB 与 published 聚合不一致时，一律以聚合为准，可用 title search+事件关键词双检索二次确证",
+  "expectation": "不一致时聚合优先",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 127,
+  "lines": "641-724",
+  "rule": "MAX_PUB 三处一致时无需双检索确证，但主进程独立 offset 聚合复核始终保留为常规步骤",
+  "expectation": "聚合复核为固定步骤",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 128,
+  "lines": "641-724",
+  "rule": "L23/L4 报的 published 总条数可能虚高，分层基数与管道健康度一律以主进程 offset 分页聚合为准",
+  "expectation": "计数以主进程聚合为准",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 129,
+  "lines": "641-724",
+  "rule": "标准执行模板：layer1 先行 → layer23+layer4 并行，layer23 沿用 layer1 的 S/A 列表不重分级，可规避分类膨胀与作用域不对称",
+  "expectation": "S/A 对齐无膨胀",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 130,
+  "lines": "641-724",
+  "rule": "Layer1 与 Layer23 作用域须对齐（Layer1 过滤赛道但 Layer23 用全量会导致不对称），双方应使用同一数据集",
+  "expectation": "两层作用域一致",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 131,
+  "lines": "641-724",
+  "rule": "以正文列表计数为准，不轻信报告标题中的数字（标题写17条正文实为15条的案例）",
+  "expectation": "计数核对正文列表",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 132,
+  "lines": "641-724",
+  "rule": "delegate layer1 时在 goal/context 中硬性要求输出完整40字符key，子agent默认截断为12字符前缀",
+  "expectation": "报告含完整key",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 133,
+  "lines": "641-724",
+  "rule": "L1 summary 的 key 截断不因硬性指令而消除，workspace 报告文件是取全 key 的可靠路径",
+  "expectation": "从报告文件取全key",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 134,
+  "lines": "641-724",
+  "rule": "L1 报告落点可能在 /tmp 而非 workspace，主进程按 L1 summary 报的路径 read_file",
+  "expectation": "按报告路径读取",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 135,
+  "lines": "641-724",
+  "rule": "L4 子 agent 报「脚本不存在」可能是 delegate context 路径多写了前缀（如 creative/），需核对路径",
+  "expectation": "先核对路径再下结论",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 136,
+  "lines": "641-724",
+  "rule": "L1 报告「按来源分组全量列表」可能整组漏掉，主进程必须核对各组条数之和==total并从原始JSON补齐",
+  "expectation": "分组求和等于total",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 137,
+  "lines": "641-724",
+  "rule": "API search= 不索引 content_ja 日文正文，查日文内容需读副本文件",
+  "expectation": "日文检索走副本",
+  "kind": "code",
+  "v2_files": [
+   "services/news.py",
+   "services/draft_io.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "services/news.py:12",
+  "reason": "规则是关于 API search= 不索引日文正文的检索纪律，候选片段仅是 DB 访问收敛与 content_ja 读取展示，未见 search= 索引行为，属人工/外部检索流程纪律，流水线无需实现。",
+  "evidence": "[services/news.py:1] \"\"\"news 读写入口 —— 收敛所有对 news 表的访问到 services（唯一模块）。\n[services/news.py:3] MCP / CLI / 薄壳都应从这里取 DB 访问，而不是各自 import scripts.sqlite_db。\n[services/news.py:4] 底层仍是 scripts.sqlite_db（WAL + busy_timeout=30000，见 P1 改动）。\n[services/news.py:5] \"\"\"\n[services/news.py:6] import sys\n[services/news.py:8] from services import paths\n[services/news.py:10] sys.path.insert(0, str(paths.REPO_ROOT / \"scripts\"))\n[services/news.py:12] from sqlite_db import (  # noqa: E402,F401  re-export\n[services/news.py:13] query_news, get_by_key, update_news,\n[services/news.py:14] get_score_dims, load_active_dimensions,\n[services/news.py:15] get_top_topics, get_config, set_config,\n[services/news.py:16] rollback_dimension_version, commit_dimension_version,\n[services/draft_io.py:33] f\"| ja_len={len(r.get('content_ja') or '')} | ts={r.get('title_score')} cs={r.get('content_score')}\")\n[services/draft_io.py:36] out.append(\"--- content_ja ---\")\n[services/draft_io.py:37] txt = (r.get(\"content_ja\") or \"\").replace(\"\\u3000\", \" \")\n[services/draft_io.py:116] \"\"\"查完整 key + 改写状态 + content_ja 长度（迁移自 get-key.sh）。\"\"\"\n[services/draft_io.py:125] \"length(content_ja), COALESCE(preselected,0), COALESCE(publish_xhs,0), \"\n[services/draft_io.py:132] \"length(content_ja), COALESCE(preselected,0), COALESCE(publish_xhs,0), \""
+ },
+ {
+  "id": 138,
+  "lines": "641-724",
+  "rule": "分层基数必须用 API published 集，不能用副本「pub_time非空」口径（含 publish_xhs=0 的未归位记录）",
+  "expectation": "基数用API published集",
+  "kind": "code",
+  "v2_files": [
+   "services/recommend.py",
+   "services/feedback_patterns.py",
+   "scripts/sqlite_db.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/feedback_patterns.py",
+  "reason": "【人工裁定】分层基数用 DB xhs_pub_time 口径",
+  "evidence": "[services/recommend.py:30] \"\"\"待推荐候选池：preselected=1 且 publish_xhs=0 且已有 rewritten_content。\"\"\"\n[services/recommend.py:41] \"WHERE preselected=1 AND COALESCE(publish_xhs,0)=0 AND COALESCE(rewritten_content,'')!='' \"\n[services/recommend.py:101] \"SELECT key,title,title_ja,content_ja,rewritten_title,xhs_pub_time FROM news \"\n[services/recommend.py:102] \"WHERE substr(COALESCE(xhs_pub_time,''),1,10)=?\", (tomorrow.isoformat(),))]\n[services/recommend.py:149] pending = conn.execute(\"SELECT count(*) FROM news WHERE COALESCE(publish_xhs,0)=1 \"\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys\n[scripts/sqlite_db.py:92] pub_time    TEXT,\n[scripts/sqlite_db.py:95] publish_xhs INTEGER DEFAULT 0,\n[scripts/sqlite_db.py:97] xhs_pub_time TEXT DEFAULT '',\n[scripts/sqlite_db.py:118] CREATE INDEX IF NOT EXISTS idx_pub_time ON news(pub_time);\n[scripts/sqlite_db.py:120] CREATE INDEX IF NOT EXISTS idx_publish_xhs ON news(publish_xhs);\n[scripts/sqlite_db.py:278] (\"xhs_pub_time\", \"TEXT DEFAULT ''\"),"
+ },
+ {
+  "id": 139,
+  "lines": "641-724",
+  "rule": "layer4_aggregate.py 的 MAX_PUB 会把未来队列条计入，必须先排除 pub_dt>now 的未来条再取 max",
+  "expectation": "排除未来条后取max",
+  "kind": "code",
+  "v2_files": [
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "skills/xhs-daily-material-review-layer4/scripts/layer4_aggregate.py",
+  "reason": "【人工裁定】脚本已随 skill 迁入；未来队列排除靠该脚本",
+  "evidence": "[services/feedback_patterns.py:23] AGG_REL = \"skills/xhs-daily-material-review-layer4/scripts/layer4_aggregate.py\"\n[services/feedback_patterns.py:29] def _now_jst():\n[services/feedback_patterns.py:32] return dt.datetime.now(ZoneInfo(\"Asia/Tokyo\"))\n[services/feedback_patterns.py:34] return dt.datetime.utcnow() + dt.timedelta(hours=9)\n[services/feedback_patterns.py:105] \"(no,date,title,body,tags,created_at) VALUES(?,?,?,?,?,datetime('now','localtime'))\",\n[services/feedback_patterns.py:131] f\"VALUES({ph},datetime('now','localtime'))\", vals)"
+ },
+ {
+  "id": 140,
+  "lines": "641-724",
+  "rule": "layer4_aggregate.py 是两个位置参数（空格分隔），传单引号单参数会静默回落到机器时间造成1h偏差",
+  "expectation": "参数格式正确且无静默偏差",
+  "kind": "process",
+  "v2_files": [
+   "services/feedback_patterns.py",
+   "agent/prompts/review.md"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：layer4_aggregate 位置参数——人工命令行",
+  "evidence": "[services/feedback_patterns.py:23] AGG_REL = \"skills/xhs-daily-material-review-layer4/scripts/layer4_aggregate.py\"\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）"
+ },
+ {
+  "id": 141,
+  "lines": "641-724",
+  "rule": "模式编号必须取文件正文最大值，不能只看趋势表最后一行，否则会撞号",
+  "expectation": "编号取正文最大值",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 142,
+  "lines": "641-724",
+  "rule": "审计Step3最高编号统计用行首 ### N. + bullet **#N 核对，防编号撞车",
+  "expectation": "编号统计覆盖两种格式",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 143,
+  "lines": "641-724",
+  "rule": "审计Step3日期grep有false-negative陷阱：优先 ^| $FULL 完整日期匹配，短日期兜底",
+  "expectation": "日期校验不漏检",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 144,
+  "lines": "641-724",
+  "rule": "审计Step4的grep会捕到自指否定句（如「无待补充」字样）属误报，需人工识别",
+  "expectation": "识别自指句误报",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 145,
+  "lines": "641-724",
+  "rule": "story_type 字段可能全为空，改用 format（news/story）+cj_len 判断体裁并在报告注明降级口径",
+  "expectation": "体裁判定有替代方案",
+  "kind": "code",
+  "v2_files": [
+   "services/format_route.py",
+   "agent/review.py",
+   "services/review_render.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/format_route.py:6-13",
+  "reason": "实现了用 format+lf 替代 story_type 的体裁路由降级方案，但用的是 is_long_form 而非规则指定的 cj_len，且未见在报告中注明降级口径。",
+  "evidence": "[services/format_route.py:1] \"\"\"体裁/字数路由（机械规则，来自 SKILL longform-vs-900-routing / 6-29-db-format-routing）。\"\"\"\n[services/format_route.py:6] def route(content_ja_len: int, fmt: str = \"news\", lf: int = 0) -> dict:\n[services/format_route.py:10] if fmt == \"story\" and lf == 1:\n[services/format_route.py:11] return {\"publish_method\": \"post\", \"target\": \"story900\",\n[services/format_route.py:12] \"note\": \"story lf=1 ≥800字且 ≥2 个 ##（900±50）\"}\n[services/format_route.py:13] return {\"publish_method\": \"post\", \"target\": \"news900\", \"note\": \"news ≤900，无 ##\"}\n[agent/review.py:16] from services import news as _news, paths, related as _rel\n[agent/review.py:44] rows = _news.query_news(date_from=date, date_to=date, status=\"active\", limit=limit)\n[agent/review.py:48] \"fmt\": r.get(\"format\"), \"lf\": r.get(\"is_long_form\"), \"ts\": r.get(\"title_score\"),\n[agent/review.py:63] r = conn.execute(\"SELECT key FROM news WHERE key LIKE ? || '%'\", (str(pfx)[:40],)).fetchone()\n[agent/review.py:106] day = {r[\"key\"] for r in _news.query_news(date_from=date, date_to=date, status=\"active\", limit=500)}\n[agent/review.py:111] _news.update_news(fk[0], {\"grade\": str(g)})\n[services/review_render.py:1] \"\"\"把 review 的**结构化数据**渲染成 Markdown 报告（二~六节）。报告=数据的模板渲染，格式由代码保证。\"\"\"\n[services/review_render.py:2] __all__ = [\"render\"]\n[services/review_render.py:5] def _c(x):\n[services/review_render.py:6] return str(x if x is not None else \"\").replace(\"|\", \"｜\").replace(\"\\n\", \" \").strip()\n[services/review_render.py:9] def _tbl(headers, rows):\n[services/review_render.py:10] out = [\"| \" + \" | \".join(headers) + \" |\", \"|\" + \"|\".join([\"---\"] * len(headers)) + \"|\"]\n[services/review_render.py:11] for r in rows:\n[services/review_render.py:12] out.append(\"| \" + \" | \".join(_c(c) for c in r) + \" |\")\n[services/review_render.py:13] return \"\\n\".join(out)\n[services/review_render.py:16] _ORDER = [(\"S\", \"S级（强烈推荐）🔥\"), (\"A\", \"A级（可选）\"),\n[services/review_render.py:17] (\"AKB大TOP\", \"✅ AKB大TOP（必须入库）\"), (\"B\", \"B级（轻量跑量）\"), (\"C\", \"C级（跳过）\")]\n[services/review_render.py:20] def render(data, titles=None):"
+ },
+ {
+  "id": 146,
+  "lines": "641-724",
+  "rule": "ts 异常低值（0.0/0.1/0.9）条目按「目标赛道+事件型才升级」处理，非目标赛道不升级",
+  "expectation": "升级需满足两条件",
+  "kind": "code",
+  "v2_files": [
+   "scripts/scoring.py",
+   "config/scoring_dimensions.json",
+   "services/rules.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "config/scoring_dimensions.json:233",
+  "reason": "配置中有『认知度会因事件爆发临时升级』的事件型升级语义，但未见『目标赛道』这一前置条件的实现，升级双条件只覆盖了事件型一项。",
+  "evidence": "[scripts/scoring.py:1] #!/usr/bin/env python3\n[scripts/scoring.py:2] \"\"\"scoring.py — 低分诊断与行动决策，纯函数无副作用\"\"\"\n[scripts/scoring.py:4] from enum import Enum\n[scripts/scoring.py:7] class Action(str, Enum):\n[scripts/scoring.py:8] DISCARD = \"DISCARD\"\n[scripts/scoring.py:9] REGENERATE = \"REGENERATE\"\n[scripts/scoring.py:10] WAIT_GALLERY = \"WAIT_GALLERY\"\n[scripts/scoring.py:11] HUMAN_REVIEW = \"HUMAN_REVIEW\"\n[scripts/scoring.py:12] PUBLISH = \"PUBLISH\"\n[scripts/scoring.py:15] def diagnose_low_score(article: dict, scores: dict,\n[scripts/scoring.py:16] publish_threshold: float = 3.0,\n[scripts/scoring.py:17] retry_threshold: float = 2.0) -> Action:\n[config/scoring_dimensions.json:233] \"edge_case\": \"标题未提及具体艺人按内容判断；认知度会因事件爆发临时升级；グラビア/写真系艺人只要在中国小红书/微博等平台有广泛传播即给1，不以职业性质作为扣分依据\"\n[services/rules.py:1] \"\"\"硬规则 config 加载（写稿 skill 复刻：硬规则=config+服务，prompt 只留判断类）。\"\"\"\n[services/rules.py:2] import functools\n[services/rules.py:3] import json\n[services/rules.py:5] from services import paths\n[services/rules.py:7] __all__ = [\"load\", \"thresholds\", \"xhs_th\", \"gzh_th\"]\n[services/rules.py:10] @functools.lru_cache(maxsize=None)\n[services/rules.py:11] def load(name):\n[services/rules.py:12] p = paths.REPO_ROOT / \"config\" / name\n[services/rules.py:13] try:\n[services/rules.py:14] return json.loads(p.read_text(encoding=\"utf-8\"))\n[services/rules.py:15] except Exception:  # noqa: BLE001\n[services/rules.py:16] return {}"
+ },
+ {
+  "id": 147,
+  "lines": "641-724",
+  "rule": "cs 普遍偏低（0.0~2.6）疑似 AI 再构成文本常态，分级靠 ts+cj_len+事件性补正",
+  "expectation": "cs塌陷不判为评分异常",
+  "kind": "code",
+  "v2_files": [
+   "scripts/scoring.py",
+   "scripts/dimension_analysis.py",
+   "config/scoring_dimensions.json"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "services/scoring.py + agent/review.py",
+  "reason": "【人工裁定】ts/cs 口径在评分类里；未显式「cs 偏低常态」说明",
+  "evidence": "[scripts/scoring.py:1] #!/usr/bin/env python3\n[scripts/scoring.py:2] \"\"\"scoring.py — 低分诊断与行动决策，纯函数无副作用\"\"\"\n[scripts/scoring.py:4] from enum import Enum\n[scripts/scoring.py:7] class Action(str, Enum):\n[scripts/scoring.py:8] DISCARD = \"DISCARD\"\n[scripts/scoring.py:9] REGENERATE = \"REGENERATE\"\n[scripts/scoring.py:10] WAIT_GALLERY = \"WAIT_GALLERY\"\n[scripts/scoring.py:11] HUMAN_REVIEW = \"HUMAN_REVIEW\"\n[scripts/scoring.py:12] PUBLISH = \"PUBLISH\"\n[scripts/scoring.py:15] def diagnose_low_score(article: dict, scores: dict,\n[scripts/scoring.py:16] publish_threshold: float = 3.0,\n[scripts/scoring.py:17] retry_threshold: float = 2.0) -> Action:\n[scripts/dimension_analysis.py:1] #!/usr/bin/env python3\n[scripts/dimension_analysis.py:2] \"\"\"dimension_analysis.py — 评分维度与实发数据的 Pearson 相关性分析\"\"\"\n[scripts/dimension_analysis.py:4] import sys\n[scripts/dimension_analysis.py:5] from pathlib import Path\n[scripts/dimension_analysis.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/dimension_analysis.py:8] from datetime import datetime\n[scripts/dimension_analysis.py:9] import pandas as pd\n[scripts/dimension_analysis.py:10] import numpy as np\n[scripts/dimension_analysis.py:11] from scipy.stats import pearsonr\n[scripts/dimension_analysis.py:14] def load_analysis_data(min_window: str = \"72h\") -> pd.DataFrame:\n[scripts/dimension_analysis.py:15] \"\"\"JOIN news + score_dims，使用 metrics_history 中对应窗口的快照值，PIVOT 为宽表。\n[scripts/dimension_analysis.py:17] 关键设计：使用 metrics_history 中 collected_at LIKE '%72h%' 的快照，\n[config/scoring_dimensions.json:1] {\n[config/scoring_dimensions.json:2] \"version\": \"1.4.0\",\n[config/scoring_dimensions.json:3] \"dimensions\": [\n[config/scoring_dimensions.json:4] {\n[config/scoring_dimensions.json:5] \"name\": \"剧情感\",\n[config/scoring_dimensions.json:6] \"category\": \"标题\",\n[config/scoring_dimensions.json:7] \"direction\": \"plus\",\n[config/scoring_dimensions.json:8] \"default_weight\": 1.0,\n[config/scoring_dimensions.json:9] \"definition\": \"标题是否能让读者感受到事件的戏剧性弧度\",\n[config/scoring_dimensions.json:10] \"example_1\": \"「N号房主犯被判无期——受害者终于等到这一天」\",\n[config/scoring_dimensions.json:11] \"example_0_5\": \"「艺人宣布恋情，粉丝反应两极」（有冲突但弧度不完整）\",\n[config/scoring_dimensions.json:12] \"example_0\": \"「某偶像出席活动」（纯陈述，无剧情感）\","
+ },
+ {
+  "id": 148,
+  "lines": "641-724",
+  "rule": "<24h 极端 v>imp（如 v/imp≈388x）是当日伪影，按中间态处理、标待复核、禁写「爆款」",
+  "expectation": "不误判为爆款",
+  "kind": "code",
+  "v2_files": [
+   "agent/review.py",
+   "agent/prompts/review.md",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:38",
+  "reason": "实现要求按 <24h 分层报告 v>imp 异常，但未见将该异常按中间态处理、标待复核或禁止写「爆款」的明确规则，且 review.md:28 的低值升级逻辑可能与之冲突",
+  "evidence": "[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys\n[agent/review.py:15] from agent import llm\n[agent/review.py:16] from services import news as _news, paths, related as _rel\n[agent/prompts/review.md:16] 对照前一天已出现/已发布的**同事件**素材，标注处理（前日重复→降 C / 前日已发 / 正常）。\n[agent/prompts/review.md:28] **⚠️ ts 异常处理**：当日 `ts` 全为 None → S 判定主要靠 `cj≥500` + 事件型，不要因缺 ts 就全压 C；`ts` 异常低值（≈0/≤1.0）→ **先读正文**，若目标赛道且事件型 → **升级 A/S \n[agent/prompts/review.md:38] 依据输入「已发布数据聚合」的三段分层（>48h / 24-48h / <24h）写结论（曝光/观看/互动、Top/最低/零曝光/v>imp 异常），**不要编造数据**；无数据写「本期无发布数据」。\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess"
+ },
+ {
+  "id": 149,
+  "lines": "641-724",
+  "rule": "单窗口零增长≠终局冻结，平台二次分发可恢复增长，此类模式结论须留余地",
+  "expectation": "不写终局冻结结论",
+  "kind": "code",
+  "v2_files": [
+   "agent/prompts/review.md",
+   "agent/review.py",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/review.py:223-246",
+  "reason": "【人工裁定】_entity_pub 有 zero_streak/近M条统计；结论留余地靠 prompt",
+  "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys"
+ },
+ {
+  "id": 150,
+  "lines": "641-724",
+  "rule": ">48h 仍 0/0 才可确认零分发；24-48h分层为空但未来队列活跃时不触发停摆告警",
+  "expectation": "按判据区分停摆与空窗",
+  "kind": "code",
+  "v2_files": [
+   "services/batches.py",
+   "scripts/agent_runner.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/review.py:246",
+  "reason": "【人工裁定】zero_streak 已实现；24-48h 空但队列活跃的判据靠 prompt",
+  "evidence": "[services/batches.py:1] \"\"\"批次 manifest + 跨日漏写检测（硬规则=config+服务）。\n[services/batches.py:3] 每次写稿落 data/write_batches/<date>.json：本次处理的 keys + 结果 + 跳过清单(keys+reason)。\n[services/batches.py:4] 下次启动读最近 manifest：消费跳过清单（不重写纯重复/待人工），并对缺失 manifest 的近期日期告警（疑似漏写日）。\n[services/batches.py:5] \"\"\"\n[services/batches.py:6] import json\n[services/batches.py:7] from datetime import datetime, timedelta\n[services/batches.py:9] from services import paths, rules\n[services/batches.py:11] __all__ = [\"save\", \"load\", \"recent\", \"covered_keys\", \"skipped_map\", \"missed_days\"]\n[services/batches.py:13] _DIRNAME = \"write_batches\"\n[services/batches.py:16] def _cfg():\n[services/batches.py:17] return rules.thresholds().get(\"batch\", {})\n[services/batches.py:20] def _dir():\n[scripts/agent_runner.py:1] #!/usr/bin/env python3\n[scripts/agent_runner.py:2] \"\"\"agent_runner.py — 智能体主循环（每日 07:00 触发）\"\"\"\n[scripts/agent_runner.py:4] import sys\n[scripts/agent_runner.py:5] from pathlib import Path\n[scripts/agent_runner.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/agent_runner.py:8] import os\n[scripts/agent_runner.py:9] import json\n[scripts/agent_runner.py:10] import logging\n[scripts/agent_runner.py:11] from datetime import datetime, timedelta\n[scripts/agent_runner.py:12] from dataclasses import asdict\n[scripts/agent_runner.py:14] logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [agent] %(message)s\")\n[scripts/agent_runner.py:15] logger = logging.getLogger(\"agent_runner\")"
+ },
+ {
+  "id": 151,
+  "lines": "641-724",
+  "rule": "发布停摆告警三判据：MAX_PUB距查询超阈值+连续日0发布+定时队列清空且<24h=0，三者齐全才成立",
+  "expectation": "三判据齐全才告警",
+  "kind": "code",
+  "v2_files": [
+   "scripts/agent_runner.py",
+   "services/schedule.py",
+   "scripts/metrics_collector.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/review.py:223 + services/feedback_patterns.py",
+  "reason": "【人工裁定】有连续0曝光统计；停摆三判据未显式成规则",
+  "evidence": "[scripts/agent_runner.py:167] f\"发布时间：{' / '.join(plan.post_times)}\"\n[scripts/agent_runner.py:299] \"\"\"检查发布满 7 天的文章，调用 upsert_topic_performance 更新话题表现\"\"\"\n[services/schedule.py:1] \"\"\"待发布推荐 · 预发布时间生成器 —— 唯一实现（迁移自 pub_time_plan.py）。\n[services/schedule.py:4] --apply 只 UPDATE news（xhs_pub_time / 可选 publish_xhs=1），**不触发发布**。\n[services/schedule.py:111] ap = argparse.ArgumentParser(description=\"待发布推荐：生成明天的预发布时间（带随机偏移）\")\n[services/schedule.py:134] print(f\"[预发布时间计划] 日期 {day}（{'今天+1' if not args.date else args.date}） \"\n[services/schedule.py:136] print(f\"{'时段':<8}{'预发布时间':<20}\")\n[services/schedule.py:166] print(\"  提醒：本脚本不触发发布（禁止 POST /api/trigger-publish）。\")\n[scripts/metrics_collector.py:1] #!/usr/bin/env python3\n[scripts/metrics_collector.py:2] \"\"\"metrics_collector.py — 每小时通过 creator 导出全量 Excel，追加历史快照\"\"\"\n[scripts/metrics_collector.py:4] import sys, os, json, time, re, logging, glob\n[scripts/metrics_collector.py:5] from pathlib import Path\n[scripts/metrics_collector.py:6] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/metrics_collector.py:7] from datetime import datetime\n[scripts/metrics_collector.py:9] import pandas as pd\n[scripts/metrics_collector.py:11] logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [metrics] %(message)s\")\n[scripts/metrics_collector.py:12] logger = logging.getLogger(\"metrics_collector\")\n[scripts/metrics_collector.py:14] CDP_HOST = os.environ.get(\"CDP_HOST\", \"127.0.0.1\")\n[scripts/metrics_collector.py:15] CDP_PORT = int(os.environ.get(\"CDP_PORT\", \"9222\"))\n[scripts/metrics_collector.py:16] DOWNLOAD_DIR = \"/tmp\""
+ },
+ {
+  "id": 152,
+  "lines": "641-724",
+  "rule": "前一日高量日后接低量日时S/A重复率显著升高，第2/3层应优先做重复判定",
+  "expectation": "低量日优先判重",
+  "kind": "code",
+  "v2_files": [
+   "agent/review.py",
+   "agent/prompts/review.md",
+   "services/feedback_patterns.py"
+  ],
+  "verdict": "部分一致",
+  "impl_loc": "agent/prompts/review.md:4",
+  "reason": "实现了第2层 date_trap 的前日重复/前日已发判定，但片段中未见「前一日高量日后接低量日时优先判重」的条件触发逻辑，重复判定未与量级条件绑定。",
+  "evidence": "[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys\n[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:3] **只输出一个 JSON 对象**（`response_format=json_object`）：**不要 Markdown、不要表格、不要任何 JSON 以外的文字**。顶层字段（key 一律用**前12位**）：\n[agent/prompts/review.md:4] - `date_trap`: [{\"key\":\"<k12>\",\"kind\":\"前日重复|前日已发|正常\",\"note\":\"<一句话>\"}]（仅需标注的；正常可不列）\n[agent/prompts/review.md:5] - `clusters`: [{\"keys\":[\"<k12>\",…],\"main\":\"<k12>\",\"note\":\"<同事件说明>\",\"grade\":\"<主条分级>\"}]（**同一事件 ≥2 条**；组内元素互指）\n[agent/prompts/review.md:6] - `grades`: {\"<k12>\":{\"grade\":\"S|A|B|C|AKB大TOP\",\"reason\":\"<一句话，与分级一致>\"}}（**当日每条都要有**）\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:8] - `cross_time`: {\"<k12>\":[{\"key\":\"<k12>\",\"hit\":\"中日双查命中|仅中文|仅日文\"}]}（仅 S/A；用输入里的实体名历史候选）\n[agent/prompts/review.md:9] - `layer4`: {\"conclusion\":\"<发布数据回顾结论>\",\"top\":\"…\",\"low\":\"…\",\"zero\":\"…\",\"anomaly\":\"…\"}\n[agent/prompts/review.md:10] - `akb_type`: {\"<k12>\":\"event|bullet\"}（**仅 AKB大TOP**）\n[agent/prompts/review.md:11] - `feedback`: {\"patterns\":[{…}],\"trend_row\":\"…\"}（见文末 facets）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:15] ## 日期陷阱（→ date_trap）\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:3] **双写**：md（人类可读累积报告）＋表 `feedback_patterns`（结构化规律，供决策/检索）。\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:6] \"\"\"\n[services/feedback_patterns.py:7] import datetime as dt\n[services/feedback_patterns.py:8] import os\n[services/feedback_patterns.py:9] import re\n[services/feedback_patterns.py:10] import shutil\n[services/feedback_patterns.py:11] import sqlite3\n[services/feedback_patterns.py:12] import subprocess\n[services/feedback_patterns.py:13] import sys"
+ },
+ {
+  "id": 153,
+  "lines": "641-724",
+  "rule": "低分母日的S级占比按绝对条数上限判（如18条不超过2-3条），不按百分比硬卡",
+  "expectation": "低量日用绝对数判",
+  "kind": "code",
+  "v2_files": [
+   "config/review_thresholds.json",
+   "services/rules.py",
+   "agent/review.py"
+  ],
+  "verdict": "缺失",
+  "impl_loc": "",
+  "reason": "【人工裁定】低分母日 S 级「绝对条数上限」（如18条≤2-3条）未实现（只有百分比 ≤15%）",
+  "evidence": "[config/review_thresholds.json:1] {\n[config/review_thresholds.json:2] \"_comment\": \"写稿机械门禁阈值与占比；precheck/write._need/density 统一读此表\",\n[config/review_thresholds.json:3] \"xhs\": {\n[config/review_thresholds.json:4] \"title_max\": 20,\n[config/review_thresholds.json:5] \"story_min_score\": 8,\n[config/review_thresholds.json:6] \"news_min_score\": 7,\n[config/review_thresholds.json:7] \"story_body_min\": 800,\n[config/review_thresholds.json:8] \"story_h2_min\": 2,\n[config/review_thresholds.json:9] \"density_min\": 30,\n[config/review_thresholds.json:10] \"kana_max\": 5,\n[config/review_thresholds.json:11] \"story_soft_max\": 900,\n[config/review_thresholds.json:12] \"story_min_score_long\": 9,\n[services/rules.py:1] \"\"\"硬规则 config 加载（写稿 skill 复刻：硬规则=config+服务，prompt 只留判断类）。\"\"\"\n[services/rules.py:2] import functools\n[services/rules.py:3] import json\n[services/rules.py:5] from services import paths\n[services/rules.py:7] __all__ = [\"load\", \"thresholds\", \"xhs_th\", \"gzh_th\"]\n[services/rules.py:10] @functools.lru_cache(maxsize=None)\n[services/rules.py:11] def load(name):\n[services/rules.py:12] p = paths.REPO_ROOT / \"config\" / name\n[services/rules.py:13] try:\n[services/rules.py:14] return json.loads(p.read_text(encoding=\"utf-8\"))\n[services/rules.py:15] except Exception:  # noqa: BLE001\n[services/rules.py:16] return {}\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys"
+ },
+ {
+  "id": 154,
+  "lines": "641-724",
+  "rule": "抓取日志条数≠API当日条数（重复命中不计入当日），以API total为准，非故障",
+  "expectation": "以API total为准",
+  "kind": "code",
+  "v2_files": [
+   "scripts/yahoo_news_auto_sqlite.py",
+   "scripts/yahoo_news_fetcher.py",
+   "scripts/fetch_runner.py"
+  ],
+  "verdict": "缺失",
+  "impl_loc": "",
+  "reason": "【人工裁定】「抓取日志条数≠API当日条数」口径未显式处理",
+  "evidence": "[scripts/yahoo_news_auto_sqlite.py:44] _disable_proxy, LITELLM_API_KEY, LITELLM_MODEL,\n[scripts/yahoo_news_fetcher.py:1] #!/usr/bin/env python3\n[scripts/yahoo_news_fetcher.py:2] \"\"\"\n[scripts/yahoo_news_fetcher.py:3] 日本 Yahoo 新闻抓取器 - 抓取与中国相关的新闻并生成小红书发布格式（含评论解读）\n[scripts/yahoo_news_fetcher.py:4] \"\"\"\n[scripts/yahoo_news_fetcher.py:6] import json\n[scripts/yahoo_news_fetcher.py:7] from datetime import datetime\n[scripts/yahoo_news_fetcher.py:9] # 敏感词过滤\n[scripts/yahoo_news_fetcher.py:10] SENSITIVE_KEYWORDS = [\n[scripts/yahoo_news_fetcher.py:11] \"天安门\", \"六四\", \"法轮功\", \"藏独\", \"疆独\",\n[scripts/yahoo_news_fetcher.py:12] \"杀人预告\", \"爆破预告\", \"皆殺し\",\n[scripts/yahoo_news_fetcher.py:13] ]\n[scripts/yahoo_news_fetcher.py:16] def is_sensitive(text: str) -> bool:\n[scripts/fetch_runner.py:1] #!/usr/bin/env python3\n[scripts/fetch_runner.py:2] \"\"\"fetch_runner.py — 每日定时抓取，从 DB 读 keywords 后调用 /api/trigger-fetch。\"\"\"\n[scripts/fetch_runner.py:4] import sys\n[scripts/fetch_runner.py:5] import json\n[scripts/fetch_runner.py:6] import time\n[scripts/fetch_runner.py:7] import logging\n[scripts/fetch_runner.py:8] import requests\n[scripts/fetch_runner.py:9] from datetime import datetime\n[scripts/fetch_runner.py:10] from pathlib import Path\n[scripts/fetch_runner.py:12] sys.path.insert(0, str(Path(__file__).resolve().parent))\n[scripts/fetch_runner.py:13] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/fetch_runner.py:15] logging.basicConfig("
+ },
+ {
+  "id": 155,
+  "lines": "641-724",
+  "rule": "L23检出标题误标（主角张冠李戴）时须核实content_ja并建议合并改主角，避免成稿主角错位",
+  "expectation": "主角与内容主体一致",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 156,
+  "lines": "641-724",
+  "rule": "宣发系列长期0发布的素材（如30+条全0发布）应建议改道其他平台或待窗口，不作普通S级XHS稿",
+  "expectation": "长期0发布系列改道",
+  "kind": "code",
+  "v2_files": [
+   "services/recommend.py",
+   "services/feedback_patterns.py",
+   "scripts/scoring.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "agent/review.py:213",
+  "reason": "【人工裁定】连续0曝光≥3 → 改道 gzh 已实现",
+  "evidence": "[services/recommend.py:1] \"\"\"待发布推荐（机械，对齐原 skill 阶段6）。\n[services/recommend.py:3] - 选篇：**4 篇数据驱动**（时效 + 人物历史发布数据 + 分数）+ **1 篇随机探索**；+ 2 条备选。\n[services/recommend.py:4] - 数据总览：断更天数 / 本月每日发布量 / 候选池规模 / 待发队列条数。\n[services/recommend.py:6] - 只选篇 + 给时段；**不发布**（写库由 services.schedule.apply_plan 完成）。\n[services/recommend.py:49] \"\"\"某人物/实体的历史发布表现：已发条数 / 中位 xhs_views / 最高 / 最近3条。\"\"\"\n[services/recommend.py:90] parts.append(\"人物无历史发布记录\")\n[services/feedback_patterns.py:1] \"\"\"第4层：发布数据聚合 + data-feedback-patterns.md（人类报告）+ feedback_patterns 表（决策检索）。\n[services/feedback_patterns.py:42] env = os.environ.get(\"XHS_FEEDBACK_MD\")\n[scripts/scoring.py:29] # 已达发布线"
+ },
+ {
+  "id": 157,
+  "lines": "641-724",
+  "rule": "validate-tables.py 规则9：单元格内竖线（哪怕转义）是最高频复发点，shell命令写进单元格必中招，应写纯文字描述",
+  "expectation": "单元格无竖线",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py",
+   "agent/tools.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:28",
+  "reason": "【人工裁定】单元格竖线→列数不一致报错",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:21] tables += 1\n[agent/tools.py:4] 只暴露确定性能力；不暴露任意 shell。\n[agent/tools.py:12] dunhao as _dh, validate_tables as _vt, news as _news,\n[agent/tools.py:47] def _validate_tables(text: str) -> dict:\n[agent/tools.py:48] tables, problems = _vt.validate_text(text)\n[agent/tools.py:49] return {\"tables\": tables, \"problems\": problems}\n[agent/tools.py:87] _fn(\"validate_tables\", \"Markdown 表格格式校验\","
+ },
+ {
+  "id": 158,
+  "lines": "641-724",
+  "rule": "validate-tables.py 规则11：标题与表格间不能夹正文行（含 > 引用行和说明段），三明治结构改为说明行→标题→表格",
+  "expectation": "标题紧邻表格",
+  "kind": "code",
+  "v2_files": [
+   "services/validate_tables.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/validate_tables.py:41",
+  "reason": "【人工裁定】标题与表格间夹正文行→报错",
+  "evidence": "[services/validate_tables.py:1] \"\"\"Markdown 表格格式校验 —— 唯一实现（迁移自 validate-tables.py）。\"\"\"\n[services/validate_tables.py:7] __all__ = [\"cols\", \"validate\", \"main\"]\n[services/validate_tables.py:14] def validate_text(text: str):\n[services/validate_tables.py:15] \"\"\"返回 (tables, problems)。\"\"\"\n[services/validate_tables.py:17] problems, tables = [], 0\n[services/validate_tables.py:21] tables += 1"
+ },
+ {
+  "id": 159,
+  "lines": "641-724",
+  "rule": "存档写完必须跑 validate-tables.py 校验表格渲染，problems>0 时修正后复跑至0",
+  "expectation": "problems: 0 才通过",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 160,
+  "lines": "641-724",
+  "rule": "curl fallback 为默认发送路径，代理端口漂移时脚本读 $http_proxy 自动切换",
+  "expectation": "发送走curl fallback",
+  "kind": "process",
+  "v2_files": [
+   "config/net_fallback.py",
+   "config/yahoo_conf.py",
+   "scripts/yahoo_common.py"
+  ],
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工流程/工具用法（自动化流水线已取代）：curl fallback 代理漂移——已被 services/delivery 取代",
+  "evidence": "[config/net_fallback.py:63] if getattr(requests.Session.request, \"_xhs_direct_fallback\", False):\n[config/net_fallback.py:65] fallback_on = os.environ.get(\"NET_DIRECT_FALLBACK\", \"1\") != \"0\"\n[config/net_fallback.py:76] if (not fallback_on or args or not host or _needs_proxy(host)\n[config/net_fallback.py:92] request._xhs_direct_fallback = True\n[config/yahoo_conf.py:57] os.environ.get(\"http_proxy\") or\n[config/yahoo_conf.py:86] \"http_proxy\": PROXY_URL, \"https_proxy\": PROXY_URL,\n[config/yahoo_conf.py:93] # 代理断开时，对不需要代理的域名自动改走直连重试（requests 全局生效，见 config/net_fallback.py）\n[config/yahoo_conf.py:94] from config import net_fallback as _net_fallback\n[config/yahoo_conf.py:95] _net_fallback.install()\n[scripts/yahoo_common.py:55] os.environ['http_proxy'] = PROXY_URL\n[scripts/yahoo_common.py:103] for k in (\"HTTP_PROXY\", \"HTTPS_PROXY\", \"http_proxy\", \"https_proxy\"):\n[scripts/yahoo_common.py:439] # fallback：仅翻译\n[scripts/yahoo_common.py:1518] return _fallback_to_news(news, keyword, extra_tags)\n[scripts/yahoo_common.py:1661] def _fallback_to_news(news: dict, keyword: str, extra_tags: list) -> dict:"
+ },
+ {
+  "id": 161,
+  "lines": "641-724",
+  "rule": "主进程直做模式和 delegate_task 分发模式均可行，选择依赖用户偏好和API负载",
+  "expectation": "两种模式均可接受",
+  "kind": "process",
+  "verdict": "不适用",
+  "impl_loc": "",
+  "reason": "人工 agent 流程（自动化流水线已取代）"
+ },
+ {
+  "id": 162,
+  "lines": "641-724",
+  "rule": "L23 报告的「最新pub」可能是定时队列值（口径差异非误报），需区分已发布与已排定",
+  "expectation": "区分口径差异与误报",
+  "kind": "code",
+  "v2_files": [
+   "services/schedule.py",
+   "services/recommend.py",
+   "scripts/yahoo_news_publish.py"
+  ],
+  "verdict": "一致",
+  "impl_loc": "services/schedule.py:72; services/recommend.py:101; scripts/yahoo_news_publish.py:79",
+  "reason": "实现以 xhs_pub_time 表示已排定的预发布时间（schedule/recommend 查询待发布队列），以 publish_time/publish_xhs 表示已发布状态，两口径在数据模型与查询中明确区分，满足区分已发布与已排定的要求。",
+  "evidence": "[services/schedule.py:1] \"\"\"待发布推荐 · 预发布时间生成器 —— 唯一实现（迁移自 pub_time_plan.py）。\n[services/schedule.py:4] --apply 只 UPDATE news（xhs_pub_time / 可选 publish_xhs=1），**不触发发布**。\n[services/schedule.py:72] \"SELECT substr(title,1,34), COALESCE(xhs_pub_time,''), \"\n[services/schedule.py:73] \"COALESCE(publish_xhs,0), \"\n[services/schedule.py:82] def apply_plan(db, keys, plan, set_publish_flag):\n[services/schedule.py:92] if set_publish_flag:\n[services/recommend.py:30] \"\"\"待推荐候选池：preselected=1 且 publish_xhs=0 且已有 rewritten_content。\"\"\"\n[services/recommend.py:41] \"WHERE preselected=1 AND COALESCE(publish_xhs,0)=0 AND COALESCE(rewritten_content,'')!='' \"\n[services/recommend.py:56] \"SELECT xhs_views, publish_time FROM news WHERE substr(publish_time,1,4)>='2000' \"\n[services/recommend.py:57] f\"AND ({_SEARCH_OR}) ORDER BY publish_time DESC LIMIT 200\",\n[services/recommend.py:101] \"SELECT key,title,title_ja,content_ja,rewritten_title,xhs_pub_time FROM news \"\n[services/recommend.py:102] \"WHERE substr(COALESCE(xhs_pub_time,''),1,10)=?\", (tomorrow.isoformat(),))]\n[scripts/yahoo_news_publish.py:59] from sqlite_db import get_pending_publish as sqlite_pending\n[scripts/yahoo_news_publish.py:71] \"发布时间\": {\"rich_text\": [{\"plain_text\": r.get('pub_time','')}]},\n[scripts/yahoo_news_publish.py:78] \"发布XHS\": {\"checkbox\": bool(r.get('publish_xhs'))},\n[scripts/yahoo_news_publish.py:79] \"发布XHS时间\": {\"date\": {\"start\": r.get('publish_time','')} if r.get('publish_time') else None},\n[scripts/yahoo_news_publish.py:80] \"发布模式\": {\"select\": {\"name\": r.get('publish_mode','normal')}},\n[scripts/yahoo_news_publish.py:81] \"自由发布内容\": {\"rich_text\": [{\"plain_text\": r.get('publish_free_text','')}]},"
+ }
+]
