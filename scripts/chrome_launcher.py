@@ -155,6 +155,12 @@ def launch_chrome(
         "--remote-allow-origins=*",  # 允许 WebSocket 连接
     ]
 
+    # 指定 Chrome 子 profile：多 profile 的 user-data-dir 下，不指定会开到 last_used
+    # （可能不是有登录态的那个，如宿主是 Profile 1 而 last_used=Default）
+    _pd = os.environ.get("CHROME_PROFILE_DIR")
+    if _pd:
+        cmd.append(f"--profile-directory={_pd}")
+
     # 容器/可移植：额外 flags 从环境变量注入
     cmd += shlex.split(os.environ.get("CHROME_EXTRA_FLAGS", ""))
 
