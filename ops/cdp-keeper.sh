@@ -26,6 +26,38 @@ before_9222=0; before_9223=0
 port_open 9222 && before_9222=1
 port_open 9223 && before_9223=1
 
+# ── 标签清理（参考容器 ops/cdp_keeper.py 的 _de_explore）——放在早退之前，保证每次都跑 ──
+#   ① /explore（视频流，持续烧 CPU）→ 导航到创作者首页
+#   ② 关掉多余的 chrome://newtab/ · about:blank（至少保留 1 个 page，否则会关掉 Chrome）
+if [ "$before_9222" = 1 ]; then
+"$PROJ/.venv/bin/python3" - <<'PYCLEAN' 2>/dev/null
+import json, urllib.request
+BASE = "http://127.0.0.1:9222"
+try:
+    tabs = json.load(urllib.request.urlopen(f"{BASE}/json", timeout=5))
+except Exception:
+    raise SystemExit
+pages = [t for t in tabs if t.get("type") == "page"]
+DEST = "https://creator.xiaohongshu.com/new/home"
+for t in pages:
+    if "www.xiaohongshu.com/explore" in (t.get("url") or ""):
+        try:
+            import websocket
+            ws = websocket.create_connection(t["webSocketDebuggerUrl"], timeout=5)
+            ws.send(json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": DEST}}))
+            ws.recv(); ws.close()
+        except Exception:
+            pass
+blanks = [t for t in pages if (t.get("url") or "") in ("chrome://newtab/", "about:blank")]
+keep = 1 if len(pages) - len(blanks) == 0 else 0
+for t in blanks[keep:]:
+    try:
+        urllib.request.urlopen(f"{BASE}/json/close/{t['id']}", timeout=5)
+    except Exception:
+        pass
+PYCLEAN
+fi
+
 # 两个都在跑就直接退出，不产生日志噪音
 if [ "$before_9222" = 1 ] && [ "$before_9223" = 1 ]; then
   exit 0
