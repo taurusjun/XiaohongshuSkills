@@ -44,7 +44,7 @@ cron → fetch_runner.py（读 webapp keywords）
 
 ## 4. 主 Chrome / 媒体 tab / mcp
 - `ops/cdp_keeper.py`（每 60s）：若 www 标签停在 `/explore`（视频流、持续烧 CPU）→ 自动导航到该账户 profile 页（读 `data/accounts_meta.json` 的 `profile_id`；无则 `about:blank`）。
-- 宿主 `~/cdp-keeper.sh`（每 300s，LaunchAgent `com.xhs.cdp-keeper`）同样做「`/explore` → 创作者首页」+ **关掉多余的 `chrome://newtab/` · `about:blank`（保留 ≥1 页）**（2026-10-17 补）。两个必须项：plist 带 **`AbandonProcessGroup=true`**（否则 launchd 在本任务退出时**杀掉**它拉起的 Chrome：日志写 `alive=1` 但端口随即又关）、脚本带 **`CHROME_PROFILE_DIR="Profile 1"`**（否则 Chrome 开到 `Local State.last_used`，可能不是有登录态的那个 profile）。
+- 宿主 `~/cdp-keeper.sh`（每 300s，LaunchAgent `com.xhs.cdp-keeper`）同样做「`/explore` → 创作者首页」+ **关掉多余的 `chrome://newtab/` · `about:blank`（保留 ≥1 页，否则会关掉 Chrome；只剩空白页时把它导航到创作者首页，不留 newtab）**（2026-10-17 补）。两个必须项：plist 带 **`AbandonProcessGroup=true`**（否则 launchd 在本任务退出时**杀掉**它拉起的 Chrome：日志写 `alive=1` 但端口随即又关）、脚本带 **`CHROME_PROFILE_DIR="Profile 1"`**（否则 Chrome 开到 `Local State.last_used`，可能不是有登录态的那个 profile）。
 - **mcp（fastmcp :5001）已从 supervisord 移除**（曾因 SOCKS 代理崩溃重启循环，持续烧一个核 → 风扇）。
 
 ## 5. 定时重启容器（宿主 LaunchAgent）

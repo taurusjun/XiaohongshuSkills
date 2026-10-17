@@ -28,7 +28,8 @@ port_open 9223 && before_9223=1
 
 # ── 标签清理（参考容器 ops/cdp_keeper.py 的 _de_explore）——放在早退之前，保证每次都跑 ──
 #   ① /explore（视频流，持续烧 CPU）→ 导航到创作者首页
-#   ② 关掉多余的 chrome://newtab/ · about:blank（至少保留 1 个 page，否则会关掉 Chrome）
+#   ② 关掉多余的 chrome://newtab/ · about:blank（至少保留 1 个 page，否则会关掉 Chrome）；
+#      只剩空白页时 → 把它导航到创作者首页（而不是留一个 newtab）
 if [ "$before_9222" = 1 ]; then
 "$PROJ/.venv/bin/python3" - <<'PYCLEAN' 2>/dev/null
 import json, urllib.request
@@ -53,6 +54,14 @@ keep = 1 if len(pages) - len(blanks) == 0 else 0
 for t in blanks[keep:]:
     try:
         urllib.request.urlopen(f"{BASE}/json/close/{t['id']}", timeout=5)
+    except Exception:
+        pass
+if keep and blanks:  # 只剩空白页时，把它导航到创作者首页（而不是留 newtab）
+    try:
+        import websocket
+        ws = websocket.create_connection(blanks[0]["webSocketDebuggerUrl"], timeout=5)
+        ws.send(json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": DEST}}))
+        ws.recv(); ws.close()
     except Exception:
         pass
 PYCLEAN
