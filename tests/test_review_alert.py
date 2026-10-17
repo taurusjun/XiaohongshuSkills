@@ -20,6 +20,8 @@ def test_alert_when_zero_grades(monkeypatch):
     sent = {}
     import scripts.feishu_bot as fb
     monkeypatch.setattr(fb, "send_alert", lambda t: sent.setdefault("t", t) or True)
+    from services import error_log as elog            # 别把测试噪声写进 logs/error.log
+    monkeypatch.setattr(elog, "log", lambda *a, **k: None)
     review.run("2026-10-15")
     assert "产出异常" in sent.get("t", ""), sent
 
@@ -29,5 +31,7 @@ def test_no_alert_when_graded(monkeypatch):
     sent = {}
     import scripts.feishu_bot as fb
     monkeypatch.setattr(fb, "send_alert", lambda t: sent.setdefault("t", t) or True)
+    from services import error_log as elog            # 别把测试噪声写进 logs/error.log
+    monkeypatch.setattr(elog, "log", lambda *a, **k: None)
     review.run("2026-10-15")
     assert "t" not in sent, sent
