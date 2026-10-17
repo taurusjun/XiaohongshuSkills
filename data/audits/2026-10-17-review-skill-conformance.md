@@ -4,18 +4,14 @@
 
 ## 汇总
 
-- 一致：22
+- 一致：25
 - 部分一致：26
-- 缺失：3
 - 不适用：111
 
 ## 逐条对齐表
 
 | # | skill 规则 | 期望 | 实现位置 | 结论 | 理由 |
 |---|---|---|---|---|---|
-| 50 | 第4层必须含「rewritten_title 抽检证据」子节：### 标题+3条「原始title→rewritten_title，mode= | 审计Step1能确认用了rewritten_title+pu | — | **缺失** | 【人工裁定】第4层「rewritten_title 抽检证据」子节未实现（review_render 无该节） |
-| 153 | 低分母日的S级占比按绝对条数上限判（如18条不超过2-3条），不按百分比硬卡 | 低量日用绝对数判 | — | **缺失** | 【人工裁定】低分母日 S 级「绝对条数上限」（如18条≤2-3条）未实现（只有百分比 ≤15%） |
-| 154 | 抓取日志条数≠API当日条数（重复命中不计入当日），以API total为准，非故障 | 以API total为准 | — | **缺失** | 【人工裁定】「抓取日志条数≠API当日条数」口径未显式处理 |
 | 13 | 同事件条目先聚类再分级，保留1-2条最丰富的，其余合并跳过并标注聚类原因 | 先聚类后分级，同事件不重复处理 | agent/prompts/review.md:5 | **部分一致** | clusters 字段实现了同事件聚类（keys/main/note/grade），但片段未见「保留1-2条最丰富、其余 |
 | 16 | AKB大TOP分流：事件型写全文preselected=1；晒照型以summary bullet入库（rewritten留空） | 按事件型/晒照型分别处理 | agent/write.py:56-57; services/import_drafts.py:69 | **部分一致** | 实现区分了晒照型bullet（preselected=1且无正文则跳过重跑）与事件型入库preselected=1，但未 |
 | 22 | 第4层分析published数据前必须先检查publish_mode、rewritten_title、rewritten_content三字 | 分析基于实际发布标题而非原始title | agent/review.py:235-236 | **部分一致** | SQL 查询用 COALESCE(rewritten_title,title) 并检索 rewritten_title/ |
@@ -56,10 +52,13 @@
 | 44 | 表格单元格内禁止出现 | 字符，即使 \| 转义也不行；含竖线内容改写为纯文字 | 单元格无竖线，列数不错位 | services/review_render.py:6 | **一致** | _c 将单元格内容中的 | 替换为全角｜，保证单元格无竖线、列数不错位，效果满足规则 |
 | 46 | 标题必须紧邻表格，中间不能夹任何正文行（含 blockquote > 行）；说明文字上移到标题之前 | 标题与表格间无正文行 | services/validate_tables.py:41 | **一致** | 【人工裁定】表格前必须是 # 标题（禁粗体引导） |
 | 47 | 「标题→说明/引用行→表格」三明治结构写时就改成「说明行→标题→表格」，不等校验器抓 | 无三明治结构 | services/validate_tables.py:42 | **一致** | 校验器要求表格前必须是 # 标题行（否则报错），即强制「说明行→标题→表格」结构，与规则要求的目标形态一致。 |
+| 50 | 第4层必须含「rewritten_title 抽检证据」子节：### 标题+3条「原始title→rewritten_title，mode= | 审计Step1能确认用了rewritten_title+pu | services/review_render.py:90 + agent/review.py:205 | **一致** | 【本轮已修】已补「rewritten_title 抽检证据」子节（取最近3条已发布：原始title→rewritten_ |
 | 105 | HTTP_PROXY 全局代理会使 DeepSeek API 连接不稳（国内服务不需代理），导致 stale stream 和 .tick. | 诊断 stale stream 时先查代理设置 | scripts/yahoo_common.py:28 | **一致** | 实现将 DeepSeek API 改为不走系统代理的直连 session，并在 yahoo_common.py:103  |
 | 111 | 第3层查DB必须用 search= 参数，不要 limit=200 全量拉回过滤，会漏旧记录 | 用 --data-urlencode search= 查询 | services/related.py:46-55 | **一致** | 实现用 SQL LIKE 直接查 DB 多字段匹配并带 limit，效果等同/优于 search= 参数查询，未做全量拉 |
 | 112 | 第4层必须先查 rewritten_title 再分析，原始title与实际发布标题可能完全不同 | 分析前先取发布标题 | agent/review.py:6 | **一致** | 检索采用 title/content_ja/rewritten_title 三字段 OR，明确包含 rewritten_ |
 | 115 | 存档表格格式：表格前用 ## 标题而非粗体，| 在行首，必须有分隔行 | 表格渲染正常 | services/validate_tables.py:25 | **一致** | validate_tables.py 专门校验表格格式（表头、分隔行、列数、粗体行退化），语义上完整覆盖规则要求。 |
+| 153 | 低分母日的S级占比按绝对条数上限判（如18条不超过2-3条），不按百分比硬卡 | 低量日用绝对数判 | agent/prompts/review.md:23 | **一致** | 【本轮已修】已补「低分母日(<25条) S 级绝对上限 ≤2-3 条，不按百分比硬卡」 |
+| 154 | 抓取日志条数≠API当日条数（重复命中不计入当日），以API total为准，非故障 | 以API total为准 | agent/prompts/review.md:15 | **一致** | 【本轮已修】已补「抓取日志条数≠API当日条数，以 API total 为准，非故障」 |
 | 156 | 宣发系列长期0发布的素材（如30+条全0发布）应建议改道其他平台或待窗口，不作普通S级XHS稿 | 长期0发布系列改道 | agent/review.py:213 | **一致** | 【人工裁定】连续0曝光≥3 → 改道 gzh 已实现 |
 | 157 | validate-tables.py 规则9：单元格内竖线（哪怕转义）是最高频复发点，shell命令写进单元格必中招，应写纯文字描述 | 单元格无竖线 | services/validate_tables.py:28 | **一致** | 【人工裁定】单元格竖线→列数不一致报错 |
 | 158 | validate-tables.py 规则11：标题与表格间不能夹正文行（含 > 引用行和说明段），三明治结构改为说明行→标题→表格 | 标题紧邻表格 | services/validate_tables.py:41 | **一致** | 【人工裁定】标题与表格间夹正文行→报错 |

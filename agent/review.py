@@ -202,6 +202,29 @@ def prepare_package(date, hist_k=6):
 _REVIEW_LLM_TO = int(os.environ.get("REVIEW_LLM_TIMEOUT", "600") or 600)
 
 
+def _layer4_samples(date, n=3):
+    """第4层「rewritten_title 抽检证据」：取最近已发布的 n 条（原始title → rewritten_title, mode）。"""
+    import sqlite3
+    from services import paths as _p
+    out = []
+    try:
+        conn = sqlite3.connect(_p.sqlite_path())
+        try:
+            rows = conn.execute(
+                "SELECT substr(key,1,12), COALESCE(title,''), COALESCE(rewritten_title,''), "
+                "COALESCE(publish_mode,'') FROM news "
+                "WHERE publish_xhs=1 AND COALESCE(xhs_pub_time,publish_time)!='' "
+                "AND COALESCE(rewritten_title,'')!='' "
+                "ORDER BY COALESCE(xhs_pub_time,publish_time) DESC LIMIT ?", (n,)).fetchall()
+        finally:
+            conn.close()
+        for k, t, rw, md in rows:
+            out.append({"key": k, "orig": t[:40], "rw": rw[:40], "mode": md})
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 CH_SYS = ("你是渠道判定器。对每篇候选，**分别独立**判断它是否适合 xhs、是否适合 gzh（两门互不排斥），并判断是否应当**跳过**。"
           "输出 channel ∈ \"xhs|gzh|both|skip\"：两门都过 → \"both\"；只过 xhs → \"xhs\"；只过 gzh → \"gzh\"；都不过 → \"xhs\"（默认）；命中跳过判据 → \"skip\"。"
           "只输出严格 JSON：{\"<key前12位>\": {\"channel\": \"xhs|gzh|both|skip\", \"reason\": \"<一句话依据>\"}}。\n"
@@ -386,7 +409,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     feedback = machine.get("feedback")
     from services import review_render as _rr
     _titles = {r["key"][:12]: (r.get("title") or "") for r in pkg["rows"]}
-    rest = _rr.render(machine, _titles)
+    _samples = _layer4_samples(date)          # 第4层抽检证据（原 skill 要求）
+    rest = _rr.render(machine, _titles, samples=_samples)
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:

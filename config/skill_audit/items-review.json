@@ -653,9 +653,9 @@
    "agent/review.py",
    "services/feedback_patterns.py"
   ],
-  "verdict": "缺失",
-  "impl_loc": "",
-  "reason": "【人工裁定】第4层「rewritten_title 抽检证据」子节未实现（review_render 无该节）",
+  "verdict": "一致",
+  "impl_loc": "services/review_render.py:90 + agent/review.py:205",
+  "reason": "【本轮已修】已补「rewritten_title 抽检证据」子节（取最近3条已发布：原始title→rewritten_title, mode）",
   "evidence": "[agent/prompts/review.md:1] 你是小红书「每日素材 review」执行者。输入=当日全量素材(JSON，字段 key/title/ja=>日文原标题/body=>content_ja 日文正文/fmt/lf/ts/cs/cj/src)、前一天素材、实体名(中日双形)历史\n[agent/prompts/review.md:7] - `advice`: {\"<k12>\":{\"title_dir\":\"…\",\"how\":\"…\",\"richness\":\"…\",\"priority\":\"P0|P1|P2\",\"emotion\":\"…\"}}（仅 S/A/AKB）\n[agent/prompts/review.md:13] **务必逐条阅读 body（content_ja 日文正文）后再聚类/分级，不要只看标题。**\n[agent/prompts/review.md:16] 对照前一天已出现/已发布的**同事件**素材，标注处理（前日重复→降 C / 前日已发 / 正常）。\n[agent/prompts/review.md:32] 对 S/A/AKB 每条：标题方向、写法建议、素材充实度、优先级(P0/P1/P2)、情绪预期。\n[agent/prompts/review.md:41] - `patterns`：**仅新增**模式。除 `title/body/tags` 外必须给结构化 facets：`category(娱乐|经济|体育|社会|其他)`、`genre`、`title_style`、`publish_mode\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:25] ENT_SYS = (\"你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**：\"\n[agent/review.py:27] \"（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。\"\n[agent/review.py:47] d = {\"key\": r[\"key\"][:12], \"title\": r.get(\"title\"), \"ja\": (r.get(\"title_ja\") or \"\")[:40],\n[agent/review.py:48] \"fmt\": r.get(\"format\"), \"lf\": r.get(\"is_long_form\"), \"ts\": r.get(\"title_score\"),\n[agent/review.py:50] \"src\": r.get(\"fetch_by\"), \"pub\": r.get(\"publish_xhs\")}\n[services/feedback_patterns.py:4] **规律结构化字段（facets）**：category/genre/title_style/publish_mode/direction/action/confidence/entities；\n[services/feedback_patterns.py:5] `body` 保留 md 原文给人看。检索 `relevant()` 按 entities/genre/category/title_style 命中并回带 direction/action。\n[services/feedback_patterns.py:25] FACETS = (\"category\", \"genre\", \"title_style\", \"publish_mode\", \"direction\", \"action\",\n[services/feedback_patterns.py:67] no INTEGER PRIMARY KEY, date TEXT, title TEXT, body TEXT, tags TEXT, created_at TEXT)\"\"\")\n[services/feedback_patterns.py:85] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})\n[services/feedback_patterns.py:91] out.append({\"no\": cur[0], \"title\": cur[1], \"body\": \"\\n\".join(buf).strip()})"
  },
  {
@@ -1828,9 +1828,9 @@
    "services/rules.py",
    "agent/review.py"
   ],
-  "verdict": "缺失",
-  "impl_loc": "",
-  "reason": "【人工裁定】低分母日 S 级「绝对条数上限」（如18条≤2-3条）未实现（只有百分比 ≤15%）",
+  "verdict": "一致",
+  "impl_loc": "agent/prompts/review.md:23",
+  "reason": "【本轮已修】已补「低分母日(<25条) S 级绝对上限 ≤2-3 条，不按百分比硬卡」",
   "evidence": "[config/review_thresholds.json:1] {\n[config/review_thresholds.json:2] \"_comment\": \"写稿机械门禁阈值与占比；precheck/write._need/density 统一读此表\",\n[config/review_thresholds.json:3] \"xhs\": {\n[config/review_thresholds.json:4] \"title_max\": 20,\n[config/review_thresholds.json:5] \"story_min_score\": 8,\n[config/review_thresholds.json:6] \"news_min_score\": 7,\n[config/review_thresholds.json:7] \"story_body_min\": 800,\n[config/review_thresholds.json:8] \"story_h2_min\": 2,\n[config/review_thresholds.json:9] \"density_min\": 30,\n[config/review_thresholds.json:10] \"kana_max\": 5,\n[config/review_thresholds.json:11] \"story_soft_max\": 900,\n[config/review_thresholds.json:12] \"story_min_score_long\": 9,\n[services/rules.py:1] \"\"\"硬规则 config 加载（写稿 skill 复刻：硬规则=config+服务，prompt 只留判断类）。\"\"\"\n[services/rules.py:2] import functools\n[services/rules.py:3] import json\n[services/rules.py:5] from services import paths\n[services/rules.py:7] __all__ = [\"load\", \"thresholds\", \"xhs_th\", \"gzh_th\"]\n[services/rules.py:10] @functools.lru_cache(maxsize=None)\n[services/rules.py:11] def load(name):\n[services/rules.py:12] p = paths.REPO_ROOT / \"config\" / name\n[services/rules.py:13] try:\n[services/rules.py:14] return json.loads(p.read_text(encoding=\"utf-8\"))\n[services/rules.py:15] except Exception:  # noqa: BLE001\n[services/rules.py:16] return {}\n[agent/review.py:1] \"\"\"完整 review skill 运行：4 层 SKILL + 当日素材 → LLM 生成完整存档（一~六）。\n[agent/review.py:3] 忠于原 skill：\n[agent/review.py:4] - review **只产出文档**，不做任何 DB 写入（layer23 明确「禁止写入操作」）。\n[agent/review.py:5] - 「第五节 跨时间关联」：按**实体名（中日双形）**做只读检索（等价 layer23 的 search=），\n[agent/review.py:6] 用只读 DB 三字段 OR（title/content_ja/rewritten_title）—— API search= 不索引 content_ja 日文正文。\n[agent/review.py:7] - 「第4层」先跑 layer4_aggregate.py 产出发布数据底稿喂 LLM，再**仅追加**更新 data-feedback-patterns.md。\n[agent/review.py:8] - 收尾跑 validate-tables（表格铁律）。\n[agent/review.py:9] \"\"\"\n[agent/review.py:10] import json\n[agent/review.py:11] import os\n[agent/review.py:12] import re\n[agent/review.py:13] import sys"
  },
  {
@@ -1844,9 +1844,9 @@
    "scripts/yahoo_news_fetcher.py",
    "scripts/fetch_runner.py"
   ],
-  "verdict": "缺失",
-  "impl_loc": "",
-  "reason": "【人工裁定】「抓取日志条数≠API当日条数」口径未显式处理",
+  "verdict": "一致",
+  "impl_loc": "agent/prompts/review.md:15",
+  "reason": "【本轮已修】已补「抓取日志条数≠API当日条数，以 API total 为准，非故障」",
   "evidence": "[scripts/yahoo_news_auto_sqlite.py:44] _disable_proxy, LITELLM_API_KEY, LITELLM_MODEL,\n[scripts/yahoo_news_fetcher.py:1] #!/usr/bin/env python3\n[scripts/yahoo_news_fetcher.py:2] \"\"\"\n[scripts/yahoo_news_fetcher.py:3] 日本 Yahoo 新闻抓取器 - 抓取与中国相关的新闻并生成小红书发布格式（含评论解读）\n[scripts/yahoo_news_fetcher.py:4] \"\"\"\n[scripts/yahoo_news_fetcher.py:6] import json\n[scripts/yahoo_news_fetcher.py:7] from datetime import datetime\n[scripts/yahoo_news_fetcher.py:9] # 敏感词过滤\n[scripts/yahoo_news_fetcher.py:10] SENSITIVE_KEYWORDS = [\n[scripts/yahoo_news_fetcher.py:11] \"天安门\", \"六四\", \"法轮功\", \"藏独\", \"疆独\",\n[scripts/yahoo_news_fetcher.py:12] \"杀人预告\", \"爆破预告\", \"皆殺し\",\n[scripts/yahoo_news_fetcher.py:13] ]\n[scripts/yahoo_news_fetcher.py:16] def is_sensitive(text: str) -> bool:\n[scripts/fetch_runner.py:1] #!/usr/bin/env python3\n[scripts/fetch_runner.py:2] \"\"\"fetch_runner.py — 每日定时抓取，从 DB 读 keywords 后调用 /api/trigger-fetch。\"\"\"\n[scripts/fetch_runner.py:4] import sys\n[scripts/fetch_runner.py:5] import json\n[scripts/fetch_runner.py:6] import time\n[scripts/fetch_runner.py:7] import logging\n[scripts/fetch_runner.py:8] import requests\n[scripts/fetch_runner.py:9] from datetime import datetime\n[scripts/fetch_runner.py:10] from pathlib import Path\n[scripts/fetch_runner.py:12] sys.path.insert(0, str(Path(__file__).resolve().parent))\n[scripts/fetch_runner.py:13] sys.path.insert(0, str(Path(__file__).resolve().parent.parent))\n[scripts/fetch_runner.py:15] logging.basicConfig("
  },
  {

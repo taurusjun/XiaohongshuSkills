@@ -17,9 +17,10 @@ _ORDER = [("S", "S级（强烈推荐）🔥"), ("A", "A级（可选）"),
           ("AKB大TOP", "✅ AKB大TOP（必须入库）"), ("B", "B级（轻量跑量）"), ("C", "C级（跳过）")]
 
 
-def render(data, titles=None):
+def render(data, titles=None, samples=None):
     data = data or {}
     titles = titles or {}
+    samples = samples or []
 
     def _t(k):
         return (titles.get(k) or "")[:26]
@@ -86,5 +87,10 @@ def render(data, titles=None):
         for lab, key in (("Top", "top"), ("最低", "low"), ("零曝光", "zero"), ("异常", "anomaly")):
             if l4.get(key):
                 parts.append(f"- **{lab}**：{_c(l4.get(key))}")
+        if samples:                       # 原 skill：第4层须含 rewritten_title 抽检证据
+            parts.append("### rewritten_title 抽检证据")
+            for sm in samples[:3]:
+                parts.append(f"- `{sm.get('key')}` 原始title《{_c(sm.get('orig'))}》"
+                             f"→ rewritten_title《{_c(sm.get('rw'))}》, mode={_c(sm.get('mode'))}")
 
     return "\n\n".join(parts) + "\n"
