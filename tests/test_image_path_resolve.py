@@ -18,3 +18,14 @@ def test_resolve_existing_and_http(monkeypatch, tmp_path):
     assert y.resolve_image_path(str(f)) == str(f)            # 已存在 → 原样
     assert y.resolve_image_path("https://x/y.jpg") == "https://x/y.jpg"   # 远程 → 原样
     assert y.resolve_image_path("") == ""                    # 空 → 空
+
+
+def test_resolve_relative(monkeypatch, tmp_path):
+    """新约定：DB 存相对路径 <key>/<file> → 按当前 GALLERY_CACHE_DIR 拼。"""
+    monkeypatch.setattr(y, "GALLERY_CACHE_DIR", str(tmp_path))
+    key = "abc123"
+    (tmp_path / key).mkdir()
+    (tmp_path / key / "001.webp").write_bytes(b"x")
+    assert y.resolve_image_path(f"{key}/001.webp") == str(tmp_path / key / "001.webp")
+    assert y.to_rel_path(f"/Users/user/.cache/xhs_images/{key}/001.webp") == f"{key}/001.webp"
+    assert y.to_rel_path(f"/home/user/.cache/xhs_images/{key}/001.webp") == f"{key}/001.webp"

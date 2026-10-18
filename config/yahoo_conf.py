@@ -13,22 +13,40 @@ DB_PATH = os.environ.get("SQLITE_PATH",
 GALLERY_CACHE_DIR = os.environ.get("GALLERY_CACHE_DIR", os.path.expanduser("~/.cache/xhs_images"))
 
 
-def resolve_image_path(p: str) -> str:
-    """把 DB 里存的图片绝对路径，按**当前** GALLERY_CACHE_DIR 归一化。
+def to_rel_path(p: str) -> str:
+    """绝对路径 → 缓存根下的**相对路径** `<key>/<file>`（DB 只存相对路径，不带根）。
 
-    迁移场景：宿主写的 /Users/user/.cache/xhs_images/<key>/x.jpg 进容器后路径失效。
-    这里取「/xhs_images/」之后的相对部分，重新拼到当前缓存目录（配置化）。
-    存在的原路径原样返回；否则返回归一化后的候选（调用方再判存在）。
+    约定：DB 里不存根，读的时候按各部署自己的 GALLERY_CACHE_DIR 拼。
     """
     if not p:
         return p
-    if os.path.exists(p):
-        return p
+    q = str(p).replace("\\", "/")
     marker = "/xhs_images/"
-    if marker in p:
-        rel = p.split(marker, 1)[1]
-        return os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), rel)
-    return p
+    if marker in q:
+        return q.split(marker, 1)[1]
+    # 兜底：按最后两段（<key>/<file>）
+    parts = [x for x in q.split("/") if x]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else q
+
+
+def resolve_image_path(p: str) -> str:
+    """把 DB 里存的图片路径解析成**当前部署**下的真实绝对路径。
+
+    约定（2026-10-18 起）：DB 存**相对路径** `<key>/<file>` → 直接拼当前 GALLERY_CACHE_DIR。
+    历史兼容：老数据是绝对路径（含迁移过来的宿主/容器路径）→ 按 `<key>/<file>` 后缀重接根。
+    存在的原路径原样返回。
+    """
+    if not p:
+        return p
+    q = str(p)
+    if q.startswith(("http://", "https://")):        # 远程 URL → 原样（契约不变）
+        return p
+    if os.path.exists(q):
+        return q
+    root = os.path.expanduser(GALLERY_CACHE_DIR)
+    if not os.path.isabs(q):                         # 相对路径：新约定（DB 只存 <key>/<file>）
+        return os.path.join(root, q.lstrip("/"))
+    return os.path.join(root, to_rel_path(q))        # 老绝对路径（迁移数据）：按后缀重接根
 
 # 多关键词并行抓取数量（默认 3）
 FETCH_PARALLEL = int(os.environ.get("FETCH_PARALLEL", "3"))

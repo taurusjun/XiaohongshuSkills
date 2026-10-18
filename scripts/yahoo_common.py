@@ -41,7 +41,7 @@ except ImportError:
 def check_proxy(interactive: bool = True) -> bool:
     """启动时检测代理是否可用。interactive=True 时代理挂了会询问用户。
     返回 True 表示继续，False 表示用户选择退出。"""
-    from config.yahoo_conf import USE_PROXY, PROXY_URL
+    from config.yahoo_conf import to_rel_path, USE_PROXY, PROXY_URL
     if not USE_PROXY:
         _disable_proxy()
         return True
@@ -1716,7 +1716,7 @@ def _download_article_images(news: dict, image_urls: list[str]) -> None:
                 ext = 'jpg'
             fpath = cache_dir / f"article_{i:02d}.{ext}"
             fpath.write_bytes(resp.content)
-            local_paths.append(str(fpath))
+            local_paths.append(to_rel_path(str(fpath)))   # DB 只存相对路径（配置化根）
             print(f"    📷 文章图片[{i}]: {fpath.name} ({len(resp.content)//1024}KB)")
         except Exception as e:
             print(f"    ⚠️ 文章图片下载失败: {e}")

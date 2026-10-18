@@ -48,7 +48,7 @@ def get_status(key: str) -> dict:
     # Check cache dir
     d = CACHE_DIR / key
     if d.is_dir():
-        cached = [str(d / f) for f in sorted(os.listdir(d))
+        cached = [f"{key}/{f}" for f in sorted(os.listdir(d))
                   if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.')]
         if cached:
             return {'status': 'done', 'images': cached, 'log': ''}
@@ -118,7 +118,7 @@ def _download(key: str, gallery_url: str = ""):
                     for f in files:
                         log.append(f'  ✓ {f}')
                     image_urls = []
-                    task['images'] = [str(d / f) for f in sorted(os.listdir(d))
+                    task['images'] = [f"{key}/{f}" for f in sorted(os.listdir(d))
                                       if not f.startswith('.') and not f.startswith('cover.')]
                     task['status'] = 'done'
                     task['log'] = '\n'.join(log)
@@ -172,12 +172,12 @@ def _download(key: str, gallery_url: str = ""):
                 task['log'] = '\n'.join(log)
 
         task['status'] = 'done'
-        images = [str(d / f) for f in sorted(os.listdir(d))
+        images = [f"{key}/{f}" for f in sorted(os.listdir(d))
                   if f != 'meta.json' and not f.startswith('.')]
         task['images'] = images
         log.append(f'✅ 已缓存 {len(images)} 张')
         # Save video to DB if any
-        vids = [str(d / f) for f in sorted(os.listdir(d))
+        vids = [f"{key}/{f}" for f in sorted(os.listdir(d))
                 if f.endswith('.mp4') and not f.startswith('.')]
         if vids:
             update_news(key, {'gallery_video': vids[0],
