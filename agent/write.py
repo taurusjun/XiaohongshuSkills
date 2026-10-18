@@ -136,7 +136,7 @@ def prepare_package(cand):
         merge_text = "\n".join(
             f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
         rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
-                             "excerpt": (s.get("content_ja") or "")[:300]} for s in sibs]
+                             "excerpt": (s.get("content_ja") or "")[:800]} for s in sibs]
         related_keys += ck
     except Exception:  # noqa: BLE001
         pass
@@ -154,7 +154,7 @@ def prepare_package(cand):
                 hist_excerpts[s["key"]] = (f"[{s['key'][:12]}] {s.get('title')}｜旧文节选："
                                            f"{((s.get('rewritten_content') or s.get('content_ja') or ''))[:400]}")
             rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
-                                 "excerpt": ((s.get("rewritten_content") or s.get("content_ja") or ""))[:300]} for s in hs]
+                                 "excerpt": ((s.get("rewritten_content") or s.get("content_ja") or ""))[:800]} for s in hs]
             related_keys += hist
     except Exception:  # noqa: BLE001
         pass
@@ -392,6 +392,10 @@ def _need(cand, channel, body_len=None):
 
 REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给【本篇】与各【候选】(同事件或同人物历史的旧文)，'
            '判断每个候选与本篇的关联类型，只输出严格 JSON：{"relations":[{"key":"<key前12位>","type":"<类型>"}]}。'
+           '**硬前置（先判这条，不满足一律"无关联"）**：候选必须与本篇 **同一人物**（本篇主体人物）'
+           '或 **同一事件**（同一场活动/同一部作品/同一部剧的最新进展）；'
+           '**仅「同作品/同角色/同系列/同团体」不算关联** —— 例：本篇是「A 出演某舞台的千寻」，'
+           '则「B 也演过该舞台/该角色」的旧文 → "无关联"。'
            '类型：时间线补充=旧事件有新进展（本轮合并写新版）｜人物呼应=旧文写过该人物、本篇是新事件（写续篇）｜'
            '新角度=旧文写了X面、本篇给Y面（写不同角度）｜纯重复=同一事件标题类似（本篇应跳过不写）｜无关联｜同名不同人。'
            '前置：命中必须先核对是否同一人；同名/近似名不同人→"同名不同人"。')
@@ -644,7 +648,9 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     # 第3层：先判关联类型（旧 skill 3b），再按类型写
     _rels = classify_relations(cand, pkg)
     _log(f"  关联判定: {[(r['key'][:8], r['type']) for r in _rels] or '无'}")
-    _KEEP = {"时间线补充", "人物呼应", "新角度"}
+    # 保留为关联的类型：纯重复=**同一事件**（标题类似，写稿层面可能该跳过，但关联层面必须挂，
+    # 生产对同事件素材就是互设 related_keys）
+    _KEEP = {"时间线补充", "人物呼应", "新角度", "纯重复"}
     # 「纯重复→跳过」只在**与已发布文章重复**时成立；同批同事件成员（未发布）不触发。
     # 且 **不覆盖 review 的 grade**（grade 由 review 产出，write 无权改）。
     _dup_pub = []
