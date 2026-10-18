@@ -75,11 +75,30 @@ def drain(batch=5, timeout=180):
     """限速排空：只挑「待发布队列里**还没有真图集**」的，**每轮最多 batch 篇**。
 
     用途：定时任务（每 20 分钟）分批补下图集，避免整队列同时触发造成并发风暴（图床封禁）。
+
+    ⚠️ 轮转：候选按 `updated_at` **升序**（久未处理的优先）。失败的（如「未检测到图集链接」——
+    这类文章本来就没有图集页，原 skill 口径是「配图走封面即可」）会把 `updated_at` 顶到最新，
+    下轮自然排到最后 → 不会反复占用名额把后面的饿死。
     """
-    ks = [k for k in pending_keys() if not _has_real_gallery(k)][:max(1, int(batch))]
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        rows = conn.execute(
+            "SELECT key FROM news WHERE COALESCE(publish_xhs,0)=1 AND COALESCE(publish_time,'')='' "
+            "ORDER BY COALESCE(updated_at,'') ASC, COALESCE(xhs_pub_time,'')").fetchall()
+    finally:
+        conn.close()
+    ks = [r[0] for r in rows if not _has_real_gallery(r[0])][:max(1, int(batch))]
     if not ks:
         return []
-    return sync(keys=ks, wait=True, timeout=timeout)
+    res = sync(keys=ks, wait=True, timeout=timeout)
+    for k, st in res:                                  # 失败/无图集 → 顶 updated_at（下轮排后）
+        if str(st).startswith("error") or st == "idle":
+            try:
+                from services import news as _n
+                _n.update_news(k, {"gallery_url": (_n.get_by_key(k) or {}).get("gallery_url") or ""})
+            except Exception:  # noqa: BLE001
+                pass
+    return res
 
 
 def trigger(key, gallery_url=""):
