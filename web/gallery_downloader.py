@@ -49,7 +49,7 @@ def get_status(key: str) -> dict:
     d = CACHE_DIR / key
     if d.is_dir():
         cached = [f"{key}/{f}" for f in sorted(os.listdir(d))
-                  if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.')]
+                  if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
         if cached:
             return {'status': 'done', 'images': cached, 'log': ''}
     return {'status': 'idle', 'images': [], 'log': ''}
@@ -119,7 +119,7 @@ def _download(key: str, gallery_url: str = ""):
                         log.append(f'  ✓ {f}')
                     image_urls = []
                     task['images'] = [f"{key}/{f}" for f in sorted(os.listdir(d))
-                                      if not f.startswith('.') and not f.startswith('cover.')]
+                                      if not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
                     task['status'] = 'done'
                     task['log'] = '\n'.join(log)
                     return
