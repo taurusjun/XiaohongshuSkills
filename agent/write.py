@@ -82,9 +82,21 @@ def pick_candidates(n=0):
             return {"P0": 0, "P1": 1, "P2": 2}.get(str((json.loads(r.get("review_advice") or "{}") or {}).get("priority") or "").upper(), 3)
         except Exception:  # noqa: BLE001
             return 3
+    # 同簇**已有正文**的（含本次 run 之前写的）→ 不再重复写。
+    # ⚠️ 原实现只看本次 run 的 picks（`used`），所以 write 只要跑第二次，
+    #    同簇第二篇就会被补写（2026-10-18 实测 10/17 有 6 簇出现「2 篇都写了正文」）。
+    #    生产口径：同簇只写主条，其余合并/跳过。
+    try:
+        import sqlite3 as _sq
+        _cx = _sq.connect(paths.sqlite_path())
+        _hasbody = {x[0] for x in _cx.execute("SELECT key FROM news WHERE COALESCE(rewritten_content,'')!=''")}
+        _cx.close()
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 同簇去重：读取已写 key 失败，本次退化为仅本 run 去重: {e}")
+        _hasbody = set()
     for r in sorted(pool, key=lambda x: (_prio(x), -(x.get("title_score") or 0))):
         cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
-        if (cl | {r["key"]}) & used:
+        if (cl | {r["key"]}) & (used | _hasbody):
             continue
         picks.append(r)
         used |= cl | {r["key"]}
