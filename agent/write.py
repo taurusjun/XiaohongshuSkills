@@ -357,6 +357,16 @@ def score_content(title, body, max_tokens=4000):
             if len(nums) == 5:
                 d["total"] = sum(nums)
         if isinstance(d.get("total"), (int, float)):
+            # 退化结果：total=0 且**所有维度都拿不到分**（不是「真的 0 分」，而是评分调用异常）
+            _any = False
+            for n in _dims:
+                v = d.get(n)
+                v = v.get("score") if isinstance(v, dict) else v
+                if isinstance(v, (int, float)) and v > 0:
+                    _any = True
+                    break
+            if float(d.get("total") or 0) == 0 and not _any:
+                d["error"] = "degenerate(全 0 且无维度分)"
             return d
     return last
 
@@ -479,6 +489,23 @@ def classify_relations(cand, pkg, max_tokens=2000):
     return out
 
 
+def _length_ok(cand, blen):
+    """skill 口径：story&lf=1 → 800-1200；export → 不压字数；其余 → ≤950（900±50）。
+    返回 (是否合规, 反馈文案)。"""
+    blen = blen or 0
+    if (cand.get("publish_method") or "") == "export":
+        return True, ""
+    if cand.get("format") == "story" and cand.get("is_long_form"):
+        if blen < 800:
+            return False, f"字数不足：正文 {blen} 字，**必须扩写到 800-1200 字**（补原文细节/背景，不要灌水）"
+        if blen > 1200:
+            return False, f"字数超限：正文 {blen} 字，**必须精简到 ≤1200 字**（删重复/铺陈，保留事实与金句）"
+        return True, ""
+    if blen > 950:
+        return False, f"字数超限：正文 {blen} 字，**必须精简到 ≤950 字**（小红书图文 900±50）"
+    return True, ""
+
+
 def _produce(cand, pkg, channel, first=None):
     """单渠道：编写→门禁(precheck+renwei exit1/gzh)→评分→改稿(最多3轮,基于上一版)。"""
     need = _need(cand, channel)
@@ -549,9 +576,9 @@ def _produce(cand, pkg, channel, first=None):
                 if any("标志性动词" in str(p) for p in fb):
                     fb.append("去掉『标志着/见证了/体现/彰显/折射出』这类拔高动词，直接陈述事实。")
                 fb = list(dict.fromkeys(fb))
-                if body and len(body) < pkg["tmin"]:
-                    fb.insert(0, f"字数严重不足：正文仅 {len(body)} 字，**必须扩写到 ≥{pkg['tmin']} 字**"
-                                  f"（密度须 ≥30%，低于会被打回；补原文细节/背景，不要灌水）")
+                _lok, _lmsg = _length_ok(cand, _blen)          # ⚠️ 长度**独立于评分**评估：
+                if not _lok:                                   # 否则高分的超长稿一次就通过（10/18 实测 1341 字）
+                    fb.insert(0, _lmsg)
                 if _score_msg:                          # 评分+建议 置顶（最显眼）
                     fb.insert(0, _score_msg)
                 ctx = ("基于上一版修改。**若字数不足，务必扩写到位**（其余问题只做局部修改）；"
@@ -610,9 +637,11 @@ def _produce(cand, pkg, channel, first=None):
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
         need = _need(cand, channel, mech.get("body_len") or len(body))    # 按长度分层
         _err = bool(score.get("error"))
+        _lok2, _lmsg2 = _length_ok(cand, mech.get("body_len") or len(body))
         _log(f"  评分 {score.get('total')}/{need}"
-             + ("（评分失败）" if _err else ("（通过）" if (score.get("total") or 0) >= need else "（偏低，继续改）")))
-        if _err or (score.get("total") or 0) >= need:
+             + ("（评分失败）" if _err else ("（通过）" if (score.get("total") or 0) >= need else "（偏低，继续改）"))
+             + ("" if _lok2 else f" ｜ 字数 {(mech.get('body_len') or len(body))} 字超区间"))
+        if (_err or (score.get("total") or 0) >= need) and _lok2:
             break
     if not mech["problems"] and (score.get("total") or 0) < need:
         mech["problems"] = list(mech.get("problems") or []) + [

@@ -168,12 +168,17 @@ def ck_cluster(rows, conn, out):
         seen.add(grp)
         n = 0
         for k in grp:
-            b = (conn.execute("SELECT rewritten_content FROM news WHERE key=?", (k,)).fetchone() or [""])[0] or ""
-            if b:
+            d = conn.execute("SELECT rewritten_content,preselected,publish_xhs,COALESCE(xhs_pub_time,'') FROM news WHERE key=?",
+                             (k,)).fetchone()
+            if not d:
+                continue
+            # 生产口径：被 related_keys 吸收的条**保留正文但 preselected=0 是预期状态**；
+            # 真正的不变量是「每簇 ≤1 篇**待发布/已发布**」。
+            if d[1] or d[2] or (d[3] or "").strip():
                 n += 1
         if n > 1:
-            multi.append(f'{r["key"][:8]} 簇内 {n} 篇都有正文（应只写主条）')
-    out.append(("同簇只写一条", multi))
+            multi.append(f'{r["key"][:8]} 簇内 {n} 篇处于待发布/已发布（应只写主条）')
+    out.append(("同簇只写一条（待发布/已发布 ≤1）", multi))
 
 
 def ck_schedule(rows, out):
