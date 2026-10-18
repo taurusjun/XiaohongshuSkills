@@ -25,6 +25,7 @@ _DDL = [
         date TEXT, ran_at TEXT, model TEXT,
         n_rows INTEGER DEFAULT 0, n_grade INTEGER DEFAULT 0, n_cluster INTEGER DEFAULT 0,
         n_advice INTEGER DEFAULT 0, n_cross INTEGER DEFAULT 0, n_date_trap INTEGER DEFAULT 0,
+        n_unresolved INTEGER DEFAULT 0,
         ok INTEGER DEFAULT 1, note TEXT)""",
 ]
 
@@ -38,7 +39,7 @@ def ensure(conn):
         conn.execute(ddl)
     # 兼容旧表：CREATE IF NOT EXISTS 不会给已存在的表补列
     for tbl, cols in (("review_clusters", [("mains_json", "TEXT DEFAULT ''")]),
-                      ("review_runs", [])):
+                      ("review_runs", [("n_unresolved", "INTEGER DEFAULT 0")])):
         try:
             have = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
         except sqlite3.OperationalError:
@@ -93,10 +94,10 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
 def save_run(conn, date, counts=None, model="", ok=1, note=""):
     ensure(conn)
     c = counts or {}
-    conn.execute("INSERT INTO review_runs(date,ran_at,model,n_rows,n_grade,n_cluster,n_advice,n_cross,n_date_trap,ok,note)"
-                 " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+    conn.execute("INSERT INTO review_runs(date,ran_at,model,n_rows,n_grade,n_cluster,n_advice,n_cross,n_date_trap,n_unresolved,ok,note)"
+                 " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                  (date, _now(), model, c.get("rows", 0), c.get("grade", 0), c.get("cluster", 0),
-                  c.get("advice", 0), c.get("cross", 0), c.get("date_trap", 0), ok, note[:200]))
+                  c.get("advice", 0), c.get("cross", 0), c.get("date_trap", 0), c.get("unresolved", 0), ok, note[:200]))
     conn.commit()
 
 
@@ -111,7 +112,7 @@ def clusters_of(conn, date):
 def runs_recent(conn, n=10):
     """最近几次 review 运行——回答「上次 review 判了什么」。"""
     ensure(conn)
-    rows = conn.execute("SELECT date,ran_at,model,n_rows,n_grade,n_cluster,n_advice,n_cross,n_date_trap,ok,note"
+    rows = conn.execute("SELECT date,ran_at,model,n_rows,n_grade,n_cluster,n_advice,n_cross,n_date_trap,n_unresolved,ok,note"
                         " FROM review_runs ORDER BY id DESC LIMIT ?", (n,)).fetchall()
-    cols = ["date", "ran_at", "model", "n_rows", "n_grade", "n_cluster", "n_advice", "n_cross", "n_date_trap", "ok", "note"]
+    cols = ["date", "ran_at", "model", "n_rows", "n_grade", "n_cluster", "n_advice", "n_cross", "n_date_trap", "n_unresolved", "ok", "note"]
     return [dict(zip(cols, r)) for r in rows]

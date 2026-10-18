@@ -204,6 +204,13 @@ def ck_landing(rows, out):
     got = {k: sum(1 for r in rows if (r.get(k) or "").strip()) for k in need}
     miss = [f"{k} 落库 {got[k]}/{len(rows)}" for k in need if got[k] == 0 and rows]
     out.append(("review 产出字段已落库（grade/grade_reason/review_advice/date_trap）", miss))
+    # LLM 返回的 key 前缀解析失败（静默丢素材/关联的源头；生产 skill 高频事故）
+    try:
+        _r = conn.execute("SELECT date,n_unresolved FROM review_runs ORDER BY id DESC LIMIT 5").fetchall()
+        _bad = [f"{x[0]} 解析失败 {x[1]} 个" for x in _r if (x[1] or 0) > 0]
+    except Exception:  # noqa: BLE001
+        _bad = []
+    out.append(("LLM 返回的 key 前缀全部解析成功（近 5 次 review）", _bad))
 
 
 def ck_static(out):

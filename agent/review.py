@@ -56,15 +56,24 @@ def compact_rows(date, limit=500, with_body=False):
     return out
 
 
+_UNRESOLVED = []          # LLM 返回但解析不到的 key 前缀（供日志/计数；生产 skill: 短key静默丢失是高频事故）
+
+
 def _resolve_keys(prefixes):
+    """把 k12/任意前缀展开成**全键**。解析不到的**记入 _UNRESOLVED**（不再静默）。"""
     import sqlite3
     out = []
     conn = sqlite3.connect(paths.sqlite_path())
     try:
         for pfx in prefixes or []:
-            r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (str(pfx)[:40],)).fetchone()
+            _p = str(pfx).strip()
+            if not _p:
+                continue
+            r = conn.execute("SELECT key FROM news WHERE key LIKE ? || '%'", (_p[:40],)).fetchone()
             if r:
                 out.append(r[0])
+            else:
+                _UNRESOLVED.append(_p[:40])
     finally:
         conn.close()
     return out
@@ -234,11 +243,14 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
             if _fk and _fk[0] in day:
                 _news.update_news(_fk[0], {"cluster_id": _cidv})
         _rs.save_run(_cx, date, {"rows": len(day), "grade": wg, "cluster": wr, "advice": ad,
-                                 "cross": ct, "date_trap": dt}, ok=1)
+                                 "cross": ct, "date_trap": dt, "unresolved": len(_UNRESOLVED)}, ok=1)
         _cx.close()
         print(f"[review_store] 簇 {_ncl} 行 + 运行留档 1 行")
     except Exception as _e:  # noqa: BLE001
         print(f"[review_store] 跳过: {_e}")
+    if _UNRESOLVED:
+        print(f"[review] ⚠️ {len(_UNRESOLVED)} 个 key 前缀解析失败（已静默丢弃；多为 LLM 抄错/跨日 key）: "
+              + ", ".join(_UNRESOLVED[:8]))
 
     return wg, wr, cleared, ch, ak, ct, ad
 
@@ -511,6 +523,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
                     pass
         except Exception as e:                      # noqa: BLE001
             print(f"[review] 重试异常: {e}")
+    _UNRESOLVED.clear()
     _raw_grades = machine.get("grades") or {}
     grades = {k: (v.get("grade") if isinstance(v, dict) else v) for k, v in _raw_grades.items()}
     # 分级理由（原 skill 的分级表带 reason；write 侧读 review 存档时能看到 → 落库并注入）
