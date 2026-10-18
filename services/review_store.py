@@ -36,6 +36,19 @@ def _now():
 def ensure(conn):
     for ddl in _DDL:
         conn.execute(ddl)
+    # 兼容旧表：CREATE IF NOT EXISTS 不会给已存在的表补列
+    for tbl, cols in (("review_clusters", [("mains_json", "TEXT DEFAULT ''")]),
+                      ("review_runs", [])):
+        try:
+            have = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})")}
+        except sqlite3.OperationalError:
+            continue
+        for c, t in cols:
+            if c not in have:
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {c} {t}")
+                except sqlite3.OperationalError:
+                    pass
     cols = {r[1] for r in conn.execute("PRAGMA table_info(news)")}
     if "cluster_id" not in cols:
         try:
@@ -55,16 +68,19 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
         keys = [str(k).strip() for k in (c.get("keys") or []) if str(k).strip()]
         if len(keys) < 2:
             continue
-        main12 = str(c.get("main") or "").strip() or keys[0]
+        _mains = c.get("mains") or ([c.get("main")] if c.get("main") else [])
+        _mains = [str(x).strip() for x in _mains if str(x).strip()] or [keys[0]]
+        main12 = _mains[0]
         main_full = main12
         if resolve_main:
             fk = resolve_main([main12])
             if fk:
                 main_full = fk[0]
         cid = f"{date}-{main_full[:12]}"
-        conn.execute("INSERT INTO review_clusters(date,cluster_id,main_key,note,grade,keys_json,n,created_at,updated_at)"
-                     " VALUES(?,?,?,?,?,?,?,?,?)",
-                     (date, cid, main_full, str(c.get("note") or "")[:300], str(c.get("grade") or ""),
+        conn.execute("INSERT INTO review_clusters(date,cluster_id,main_key,mains_json,note,grade,keys_json,n,created_at,updated_at)"
+                     " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                     (date, cid, main_full, json.dumps(_mains, ensure_ascii=False),
+                      str(c.get("note") or "")[:300], str(c.get("grade") or ""),
                       json.dumps(keys, ensure_ascii=False), len(keys), now, now))
         n += 1
         for k in keys:
@@ -86,9 +102,9 @@ def save_run(conn, date, counts=None, model="", ok=1, note=""):
 def clusters_of(conn, date):
     """某天的簇（含主条与说明）——回答「这一簇主条是谁」。"""
     ensure(conn)
-    rows = conn.execute("SELECT cluster_id,main_key,note,grade,n,keys_json FROM review_clusters WHERE date=?", (date,)).fetchall()
-    return [{"cluster_id": r[0], "main_key": r[1], "note": r[2], "grade": r[3], "n": r[4],
-             "keys": json.loads(r[5] or "[]")} for r in rows]
+    rows = conn.execute("SELECT cluster_id,main_key,mains_json,note,grade,n,keys_json FROM review_clusters WHERE date=?", (date,)).fetchall()
+    return [{"cluster_id": r[0], "main_key": r[1], "mains": json.loads(r[2] or "[]"), "note": r[3],
+             "grade": r[4], "n": r[5], "keys": json.loads(r[6] or "[]")} for r in rows]
 
 
 def runs_recent(conn, n=10):

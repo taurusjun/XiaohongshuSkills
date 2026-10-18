@@ -132,12 +132,23 @@ def pick_candidates(n=0):
     for r in sorted(pool, key=lambda x: (_prio(x), -(x.get("title_score") or 0))):
         if (r.get("merged_into") or "").strip():
             continue            # 被吸收条（review 已标 merged-into）→ 不写第二篇
-        cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
-        _cm = (r.get("cluster_main") or "").strip()
-        if _cm and r["key"] != _cm and _cm in cl:
-            continue            # 权威主条判据（review 的 clusters.main）→ 簇内非主条不写
-        if (cl | {r["key"]}) & (used | _hasbody):
-            continue
+        # ⚠️ 键长度口径：cluster_keys / r["key"] 是 40 位全键，cluster_mains 存的是 12 位前缀
+        #    → 一律按 k12 比较，否则主条判定恒为 False（2026-10-18 踩过）
+        _k12 = r["key"][:12]
+        cl = {x[:12] for x in (r.get("cluster_keys") or "").split(",") if x}
+        _cms = [x.strip()[:12] for x in (r.get("cluster_mains") or "").split(",") if x.strip()]
+        if not _cms:
+            _cm = (r.get("cluster_main") or "").strip()[:12]
+            _cms = [_cm] if _cm else []
+        _used12 = {x[:12] for x in (used | _hasbody)}
+        _is_main = bool(_cms) and _k12 in _cms
+        if _cms and not _is_main and (set(_cms) & cl):
+            continue            # 权威主条判据（review 的 clusters.mains，1-2 条）→ 非主条不写
+        if _is_main:
+            if _k12 in _used12:
+                continue        # 主条之间**互不排斥**（1-2 条都要写），只防自己重复
+        elif (cl | {_k12}) & _used12:
+            continue            # 非主条：簇内任一成员已选/已成篇 → 不写
         picks.append(r)
         used |= cl | {r["key"]}
         if n and len(picks) >= n:

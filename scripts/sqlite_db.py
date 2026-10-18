@@ -270,7 +270,7 @@ def init_db():
             );
             CREATE TABLE IF NOT EXISTS review_clusters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT, cluster_id TEXT, main_key TEXT, note TEXT, grade TEXT,
+                date TEXT, cluster_id TEXT, main_key TEXT, mains_json TEXT, note TEXT, grade TEXT,
                 keys_json TEXT, n INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT
             );
             CREATE TABLE IF NOT EXISTS review_runs (
@@ -324,6 +324,7 @@ def init_db():
             ("grade_reason", "TEXT DEFAULT ''"),
             ("date_trap", "TEXT DEFAULT ''"),
             ("cluster_main", "TEXT DEFAULT ''"),
+            ("cluster_mains", "TEXT DEFAULT ''"),
             ("cluster_note", "TEXT DEFAULT ''"),
             ("merged_into", "TEXT DEFAULT ''"),
             ("channel_hint", "TEXT DEFAULT ''"),
@@ -619,7 +620,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','date_trap','cluster_main','cluster_note','merged_into','cluster_id','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
+               'grade','grade_reason','date_trap','cluster_main','cluster_mains','cluster_note','merged_into','cluster_id','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

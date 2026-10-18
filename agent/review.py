@@ -105,7 +105,7 @@ def _extract_machine_json(text):
 
 def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None,
             grade_reasons=None, date_trap=None, cluster_main=None, cluster_note=None,
-            clusters_raw=None):
+            clusters_raw=None, cluster_mains=None):
     """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
     + **cross_time（第3层跨时间关联）并入 related_keys**。
 
@@ -135,13 +135,17 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         _news.update_news(k, {"cluster_keys": v})
         _m = (cluster_main or {}).get(k[:12]) or (cluster_main or {}).get(k) or ""
         _n = (cluster_note or {}).get(k[:12]) or (cluster_note or {}).get(k) or ""
-        if _m:
+        _ms = (cluster_mains or {}).get(k[:12]) or (cluster_mains or {}).get(k) or ""
+        if _ms:
+            _news.update_news(k, {"cluster_mains": _ms})
+        _is_main = k[:12] in [x.strip() for x in _ms.split(",") if x.strip()] if _ms else False
+        if _m and not _is_main:
             _fk = _resolve_keys([_m])
             if _fk and _fk[0] != k:
                 # 生产约定：同事件重复条/被吸收条 → 标 merged-into-<主条key12>
                 #   （生产写在 score_dims；这里另存专列 merged_into，且仅在 score_dims 为空时才写 score_dims，避免丢评分数据）
                 _cur = (_news.get_by_key(k) or {})
-                _upd = {"cluster_main": _fk[0], "merged_into": _fk[0][:12]}
+                _upd = {"cluster_main": _fk[0], "cluster_mains": _ms, "merged_into": _fk[0][:12]}
                 if not (_cur.get("score_dims") or "").strip():
                     _upd["score_dims"] = f"merged-into-{_fk[0][:12]}"
                 # S/A/AKB大TOP 被吸收条：按生产口径 preselected=1（靠 merged_into 拦写稿）；其余保持 0
@@ -514,9 +518,11 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     _craw = [c for c in (machine.get("clusters") or []) if isinstance(c, dict) and c.get("keys")]
     clusters = [c.get("keys") for c in _craw]
     # 主条(clusters.main)与同事件说明(clusters.note)：write 的「只写主条」要用权威判据，别再推断
-    cluster_main, cluster_note = {}, {}
+    cluster_main, cluster_mains, cluster_note = {}, {}, {}
     for _c in _craw:
-        _m = (_c.get("main") or "").strip()
+        _ml = _c.get("mains") or ([_c.get("main")] if _c.get("main") else [])
+        _ml = [str(x).strip() for x in _ml if str(x).strip()]
+        _m = (_ml[0] if _ml else "").strip()
         _n = (_c.get("note") or "").strip()
         for _k in (_c.get("keys") or []):
             _k = str(_k).strip()
@@ -524,6 +530,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
                 continue
             if _m:
                 cluster_main[_k] = _m
+                cluster_mains[_k] = ",".join(_ml)
             if _n:
                 cluster_note[_k] = _n
     channel_hint = machine.get("channel_hint") or {}
@@ -546,7 +553,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
                                          machine.get("cross_time"),
                                          machine.get("advice"),
                                          grade_reasons, machine.get("date_trap"),
-                                         cluster_main, cluster_note, _craw)
+                                         cluster_main, cluster_note, _craw, cluster_mains)
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
                   f"跨时间关联 {ct} / 价值建议 {ad} / 日期陷阱 {dt} 篇落库；主条 {len(cluster_main or {})} 篇 / 说明 {len(cluster_note or {})} 篇")
     except Exception as e:  # noqa: BLE001

@@ -176,8 +176,16 @@ def ck_cluster(rows, conn, out):
             # 真正的不变量是「每簇 ≤1 篇**待发布/已发布**」。
             if d[1] or d[2] or (d[3] or "").strip():
                 n += 1
-        if n > 1:
-            multi.append(f'{r["key"][:8]} 簇内 {n} 篇处于待发布/已发布（应只写主条）')
+        _cap = 2
+        try:
+            _m = conn.execute("SELECT mains_json FROM review_clusters WHERE cluster_id=?",
+                              (r.get("cluster_id") or "",)).fetchone()
+            if _m and (_m[0] or "").strip():
+                _cap = max(1, len(json.loads(_m[0])))
+        except Exception:  # noqa: BLE001
+            pass
+        if n > _cap:
+            multi.append(f'{r["key"][:8]} 簇内 {n} 篇处于待发布/已发布（主条上限 {_cap}）')
     out.append(("同簇只写一条（待发布/已发布 ≤1）", multi))
 
 
