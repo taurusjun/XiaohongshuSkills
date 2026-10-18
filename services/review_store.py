@@ -70,12 +70,13 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
             continue
         _mains = c.get("mains") or ([c.get("main")] if c.get("main") else [])
         _mains = [str(x).strip() for x in _mains if str(x).strip()] or [keys[0]]
-        main12 = _mains[0]
-        main_full = main12
-        if resolve_main:
-            fk = resolve_main([main12])
-            if fk:
-                main_full = fk[0]
+        # 落库一律全键（k12 只在 LLM 接口层）
+        _full = []
+        for _x in _mains:
+            _f = resolve_main([_x]) if resolve_main else []
+            _full.append(_f[0] if _f else _x)
+        _mains = _full
+        main_full = _mains[0]
         cid = f"{date}-{main_full[:12]}"
         conn.execute("INSERT INTO review_clusters(date,cluster_id,main_key,mains_json,note,grade,keys_json,n,created_at,updated_at)"
                      " VALUES(?,?,?,?,?,?,?,?,?,?)",

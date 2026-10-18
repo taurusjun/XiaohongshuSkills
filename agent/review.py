@@ -138,7 +138,7 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         _ms = (cluster_mains or {}).get(k[:12]) or (cluster_mains or {}).get(k) or ""
         if _ms:
             _news.update_news(k, {"cluster_mains": _ms})
-        _is_main = k[:12] in [x.strip() for x in _ms.split(",") if x.strip()] if _ms else False
+        _is_main = k in [x.strip() for x in _ms.split(",") if x.strip()] if _ms else False
         if _m and not _is_main:
             _fk = _resolve_keys([_m])
             if _fk and _fk[0] != k:
@@ -529,8 +529,12 @@ def run(date, deliver=False, name=None, max_tokens=20000):
             if not _k:
                 continue
             if _m:
-                cluster_main[_k] = _m
-                cluster_mains[_k] = ",".join(_ml)
+                # ⚠️ 落库一律**全键**（k12 只存在于 LLM 接口层）：项目约定见 SKILL.md:172/174/176
+                _mf = _resolve_keys([_m])
+                _mf = _mf[0] if _mf else _m
+                cluster_main[_k] = _mf
+                _full = [_resolve_keys([x])[0] if _resolve_keys([x]) else x for x in _ml]
+                cluster_mains[_k] = ",".join(_full)
             if _n:
                 cluster_note[_k] = _n
     channel_hint = machine.get("channel_hint") or {}
