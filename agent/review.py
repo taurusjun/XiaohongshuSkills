@@ -22,13 +22,15 @@ SKILL_FILES = [
     "skills/xhs-daily-material-review-layer4/SKILL.md",
 ]
 
-ENT_SYS = ("你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**："
-           "人物名/团体名/作品名/系列名。**每个实体同时给出「日语汉字（或假名）」与「简体中文」两种写法**"
+ENT_SYS = ("你是日娱实体抽取器。给每条素材(title=中文标题, ja=日文原标题)，抽取**用于检索的实体**，"
+           "并**分成三类**：p=人物名（检索主轴）；g=团体名（如组合/剧团的正式名）；"
+           "w=作品名/系列名/角色名（仅辅助，别混进 p/g）。"
+           "**每个实体同时给出「日语汉字（或假名）」与「简体中文」两种写法**"
            "（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。"
            "不要把“古民家/剪去长发/唱的是/移籍/写真/演唱会/评论区/自拍”等描述性词当实体。"
-           '只输出严格 JSON：{"<key前12位>": ["实体1","实体1简体", ...]}。')
+           '只输出严格 JSON：{"<key前12位>": {"p": ["实体1","实体1简体", ...], "g": [...], "w": [...]}}。')
 
-__all__ = ["compact_rows", "prepare_package", "extract_entities", "run", "main"]
+__all__ = ["compact_rows", "prepare_package", "extract_entities", "Entities", "run", "main"]
 
 
 def _read(rel):
@@ -150,18 +152,42 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None):
     return wg, wr, cleared, ch, ak
 
 
+class Entities(dict):
+    """{key12: [扁平实体,...]}（向后兼容旧调用：取值仍是扁平列表）；另存分型 {key12:{"p":[],"w":[]}}。"""
+
+    def __init__(self, flat=None, typed=None):
+        super().__init__(flat or {})
+        self._typed = typed or {}
+
+    def typed(self, k):
+        """取分型实体；缺失时把扁平列表当 p（兼容旧数据/旧 prompt）。"""
+        return self._typed.get(k) or {"p": list(self.get(k) or []), "g": [], "w": []}
+
+
 def extract_entities(items, max_tokens=4000):
-    """items:[{key,title,ja}] → {key12: [实体,...]}（LLM 抽取，中日双形）。"""
+    """items:[{key,title,ja}] → Entities（{key12:[扁平实体]} + .typed(key12) 分型）。"""
     if not items:
-        return {}
+        return Entities()
     try:
         raw = llm.chat([{"role": "system", "content": ENT_SYS},
                         {"role": "user", "content": json.dumps(items, ensure_ascii=False)}],
                        max_tokens=max_tokens, json_mode=True)
         m = re.search(r"\{.*\}", raw, re.S)
-        return json.loads(m.group(0)) if m else {}
+        d = json.loads(m.group(0)) if m else {}
     except Exception:  # noqa: BLE001
-        return {}
+        return Entities()
+    flat, typed = {}, {}
+    for k, v in (d or {}).items():
+        if isinstance(v, dict):
+            pp = [str(x).strip() for x in (v.get("p") or []) if str(x).strip()]
+            ww = [str(x).strip() for x in (v.get("w") or []) if str(x).strip()]
+        else:                                   # 容错：旧式扁平输出
+            pp = [str(x).strip() for x in (v or []) if str(x).strip()]
+            ww = []
+        gg = [str(x).strip() for x in (v.get("g") or []) if str(x).strip()] if isinstance(v, dict) else []
+        typed[k] = {"p": pp, "g": gg, "w": ww}
+        flat[k] = list(dict.fromkeys(pp + gg + ww))
+    return Entities(flat, typed)
 
 
 def prepare_package(date, hist_k=6):

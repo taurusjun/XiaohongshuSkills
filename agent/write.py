@@ -143,9 +143,9 @@ def prepare_package(cand):
     try:
         from agent import review as _rev
         from services import related as _rel
-        ents = (_rev.extract_entities([{"key": cand["key"][:12], "title": cand.get("title") or "",
+        _ents = _rev.extract_entities([{"key": cand["key"][:12], "title": cand.get("title") or "",
                                         "ja": (cand.get("title_ja") or "")[:60]}])
-                .get(cand["key"][:12], []))
+        ents = _ents.typed(cand["key"][:12])            # 分型：p=人物/团体（主轴）、w=作品/系列（仅辅助）
         hist = [h["key"] for h in _rel.find_related(cand["key"], ents, limit=4)
                 if h["key"] not in related_keys]
         if hist:
@@ -663,8 +663,10 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     _he = pkg.get("hist_excerpts") or {}
     pkg["hist_text"] = "\n".join(_he[k] for k in _kept if k in _he)
     # related_keys = 历史关联(KEEP) + 同事件簇成员（对齐生产：主条也链接簇成员，关联双向）
-    _rk = [r["key"] for r in pkg["relations"]] + [k for k in (pkg.get("cluster_keys") or []) if k != cand["key"]]
-    rk_s = ",".join(dict.fromkeys(_rk))
+    _cl = [k for k in (pkg.get("cluster_keys") or []) if k != cand["key"]]
+    _hi = [r["key"] for r in pkg["relations"]]
+    _rk = list(dict.fromkeys(_cl + _hi))[:3]        # 同事件置顶（对齐生产）→ 跨时间历史；截断 3
+    rk_s = ",".join(_rk)
     # 渠道：显式 > review 标注(gzh) > 默认 xhs。无 channel_hint 时**不允许 LLM 改道 gzh**（回落 xhs）；both 仍允许。
     _hint = (pkg.get("channel_hint") or "").strip().lower()
     eff = force_channel or (_hint if _hint in ("gzh", "both") else None)

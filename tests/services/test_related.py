@@ -41,3 +41,30 @@ def test_find_related_cross_time(tmp_path):
     ])
     res = related.find_related("k" * 40, ["相川暖花"], db=db)
     assert any(r["key"] == "o" + "0" * 39 for r in res), res
+
+
+def test_find_related_work_only_last(tmp_path):
+    """只命中作品/角色名（w）的候选：垫底、可限量（同事件素材要靠它，同作品不同人要靠判定滤）。"""
+    db = str(tmp_path / "w2.db")
+    _mk(db, "key TEXT,title TEXT,title_ja TEXT,content_ja TEXT,status TEXT,created_at TEXT", [
+        ("m" * 40, "井上和演千寻", "井上和", "千と千尋の神隠し", "active", "2026-10-16 10:00:00"),
+        ("n" * 40, "川荣李奈", "川荣李奈", "千尋の舞台に出演", "active", "2026-06-22 10:00:00"),
+        ("o" + "0" * 39, "井上和走秀", "井上和", "", "active", "2026-10-17 10:00:00"),
+    ])
+    res = related.find_related("m" * 40, {"p": ["井上和"], "w": ["千寻"]}, db=db)
+    assert res[0]["key"] == "o" + "0" * 39          # 同人物 + 日期新 → 第一
+    assert res[-1]["key"] == "n" * 40               # w-only → 垫底
+    res0 = related.find_related("m" * 40, {"p": ["井上和"], "w": ["千寻"]}, db=db, max_work_only=0)
+    assert "n" * 40 not in [r["key"] for r in res0]  # 限量 0 → 全丢
+
+
+def test_find_related_group_ranks_below_person(tmp_path):
+    """团体命中（g）排在人物命中（p）之后，避免「组合通稿」把同人物历史顶掉。"""
+    db = str(tmp_path / "w4.db")
+    _mk(db, "key TEXT,title TEXT,title_ja TEXT,content_ja TEXT,status TEXT,created_at TEXT", [
+        ("a" * 40, "本篇", "", "", "active", "2026-10-16 10:00:00"),
+        ("b" * 40, "组合通稿", "乃木坂46", "乃木坂46の記事", "active", "2026-10-17 10:00:00"),
+        ("c" * 40, "同人物旧稿", "井上和", "井上和の記事", "active", "2026-09-01 10:00:00"),
+    ])
+    res = related.find_related("a" * 40, {"p": ["井上和"], "g": ["乃木坂46"], "w": []}, db=db)
+    assert res[0]["key"] == "c" * 40
