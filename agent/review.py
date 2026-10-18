@@ -449,6 +449,8 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     from services import routing as _routing
     _txt = {r["key"]: " ".join([r.get("title") or "", r.get("ja") or "",
                                      (r.get("body") or "")[:800]]) for r in cands}
+    _txt12 = {r["key"][:12]: v for r, v in zip(cands, _txt.values())}
+    _txt.update(_txt12)   # 双键：LLM 回全键或 k12 都能查到
     out, decisions = {}, []
     for k, v in (d.items() if isinstance(d, dict) else []):
         if isinstance(v, dict):
