@@ -78,6 +78,12 @@ def _download(key: str, gallery_url: str = ""):
             if not gallery_url:
                 task['status'] = 'error: 未检测到图集链接'
                 task['log'] = '\n'.join(log)
+                # 持久标记：该篇**确认没有图集页**（原 skill 口径「配图走封面即可」）
+                # 只挡自动排空（services.gallery.drain）；手动重试（--keys / --force）不受影响，且会重新判定
+                try:
+                    update_news(key, {'gallery_status': 'none'})
+                except Exception:  # noqa: BLE001
+                    pass
                 return
 
         log.append(f'📸 图集: {gallery_url}')
@@ -200,7 +206,7 @@ def _download(key: str, gallery_url: str = ""):
         try:
             _imgs = [i for i in images if not i.endswith('.mp4')]
             if _imgs:
-                update_news(key, {'gallery_images': _imgs})
+                update_news(key, {'gallery_images': _imgs, 'gallery_status': 'ok'})   # 成功 → 清掉 none 标记
                 log.append(f'  ↳ DB gallery_images 已更新（{len(_imgs)} 张，相对路径）')
         except Exception as _e:
             log.append(f'  ⚠️ DB 写入失败: {_e}')

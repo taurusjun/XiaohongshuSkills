@@ -147,7 +147,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="draft 所在目录")
     ap.add_argument("--plan", help="plan.json 路径")
-    ap.add_argument("--spec", action="append", default=[], help="k12=fmt:lf:ja（可重复）")
+    ap.add_argument("--spec", action="append", default=[], help="<完整40位key>=fmt:lf:ja（可重复）")
     ap.add_argument("--channel", default="xhs", choices=["xhs", "gzh"])
     ap.add_argument("--glob", default="*_draft_*.md")
     args = ap.parse_args(argv)
@@ -167,17 +167,18 @@ def main(argv=None):
 
     fails = 0
     for path in files:
-        k12 = re.sub(r"^(xhs|gzh)_draft_", "", os.path.basename(path))[:-3]
-        spec = plan.get(k12)
+        # ⚠️ draft 文件名应携带**完整 40 位 key**（AGENTS.md 规则）；这里按文件名里的 key 取用
+        key_part = re.sub(r"^(xhs|gzh)_draft_", "", os.path.basename(path))[:-3]
+        spec = plan.get(key_part)
         if spec is None:
-            print(f"SKIP {k12}  (plan 里没有这个 key，先补 fmt/lf/ja 再判)")
+            print(f"SKIP {key_part}  (plan 里没有这个 key，先补 fmt/lf/ja 再判)")
             continue
         r = check(path, spec, args.channel)
         verdict = "FAIL" if r["problems"] else ("WARN" if r["warns"] else "PASS")
         if r["problems"]:
             fails += 1
         dens = f"{r['density']:.1f}%" if r["density"] is not None else "n/a"
-        print(f"{verdict} {k12}  body={r['body_len']}字 ##={r['h2']} "
+        print(f"{verdict} {key_part}  body={r['body_len']}字 ##={r['h2']} "
               f"密度={dens} kana={r['kana']} | {(r['title'] or '')[:26]}")
         for p in r["problems"]:
             print(f"      ✗ {p}")

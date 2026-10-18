@@ -334,6 +334,7 @@ def init_db():
             ("material_type", "TEXT DEFAULT ''"),
             ("review_advice", "TEXT DEFAULT ''"),
             ("cluster_id", "TEXT DEFAULT ''"),
+            ("gallery_status", "TEXT DEFAULT ''"),
             ("write_score", "REAL DEFAULT 0"),
             ("write_title_score", "REAL DEFAULT 0"),
             ("write_content_score", "REAL DEFAULT 0"),
@@ -620,7 +621,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','date_trap','cluster_main','cluster_mains','cluster_note','merged_into','cluster_id','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
+               'grade','grade_reason','date_trap','cluster_main','cluster_mains','cluster_note','merged_into','cluster_id','gallery_status','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

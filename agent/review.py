@@ -59,20 +59,6 @@ def compact_rows(date, limit=500, with_body=False):
 _UNRESOLVED = []          # LLM 返回但解析不到的 key 前缀（供日志/计数；生产 skill: 短key静默丢失是高频事故）
 
 
-def _lk(mapping, key):
-    """容错查表：先按全键，再按 k12，再按「互为前缀」。LLM 抄成 k12/截断时也能命中。"""
-    if not mapping or not key:
-        return None
-    if key in mapping:
-        return mapping[key]
-    if key[:12] in mapping:
-        return mapping[key[:12]]
-    for k, v in mapping.items():
-        if k and (k.startswith(key[:12]) or key.startswith(k[:12])):
-            return v
-    return None
-
-
 def _resolve_keys(prefixes):
     """把 k12/任意前缀展开成**全键**。解析不到的**记入 _UNRESOLVED**（不再静默）。"""
     import sqlite3
@@ -139,12 +125,12 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     wg = wr = cleared = 0
-    for k12, g in (grades or {}).items():
-        fk = _resolve_keys([k12])
+    for k, g in (grades or {}).items():
+        fk = _resolve_keys([k])
         if fk and fk[0] in day:
             _g = (g.get("grade") if isinstance(g, dict) else g) or ""
             _news.update_news(fk[0], {"grade": str(_g).strip()})
-            _rz = _lk(grade_reasons, k12) or ""
+            _rz = (grade_reasons or {}).get(k) or ""
             if _rz:
                 _news.update_news(fk[0], {"grade_reason": str(_rz)[:300]})
             wg += 1
@@ -156,9 +142,9 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
             norm[x] = ",".join(sorted(y for y in fks if y != x))
     for k, v in norm.items():
         _news.update_news(k, {"cluster_keys": v})
-        _m = _lk(cluster_main, k) or ""
-        _n = _lk(cluster_note, k) or ""
-        _ms = _lk(cluster_mains, k) or ""
+        _m = (cluster_main or {}).get(k) or ""
+        _n = (cluster_note or {}).get(k) or ""
+        _ms = (cluster_mains or {}).get(k) or ""
         if _ms:
             _news.update_news(k, {"cluster_mains": _ms})
         _is_main = k in [x.strip() for x in _ms.split(",") if x.strip()] if _ms else False
@@ -198,18 +184,18 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
 
     # 第2层「价值建议」（review 已判：标题方向/写法/充实度/优先级/情绪）→ 落库，供 write 注入 prompt
     ad = 0
-    for k12, v in (advice or {}).items():
+    for k, v in (advice or {}).items():
         if not isinstance(v, dict) or not v:
             continue
-        fk = _resolve_keys([k12])
+        fk = _resolve_keys([k])
         if fk and fk[0] in day:
             _news.update_news(fk[0], {"review_advice": json.dumps(v, ensure_ascii=False)})
             ad += 1
 
     # 第3层「跨时间关联」（review 已判，原 skill 3b）→ 并入 related_keys（write 阶段 union，不覆盖）
     ct = 0
-    for k12, hits in (cross_time or {}).items():
-        fk = _resolve_keys([k12])
+    for k, hits in (cross_time or {}).items():
+        fk = _resolve_keys([k])
         if not fk or fk[0] not in day:
             continue
         cur = [x for x in ((_news.get_by_key(fk[0]) or {}).get("related_keys") or "").split(",") if x]
@@ -225,8 +211,8 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     # channel_hint（gzh 方向，旧 skill 阶段2「从 review 提取 gzh 方向素材」）
     ch = 0
     ch_keys = set()
-    for k12, v in (channel_hint or {}).items():
-        fk = _resolve_keys([k12])
+    for k, v in (channel_hint or {}).items():
+        fk = _resolve_keys([k])
         if fk and fk[0] in day and str(v).strip():
             _news.update_news(fk[0], {"channel_hint": str(v).strip()})
             ch_keys.add(fk[0])
@@ -237,8 +223,8 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     # akb_type（AKB大TOP 事件型 vs 晒照型 → 决定 write 是否写正文）
     ak = 0
     ak_keys = set()
-    for k12, v in (akb_type or {}).items():
-        fk = _resolve_keys([k12])
+    for k, v in (akb_type or {}).items():
+        fk = _resolve_keys([k])
         if fk and fk[0] in day and str(v).strip() in ("event", "bullet"):
             _news.update_news(fk[0], {"akb_type": str(v).strip()})
             ak_keys.add(fk[0])
@@ -252,8 +238,8 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         from services import review_store as _rs
         _cx = _sq3.connect(paths.sqlite_path(), timeout=30)
         _ncl, _cidmap = _rs.save_clusters(_cx, date, clusters_raw, resolve_main=_resolve_keys)
-        for _k12, _cidv in _cidmap.items():
-            _fk = _resolve_keys([_k12])
+        for _kk, _cidv in _cidmap.items():
+            _fk = _resolve_keys([_kk])
             if _fk and _fk[0] in day:
                 _news.update_news(_fk[0], {"cluster_id": _cidv})
         _rs.save_run(_cx, date, {"rows": len(day), "grade": wg, "cluster": wr, "advice": ad,
@@ -424,7 +410,7 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     rows = pkg.get("rows") or []
     ents = pkg.get("entities") or {}
     cands = [r for r in rows
-             if (_lk(grades, r["key"]) or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
+             if ((grades or {}).get(r["key"]) or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     if not cands:
         return {}
     lines = []
@@ -449,8 +435,6 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     from services import routing as _routing
     _txt = {r["key"]: " ".join([r.get("title") or "", r.get("ja") or "",
                                      (r.get("body") or "")[:800]]) for r in cands}
-    _txt12 = {r["key"][:12]: v for r, v in zip(cands, _txt.values())}
-    _txt.update(_txt12)   # 双键：LLM 回全键或 k12 都能查到
     out, decisions = {}, []
     for k, v in (d.items() if isinstance(d, dict) else []):
         if isinstance(v, dict):
@@ -580,7 +564,6 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     _titles = {}
     for r in pkg["rows"]:
         _titles[r["key"]] = r.get("title") or ""
-        _titles[r["key"][:12]] = r.get("title") or ""
     _samples = _layer4_samples(date)          # 第4层抽检证据（原 skill 要求）
     rest = _rr.render(machine, _titles, samples=_samples)
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()

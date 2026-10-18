@@ -3937,7 +3937,7 @@ def api_split_preview():
         L = _sp.cluster_text_len(c)
         if L <= th:
             continue
-        out.append({"key": c['key'][:12], "full_key": c['key'], "title": c.get('title') or '',
+        out.append({"key": c['key'], "full_key": c['key'], "title": c.get('title') or '',
                     "format": c.get('format') or '', "len": L})
     total = len(out)
     start = (page - 1) * page_size

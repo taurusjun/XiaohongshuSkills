@@ -70,11 +70,11 @@ def ck_related(rows, conn, out):
     for r in rows:
         for x in [y for y in (r["related_keys"] or "").split(",") if y]:
             if len(x) != 40:
-                bad40.append(f'{r["key"][:8]} -> {x[:14]}({len(x)}位)')
+                bad40.append(f'{r["key"]} -> {x[:14]}({len(x)}位)')
             elif x == r["key"]:
-                selfref.append(r["key"][:8])
+                selfref.append(r["key"])
             elif not conn.execute("SELECT 1 FROM news WHERE key=?", (x,)).fetchone():
-                ghost.append(f'{r["key"][:8]} -> {x[:12]}')
+                ghost.append(f'{r["key"]} -> {x}')
     out.append(("related_keys 全 40 位", bad40))
     out.append(("related_keys 无自我关联", selfref))
     out.append(("related_keys 指向的 key 都存在", ghost))
@@ -101,19 +101,19 @@ def ck_body(rows, out):
         if is_story_lf and not exp:
             n = content_len(b)
             if n < 800:
-                short.append(f'{r["key"][:8]} {n}字(<800)')
+                short.append(f'{r["key"]} {n}字(<800)')
             elif n > 1200:
-                long_.append(f'{r["key"][:8]} {n}字(>1200)')
+                long_.append(f'{r["key"]} {n}字(>1200)')
             if b.count("##") < 2:
-                h2.append(f'{r["key"][:8]} ##{b.count("##")}(<2)')
+                h2.append(f'{r["key"]} ##{b.count("##")}(<2)')
         elif not exp and content_len(b) > 950:
-            long_.append(f'{r["key"][:8]} {content_len(b)}字(>950, 900±50)')
+            long_.append(f'{r["key"]} {content_len(b)}字(>950, 900±50)')
     out.append(("story&lf=1 正文 800-1200（export 不压字数）", short + long_))
     out.append(("story&lf=1 有 ≥2 个 ##", h2))
 
 
 def ck_title(rows, out):
-    bad = [f'{r["key"][:8]} {title_weight(r["rewritten_title"])}字 {r["rewritten_title"][:24]}'
+    bad = [f'{r["key"]} {title_weight(r["rewritten_title"])}字 {r["rewritten_title"][:24]}'
            for r in rows if (r["rewritten_title"] or "") and title_weight(r["rewritten_title"]) > 20]
     out.append(("标题 ≤20（CJK×1/其余×0.5）", bad))
 
@@ -126,10 +126,10 @@ def ck_kana_dunhao(rows, out):
             continue
         k = kana_count(b) + kana_count(r["rewritten_title"] or "")
         if k > 5:
-            kana.append(f'{r["key"][:8]} 假名{k}')
+            kana.append(f'{r["key"]} 假名{k}')
         for ln in b.split("\n"):
             if ln.count("、") >= 2:
-                dh.append(f'{r["key"][:8]} {ln[:22]}')
+                dh.append(f'{r["key"]} {ln[:22]}')
                 break
     out.append(("假名 ≤5（含标题行）", kana))
     out.append(("无顿号行（行内「、」≥2）", dh))
@@ -142,7 +142,7 @@ def ck_density(rows, out):
             continue
         d = dens_pct(r["rewritten_content"], r["content_ja"])
         if d < 30 and r["publish_method"] != "export":
-            low.append(f'{r["key"][:8]} {d:.1f}%')
+            low.append(f'{r["key"]} {d:.1f}%')
     out.append(("密度 ≥30%（export/深访另计）", low))
 
 
@@ -185,14 +185,14 @@ def ck_cluster(rows, conn, out):
         except Exception:  # noqa: BLE001
             pass
         if n > _cap:
-            multi.append(f'{r["key"][:8]} 簇内 {n} 篇处于待发布/已发布（主条上限 {_cap}）')
+            multi.append(f'{r["key"]} 簇内 {n} 篇处于待发布/已发布（主条上限 {_cap}）')
     out.append(("同簇只写一条（待发布/已发布 ≤1）", multi))
 
 
 def ck_schedule(rows, out):
     sched = [r for r in rows if (r["xhs_pub_time"] or "").strip()]
-    odd = [f'{r["key"][:8]} {r["xhs_pub_time"]}' for r in sched if r["xhs_pub_time"][14:16] == "00"]
-    orphan = [r["key"][:8] for r in rows if r["publish_xhs"] and not (r["xhs_pub_time"] or "").strip()]
+    odd = [f'{r["key"]} {r["xhs_pub_time"]}' for r in sched if r["xhs_pub_time"][14:16] == "00"]
+    orphan = [r["key"] for r in rows if r["publish_xhs"] and not (r["xhs_pub_time"] or "").strip()]
     out.append(("排期非整点", odd))
     out.append(("publish_xhs=1 必有 xhs_pub_time", orphan))
 
@@ -304,7 +304,7 @@ def main(argv=None):
         print(f"  ⚠️ 白名单读取失败: {_e}")
 
     def _k12(item):
-        return str(item).split(" ", 1)[0]      # 条目以 key 前缀开头（审计里用 key[:8]），原样取首 token
+        return str(item).split(" ", 1)[0]      # 条目以**完整 key** 开头，原样取首 token（白名单匹配必须全键）
 
     viol, accepted, used = [], [], set()
     for _n, _v in out:

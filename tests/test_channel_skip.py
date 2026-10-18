@@ -8,13 +8,13 @@ def test_judge_channels_emits_skip(monkeypatch):
     k1, k2 = "a" * 40, "b" * 40
     pkg = {"rows": [{"key": k1, "title": "T1"}, {"key": k2, "title": "T2"}], "entities": {}}
     monkeypatch.setattr(review.llm, "chat", lambda *a, **k: json.dumps({
-        "aaaaaaaaaaaa": {"channel": "skip", "reason": "纯榜单无上下文"},
-        "bbbbbbbbbbbb": {"channel": "both", "reason": "人物心路＋人物深度兼有"},
+        k1: {"channel": "skip", "reason": "纯榜单无上下文"},
+        k2: {"channel": "both", "reason": "人物心路＋人物深度兼有"},
     }))
     monkeypatch.setattr(review, "_log_channels", lambda *a, **k: None)
-    out = review.judge_channels("2026-10-13", pkg, {"aaaaaaaaaaaa": "S", "bbbbbbbbbbbb": "A"})
-    assert out.get("aaaaaaaaaaaa") == "skip"      # skip 会落库（xhs 不列=默认，skip 要显式）
-    assert out.get("bbbbbbbbbbbb") == "both"
+    out = review.judge_channels("2026-10-13", pkg, {k1: "S", k2: "A"})
+    assert out.get(k1) == "skip"      # skip 会落库（xhs 不列=默认，skip 要显式）
+    assert out.get(k2) == "both"
 
 
 def test_pick_candidates_excludes_skip(monkeypatch):
@@ -44,10 +44,10 @@ def test_judge_channels_sakamichi_hard_rule(monkeypatch):
     pkg = {"rows": [{"key": k, "title": "齐藤京子出道10年转身当歌手",
                      "ja": "元日向坂46・齊藤京子 芸能活動10周年", "body": ""}], "entities": {}}
     monkeypatch.setattr(review.llm, "chat",
-                        lambda *a, **kw: json.dumps({"aaaaaaaaaaaa": {"channel": "gzh", "reason": "人物深度"}}))
+                        lambda *a, **kw: json.dumps({k: {"channel": "gzh", "reason": "人物深度"}}))
     monkeypatch.setattr(review, "_log_channels", lambda *a, **kw: None)
-    out = review.judge_channels("2026-10-13", pkg, {"aaaaaaaaaaaa": "A"})
-    assert out.get("aaaaaaaaaaaa") == "both", out
+    out = review.judge_channels("2026-10-13", pkg, {k: "A"})
+    assert out.get(k) == "both", out
 
 
 def test_judge_channels_skip_not_overridden_by_sakamichi(monkeypatch):
@@ -55,7 +55,7 @@ def test_judge_channels_skip_not_overridden_by_sakamichi(monkeypatch):
     k = "a" * 40
     pkg = {"rows": [{"key": k, "title": "乃木坂46 纯榜单", "ja": "乃木坂46", "body": ""}], "entities": {}}
     monkeypatch.setattr(review.llm, "chat",
-                        lambda *a, **kw: json.dumps({"aaaaaaaaaaaa": {"channel": "skip", "reason": "纯榜单"}}))
+                        lambda *a, **kw: json.dumps({k: {"channel": "skip", "reason": "纯榜单"}}))
     monkeypatch.setattr(review, "_log_channels", lambda *a, **kw: None)
-    out = review.judge_channels("2026-10-13", pkg, {"aaaaaaaaaaaa": "A"})
-    assert out.get("aaaaaaaaaaaa") == "skip", out
+    out = review.judge_channels("2026-10-13", pkg, {k: "A"})
+    assert out.get(k) == "skip", out

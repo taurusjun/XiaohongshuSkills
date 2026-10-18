@@ -26,7 +26,7 @@ def import_drafts(draft_dir, dump_path=None, rel_map=None, gzh_set=None,
         km = {}
         if dump_path and os.path.exists(dump_path):
             with open(dump_path, encoding="utf-8") as f:
-                km = {r["key"][:12]: r["key"] for r in json.load(f)["rows"]}
+                km = {r["key"]: r["key"] for r in json.load(f)["rows"]}   # 全键（AGENTS.md 规则）
 
         def full(prefix):
             k = km.get(prefix)

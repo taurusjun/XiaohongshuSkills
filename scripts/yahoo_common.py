@@ -193,7 +193,7 @@ _CUR = _threading.local()      # 并行抓取：每线程独立的当前 key
 
 def set_current_key(k) -> None:
     """设置当前线程处理的文章 key（每次调用落库时带上，便于「每篇评分次数」统计）。"""
-    _CUR.key = (k or "")[:12]
+    _CUR.key = (k or "")
 
 
 def _record_call(u, stage: str = "") -> None:

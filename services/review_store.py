@@ -79,7 +79,7 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
             _full.append(_f[0] if _f else _x)
         _mains = _full
         main_full = _mains[0]
-        cid = f"{date}-{main_full[:12]}"
+        cid = f"{date}-{main_full}"
         conn.execute("INSERT INTO review_clusters(date,cluster_id,main_key,mains_json,note,grade,keys_json,n,created_at,updated_at)"
                      " VALUES(?,?,?,?,?,?,?,?,?,?)",
                      (date, cid, main_full, json.dumps(_mains, ensure_ascii=False),

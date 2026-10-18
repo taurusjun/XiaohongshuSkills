@@ -52,8 +52,8 @@ def split_plan(cand, threshold=DEFAULT_THRESHOLD):
             r = get_by_key(k) or {}
             L = content_len(r.get("content_ja") or "")
             tot += L
-            members.append({"key": k[:12], "full_key": k,
+            members.append({"key": k, "full_key": k,
                             "title": r.get("title") or "", "len": L})
-        out.append({"no": i, "main_key": g[0][:12], "main_full_key": g[0],
+        out.append({"no": i, "main_key": g[0], "main_full_key": g[0],
                     "total_len": tot, "members": members})
     return out

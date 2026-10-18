@@ -2,14 +2,50 @@
   "_note": "保真度审计的『已确认接受』白名单：列在这里的条目记为 ℹ️，不再计入违规/不再触发飞书告警。审计只对**新增**违规告警。",
   "_updated": "2026-10-18",
   "items": [
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "87116ded", "reason": "历史遗留：根因（字数上限未独立评估 / 评分退化空耗3轮）2026-10-18 已修，本篇不再重写"},
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "b8cbf5c7", "reason": "同上（历史遗留，差 3 字）"},
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "ce164a7e", "reason": "同上（历史遗留）"},
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "ef3c6e14", "reason": "同上（历史遗留）"},
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "e845ddbd", "reason": "同上（历史遗留，已排期 10/19）"},
-    {"check": "story&lf=1 正文 800-1200（export 不压字数）", "key": "81a8bbdd", "reason": "同上（历史遗留，超上限）"},
-    {"check": "同簇只写一条（待发布/已发布 ≤1）", "key": "b46fb2bf", "reason": "用户 2026-10-18 选择恢复该批 preselected → 有意偏离生产『每簇 1-2 主条』口径"},
-    {"check": "同簇只写一条（待发布/已发布 ≤1）", "key": "7849b37b", "reason": "同上（有意偏离）"},
-    {"check": "同簇只写一条（待发布/已发布 ≤1）", "key": "813182ec", "reason": "同上（有意偏离）"}
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "87116ded511e152f5a371c16cdaba1ed7108b3a4",
+      "reason": "历史遗留：根因（字数上限未独立评估 / 评分退化空耗3轮）2026-10-18 已修，本篇不再重写"
+    },
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "b8cbf5c72940f773ca27f8f104d3a34858f9fa76",
+      "reason": "同上（历史遗留，差 3 字）"
+    },
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "ce164a7e5ac3b225ac4d21e5461c82265950f69d",
+      "reason": "同上（历史遗留）"
+    },
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "ef3c6e148e1a491c89ca13cee36775a55d68c47e",
+      "reason": "同上（历史遗留）"
+    },
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "e845ddbd5e54364f84515c88c7775f415dbea924",
+      "reason": "同上（历史遗留，已排期 10/19）"
+    },
+    {
+      "check": "story&lf=1 正文 800-1200（export 不压字数）",
+      "key": "81a8bbdd1866b1a4f4eca151fbbc681c7904ee21",
+      "reason": "同上（历史遗留，超上限）"
+    },
+    {
+      "check": "同簇只写一条（待发布/已发布 ≤1）",
+      "key": "b46fb2bf078eb811172326dfba94da8324aa4633",
+      "reason": "用户 2026-10-18 选择恢复该批 preselected → 有意偏离生产『每簇 1-2 主条』口径"
+    },
+    {
+      "check": "同簇只写一条（待发布/已发布 ≤1）",
+      "key": "7849b37b69009beb10954dfa6e633a1c15bbf570",
+      "reason": "同上（有意偏离）"
+    },
+    {
+      "check": "同簇只写一条（待发布/已发布 ≤1）",
+      "key": "813182ec1a1b4fe1429c1d1f545b220267d8465d",
+      "reason": "同上（有意偏离）"
+    }
   ]
 }

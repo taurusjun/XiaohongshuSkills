@@ -109,7 +109,7 @@ def stage6(pool, entities_by_key, busy_entities=None, n=5, seed=None, today=None
     today = today or dt.datetime.now(JST).date()
     stat_by_key = {}
     for r in pool:
-        ents = entities_by_key.get(r["key"][:12], []) or []
+        ents = entities_by_key.get(r["key"], []) or []
         stat_by_key[r["key"]] = _merge_stats([historical_stats(e, db) for e in ents])
     busy_ents = set(busy_entities or [])
     ordered = sorted(pool, key=lambda r: -priority(r, stat_by_key[r["key"]], today))
@@ -117,7 +117,7 @@ def stage6(pool, entities_by_key, busy_entities=None, n=5, seed=None, today=None
     picks, used_ent, used_keys, pick_rel = [], set(busy_ents), set(), set()
     for r in ordered:
         k = r["key"]
-        ents = set(entities_by_key.get(k[:12], []) or [])
+        ents = set(entities_by_key.get(k, []) or [])
         if ents & used_ent:                       # 同人物不挤同一天
             continue
         rel = {x for x in (r.get("related_keys") or "").split(",") if x}

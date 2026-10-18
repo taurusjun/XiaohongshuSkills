@@ -96,7 +96,7 @@ def pick_candidates(n=0):
                     _sib = _x
                     break
             if _sib:
-                _dt_skip.append((_r["key"][:12], _sib[:12], _kind))
+                _dt_skip.append((_r["key"], _sib, _kind))
                 base.remove(_r)
         _cx2.close()
         if _dt_skip:
@@ -495,7 +495,7 @@ def _need(cand, channel, body_len=None):
 
 
 REL_SYS = ('你是"跨时间关联"判断器（对齐旧 skill 第3层）。给【本篇】与各【候选】(同事件或同人物历史的旧文)，'
-           '判断每个候选与本篇的关联类型，只输出严格 JSON：{"relations":[{"key":"<key前12位>","type":"<类型>"}]}。'
+           '判断每个候选与本篇的关联类型，只输出严格 JSON：{"relations":[{"key":"<完整40位key，原样复制候选里的 key>","type":"<类型>"}]}。'
            '**硬前置（先判这条，不满足一律"无关联"）**：候选必须与本篇 **同一人物**（本篇主体人物）'
            '或 **同一事件**（同一场活动/同一部作品/同一部剧的最新进展）；'
            '**仅「同作品/同角色/同系列/同团体」不算关联** —— 例：本篇是「A 出演某舞台的千寻」，'
@@ -530,7 +530,7 @@ def classify_relations(cand, pkg, max_tokens=2000):
     if not cands:
         return []
     user = (f"【本篇】{cand.get('title')}｜{(cand.get('content_ja') or '')[:800]}\n\n【候选】\n"
-            + "\n".join(f"[{c.get('key') or c.get('k12')}] {c['title']}｜{c['excerpt']}" for c in cands))
+            + "\n".join(f"[{c.get('key')}] {c['title']}｜{c['excerpt']}" for c in cands))
     try:
         raw = llm.chat([{"role": "system", "content": REL_SYS}, {"role": "user", "content": user}],
                        max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
@@ -750,11 +750,11 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
         if not dry_run:
             _news.update_news(cand["key"], {"preselected": 1, "publish_xhs": 0, "publish_mode": "normal",
                                             "score_dims": "akb-top-bullet"})
-        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": True, "bullet": True,
+        return {"key": cand["key"], "full_key": cand["key"], "ok": True, "bullet": True,
                 "attempts": 0, "channel": "xhs", "title": "", "text": "", "body": 0, "h2": 0,
                 "kana": 0, "method": "bullet", "score": 0, "related": "", "problems": [], "versions": []}
     if (cand.get("channel_hint") or "").strip().lower() == "skip":
-        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
+        return {"key": cand["key"], "full_key": cand["key"], "ok": False, "skipped": True,
                 "attempts": 0, "channel": "skip", "title": "", "text": "", "body": 0, "h2": 0,
                 "kana": 0, "method": "", "score": 0, "related": "",
                 "problems": ["渠道判定=skip（不写稿）"], "versions": []}
@@ -785,7 +785,7 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
             if (_rr.get("publish_time") or "").strip():
                 _dup_pub.append(_r)
     if _dup_pub and not split_mode:
-        return {"key": cand["key"][:12], "full_key": cand["key"], "ok": False, "skipped": True,
+        return {"key": cand["key"], "full_key": cand["key"], "ok": False, "skipped": True,
                 "attempts": 0, "channel": pkg.get("pre_channel") or "xhs", "title": "", "text": "",
                 "body": 0, "h2": 0, "kana": 0, "method": method, "score": 0, "related": "",
                 "problems": ["纯重复(已发)→跳过"], "versions": []}
@@ -891,7 +891,7 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
                 "write_dims": json.dumps(_so, ensure_ascii=False)[:4000]})
         except Exception:  # noqa: BLE001
             pass
-    return {"key": cand["key"][:12], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
+    return {"key": cand["key"], "full_key": cand["key"], "ok": any(v["ok"] for v in versions),
             "manual": _mr,
             "attempts": max(v["attempts"] for v in versions), "channel": ch,
             "title": prim["title"], "text": prim["text"], "body": prim["body"], "h2": prim["h2"],
@@ -1161,7 +1161,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
     if not key and cands:
         try:
             _cov = _batches.covered_keys(_batches.recent())
-            _backlog = [c["key"][:12] for c in cands if c["key"] not in _cov]
+            _backlog = [c["key"] for c in cands if c["key"] not in _cov]
             if _backlog:
                 _more = "..." if len(_backlog) > 8 else ""
                 print(f"[跨日] {len(_backlog)} 篇为新/漏写候选：{_backlog[:8]}{_more}")
@@ -1210,7 +1210,7 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
             if not dry_run:                           # 确认放弃（异常已含退避耗尽）→ 落表
                 import traceback as _tb
                 _enqueue_failure(c, f"{type(e).__name__}: {e}", "exception", tb=_tb.format_exc())
-            r = {"key": c["key"][:12], "full_key": c["key"], "ok": False, "error": str(e),
+            r = {"key": c["key"], "full_key": c["key"], "ok": False, "error": str(e),
                  "versions": [], "related": "", "channel": "", "problems": [f"{type(e).__name__}: {e}"]}
             try:
                 _tu.record("write", "article", c["key"], _tu.diff(_u0, _llm.usage()))

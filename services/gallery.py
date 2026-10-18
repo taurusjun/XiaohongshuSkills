@@ -84,6 +84,7 @@ def drain(batch=5, timeout=180):
     try:
         rows = conn.execute(
             "SELECT key FROM news WHERE COALESCE(publish_xhs,0)=1 AND COALESCE(publish_time,'')='' "
+            "AND COALESCE(gallery_status,'') != 'none' "          # 已确认无图集 → 自动排空跳过
             "ORDER BY COALESCE(updated_at,'') ASC, COALESCE(xhs_pub_time,'')").fetchall()
     finally:
         conn.close()
