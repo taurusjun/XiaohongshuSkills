@@ -293,19 +293,46 @@ def main(argv=None):
     ck_cluster(rows, conn, out); ck_schedule(rows, out); ck_landing(rows, out)
     ck_static(out)
 
-    viol = [(n, v) for n, v in out if v]
+    # 白名单：已确认接受的历史项（只对**新增**违规告警）
+    allow = {}
+    try:
+        _ap = os.path.join(REPO, "config", "fidelity_allow.json")
+        if os.path.exists(_ap):
+            for _it in (json.load(open(_ap, encoding="utf-8")).get("items") or []):
+                allow[(str(_it.get("check") or ""), str(_it.get("key") or ""))] = str(_it.get("reason") or "")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  ⚠️ 白名单读取失败: {_e}")
+
+    def _k12(item):
+        return str(item).split(" ", 1)[0]      # 条目以 key 前缀开头（审计里用 key[:8]），原样取首 token
+
+    viol, accepted, used = [], [], set()
+    for _n, _v in out:
+        for _item in _v:
+            _key = (_n, _k12(_item))
+            if _key in allow:
+                accepted.append((_n, _item))
+                used.add(_key)
+            else:
+                viol.append((_n, _item))
+    for _key in allow:
+        if _key not in used:
+            print(f"  ⚠️ 白名单条目未命中（check 名或 key 变了？）: {_key[0]} / {_key[1]}")
+
     if a.json:
-        print(json.dumps({"db": db, "sample": len(rows), "violations": [{"check": n, "items": v} for n, v in viol]},
+        print(json.dumps({"db": db, "sample": len(rows),
+                          "violations": [{"check": n, "item": i} for n, i in viol],
+                          "accepted": [{"check": n, "item": i, "reason": allow[(n, _k12(i))]} for n, i in accepted]},
                          ensure_ascii=False, indent=1))
     else:
         print(f"[fidelity] 样本 {len(rows)} 篇（{'--date ' + a.date if a.date else '最近 %d 天' % a.days}）")
         for n, v in out:
             print(("  ⚠️ " if v else "  ✅ ") + n + (f"（{len(v)} 处）" if v else ""))
             for x in v[:8]:
-                print("       " + x)
+                print(("       ℹ️ " if (n, _k12(x)) in allow else "       ") + x)
             if len(v) > 8:
                 print(f"       … 另 {len(v)-8} 处")
-        print(f"\n违规项 {len(viol)} / 检查项 {len(out)}")
+        print(f"\n新增违规 {len(viol)} 项 / 已接受 {len(accepted)} 项 / 检查项 {len(out)}")
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
             f.write(f"# 保真度审计 {_date.today().isoformat()}\n\n样本 {len(rows)} 篇\n\n")
