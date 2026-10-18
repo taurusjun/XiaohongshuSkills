@@ -103,7 +103,7 @@ def _extract_machine_json(text):
     return None, text
 
 
-def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None):
+def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None):
     """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
     + **cross_time（第3层跨时间关联）并入 related_keys**。
 
@@ -132,6 +132,16 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         if k not in norm and (_news.get_by_key(k) or {}).get("cluster_keys"):
             _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
+
+    # 第2层「价值建议」（review 已判：标题方向/写法/充实度/优先级/情绪）→ 落库，供 write 注入 prompt
+    ad = 0
+    for k12, v in (advice or {}).items():
+        if not isinstance(v, dict) or not v:
+            continue
+        fk = _resolve_keys([k12])
+        if fk and fk[0] in day:
+            _news.update_news(fk[0], {"review_advice": json.dumps(v, ensure_ascii=False)})
+            ad += 1
 
     # 第3层「跨时间关联」（review 已判，原 skill 3b）→ 并入 related_keys（write 阶段 union，不覆盖）
     ct = 0
@@ -173,7 +183,7 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     for k in day:
         if k not in ak_keys and (_news.get_by_key(k) or {}).get("akb_type"):
             _news.update_news(k, {"akb_type": ""})
-    return wg, wr, cleared, ch, ak, ct
+    return wg, wr, cleared, ch, ak, ct, ad
 
 
 class Entities(dict):
@@ -464,10 +474,11 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:
-        wg, wr, cl, ch, ak, ct = persist(date, grades, clusters, channel_hint, akb_type,
-                                         machine.get("cross_time"))
+        wg, wr, cl, ch, ak, ct, ad = persist(date, grades, clusters, channel_hint, akb_type,
+                                         machine.get("cross_time"),
+                                         machine.get("advice"))
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
-                  f"跨时间关联 {ct} 篇并入 related_keys（write 阶段 union）")
+                  f"跨时间关联 {ct} 篇并入 related_keys / 价值建议 {ad} 篇落库（write 阶段 union+注入）")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 产出校验告警：当日有素材却评出 0 条 grade（静默失败兜底；如 LLM 空响应/超时/思考模式未关）

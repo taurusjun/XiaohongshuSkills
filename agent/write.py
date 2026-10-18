@@ -77,7 +77,12 @@ def pick_candidates(n=0):
         seen = {r["key"] for r in pool}
         pool = pool + [r for r in gzh_hint if r["key"] not in seen]
     picks, used = [], set()
-    for r in sorted(pool, key=lambda x: -(x.get("title_score") or 0)):
+    def _prio(r):                                  # review 第2层给的优先级（P0>P1>P2>未标）
+        try:
+            return {"P0": 0, "P1": 1, "P2": 2}.get(str((json.loads(r.get("review_advice") or "{}") or {}).get("priority") or "").upper(), 3)
+        except Exception:  # noqa: BLE001
+            return 3
+    for r in sorted(pool, key=lambda x: (_prio(x), -(x.get("title_score") or 0))):
         cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
         if (cl | {r["key"]}) & used:
             continue
@@ -194,6 +199,18 @@ def _compose_msgs(cand, pkg, force_channel=None):
         _lab = {"时间线补充": "开头交代旧事件，主体写新进展（合并写新版）", "人物呼应": "以续篇口吻，一句带过前情", "新角度": "从新角度切入，不要重复旧文"}
         user += ("\n\n=== 历史关联（已判定类型，按类型写）===\n"
                  + "\n".join(f"- [{r['key'][:12]}] {r['type']}：{_lab.get(r['type'], '')}" for r in pkg["relations"]))
+    _adv = cand.get("review_advice") or ""
+    if _adv.strip().startswith("{"):
+        try:
+            _a = json.loads(_adv)
+        except Exception:  # noqa: BLE001
+            _a = {}
+        _lab = {"title_dir": "标题方向", "how": "写法要点", "richness": "素材充实度",
+                "priority": "优先级", "emotion": "情绪点"}
+        _items = [f"- {_lab.get(k, k)}：{v}" for k, v in (_a or {}).items() if v]
+        if _items:
+            user += ("\n\n=== review 给本篇的写法建议（第2层价值建议，**优先采纳**；"
+                     "与本包其它指示冲突时以本节为准）===\n" + "\n".join(_items))
     if pkg.get("patterns"):
         user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
                  "来自 feedback_patterns 表）===\n" + pkg["patterns"])
