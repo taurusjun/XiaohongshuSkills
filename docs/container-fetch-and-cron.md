@@ -123,6 +123,11 @@ bash ~/PG/xhs-docker-src/ops/restart_host_chrome.sh     # 真重启 9222，并�
 - 单篇内部的图片并发：**默认 3**，可用环境变量 `GALLERY_DL_CONCURRENCY` 覆盖（硬上限 8）——图床容易限流，别开大
 - 下载完成后**同步写 DB** `gallery_images`（**相对路径** `<key>/NNN.jpg`；mp4 归 `gallery_video`）
 - 日志：`logs/gallery_drain.log`
+- **「确认无图集」持久标记**（`news.gallery_status`，2026-10-18 新增）：
+  - 下载时若判定「未检测到图集链接」（该篇本来就没有图集页，原 skill 口径「配图走封面即可」）→ 写 `gallery_status='none'`；下载成功 → 写 `'ok'`（并清掉 `none`）；
+  - **`drain`（自动排空）跳过 `none`** → 不再反复重试、不会饿死后面的候选；
+  - **手动重试不受影响**：`--keys <完整40位key>` / `--force` 照常执行并**重新判定**（成功→`ok`，仍无图集→`none`）；
+  - 想让它重新进入自动排空：把该篇 `gallery_status` 清空即可。
 - 实测：15 张图集 **120s（串行）→ 41s（并发 3）**
 
 > 相关约定（见 §9）：DB 里图片路径一律**相对路径**，读时按各部署自己的 `GALLERY_CACHE_DIR` 拼。
