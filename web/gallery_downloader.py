@@ -145,6 +145,11 @@ def _download(key: str, gallery_url: str = ""):
             if not mixed_urls:
                 task['status'] = 'error: 图集为空'
                 task['log'] = '\n'.join(log)
+                # 同样是「确认无图集」（图集页存在但没图）→ 打持久标记，只挡自动排空
+                try:
+                    update_news(key, {'gallery_status': 'none'})
+                except Exception:  # noqa: BLE001
+                    pass
                 return
             # Separate Instagram and Twitter/X URLs from image URLs
             ig_urls = [u for u in mixed_urls if 'instagram.com/p/' in u or 'instagram.com/reel/' in u]
