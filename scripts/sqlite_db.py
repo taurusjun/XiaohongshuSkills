@@ -310,6 +310,7 @@ def init_db():
             ("wechat_image_url", "TEXT DEFAULT ''"),
             ("grade", "TEXT DEFAULT ''"),
             ("grade_reason", "TEXT DEFAULT ''"),
+            ("date_trap", "TEXT DEFAULT ''"),
             ("channel_hint", "TEXT DEFAULT ''"),
             ("akb_type", "TEXT DEFAULT ''"),
             ("manual_review", "INTEGER DEFAULT 0"),
@@ -602,7 +603,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
+               'grade','grade_reason','date_trap','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False

@@ -69,6 +69,41 @@ def pick_candidates(n=0):
             base = [r for r in base if r["key"] not in _blocked]
     except Exception:  # noqa: BLE001
         pass
+    # 日期陷阱（原 skill :212）：review 判「前日重复/前日已发」时——
+    #   **若前日同事件那篇已成篇（有正文）→ 不写第二篇**；若前日那篇是 B/C 级从未成篇 → **要写本日版本**。
+    #   判据用本稿 related_keys 里「更早且已成篇」的同事件稿（review 的 cross_time 已并入 related_keys）。
+    try:
+        import sqlite3 as _sq2
+        _cx2 = _sq2.connect(paths.sqlite_path())
+        _dt_skip = []
+        for _r in list(base):
+            _raw = (_r.get("date_trap") or "").strip()
+            _kind = ""
+            if _raw.startswith("{"):
+                try:
+                    _kind = (json.loads(_raw) or {}).get("kind") or ""
+                except Exception:  # noqa: BLE001
+                    _kind = ""
+            else:
+                _kind = _raw
+            if not ("前日重复" in _kind or "前日已发" in _kind):
+                continue
+            _day = (_r.get("created_at") or "")[:10]
+            _sib = None
+            for _x in [y for y in (_r.get("related_keys") or "").split(",") if y]:
+                _row = _cx2.execute("SELECT created_at,rewritten_content FROM news WHERE key=?", (_x,)).fetchone()
+                if _row and (_row[0] or "")[:10] < _day and (_row[1] or "").strip():
+                    _sib = _x
+                    break
+            if _sib:
+                _dt_skip.append((_r["key"][:12], _sib[:12], _kind))
+                base.remove(_r)
+        _cx2.close()
+        if _dt_skip:
+            _log(f"  日期陷阱跳过 {len(_dt_skip)} 篇（前日同事件已成篇，不写第二篇）: "
+                 + "; ".join(f"{a}←{b}({c})" for a, b, c in _dt_skip[:5]))
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 日期陷阱跳过判定失败（按不跳过处理）: {e}")
     # 选材：review 的 grade（S/A/AKB大TOP）；**同 cluster 只取一条**（其余合并/跳过）；无分级才分数兜底
     graded = [r for r in base if (r.get("grade") or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     gzh_hint = [r for r in base if (r.get("channel_hint") or "").strip().lower() in ("gzh", "both")]

@@ -104,7 +104,7 @@ def _extract_machine_json(text):
 
 
 def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None,
-            grade_reasons=None):
+            grade_reasons=None, date_trap=None):
     """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
     + **cross_time（第3层跨时间关联）并入 related_keys**。
 
@@ -137,6 +137,18 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         if k not in norm and (_news.get_by_key(k) or {}).get("cluster_keys"):
             _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
+
+    # 日期陷阱（前日重复/前日已发）：write 侧「跳过 vs 补写」要用它（原 skill :212）
+    dt = 0
+    for it in (date_trap or []):
+        if not isinstance(it, dict):
+            continue
+        fk = _resolve_keys([it.get("key") or ""])
+        if fk and fk[0] in day:
+            _news.update_news(fk[0], {"date_trap": json.dumps(
+                {"kind": (it.get("kind") or "").strip(), "note": (it.get("note") or "").strip()},
+                ensure_ascii=False)})
+            dt += 1
 
     # 第2层「价值建议」（review 已判：标题方向/写法/充实度/优先级/情绪）→ 落库，供 write 注入 prompt
     ad = 0
@@ -484,9 +496,9 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         wg, wr, cl, ch, ak, ct, ad = persist(date, grades, clusters, channel_hint, akb_type,
                                          machine.get("cross_time"),
                                          machine.get("advice"),
-                                         grade_reasons)
+                                         grade_reasons, machine.get("date_trap"))
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
-                  f"跨时间关联 {ct} 篇并入 related_keys / 价值建议 {ad} 篇落库（write 阶段 union+注入）")
+                  f"跨时间关联 {ct} 篇并入 related_keys / 价值建议 {ad} 篇 / 日期陷阱 {dt} 篇落库")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 产出校验告警：当日有素材却评出 0 条 grade（静默失败兜底；如 LLM 空响应/超时/思考模式未关）
