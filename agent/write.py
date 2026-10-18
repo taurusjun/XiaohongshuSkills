@@ -138,8 +138,8 @@ def prepare_package(cand):
         rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
                              "excerpt": (s.get("content_ja") or "")[:800]} for s in sibs]
         related_keys += ck
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 关联候选(同事件簇)构建失败，本次无簇关联: {e}")
     try:
         from agent import review as _rev
         from services import related as _rel
@@ -156,8 +156,8 @@ def prepare_package(cand):
             rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
                                  "excerpt": ((s.get("rewritten_content") or s.get("content_ja") or ""))[:800]} for s in hs]
             related_keys += hist
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 关联候选(同人物历史)构建失败，本次无历史关联: {e}")
     related_keys = list(dict.fromkeys(related_keys))
     return {"content_ja": cj[:cap], "target": target, "tmin": tmin, "tmax": tmax, "refs": refs, "patterns": patterns,
             "merge_text": merge_text, "hist_text": hist_text, "hist_excerpts": hist_excerpts,
@@ -415,7 +415,8 @@ def classify_material(cand, max_tokens=200):
                         {"role": "user", "content": _set_mat}], max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
         d = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
         return (d.get("type") or "normal").strip()
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 素材类型判定失败，按 normal 处理（密度不豁免）: {e}")
         return "normal"
 
 
@@ -432,7 +433,8 @@ def classify_relations(cand, pkg, max_tokens=2000):
         m = re.search(r"\{.*\}", raw, re.S)
         d = json.loads(m.group(0)) if m else {}
         rels = d.get("relations") or []
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ⚠️ 关联判定 LLM 失败，本次全部按无关联处理: {e}")
         return []
     out, seen = [], set()
     for it in rels:
@@ -670,8 +672,10 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
     pkg["hist_text"] = "\n".join(_he[k] for k in _kept if k in _he)
     # related_keys = 历史关联(KEEP) + 同事件簇成员（对齐生产：主条也链接簇成员，关联双向）
     _cl = [k for k in (pkg.get("cluster_keys") or []) if k != cand["key"]]
+    # review 第3层（LLM 判好的跨时间关联，persist 已写入 related_keys）→ 优先于本阶段机械候选，且**不覆盖**
+    _prev = [x for x in (cand.get("related_keys") or "").split(",") if x and x != cand["key"]]
     _hi = [r["key"] for r in pkg["relations"]]
-    _rk = list(dict.fromkeys(_cl + _hi))[:3]        # 同事件置顶（对齐生产）→ 跨时间历史；截断 3
+    _rk = list(dict.fromkeys(_cl + _prev + _hi))[:3]   # 同事件置顶 → review 跨时间判定 → 机械历史；截断 3
     rk_s = ",".join(_rk)
     # 渠道：显式 > review 标注(gzh) > 默认 xhs。无 channel_hint 时**不允许 LLM 改道 gzh**（回落 xhs）；both 仍允许。
     _hint = (pkg.get("channel_hint") or "").strip().lower()
@@ -705,7 +709,9 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
             _news.update_news(cand["key"], {"rewritten_title": v["title"], "rewritten_content": v["text"],
                                             "publish_mode": "rewritten", "publish_method": method,
                                             "related_keys": rk_s, "preselected": 1, "publish_xhs": 0})
-        for sib in pkg.get("cluster_keys", []):        # 关联素材回指主稿
+        # 关联素材回指主稿：生产口径「同事件的每篇素材都必须**互设** related_keys」
+        # （原来只回写 cluster_keys 成员 → 判定为同事件但非簇成员的稿会只单向挂）
+        for sib in _rk:
             if sib == cand["key"]:
                 continue
             cur = _news.get_by_key(sib) or {}
@@ -784,8 +790,12 @@ def recommend_and_schedule(n=5, seed=None):
     items = [{"key": r["key"][:12], "title": r.get("title") or "", "ja": (r.get("title_ja") or "")[:60]}
              for r in (pool + busy)]
     ents = _rev.extract_entities(items)                     # LLM 一次：候选+明天已排的实体
-    busy_ents = [e for r in busy for e in (ents.get(r["key"][:12]) or [])]
-    picks, backups, stat_by_key = _rec.stage6(pool, ents, busy_entities=busy_ents,
+    # ⚠️ 只喂**人物**（p）：生产口径是「同**人物**不挤同一天」+ 按**人物**历史发布数据算优先级。
+    #    若喂扁平实体（含团体/作品），会退化成「同团体/同作品也不挤同一天」，
+    #    且 historical_stats 按团体名统计 → 人物历史被稀释（2026-10-18 实测：同一候选池选出 5 篇有 3 篇不同）。
+    _person = {k: (ents.typed(k).get("p") or []) for k in ents}
+    busy_ents = [e for r in busy for e in (_person.get(r["key"][:12]) or [])]
+    picks, backups, stat_by_key = _rec.stage6(pool, _person, busy_entities=busy_ents,
                                               n=n, seed=seed, today=today)
     rng = random.Random(seed)
     # 明天已占时段（时段级冲突：生产要求不挤同一时段）

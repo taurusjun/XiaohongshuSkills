@@ -103,8 +103,15 @@ def _extract_machine_json(text):
     return None, text
 
 
-def persist(date, grades, clusters, channel_hint=None, akb_type=None):
-    """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type。"""
+def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None):
+    """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
+    + **cross_time（第3层跨时间关联）并入 related_keys**。
+
+    ⚠️ cross_time 是 review 用 LLM 判好的跨时间关联（原 skill 第3层），**必须先落库**：
+    write 阶段只做机械候选（实体 LIKE），判不出「同事件不同人/同名不同人」。
+    这里写进 related_keys，write 阶段做 **union（不覆盖）**，优先级排在簇之后、机械候选之前。
+    """
+    day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     day = {r["key"] for r in _news.query_news(date_from=date, date_to=date, status="active", limit=500)}
     wg = wr = cleared = 0
     for k12, g in (grades or {}).items():
@@ -125,6 +132,23 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None):
         if k not in norm and (_news.get_by_key(k) or {}).get("cluster_keys"):
             _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
+
+    # 第3层「跨时间关联」（review 已判，原 skill 3b）→ 并入 related_keys（write 阶段 union，不覆盖）
+    ct = 0
+    for k12, hits in (cross_time or {}).items():
+        fk = _resolve_keys([k12])
+        if not fk or fk[0] not in day:
+            continue
+        cur = [x for x in ((_news.get_by_key(fk[0]) or {}).get("related_keys") or "").split(",") if x]
+        addk = []
+        for h in (hits or []):
+            kk = (h.get("key") if isinstance(h, dict) else h) or ""
+            r = _resolve_keys([kk])
+            if r and r[0] != fk[0] and r[0] not in cur and r[0] not in addk:
+                addk.append(r[0])
+        if addk:
+            _news.update_news(fk[0], {"related_keys": ",".join(cur + addk)})
+            ct += 1
     # channel_hint（gzh 方向，旧 skill 阶段2「从 review 提取 gzh 方向素材」）
     ch = 0
     ch_keys = set()
@@ -149,7 +173,7 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None):
     for k in day:
         if k not in ak_keys and (_news.get_by_key(k) or {}).get("akb_type"):
             _news.update_news(k, {"akb_type": ""})
-    return wg, wr, cleared, ch, ak
+    return wg, wr, cleared, ch, ak, ct
 
 
 class Entities(dict):
@@ -440,8 +464,10 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:
-        wg, wr, cl, ch, ak = persist(date, grades, clusters, channel_hint, akb_type)
-        print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇（仅当日；related_keys 留给 write）")
+        wg, wr, cl, ch, ak, ct = persist(date, grades, clusters, channel_hint, akb_type,
+                                         machine.get("cross_time"))
+        print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
+                  f"跨时间关联 {ct} 篇并入 related_keys（write 阶段 union）")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 产出校验告警：当日有素材却评出 0 条 grade（静默失败兜底；如 LLM 空响应/超时/思考模式未关）
