@@ -27,6 +27,7 @@
 | reflection | **周一 00:00** | 周日 23:00 |
 | db-backup | 每小时 **:47** | :17 |
 | 重启主 Chrome(9222) | 每小时 **:05** | 每小时 :05（2026-10-17 新增，见 §6）|
+| 图集限速排空 | 每 **20 分钟**（:00/:20/:40）| —（容器新增，见 §7）|
 
 - 定义在 `ops/crontab`（entrypoint 安装到 user crontab）。
 - 所有 job **直接跑命令，无 `wait_idle`、无随机 sleep**（对齐生产）。
@@ -104,3 +105,46 @@ bash ~/PG/xhs-docker-src/ops/restart_host_chrome.sh     # 真重启 9222，并�
 ```
 
 > 计划文档提到的「升级为 **RSS 超阈值才重启**」（比固定每小时更精准）仍是待实现项。
+
+## 7. 图集限速排空（容器 cron，2026-10-18 新增）
+
+**为什么需要**：图集下载原先只挂在「写稿的推荐步骤」里（每天一次），且判据是「缓存目录里有任意图 → 认为已下载」——
+抓取阶段会往同一目录写 1 张内嵌图 `article_00.jpg`，导致**待发布队列 60/67 篇被误判 skip、真图集从未下载**。
+修掉误判后，若一次性触发整个队列（67 篇 × 单篇 3 并发）会形成**并发风暴**，有被图床封禁的风险。
+
+**做法**：容器 cron 每 20 分钟跑一次，**每轮只补 5 篇**，且**只挑「待发布队列里还没有真图集」的**（DB 字段与缓存目录都查过，排除 `article_*`/`cover.*`）。
+
+```cron
+# ops/crontab
+*/20 * * * * cd /home/user/PG/XiaohongshuSkills && .venv/bin/python services/gallery.py --drain 5 >> logs/gallery_drain.log 2>&1
+```
+
+- 脚本：`services/gallery.py`（`--drain N`；`_has_real_gallery()` 判定是否缺图集，`drain()` 限速排空）
+- 单篇内部的图片并发：**默认 3**，可用环境变量 `GALLERY_DL_CONCURRENCY` 覆盖（硬上限 8）——图床容易限流，别开大
+- 下载完成后**同步写 DB** `gallery_images`（**相对路径** `<key>/NNN.jpg`；mp4 归 `gallery_video`）
+- 日志：`logs/gallery_drain.log`
+- 实测：15 张图集 **120s（串行）→ 41s（并发 3）**
+
+> 相关约定（见 §9）：DB 里图片路径一律**相对路径**，读时按各部署自己的 `GALLERY_CACHE_DIR` 拼。
+
+## 8. 保真度审计（宿主 LaunchAgent，2026-10-18 新增）
+
+**为什么需要**：按「规则有没有写进代码」做的审计会**整类漏掉**问题（机械缺陷如 `LIMIT` 无 `ORDER BY`、
+数据流断点如 review 产了 `cross_time` 却从不落库、静默丢弃如 `update_news` 白名单外字段）。
+改成「**拿真实数据按 skill 精确口径校验**」。
+
+- 脚本：`ops/fidelity_audit.py`（17 项：字数/标题/密度/假名/顿号/S级占比/同簇/排期/落库/静默丢弃/`LIMIT` 无 `ORDER BY` …；**口径独立实现**，不调用门禁自身逻辑）
+- 计划：**每周日 22:00**
+- LaunchAgent：`ops/com.xhs.fidelity-audit.plist` → 安装到 `~/Library/LaunchAgents/`
+- 报告：`~/PG/xhs-storage/data/audits/YYYY-MM-DD-fidelity.md`（宿主路径）
+- **有违规则发飞书告警**（`ops/notify_feishu.py`）
+- 日志：`logs/fidelity_audit.log`
+- 手动跑：`docker exec xhs bash -lc 'cd /home/user/PG/XiaohongshuSkills && .venv/bin/python ops/fidelity_audit.py --days 3'`
+
+安装/更新：
+
+```bash
+cp ~/PG/xhs-docker-src/ops/com.xhs.fidelity-audit.plist ~/Library/LaunchAgents/
+launchctl bootout gui/501/com.xhs.fidelity-audit 2>/dev/null
+launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.xhs.fidelity-audit.plist
+```

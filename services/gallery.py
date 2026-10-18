@@ -46,6 +46,42 @@ def _get(path, timeout=10):
         return json.loads(r.read() or "{}")
 
 
+def _has_real_gallery(key: str) -> bool:
+    """DB 字段或缓存目录里是否有**真图集**（排除抓取阶段的内嵌图 article_* 与封面 cover.*）。"""
+    def _ok(names):
+        return any(str(n).endswith(('.jpg', '.jpeg', '.png', '.webp', '.mp4')) and not str(n).startswith('.')
+                   and not str(n).startswith('cover.') and not str(n).startswith('article_') for n in names)
+
+    conn = sqlite3.connect(paths.sqlite_path())
+    try:
+        row = conn.execute("SELECT COALESCE(gallery_images,'') FROM news WHERE key=?", (key,)).fetchone()
+    finally:
+        conn.close()
+    if row and str(row[0]).strip().startswith("["):
+        try:
+            if _ok([os.path.basename(x) for x in json.loads(row[0])]):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        from config.yahoo_conf import GALLERY_CACHE_DIR
+        d = os.path.join(os.path.expanduser(GALLERY_CACHE_DIR), key)
+        return os.path.isdir(d) and _ok(os.listdir(d))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def drain(batch=5, timeout=180):
+    """限速排空：只挑「待发布队列里**还没有真图集**」的，**每轮最多 batch 篇**。
+
+    用途：定时任务（每 20 分钟）分批补下图集，避免整队列同时触发造成并发风暴（图床封禁）。
+    """
+    ks = [k for k in pending_keys() if not _has_real_gallery(k)][:max(1, int(batch))]
+    if not ks:
+        return []
+    return sync(keys=ks, wait=True, timeout=timeout)
+
+
 def trigger(key, gallery_url=""):
     return _post(f"/api/gallery-download/{key}", {"gallery_url": gallery_url or ""})
 
@@ -94,9 +130,14 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true", help="强制重下（含已有缓存）")
     ap.add_argument("--no-wait", action="store_true")
     ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--drain", type=int, default=0,
+                    help="限速排空：每轮最多 N 篇（只挑待发布队列里还没有真图集的）")
     a = ap.parse_args(argv)
     keys = [k.strip() for k in a.keys.split(",")] if a.keys else None
-    results = sync(keys=keys, force=a.force, timeout=a.timeout, wait=not a.no_wait)
+    if a.drain:
+        results = drain(batch=a.drain, timeout=a.timeout)
+    else:
+        results = sync(keys=keys, force=a.force, timeout=a.timeout, wait=not a.no_wait)
     ok = 0
     for k, st in results:
         flag = "OK" if (st == "done" or str(st).startswith("skip")) else ("err" if str(st).startswith("error") else st)

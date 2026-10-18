@@ -21,3 +21,6 @@ XHS_WEBAPI_BASE=http://127.0.0.1:5000
 47 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
 # 每小时重启容器主 Chrome(9222)，清累积空转；keeper 自动重拉
 5 * * * * /opt/ops/restart_main_chrome.sh >> /home/user/PG/XiaohongshuSkills/logs/cdp_restart.log 2>&1
+
+# 图集限速排空：每 20 分钟补 5 篇（只挑待发布队列里还没有真图集的，避免并发风暴/封禁）
+*/20 * * * * cd /home/user/PG/XiaohongshuSkills && .venv/bin/python -m services.gallery --drain 5 >> logs/gallery_drain.log 2>&1
