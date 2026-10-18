@@ -121,9 +121,16 @@ def _download(key: str, gallery_url: str = ""):
                     for f in files:
                         log.append(f'  ✓ {f}')
                     image_urls = []
-                    task['images'] = [f"{key}/{f}" for f in sorted(os.listdir(d))
-                                      if not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
+                    _ii = [f"{key}/{f}" for f in sorted(os.listdir(d))
+                           if not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
+                    task['images'] = _ii
                     task['status'] = 'done'
+                    try:
+                        _i2 = [i for i in _ii if not i.endswith('.mp4')]
+                        if _i2:
+                            update_news(key, {'gallery_images': _i2})
+                    except Exception:  # noqa: BLE001
+                        pass
                     task['log'] = '\n'.join(log)
                     return
             except Exception:
@@ -162,23 +169,41 @@ def _download(key: str, gallery_url: str = ""):
             dl_headers['Referer'] = gallery_url
             from config.yahoo_conf import get_proxies as _get_proxies
             _proxies_all = _get_proxies()
-            for i, url in enumerate(image_urls):
+            # 受控并发：默认 3（图床容易被限流/封，别开大）。可用 GALLERY_DL_CONCURRENCY 覆盖。
+            import concurrent.futures as _cf
+            _nw = max(1, min(8, int(os.environ.get("GALLERY_DL_CONCURRENCY", "3"))))
+
+            def _one(_it):
+                _i, _url = _it
                 try:
-                    _proxies = _proxies_all if ("twimg.com" in url and _proxies_all) else None
-                    resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
+                    _proxies = _proxies_all if ("twimg.com" in _url and _proxies_all) else None
+                    _resp = __import__('requests').get(_url, headers=dl_headers, timeout=30, proxies=_proxies)
                     # 按内容定扩展名，别信 URL 后缀（站点常在 .jpg 上返回 WebP）
-                    fname = f'{i+1:03d}.{_sniff_ext(resp.content, url)}'
-                    (d / fname).write_bytes(resp.content)
-                    log.append(f'    ✓ {fname}')
-                except Exception as e2:
-                    log.append(f'    ✗ {i+1:03d}: {e2}')
-                task['log'] = '\n'.join(log)
+                    _fn = f'{_i+1:03d}.{_sniff_ext(_resp.content, _url)}'
+                    (d / _fn).write_bytes(_resp.content)
+                    return (_i, _fn, None)
+                except Exception as _e:
+                    return (_i, None, str(_e))
+
+            with _cf.ThreadPoolExecutor(max_workers=_nw) as _ex:
+                for _i, _fn, _err in _ex.map(_one, list(enumerate(image_urls))):
+                    log.append(f'    ✓ {_fn}' if _fn else f'    ✗ {_i+1:03d}: {_err}')
+            log.append(f'  （并发 {_nw}）')
+            task['log'] = '\n'.join(log)
 
         task['status'] = 'done'
         images = [f"{key}/{f}" for f in sorted(os.listdir(d))
                   if f != 'meta.json' and not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
         task['images'] = images
         log.append(f'✅ 已缓存 {len(images)} 张')
+        # 图集下载完成 → **同步 DB**（相对路径 <key>/NNN.ext；发布/审计直读）
+        try:
+            _imgs = [i for i in images if not i.endswith('.mp4')]
+            if _imgs:
+                update_news(key, {'gallery_images': _imgs})
+                log.append(f'  ↳ DB gallery_images 已更新（{len(_imgs)} 张，相对路径）')
+        except Exception as _e:
+            log.append(f'  ⚠️ DB 写入失败: {_e}')
         # Save video to DB if any
         vids = [f"{key}/{f}" for f in sorted(os.listdir(d))
                 if f.endswith('.mp4') and not f.startswith('.') and not f.startswith('article_')]
