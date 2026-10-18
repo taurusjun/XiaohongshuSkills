@@ -141,6 +141,12 @@ bash ~/PG/xhs-docker-src/ops/restart_host_chrome.sh     # 真重启 9222，并�
 - 日志：`logs/fidelity_audit.log`
 - 手动跑：`docker exec xhs bash -lc 'cd /home/user/PG/XiaohongshuSkills && .venv/bin/python ops/fidelity_audit.py --days 3'`
 
+**「已确认接受」白名单**（2026-10-18 新增）：`config/fidelity_allow.json`
+- 列在里面的条目记为 **ℹ️**，**不计入违规、不触发飞书告警**；审计只对**新增**违规告警 → 避免告警疲劳；
+- 条目格式 `{check, key(前缀), reason}`；**白名单条目未命中会打印告警**（防止 check 名或 key 变更后静默失效）；
+- 现有 9 条：6 条「story&lf=1 字数超窗」历史遗留（根因 2026-10-18 已修，不重写）+ 3 条「同簇超限」（用户选择恢复该批 preselected，属有意偏离）；
+- 手动重试/绕过：把条目从 JSON 删掉即可恢复告警。
+
 安装/更新：
 
 ```bash
