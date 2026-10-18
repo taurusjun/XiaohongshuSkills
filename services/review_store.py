@@ -62,6 +62,7 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
     """clusters_raw: review 的 clusters 原样（[{keys, main, note, grade}, ...]）。
     返回 (簇数, {k12: cluster_id})。resolve_main: 把 main 的 k12 展开成 40 位键的函数。"""
     ensure(conn)
+    conn.execute("DELETE FROM review_clusters WHERE date=?", (date,))   # 同日重跑 → 覆盖（不累积重复）
     now = _now()
     out = {}
     n = 0
@@ -92,6 +93,7 @@ def save_clusters(conn, date, clusters_raw, resolve_main=None):
 
 
 def save_run(conn, date, counts=None, model="", ok=1, note=""):
+    """运行历史 = **append-only**（每次运行留一行，用于「上次 review 判了什么」）。"""
     ensure(conn)
     c = counts or {}
     conn.execute("INSERT INTO review_runs(date,ran_at,model,n_rows,n_grade,n_cluster,n_advice,n_cross,n_date_trap,n_unresolved,ok,note)"
