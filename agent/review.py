@@ -266,7 +266,7 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         print(f"[review] ⚠️ {len(_UNRESOLVED)} 个 key 前缀解析失败（已静默丢弃；多为 LLM 抄错/跨日 key）: "
               + ", ".join(_UNRESOLVED[:8]))
 
-    return wg, wr, cleared, ch, ak, ct, ad
+    return wg, wr, cleared, ch, ak, ct, ad, dt
 
 
 class Entities(dict):
@@ -586,7 +586,7 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
     # 结构化共享数据入 DB（只写当日行）：grade + cluster_keys
     try:
-        wg, wr, cl, ch, ak, ct, ad = persist(date, grades, clusters, channel_hint, akb_type,
+        wg, wr, cl, ch, ak, ct, ad, dt = persist(date, grades, clusters, channel_hint, akb_type,
                                          machine.get("cross_time"),
                                          machine.get("advice"),
                                          grade_reasons, machine.get("date_trap"),
