@@ -4,6 +4,12 @@
 
 > ⚠️ **Yahoo 必须直连，严禁代理**：对 `news.yahoo.co.jp` 的任何请求都不得走代理（区域限制，会被 block）。Chrome `--no-proxy-server`；Python `_direct_session`(`trust_env=False`)。
 
+> 🚫 **ID 一律用完整 40 位 key，严禁 12 位前缀（k12）**：
+> - 任何**逻辑**用途（prompt 输入/输出、落库、比较、过滤、脚本参数、测试、关联、聚类、排期）**必须用完整 40 位 SHA1 key**；
+> - **k12 只允许出现在「人看的展示」**（终端打印 / 存档 md / UI 缩略），且**绝不参与比较、查询、落库**；
+> - LLM 接口层若给的是 k12，**落库/比较前必须 `_resolve_keys()` 展开成全键**；
+> - 反例（都出过事）：`news.cluster_mains` 存 k12 而 `cluster_keys` 存全键 → 主条判定恒 False；`merged_into` 误标；测试传 k12 给 `get_by_key` → 崩。生产 skill 记录的事故：7/20、8/18、8/22、9/1、9/11、9/17 六类。
+
 ## 基础信息
 
 - Base URL：`http://localhost:5000`
