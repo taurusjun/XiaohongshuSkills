@@ -103,7 +103,8 @@ def _extract_machine_json(text):
     return None, text
 
 
-def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None):
+def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None,
+            grade_reasons=None):
     """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
     + **cross_time（第3层跨时间关联）并入 related_keys**。
 
@@ -117,7 +118,11 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     for k12, g in (grades or {}).items():
         fk = _resolve_keys([k12])
         if fk and fk[0] in day:
-            _news.update_news(fk[0], {"grade": str(g)})
+            _g = (g.get("grade") if isinstance(g, dict) else g) or ""
+            _news.update_news(fk[0], {"grade": str(_g).strip()})
+            _rz = (grade_reasons or {}).get(k12) or ""
+            if _rz:
+                _news.update_news(fk[0], {"grade_reason": str(_rz)[:300]})
             wg += 1
     # 聚类计划 → cluster_keys（**不是** related_keys；related_keys 由 write 阶段写）
     norm = {}
@@ -456,6 +461,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
             print(f"[review] 重试异常: {e}")
     _raw_grades = machine.get("grades") or {}
     grades = {k: (v.get("grade") if isinstance(v, dict) else v) for k, v in _raw_grades.items()}
+    # 分级理由（原 skill 的分级表带 reason；write 侧读 review 存档时能看到 → 落库并注入）
+    grade_reasons = {k: (v.get("reason") if isinstance(v, dict) else "") for k, v in _raw_grades.items()}
     clusters = [c.get("keys") for c in (machine.get("clusters") or [])
                 if isinstance(c, dict) and c.get("keys")]
     channel_hint = machine.get("channel_hint") or {}
@@ -476,7 +483,8 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     try:
         wg, wr, cl, ch, ak, ct, ad = persist(date, grades, clusters, channel_hint, akb_type,
                                          machine.get("cross_time"),
-                                         machine.get("advice"))
+                                         machine.get("advice"),
+                                         grade_reasons)
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
                   f"跨时间关联 {ct} 篇并入 related_keys / 价值建议 {ad} 篇落库（write 阶段 union+注入）")
     except Exception as e:  # noqa: BLE001

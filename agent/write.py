@@ -223,6 +223,9 @@ def _compose_msgs(cand, pkg, force_channel=None):
         if _items:
             user += ("\n\n=== review 给本篇的写法建议（第2层价值建议，**优先采纳**；"
                      "与本包其它指示冲突时以本节为准）===\n" + "\n".join(_items))
+    if (cand.get("grade_reason") or "").strip():      # review 的分级理由（生产 write 读存档可见）
+        user += (f"\n\n=== review 分级理由（{cand.get('grade') or '?'}）===\n"
+                 f"- {cand['grade_reason']}")
     if pkg.get("patterns"):
         user += ("\n\n=== 历史发布规律（往期已发布数据的复盘结论，供选题/标题/写法避坑；"
                  "来自 feedback_patterns 表）===\n" + pkg["patterns"])
