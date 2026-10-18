@@ -1268,6 +1268,11 @@ def run(n=0, deliver=False, dry_run=False, split_large=False, key=None, force_ch
         # 待发布必跑：对**整个待发布队列** one-way 触发图集下载（fire-and-forget，后读状态/日志确认）
         try:
             from services import gallery as _gal
+            # 本次**新选中**的待发布 → 首次标记就直接下载（force，不查缓存）
+            _new = [r["key"] for r in picks]
+            if _new:
+                _fres = _gal.sync(keys=_new, force=True, wait=False)
+                print(f"[图集] 本次新选 {len(_new)} 篇 → 强制触发（不查缓存）")
             ks = _gal.pending_keys()
             gres = _gal.sync(keys=ks, wait=False)
             started = sum(1 for _, st in gres if st == "started")

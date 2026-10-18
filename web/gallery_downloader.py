@@ -50,7 +50,9 @@ def get_status(key: str) -> dict:
     if d.is_dir():
         cached = [f"{key}/{f}" for f in sorted(os.listdir(d))
                   if f.endswith(('.jpg','.jpeg','.png','.webp','.mp4')) and not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
-        if cached:
+        # 「已下载」判据：有真图集文件，或有下载器写的 meta.json 标记
+        # （article_*/cover.* 是抓取阶段的内嵌图/封面，不算图集已下载）
+        if cached or (d / 'meta.json').exists():
             return {'status': 'done', 'images': cached, 'log': ''}
     return {'status': 'idle', 'images': [], 'log': ''}
 
@@ -173,9 +175,14 @@ def _download(key: str, gallery_url: str = ""):
 
         task['status'] = 'done'
         images = [f"{key}/{f}" for f in sorted(os.listdir(d))
-                  if f != 'meta.json' and not f.startswith('.')]
+                  if f != 'meta.json' and not f.startswith('.') and not f.startswith('cover.') and not f.startswith('article_')]
         task['images'] = images
         log.append(f'✅ 已缓存 {len(images)} 张')
+        try:   # 写「真下过」标记：后续 skip 判据以它为准（首次选中不该查缓存，这里保证可判）
+            import json as _j
+            (d / 'meta.json').write_text(_j.dumps({'gallery_url': gallery_url or '', 'count': len(images)}, ensure_ascii=False))
+        except Exception:  # noqa: BLE001
+            pass
         # Save video to DB if any
         vids = [f"{key}/{f}" for f in sorted(os.listdir(d))
                 if f.endswith('.mp4') and not f.startswith('.')]
