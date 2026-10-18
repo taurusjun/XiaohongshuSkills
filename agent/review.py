@@ -157,23 +157,6 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
             _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
 
-    # 簇身份 + 运行历史（services/review_store）：一簇一行 + 成员行存 cluster_id + 本次运行留档
-    try:
-        import sqlite3 as _sq3
-        from services import review_store as _rs
-        _cx = _sq3.connect(paths.sqlite_path(), timeout=30)
-        _ncl, _cidmap = _rs.save_clusters(_cx, date, clusters_raw, resolve_main=_resolve_keys)
-        for _k12, _cidv in _cidmap.items():
-            _fk = _resolve_keys([_k12])
-            if _fk and _fk[0] in day:
-                _news.update_news(_fk[0], {"cluster_id": _cidv})
-        _rs.save_run(_cx, date, {"rows": len(day), "grade": wg, "cluster": wr, "advice": ad,
-                                 "cross": ct, "date_trap": dt}, ok=1)
-        _cx.close()
-        print(f"[review_store] 簇 {_ncl} 行 + 运行留档 1 行")
-    except Exception as _e:  # noqa: BLE001
-        print(f"[review_store] 跳过: {_e}")
-
     # 日期陷阱（前日重复/前日已发）：write 侧「跳过 vs 补写」要用它（原 skill :212）
     dt = 0
     for it in (date_trap or []):
@@ -236,6 +219,23 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
     for k in day:
         if k not in ak_keys and (_news.get_by_key(k) or {}).get("akb_type"):
             _news.update_news(k, {"akb_type": ""})
+    # 簇身份 + 运行历史（services/review_store）：一簇一行 + 成员行存 cluster_id + 本次运行留档
+    try:
+        import sqlite3 as _sq3
+        from services import review_store as _rs
+        _cx = _sq3.connect(paths.sqlite_path(), timeout=30)
+        _ncl, _cidmap = _rs.save_clusters(_cx, date, clusters_raw, resolve_main=_resolve_keys)
+        for _k12, _cidv in _cidmap.items():
+            _fk = _resolve_keys([_k12])
+            if _fk and _fk[0] in day:
+                _news.update_news(_fk[0], {"cluster_id": _cidv})
+        _rs.save_run(_cx, date, {"rows": len(day), "grade": wg, "cluster": wr, "advice": ad,
+                                 "cross": ct, "date_trap": dt}, ok=1)
+        _cx.close()
+        print(f"[review_store] 簇 {_ncl} 行 + 运行留档 1 行")
+    except Exception as _e:  # noqa: BLE001
+        print(f"[review_store] 跳过: {_e}")
+
     return wg, wr, cleared, ch, ak, ct, ad
 
 
