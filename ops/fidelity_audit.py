@@ -210,8 +210,27 @@ def ck_static(out):
                 if not f.endswith(".py"):
                     continue
                 t = open(os.path.join(dp, f), encoding="utf-8", errors="ignore").read()
-                for mm in re.finditer(r"update_news\(\s*[^,]+,\s*\{(.*?)\}\s*\)", t, re.S):
-                    written |= set(re.findall(r"[\"']([a-z_]+)[\"']\s*:", mm.group(1)))
+                for mm in re.finditer(r"update_news\(\s*[^,]+,\s*\{", t, re.S):
+                    # 只取**顶层**键：跟踪花括号深度，嵌套 dict（如 {"date_trap": json.dumps({"kind":..})}）不算字段
+                    i = mm.end() - 1
+                    depth, buf, keys = 0, "", []
+                    while i < len(t):
+                        ch = t[i]
+                        if ch == "{":
+                            depth += 1
+                            if depth == 1:
+                                i += 1
+                                continue
+                        elif ch == "}":
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        if depth == 1:
+                            buf += ch
+                        i += 1
+                    for km in re.finditer(r"[\"']([a-z_]+)[\"']\s*:", buf):
+                        keys.append(km.group(1))
+                    written |= set(keys)
     out.append(("update_news 白名单外字段（会被静默丢弃）", sorted(written - allowed)))
     noorder = []
     for root in ("agent", "services", "cli", "scripts"):
