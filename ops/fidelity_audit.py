@@ -191,10 +191,11 @@ def ck_schedule(rows, out):
 
 def ck_landing(rows, out):
     """review 产出的字段有没有真的落库（数据流断点类）。"""
-    need = {"grade": "grade", "grade_reason": "grade_reason", "review_advice": "review_advice"}
+    need = {"grade": "grade", "grade_reason": "grade_reason", "review_advice": "review_advice",
+            "date_trap": "date_trap"}
     got = {k: sum(1 for r in rows if (r.get(k) or "").strip()) for k in need}
     miss = [f"{k} 落库 {got[k]}/{len(rows)}" for k in need if got[k] == 0 and rows]
-    out.append(("review 产出字段已落库（grade/grade_reason/review_advice）", miss))
+    out.append(("review 产出字段已落库（grade/grade_reason/review_advice/date_trap）", miss))
 
 
 def ck_static(out):
