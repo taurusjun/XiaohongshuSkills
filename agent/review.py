@@ -28,7 +28,7 @@ ENT_SYS = ("你是日娱实体抽取器。给每条素材(title=中文标题, ja
            "**每个实体同时给出「日语汉字（或假名）」与「简体中文」两种写法**"
            "（两者相同则只给一个）——因为本库历史 title/rewritten_title 以简体中文为主、content_ja 为日文，需中日双查。"
            "不要把“古民家/剪去长发/唱的是/移籍/写真/演唱会/评论区/自拍”等描述性词当实体。"
-           '只输出严格 JSON：{"<key前12位>": {"p": ["实体1","实体1简体", ...], "g": [...], "w": [...]}}。')
+           '只输出严格 JSON：{"<完整40位key，原样复制输入>": {"p": ["实体1","实体1简体", ...], "g": [...], "w": [...]}}。')
 
 __all__ = ["compact_rows", "prepare_package", "extract_entities", "Entities", "run", "main"]
 
@@ -46,7 +46,7 @@ def compact_rows(date, limit=500, with_body=False):
     rows = _news.query_news(date_from=date, date_to=date, status="active", limit=limit)
     out = []
     for r in rows:
-        d = {"key": r["key"][:12], "title": r.get("title"), "ja": (r.get("title_ja") or "")[:40],
+        d = {"key": r["key"], "title": r.get("title"), "ja": (r.get("title_ja") or "")[:40],
              "fmt": r.get("format"), "lf": r.get("is_long_form"), "ts": r.get("title_score"),
              "cs": r.get("content_score"), "cj": len(r.get("content_ja") or ""),
              "src": r.get("fetch_by"), "pub": r.get("publish_xhs")}
@@ -57,6 +57,20 @@ def compact_rows(date, limit=500, with_body=False):
 
 
 _UNRESOLVED = []          # LLM 返回但解析不到的 key 前缀（供日志/计数；生产 skill: 短key静默丢失是高频事故）
+
+
+def _lk(mapping, key):
+    """容错查表：先按全键，再按 k12，再按「互为前缀」。LLM 抄成 k12/截断时也能命中。"""
+    if not mapping or not key:
+        return None
+    if key in mapping:
+        return mapping[key]
+    if key[:12] in mapping:
+        return mapping[key[:12]]
+    for k, v in mapping.items():
+        if k and (k.startswith(key[:12]) or key.startswith(k[:12])):
+            return v
+    return None
 
 
 def _resolve_keys(prefixes):
@@ -130,7 +144,7 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
         if fk and fk[0] in day:
             _g = (g.get("grade") if isinstance(g, dict) else g) or ""
             _news.update_news(fk[0], {"grade": str(_g).strip()})
-            _rz = (grade_reasons or {}).get(k12) or ""
+            _rz = _lk(grade_reasons, k12) or ""
             if _rz:
                 _news.update_news(fk[0], {"grade_reason": str(_rz)[:300]})
             wg += 1
@@ -142,9 +156,9 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
             norm[x] = ",".join(sorted(y for y in fks if y != x))
     for k, v in norm.items():
         _news.update_news(k, {"cluster_keys": v})
-        _m = (cluster_main or {}).get(k[:12]) or (cluster_main or {}).get(k) or ""
-        _n = (cluster_note or {}).get(k[:12]) or (cluster_note or {}).get(k) or ""
-        _ms = (cluster_mains or {}).get(k[:12]) or (cluster_mains or {}).get(k) or ""
+        _m = _lk(cluster_main, k) or ""
+        _n = _lk(cluster_note, k) or ""
+        _ms = _lk(cluster_mains, k) or ""
         if _ms:
             _news.update_news(k, {"cluster_mains": _ms})
         _is_main = k in [x.strip() for x in _ms.split(",") if x.strip()] if _ms else False
@@ -154,9 +168,9 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
                 # 生产约定：同事件重复条/被吸收条 → 标 merged-into-<主条key12>
                 #   （生产写在 score_dims；这里另存专列 merged_into，且仅在 score_dims 为空时才写 score_dims，避免丢评分数据）
                 _cur = (_news.get_by_key(k) or {})
-                _upd = {"cluster_main": _fk[0], "cluster_mains": _ms, "merged_into": _fk[0][:12]}
+                _upd = {"cluster_main": _fk[0], "cluster_mains": _ms, "merged_into": _fk[0]}
                 if not (_cur.get("score_dims") or "").strip():
-                    _upd["score_dims"] = f"merged-into-{_fk[0][:12]}"
+                    _upd["score_dims"] = f"merged-into-{_fk[0]}"
                 # S/A/AKB大TOP 被吸收条：按生产口径 preselected=1（靠 merged_into 拦写稿）；其余保持 0
                 _g = (_cur.get("grade") or "").strip().upper()
                 if _g in ("S", "A", "AKB", "AKB大TOP"):
@@ -302,16 +316,16 @@ def prepare_package(date, hist_k=6):
     except Exception:  # noqa: BLE001
         prev = []
     full = _news.query_news(date_from=date, date_to=date, status="active", limit=500)
-    ent = extract_entities([{"key": r["key"][:12], "title": r.get("title") or "",
+    ent = extract_entities([{"key": r["key"], "title": r.get("title") or "",
                              "ja": (r.get("title_ja") or "")[:60]}
                             for r in full if (r.get("title") or "").strip()])
     hist = {}
     for r in full:
         if not (r.get("title") or "").strip():
             continue
-        cs = _rel.find_related(r["key"], ent.get(r["key"][:12]) or [], limit=hist_k)
+        cs = _rel.find_related(r["key"], ent.get(r["key"]) or [], limit=hist_k)
         if cs:
-            hist[r["key"][:12]] = [{"k": c["key"][:12], "day": c["day"], "t": (c["title"] or "")[:26]}
+            hist[r["key"]] = [{"k": c["key"], "day": c["day"], "t": (c["title"] or "")[:26]}
                                    for c in cs]
     from services import feedback_patterns as _fb
     try:
@@ -410,12 +424,12 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     rows = pkg.get("rows") or []
     ents = pkg.get("entities") or {}
     cands = [r for r in rows
-             if (grades.get(r["key"][:12]) or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
+             if (_lk(grades, r["key"]) or "").upper() in ("S", "A", "AKB", "AKB大TOP")]
     if not cands:
         return {}
     lines = []
     for r in cands:
-        k = r["key"][:12]
+        k = r["key"]
         e = ents.get(k) or []
         pubs = _entity_pub(e)
         parts = []
@@ -433,7 +447,7 @@ def judge_channels(date, pkg, grades, max_tokens=4000):
     except Exception:  # noqa: BLE001
         return {}
     from services import routing as _routing
-    _txt = {r["key"][:12]: " ".join([r.get("title") or "", r.get("ja") or "",
+    _txt = {r["key"]: " ".join([r.get("title") or "", r.get("ja") or "",
                                      (r.get("body") or "")[:800]]) for r in cands}
     out, decisions = {}, []
     for k, v in (d.items() if isinstance(d, dict) else []):
@@ -560,7 +574,11 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     akb_type = machine.get("akb_type") or {}
     feedback = machine.get("feedback")
     from services import review_render as _rr
-    _titles = {r["key"][:12]: (r.get("title") or "") for r in pkg["rows"]}
+    # 渲染器按 k12 显示、machine 里现在是全键 → 建**双键**映射，两种都查得到
+    _titles = {}
+    for r in pkg["rows"]:
+        _titles[r["key"]] = r.get("title") or ""
+        _titles[r["key"][:12]] = r.get("title") or ""
     _samples = _layer4_samples(date)          # 第4层抽检证据（原 skill 要求）
     rest = _rr.render(machine, _titles, samples=_samples)
     md = part1.rstrip() + "\n\n---\n\n" + rest.lstrip()
