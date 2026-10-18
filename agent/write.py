@@ -130,7 +130,12 @@ def pick_candidates(n=0):
         _log(f"  ⚠️ 同簇去重：读取已写 key 失败，本次退化为仅本 run 去重: {e}")
         _hasbody = set()
     for r in sorted(pool, key=lambda x: (_prio(x), -(x.get("title_score") or 0))):
+        if (r.get("merged_into") or "").strip():
+            continue            # 被吸收条（review 已标 merged-into）→ 不写第二篇
         cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
+        _cm = (r.get("cluster_main") or "").strip()
+        if _cm and r["key"] != _cm and _cm in cl:
+            continue            # 权威主条判据（review 的 clusters.main）→ 簇内非主条不写
         if (cl | {r["key"]}) & (used | _hasbody):
             continue
         picks.append(r)
@@ -238,6 +243,9 @@ def _compose_msgs(cand, pkg, force_channel=None):
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
     if pkg["refs"]:
         user += "\n\n=== 相关规范/案例（节选）===\n" + pkg["refs"]
+    _cn = (cand.get("cluster_note") or "").strip()
+    if _cn:
+        user += f"\n\n=== 同事件说明（review 聚类理由）===\n- {_cn}"
     if pkg.get("merge_text"):
         user += "\n\n=== 同事件关联（可合并：把这些素材的角度并入正文）===\n" + pkg["merge_text"]
     if pkg.get("hist_text"):

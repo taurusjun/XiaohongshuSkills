@@ -104,7 +104,8 @@ def _extract_machine_json(text):
 
 
 def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time=None, advice=None,
-            grade_reasons=None, date_trap=None):
+            grade_reasons=None, date_trap=None, cluster_main=None, cluster_note=None,
+            clusters_raw=None):
     """把 review 的**结构化共享数据**写库（只写当日行）：grade + cluster_keys + channel_hint + akb_type
     + **cross_time（第3层跨时间关联）并入 related_keys**。
 
@@ -132,11 +133,46 @@ def persist(date, grades, clusters, channel_hint=None, akb_type=None, cross_time
             norm[x] = ",".join(sorted(y for y in fks if y != x))
     for k, v in norm.items():
         _news.update_news(k, {"cluster_keys": v})
+        _m = (cluster_main or {}).get(k[:12]) or (cluster_main or {}).get(k) or ""
+        _n = (cluster_note or {}).get(k[:12]) or (cluster_note or {}).get(k) or ""
+        if _m:
+            _fk = _resolve_keys([_m])
+            if _fk and _fk[0] != k:
+                # 生产约定：同事件重复条/被吸收条 → 标 merged-into-<主条key12>
+                #   （生产写在 score_dims；这里另存专列 merged_into，且仅在 score_dims 为空时才写 score_dims，避免丢评分数据）
+                _cur = (_news.get_by_key(k) or {})
+                _upd = {"cluster_main": _fk[0], "merged_into": _fk[0][:12]}
+                if not (_cur.get("score_dims") or "").strip():
+                    _upd["score_dims"] = f"merged-into-{_fk[0][:12]}"
+                # S/A/AKB大TOP 被吸收条：按生产口径 preselected=1（靠 merged_into 拦写稿）；其余保持 0
+                _g = (_cur.get("grade") or "").strip().upper()
+                if _g in ("S", "A", "AKB", "AKB大TOP"):
+                    _upd["preselected"] = 1
+                _news.update_news(k, _upd)
+        if _n:
+            _news.update_news(k, {"cluster_note": str(_n)[:200]})
         wr += 1
     for k in day:
         if k not in norm and (_news.get_by_key(k) or {}).get("cluster_keys"):
             _news.update_news(k, {"cluster_keys": ""})
             cleared += 1
+
+    # 簇身份 + 运行历史（services/review_store）：一簇一行 + 成员行存 cluster_id + 本次运行留档
+    try:
+        import sqlite3 as _sq3
+        from services import review_store as _rs
+        _cx = _sq3.connect(paths.sqlite_path(), timeout=30)
+        _ncl, _cidmap = _rs.save_clusters(_cx, date, clusters_raw, resolve_main=_resolve_keys)
+        for _k12, _cidv in _cidmap.items():
+            _fk = _resolve_keys([_k12])
+            if _fk and _fk[0] in day:
+                _news.update_news(_fk[0], {"cluster_id": _cidv})
+        _rs.save_run(_cx, date, {"rows": len(day), "grade": wg, "cluster": wr, "advice": ad,
+                                 "cross": ct, "date_trap": dt}, ok=1)
+        _cx.close()
+        print(f"[review_store] 簇 {_ncl} 行 + 运行留档 1 行")
+    except Exception as _e:  # noqa: BLE001
+        print(f"[review_store] 跳过: {_e}")
 
     # 日期陷阱（前日重复/前日已发）：write 侧「跳过 vs 补写」要用它（原 skill :212）
     dt = 0
@@ -475,8 +511,21 @@ def run(date, deliver=False, name=None, max_tokens=20000):
     grades = {k: (v.get("grade") if isinstance(v, dict) else v) for k, v in _raw_grades.items()}
     # 分级理由（原 skill 的分级表带 reason；write 侧读 review 存档时能看到 → 落库并注入）
     grade_reasons = {k: (v.get("reason") if isinstance(v, dict) else "") for k, v in _raw_grades.items()}
-    clusters = [c.get("keys") for c in (machine.get("clusters") or [])
-                if isinstance(c, dict) and c.get("keys")]
+    _craw = [c for c in (machine.get("clusters") or []) if isinstance(c, dict) and c.get("keys")]
+    clusters = [c.get("keys") for c in _craw]
+    # 主条(clusters.main)与同事件说明(clusters.note)：write 的「只写主条」要用权威判据，别再推断
+    cluster_main, cluster_note = {}, {}
+    for _c in _craw:
+        _m = (_c.get("main") or "").strip()
+        _n = (_c.get("note") or "").strip()
+        for _k in (_c.get("keys") or []):
+            _k = str(_k).strip()
+            if not _k:
+                continue
+            if _m:
+                cluster_main[_k] = _m
+            if _n:
+                cluster_note[_k] = _n
     channel_hint = machine.get("channel_hint") or {}
     try:                                             # 独立一次 LLM 判渠道（覆盖主调用）
         _ch = judge_channels(date, pkg, grades)
@@ -496,9 +545,10 @@ def run(date, deliver=False, name=None, max_tokens=20000):
         wg, wr, cl, ch, ak, ct, ad = persist(date, grades, clusters, channel_hint, akb_type,
                                          machine.get("cross_time"),
                                          machine.get("advice"),
-                                         grade_reasons, machine.get("date_trap"))
+                                         grade_reasons, machine.get("date_trap"),
+                                         cluster_main, cluster_note, _craw)
         print(f"[persist] grade {wg} 篇 / cluster {wr} 篇 / 清空 {cl} 篇 / gzh方向 {ch} 篇 / AKB分流 {ak} 篇 / "
-                  f"跨时间关联 {ct} 篇并入 related_keys / 价值建议 {ad} 篇 / 日期陷阱 {dt} 篇落库")
+                  f"跨时间关联 {ct} / 价值建议 {ad} / 日期陷阱 {dt} 篇落库；主条 {len(cluster_main or {})} 篇 / 说明 {len(cluster_note or {})} 篇")
     except Exception as e:  # noqa: BLE001
         print(f"[persist] 跳过: {e}")
     # 产出校验告警：当日有素材却评出 0 条 grade（静默失败兜底；如 LLM 空响应/超时/思考模式未关）

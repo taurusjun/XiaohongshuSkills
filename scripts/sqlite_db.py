@@ -267,7 +267,19 @@ def init_db():
                 actor       TEXT DEFAULT '',
                 reason      TEXT DEFAULT '',
                 ts          TEXT DEFAULT ''
+            )
+            CREATE TABLE IF NOT EXISTS review_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT, cluster_id TEXT, main_key TEXT, note TEXT, grade TEXT,
+                keys_json TEXT, n INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS review_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT, ran_at TEXT, model TEXT,
+                n_rows INTEGER DEFAULT 0, n_grade INTEGER DEFAULT 0, n_cluster INTEGER DEFAULT 0,
+                n_advice INTEGER DEFAULT 0, n_cross INTEGER DEFAULT 0, n_date_trap INTEGER DEFAULT 0,
+                ok INTEGER DEFAULT 1, note TEXT
+            );;
         """)
         # Compat: add columns to existing DBs
         _news_compat = [
@@ -311,12 +323,16 @@ def init_db():
             ("grade", "TEXT DEFAULT ''"),
             ("grade_reason", "TEXT DEFAULT ''"),
             ("date_trap", "TEXT DEFAULT ''"),
+            ("cluster_main", "TEXT DEFAULT ''"),
+            ("cluster_note", "TEXT DEFAULT ''"),
+            ("merged_into", "TEXT DEFAULT ''"),
             ("channel_hint", "TEXT DEFAULT ''"),
             ("akb_type", "TEXT DEFAULT ''"),
             ("manual_review", "INTEGER DEFAULT 0"),
             ("manual_reason", "TEXT DEFAULT ''"),
             ("material_type", "TEXT DEFAULT ''"),
             ("review_advice", "TEXT DEFAULT ''"),
+            ("cluster_id", "TEXT DEFAULT ''"),
             ("write_score", "REAL DEFAULT 0"),
             ("write_title_score", "REAL DEFAULT 0"),
             ("write_content_score", "REAL DEFAULT 0"),
@@ -603,7 +619,7 @@ def update_news(key: str, fields: dict) -> bool:
                'topic_perf_updated_at',
                'en_title','en_content','en_tweet','en_publish_twitter','en_pub_time',
                'channel',
-               'grade','grade_reason','date_trap','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
+               'grade','grade_reason','date_trap','cluster_main','cluster_note','merged_into','channel_hint','akb_type','score_dims','manual_review','manual_reason','material_type','review_advice','write_score','write_title_score','write_content_score','write_dims'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
