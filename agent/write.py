@@ -129,8 +129,13 @@ def pick_candidates(n=0):
     except Exception as e:  # noqa: BLE001
         _log(f"  ⚠️ 同簇去重：读取已写 key 失败，本次退化为仅本 run 去重: {e}")
         _hasbody = set()
+    _dbg = bool(os.environ.get("PICK_DEBUG"))
     for r in sorted(pool, key=lambda x: (_prio(x), -(x.get("title_score") or 0))):
+        if _dbg:
+            print(f"[pick] {r['key'][:12]} g={r.get('grade')} ts={r.get('title_score')} "
+                  f"mains={(r.get('cluster_mains') or '')[:12]} merged={(r.get('merged_into') or '')[:12]}")
         if (r.get("merged_into") or "").strip():
+            if _dbg: print(f"[pick]   → 跳过：被吸收条")
             continue            # 被吸收条（review 已标 merged-into）→ 不写第二篇
         # 键口径一律 **40 位全键**（项目约定；k12 只存在于 LLM 接口层，落库前已 _resolve_keys 展开）
         cl = {x for x in (r.get("cluster_keys") or "").split(",") if x}
@@ -140,14 +145,20 @@ def pick_candidates(n=0):
             _cms = [_cm] if _cm else []
         _is_main = bool(_cms) and r["key"] in _cms
         if _cms and not _is_main and (set(_cms) & cl):
+            if _dbg: print(f"[pick]   → 跳过：非主条（mains={[x[:12] for x in _cms]}）")
             continue            # 权威主条判据（review 的 clusters.mains，1-2 条）→ 非主条不写
         if _is_main:
             if r["key"] in (used | _hasbody):
+                if _dbg: print(f"[pick]   → 跳过：主条自己已选/已成篇")
                 continue        # 主条之间**互不排斥**（1-2 条都要写），只防自己重复
         elif (cl | {r["key"]}) & (used | _hasbody):
+            if _dbg: print(f"[pick]   → 跳过：簇内成员已选/已成篇 cl={[x[:12] for x in cl]}")
             continue            # 非主条：簇内任一成员已选/已成篇 → 不写
         picks.append(r)
-        used |= cl | {r["key"]}
+        if _is_main:
+            used.add(r["key"])          # 主条：**只占自己**（1-2 条都要写，不能占掉同簇另一个主条）
+        else:
+            used |= cl | {r["key"]}     # 非主条：整簇占位（其余合并/跳过）
         if n and len(picks) >= n:
             break
     return picks
@@ -199,8 +210,8 @@ def prepare_package(cand):
         ck = [k.strip() for k in (cand.get("cluster_keys") or "").split(",") if k.strip()]
         sibs = [x for x in (_news.get_by_key(k) for k in ck) if x]
         merge_text = "\n".join(
-            f"[{s['key'][:12]}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
-        rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
+            f"[{s['key']}] {s.get('title')}｜原文节选：{(s.get('content_ja') or '')[:1200]}" for s in sibs)
+        rel_candidates += [{"key": s["key"], "title": s.get("title") or "",
                              "excerpt": (s.get("content_ja") or "")[:800]} for s in sibs]
         related_keys += ck
     except Exception as e:  # noqa: BLE001
@@ -208,17 +219,17 @@ def prepare_package(cand):
     try:
         from agent import review as _rev
         from services import related as _rel
-        _ents = _rev.extract_entities([{"key": cand["key"][:12], "title": cand.get("title") or "",
+        _ents = _rev.extract_entities([{"key": cand["key"], "title": cand.get("title") or "",
                                         "ja": (cand.get("title_ja") or "")[:60]}])
-        ents = _ents.typed(cand["key"][:12])            # 分型：p=人物/团体（主轴）、w=作品/系列（仅辅助）
+        ents = _ents.typed(cand["key"])            # 分型：p=人物/团体（主轴）、w=作品/系列（仅辅助）
         hist = [h["key"] for h in _rel.find_related(cand["key"], ents, limit=4)
                 if h["key"] not in related_keys]
         if hist:
             hs = [x for x in (_news.get_by_key(k) for k in hist) if x]
             for s in hs:        # 只登记节选，**暂不注入**（classify 后再按合格类型注入）
-                hist_excerpts[s["key"]] = (f"[{s['key'][:12]}] {s.get('title')}｜旧文节选："
+                hist_excerpts[s["key"]] = (f"[{s['key']}] {s.get('title')}｜旧文节选："
                                            f"{((s.get('rewritten_content') or s.get('content_ja') or ''))[:400]}")
-            rel_candidates += [{"k12": s["key"][:12], "title": s.get("title") or "",
+            rel_candidates += [{"key": s["key"], "title": s.get("title") or "",
                                  "excerpt": ((s.get("rewritten_content") or s.get("content_ja") or ""))[:800]} for s in hs]
             related_keys += hist
     except Exception as e:  # noqa: BLE001
@@ -261,7 +272,7 @@ def _compose_msgs(cand, pkg, force_channel=None):
     if pkg.get("relations"):
         _lab = {"时间线补充": "开头交代旧事件，主体写新进展（合并写新版）", "人物呼应": "以续篇口吻，一句带过前情", "新角度": "从新角度切入，不要重复旧文"}
         user += ("\n\n=== 历史关联（已判定类型，按类型写）===\n"
-                 + "\n".join(f"- [{r['key'][:12]}] {r['type']}：{_lab.get(r['type'], '')}" for r in pkg["relations"]))
+                 + "\n".join(f"- [{r['key']}] {r['type']}：{_lab.get(r['type'], '')}" for r in pkg["relations"]))
     _adv = cand.get("review_advice") or ""
     if _adv.strip().startswith("{"):
         try:
@@ -519,7 +530,7 @@ def classify_relations(cand, pkg, max_tokens=2000):
     if not cands:
         return []
     user = (f"【本篇】{cand.get('title')}｜{(cand.get('content_ja') or '')[:800]}\n\n【候选】\n"
-            + "\n".join(f"[{c['k12']}] {c['title']}｜{c['excerpt']}" for c in cands))
+            + "\n".join(f"[{c.get('key') or c.get('k12')}] {c['title']}｜{c['excerpt']}" for c in cands))
     try:
         raw = llm.chat([{"role": "system", "content": REL_SYS}, {"role": "user", "content": user}],
                        max_tokens=max_tokens, json_mode=True, timeout=_LLM_TO)
@@ -899,14 +910,15 @@ def recommend_and_schedule(n=5, seed=None):
     tomorrow = today + dt.timedelta(days=1)
     pool = _rec.candidates(days=2)
     busy = _rec.tomorrow_busy(tomorrow)
-    items = [{"key": r["key"][:12], "title": r.get("title") or "", "ja": (r.get("title_ja") or "")[:60]}
+    items = [{"key": r["key"], "title": r.get("title") or "", "ja": (r.get("title_ja") or "")[:60]}
              for r in (pool + busy)]
     ents = _rev.extract_entities(items)                     # LLM 一次：候选+明天已排的实体
     # ⚠️ 只喂**人物**（p）：生产口径是「同**人物**不挤同一天」+ 按**人物**历史发布数据算优先级。
     #    若喂扁平实体（含团体/作品），会退化成「同团体/同作品也不挤同一天」，
     #    且 historical_stats 按团体名统计 → 人物历史被稀释（2026-10-18 实测：同一候选池选出 5 篇有 3 篇不同）。
     _person = {k: (ents.typed(k).get("p") or []) for k in ents}
-    busy_ents = [e for r in busy for e in (_person.get(r["key"][:12]) or [])]
+    # _person 现在按**全键**索引（原按 k12）
+    busy_ents = [e for r in busy for e in (_person.get(r["key"]) or [])]
     picks, backups, stat_by_key = _rec.stage6(pool, _person, busy_entities=busy_ents,
                                               n=n, seed=seed, today=today)
     rng = random.Random(seed)
