@@ -2,8 +2,8 @@
 """容器内 CDP keeper。
 
 - 端口已开则不动；**绝不主动重启 9222**（用 Xvfb+headed 占住端口，使发布链路的 --headless 失效）。
-- 追加：若 www 标签停在 /explore（视频流，持续烧 CPU）→ 导航到该账户 profile 页
-  （读 data/accounts_meta.json 的 profile_id；无则 about:blank）。只碰 explore，不动其他页。
+- 2026-10-24：**不再处理 /explore**（用户明确不需要）；职责仅剩「关掉多余空白页」
+  与「只剩空白页时导航到创作者首页」。
 """
 import json
 import sys
@@ -20,21 +20,12 @@ CUR = "/home/user/PG/XiaohongshuSkills/tmp/current_account.txt"
 
 
 def _dest_url():
-    try:
-        meta = json.load(open(META, encoding="utf-8"))
-        cur = "default"
-        try:
-            cur = open(CUR, encoding="utf-8").read().strip() or "default"
-        except Exception:
-            pass
-        pid = (meta.get(cur) or {}).get("profile_id") or ""
-        if not pid:
-            pid = next((v.get("profile_id") for v in meta.values() if v.get("profile_id")), "")
-        if pid:
-            return f"https://www.xiaohongshu.com/user/profile/{pid}"
-    except Exception:  # noqa: BLE001
-        pass
-    return "about:blank"
+    """explore → **创作者后台首页**。
+
+    ⚠️ 2026-10-24：原来导到「该账户 profile 页」，但 profile 页自带视频流、同样持续烧 CPU
+    （容器 CPU 长期 16–60%）。改为创作者首页（数据后台，无视频流）。
+    """
+    return "https://creator.xiaohongshu.com/new/home"
 
 
 def _de_explore():
@@ -43,17 +34,27 @@ def _de_explore():
     except Exception:  # noqa: BLE001
         return
     dest = _dest_url()
-    for t in tabs:
-        if t.get("type") == "page" and "www.xiaohongshu.com/explore" in (t.get("url") or ""):
-            try:
-                import websocket
-                ws = websocket.create_connection(t["webSocketDebuggerUrl"], timeout=5)
-                ws.send(json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": dest}}))
-                ws.recv()
-                ws.close()
-                print(f"[cdp_keeper] explore -> {dest}", flush=True)
-            except Exception as e:  # noqa: BLE001
-                print(f"[cdp_keeper] explore navigate failed: {e}", flush=True)
+
+    # 关掉多余空白页（chrome://newtab/ · about:blank）；至少保留 1 个 page，
+    # 若只剩空白页 → 把第一个导航到目标页（而不是留 newtab，视频/动画也烧 CPU）
+    pages = [t for t in tabs if t.get("type") == "page"]
+    blanks = [t for t in pages if (t.get("url") or "") in ("chrome://newtab/", "about:blank")]
+    keep = 1 if len(pages) - len(blanks) == 0 else 0
+    for t in blanks[keep:]:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json/close/{t['id']}", timeout=5).read()
+            print("[cdp_keeper] closed blank tab", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+    if keep and blanks:
+        try:
+            import websocket
+            ws = websocket.create_connection(blanks[0]["webSocketDebuggerUrl"], timeout=5)
+            ws.send(json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": dest}}))
+            ws.recv(); ws.close()
+            print(f"[cdp_keeper] blank -> {dest}", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 if __name__ == "__main__":
