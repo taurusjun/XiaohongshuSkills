@@ -24,6 +24,31 @@ HEADERS = {
 BASE = "https://nlab.itmedia.co.jp"
 
 
+# 正文 <div data-content> 里夹着的非正文图：Amazon 推广、相关文章卡片、Google 徽章、目录栏
+_JUNK_CLASS_MARKERS = ("ogpcard", "affiliate", "google-preferred", "mokuji", "amazon")
+_JUNK_HOSTS = ("media-amazon.com", "images-amazon.com", "amazon.co.jp")
+
+
+def _log_error(msg: str) -> None:
+    try:
+        from sqlite_db import _log_db_error
+        _log_db_error(msg)
+    except Exception:
+        pass
+
+
+def _is_junk(im, body) -> bool:
+    """img 是否属于正文里的推广 / 相关文章 / 装饰图（按祖先 class 和图片域名判断）。"""
+    for p in im.parents:
+        if p is body:
+            break
+        cls = " ".join(p.get("class") or [])
+        if any(m in cls for m in _JUNK_CLASS_MARKERS):
+            return True
+    src = im.get("src") or im.get("data-src") or ""
+    return any(h in src for h in _JUNK_HOSTS)
+
+
 def _upgrade(src: str) -> str:
     """article-thumb 缩略图 → 全尺寸"""
     full = re.sub(r'-\d+x\d+(\.[a-z]+)?$', r'\1', src)
@@ -33,14 +58,15 @@ def _upgrade(src: str) -> str:
 
 def scrape(gallery_url: str) -> list[str]:
     """从 nlab.itmedia.co.jp 文章页抓取所有大图 URL（多页聚合）"""
-    base_url = re.sub(r'/\d+/?$', '/', gallery_url.split("?")[0].rstrip("/"))
-    if not base_url.endswith("/cont/articles/"):
-        # 把 URL 归一化到 /cont/articles/<id>/
-        m = re.search(r'(/cont/articles/\d+/)', gallery_url)
-        if not m:
-            print(f"  ⚠️ itmedia/nlab URL 不识别: {gallery_url}")
-            return []
-        base_url = f"{BASE}{m.group(1)}"
+    # 归一化到 /cont/articles/<id>/（不论带不带页码 / 查询串 / #utm 片段）。
+    # 原先先用 re.sub(r'/\d+/?$', ...) 去页码，对不带页码的 /cont/articles/<id>/ 会把文章 id 当页码删掉，
+    # 得到 /cont/articles/ 而 404。
+    m = re.search(r'(/cont/articles/\d+/)', gallery_url)
+    if not m:
+        print(f"  ⚠️ itmedia/nlab URL 不识别: {gallery_url}")
+        _log_error(f"itmedia/nlab URL 不识别: {gallery_url}")
+        return []
+    base_url = f"{BASE}{m.group(1)}"
 
     # 第一页发现分页
     try:
@@ -71,8 +97,17 @@ def scrape(gallery_url: str) -> list[str]:
     images: list[str] = []
 
     def _collect(soup):
-        for im in soup.select(".article-thumb img"):
-            src = im.get("src") or ""
+        # 正文在 <div data-content> 里。页面其他位置的 .article-thumb 是排行榜 / 相关文章列表的
+        # 缩略图（每篇文章都是同样 15 张），不是这篇的图，不能取。
+        body = soup.select_one("div[data-content]")
+        if body is None:
+            print("  ⚠️ itmedia/nlab 未找到 div[data-content]（页面结构可能改版）")
+            _log_error(f"itmedia/nlab 未找到 div[data-content]: {base_url}")
+            return
+        for im in body.select("img"):
+            if _is_junk(im, body):
+                continue
+            src = im.get("src") or im.get("data-src") or ""
             if not src.startswith("http"):
                 src = urljoin(BASE, src)
             if "/assets/" in src or "icon" in src.lower():
@@ -108,6 +143,7 @@ def scrape(gallery_url: str) -> list[str]:
 
     if not images:
         print("  ⚠️ itmedia/nlab 未提取到图片")
+        _log_error(f"itmedia/nlab 未提取到图片: {gallery_url}")
     return images
 
 
