@@ -3449,10 +3449,32 @@ def api_all_tags():
     # 只返回出现 >=2 次的标签，过滤单次使用的人名/杂项
     return jsonify({"tags": sorted([t for t, n in c.items() if n >= 2])})
 
+def _kick_gallery_download(key):
+    """标记待发布后，一次性踢一脚后台图集下载（oneway，不等待、不回报）。
+
+    - 已有缓存 / 正在下载 → 跳过，幂等
+    - 任何异常都吞掉：图集只是配图，失败不能影响 PUBLISH_XHS 标记本身
+    """
+    try:
+        from web.gallery_downloader import get_status as _gst, trigger_download
+        st = (_gst(key) or {}).get('status', '')
+        if st in ('running', 'done') or st.startswith('error: 未检测到图集链接'):
+            return                     # 有缓存 / 下载中 / 源站本来就没有图集 → 不重复踢
+        trigger_download(key)          # daemon thread，立即返回
+    except Exception as e:
+        try:
+            app.logger.warning(f'gallery kick failed {key}: {e}')
+        except Exception:
+            pass
+
+
 @app.route('/api/news/<key>', methods=['PUT'])
 def api_update(key):
     data = request.get_json()
     update_news(key, data)
+    # 待发布选中（publish_xhs=1）→ 立刻踢图集下载，不阻塞响应
+    if str(data.get('publish_xhs', '')).strip().lower() in ('1', 'true'):
+        _kick_gallery_download(key)
     return jsonify({"ok": True})
 
 @app.route('/api/collect-metrics', methods=['POST'])
