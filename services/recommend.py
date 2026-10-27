@@ -11,6 +11,7 @@ import sqlite3
 import statistics
 
 from services import paths
+from services import pub_history_gate as _gate
 
 JST = dt.timezone(dt.timedelta(hours=9))
 _SEARCH_OR = "title LIKE ? OR title_ja LIKE ? OR content_ja LIKE ? OR rewritten_title LIKE ?"
@@ -112,6 +113,12 @@ def stage6(pool, entities_by_key, busy_entities=None, n=5, seed=None, today=None
         ents = entities_by_key.get(r["key"], []) or []
         stat_by_key[r["key"]] = _merge_stats([historical_stats(e, db) for e in ents])
     busy_ents = set(busy_entities or [])
+    # 发布历史闸门（10/22 事故后立规）：硬重复/题材疲劳/排期撞车的候选直接不进推荐
+    _g = _gate.check_keys([r["key"] for r in pool], db=db, today=today)
+    _passed = [r for r in pool if (_g.get(r["key"]) or {}).get("verdict") != "FAIL"]
+    if len(_passed) < len(pool):
+        print(f"  [闸门] 剔除 {len(pool)-len(_passed)} 篇（近 3 天同 tag 已发 / 14 天 ≥2 条 / 排期撞车）")
+    pool = _passed
     ordered = sorted(pool, key=lambda r: -priority(r, stat_by_key[r["key"]], today))
 
     picks, used_ent, used_keys, pick_rel = [], set(busy_ents), set(), set()
@@ -126,7 +133,9 @@ def stage6(pool, entities_by_key, busy_entities=None, n=5, seed=None, today=None
         picks.append(r); used_ent |= ents; used_keys.add(k); pick_rel |= rel
         if len(picks) >= n - 1:
             break
-    rest = [r for r in ordered if r["key"] not in used_keys]
+    _cut = today - dt.timedelta(days=3)      # 10/27 事故：随机池不能全库捞（会抽到几个月前）
+    rest = [r for r in ordered if r["key"] not in used_keys
+            and (_day(r.get("created_at")) or _cut) >= _cut]
     if rest:                                      # 1 篇随机探索
         rnd = dict(random.Random(seed).choice(rest))
         rnd["_random"] = True

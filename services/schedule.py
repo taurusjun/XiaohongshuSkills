@@ -88,6 +88,7 @@ def preflight(db, keys):
     """
     import sqlite3
     from services import word_count as wc
+    from services import pub_history_gate as _gate
 
     ok, reject = [], []
     conn = sqlite3.connect(db)
@@ -113,6 +114,9 @@ def preflight(db, keys):
                     (cid, k)).fetchone()
                 if other:
                     reject.append((k, f"同簇已有待发布/已发布 {other[0]}")); continue
+            _gok, _gbad = _gate.gate_filter([k], db=db)
+            if not _gok:
+                reject.append((k, _gbad[0][1])); continue
             if fmt == "story" and lf and mode != "export":
                 n = wc.content_len(body)
                 if n < 800:
