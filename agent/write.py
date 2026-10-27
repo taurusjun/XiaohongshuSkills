@@ -172,7 +172,7 @@ def prepare_package(cand):
     j = content_len(cj) or 1
     cap = 9000
     if r["publish_method"] == "export":                 # 超长文：喂更多原文（旧 dump_ja 全文口径）
-        tmin, tmax = int(j * 0.31), int(j * 0.33)
+        tmin, tmax = int(j * 0.315), int(j * 0.325)     # 按 ja×0.32 一次到位（不再来回压字）
         cap = 20000
     elif cand.get("format") == "story" and cand.get("is_long_form"):
         tmin, tmax = max(800, int(j * 0.30)), max(900, int(j * 0.34))
@@ -182,7 +182,12 @@ def prepare_package(cand):
     if r["publish_method"] != "export":
         tmax = min(tmax, 900)
         tmin = min(tmin, tmax)
-    target = f"{tmin}~{tmax}字（密度=正文字数/主素材日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）"
+    _hint = ""
+    if cand.get("format") == "story" and cand.get("is_long_form"):
+        _hint = "；落笔按 900 收——实测中文落笔比自估长 5–10%，别按 950 收"
+    elif r["publish_method"] == "export":
+        _hint = "；密度按原文×0.32 一次到位"
+    target = f"{tmin}~{tmax}字（密度=正文字数/主素材日文原文×100，须 ≥30%，低于 {tmin} 会被打回重写）{_hint}"
     # 渠道：review 标注的 gzh 方向 > 机械预判（旧 skill 阶段2「review 标了 gzh 方向的必须先处理」）
     hint = (cand.get("channel_hint") or "").strip().lower()
     _rh, _conf = _route.route_detail(cand.get("title") or "", cj[:500])
