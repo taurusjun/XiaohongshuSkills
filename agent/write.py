@@ -697,7 +697,8 @@ def _produce(cand, pkg, channel, first=None):
             _log(f"  ✗ 门禁未过: {'; '.join(gate)[:120]}")
             continue
         score = score_gzh(title, body) if channel == "gzh" else score_content(title, body)
-        need = _need(cand, channel, mech.get("body_len") or len(body))    # 按长度分层
+        _short_news = (cand.get("format") or "").strip() == "news" and not cand.get("is_long_form")
+        need = 0 if _short_news else _need(cand, channel, mech.get("body_len") or len(body))  # news 不套 8 分线
         _err = bool(score.get("error"))
         _lok2, _lmsg2 = _length_ok(cand, mech.get("body_len") or len(body))
         _log(f"  评分 {score.get('total')}/{need}"
@@ -759,6 +760,8 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
                 "kana": 0, "method": "", "score": 0, "related": "",
                 "problems": ["渠道判定=skip（不写稿）"], "versions": []}
     _log(f"▶ {cand['key'][:12]} 《{(cand.get('title') or '')[:20]}》 fmt={cand.get('format')} lf={cand.get('is_long_form')}")
+    # 短 news：skill 口径不套 5 维 8 分线（正文短、信息密度优先），评分只记 news-pass
+    _is_news = (cand.get("format") or "").strip() == "news" and not cand.get("is_long_form")
     pkg = prepare_package(cand)
     method = pkg["method"]
     _log(f"  准备: method={method} pre={pkg.get('pre_channel')}({pkg.get('route_conf')}) "
@@ -863,6 +866,33 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
         if (got.get("channel") or "") != chan:
             upd["channel"] = chan
         want_ps = 1 if has_x else 0          # xhs 版本存在 → 待发(1)；仅 gzh → 0
+        # 同簇唯一（审计不变量）：簇内「待发布/已发布」篇数不得超过主条数，默认 1。
+        # 独立写出的同簇成员原本也会被置 preselected=1 → 一簇多篇上线，这里兜住。
+        if want_ps and (cand.get("cluster_id") or ""):
+            _cap = 1
+            try:
+                _rowm = _news._connect().execute(
+                    "SELECT mains_json FROM review_clusters WHERE cluster_id=?",
+                    (cand["cluster_id"],)).fetchone()
+                if _rowm and (_rowm[0] or "").strip():
+                    _cap = max(1, len(json.loads(_rowm[0])))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _others = _news._connect().execute(
+                    "SELECT key FROM news WHERE cluster_id=? AND key<>? "
+                    "AND (COALESCE(preselected,0)=1 OR COALESCE(publish_xhs,0)=1 "
+                    "OR COALESCE(xhs_pub_time,'')<>'') ", (cand["cluster_id"], cand["key"])).fetchall()
+            except Exception:  # noqa: BLE001
+                _others = []
+            if len(_others) >= _cap:
+                want_ps = 0
+                try:
+                    _news.update_news(cand["key"], {
+                        "score_dims": f"merged-into-{_others[0][0]}"})
+                except Exception:  # noqa: BLE001
+                    pass
+                _log(f"  同簇已有 {len(_others)} 篇待发布/已发布（上限 {_cap}）→ 本篇不占位")
         if got.get("preselected") != want_ps:
             upd["preselected"] = want_ps
         if upd:
@@ -874,6 +904,11 @@ def write_one(cand, dry_run=True, force_channel=None, split_mode=False):
         _mr = None
     if not dry_run and _mr:
         _news.update_news(cand["key"], _mr)
+    if not dry_run and _is_news:
+        try:
+            _news.update_news(cand["key"], {"score_dims": "news-pass"})
+        except Exception:  # noqa: BLE001
+            pass
     prim = versions[0]
     if not dry_run and prim.get("score_obj"):                 # 5 维评分落表（不动原 title_score/content_score）
         _so = prim["score_obj"]

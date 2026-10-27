@@ -56,3 +56,42 @@ def test_apply_missing_key_reported(tmp_path):
     plan = sch.build_plan(dt.date(2026, 10, 9), sch.parse_slots("09:00"), 8, random.Random(1))
     ok, bad = sch.apply_plan(db, ["z" * 40], plan, True)
     assert not ok and bad and bad[0][1] == "key 不存在"
+
+
+def _mkdb_full(tmp_path):
+    """带保真度相关列的库（模拟生产表结构）"""
+    import sqlite3
+    db = str(tmp_path / "full.db")
+    c = sqlite3.connect(db)
+    c.execute(
+        "CREATE TABLE news (key TEXT, title TEXT, xhs_pub_time TEXT, publish_xhs INTEGER,"
+        " rewritten_content TEXT, cluster_id TEXT, format TEXT, is_long_form INTEGER,"
+        " publish_mode TEXT, preselected INTEGER)")
+    c.commit(); c.close()
+    return db
+
+
+def test_preflight_rejects_short_story(tmp_path):
+    """story&lf 正文 <800 → 拒绝排期（保真度审计 ①）"""
+    import sqlite3
+    db = _mkdb_full(tmp_path)
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO news VALUES (?,?,?,?,?,?,?,?,?,?)",
+              ("k" * 40, "t", "", 0, "短" * 100, "", "story", 1, "rewritten", 1))
+    c.commit(); c.close()
+    ok, rej = sch.preflight(db, ["k" * 40])
+    assert ok == [] and rej and "800" in rej[0][1]
+
+
+def test_preflight_rejects_same_cluster(tmp_path):
+    """同簇已有待发布/已发布 → 后续成员拒绝排期（②）"""
+    import sqlite3
+    db = _mkdb_full(tmp_path)
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO news VALUES (?,?,?,?,?,?,?,?,?,?)",
+              ("a" * 40, "t1", "2026-10-27 09:07", 1, "正文" * 500, "C1", "news", 0, "rewritten", 1))
+    c.execute("INSERT INTO news VALUES (?,?,?,?,?,?,?,?,?,?)",
+              ("b" * 40, "t2", "", 0, "正文" * 500, "C1", "news", 0, "rewritten", 1))
+    c.commit(); c.close()
+    ok, rej = sch.preflight(db, ["b" * 40])
+    assert ok == [] and rej and "同簇" in rej[0][1]

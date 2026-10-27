@@ -79,10 +79,81 @@ def describe_keys(db, keys):
     return out
 
 
-def apply_plan(db, keys, plan, set_publish_flag):
+def preflight(db, keys):
+    """排期前预检：返回 (可排 keys, 拒绝 [(key, 原因)])。
+
+    规则（保真度审计口径）：
+      ① 同簇唯一：同 cluster_id 内已有「待发布/已发布」的 → 拒绝（避免一簇多篇上线）
+      ② 字数：story&lf（非 export）正文 800-1200，超出先改稿再排期
+    """
     import sqlite3
+    from services import word_count as wc
+
+    ok, reject = [], []
     conn = sqlite3.connect(db)
-    ok, bad = [], []
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(news)")}
+    has_cluster = "cluster_id" in cols
+    _sel = ", ".join([
+        "COALESCE(cluster_id,'')" if has_cluster else "''",
+        "COALESCE(format,'')" if "format" in cols else "''",
+        "COALESCE(is_long_form,0)" if "is_long_form" in cols else "0",
+        "COALESCE(publish_mode,'')" if "publish_mode" in cols else "''",
+        "COALESCE(rewritten_content,'')" if "rewritten_content" in cols else "''",
+    ])
+    try:
+        for k in keys:
+            row = conn.execute(f"SELECT {_sel} FROM news WHERE key=?", (k,)).fetchone()
+            if not row:
+                reject.append((k, "key 不存在")); continue
+            cid, fmt, lf, mode, body = row
+            if cid:
+                other = conn.execute(
+                    "SELECT key FROM news WHERE cluster_id=? AND key<>? "
+                    "AND (COALESCE(publish_xhs,0)=1 OR COALESCE(xhs_pub_time,'')<>'') LIMIT 1",
+                    (cid, k)).fetchone()
+                if other:
+                    reject.append((k, f"同簇已有待发布/已发布 {other[0]}")); continue
+            if fmt == "story" and lf and mode != "export":
+                n = wc.content_len(body)
+                if n < 800:
+                    reject.append((k, f"正文 {n} 字 <800，先扩写再排期")); continue
+                if n > 1200:
+                    reject.append((k, f"正文 {n} 字 >1200，先精简再排期")); continue
+            ok.append(k)
+    finally:
+        conn.close()
+    return ok, reject
+
+
+def kick_gallery(keys):
+    """排期成功后补图集下载（--apply 走裸 SQL，不会触发 PUT /api/news 的自动线程）。"""
+    done = 0
+    try:
+        from web.gallery_downloader import trigger_download
+        for k in keys:
+            try:
+                trigger_download(k, "")
+                done += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"  [warn] 图集下载触发失败 {k}: {e}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  [warn] 无法加载 gallery_downloader（跳过图集触发）: {e}")
+    return done
+
+
+def apply_plan(db, keys, plan, set_publish_flag, gallery=True):
+    import sqlite3
+    allowed, rejected = preflight(db, keys)
+    for k, why in rejected:
+        print(f"  [拒绝排期] {k[:12]}  {why}")
+    plan = plan[:len(allowed)]
+    keys = allowed
+    if not keys:
+        print("  [拒绝排期] 预检后无可排条目")
+        return [], rejected
+
+    conn = sqlite3.connect(db)
+    ok, bad = list(rejected), []
     try:
         for k, (slot, ts) in zip(keys, plan):
             row = conn.execute("SELECT key FROM news WHERE key=?", (k,)).fetchone()
@@ -103,6 +174,10 @@ def apply_plan(db, keys, plan, set_publish_flag):
             print(f"  [verify {status}] {k[:12]} xhs_pub_time={got[0]} publish_xhs={got[1]}")
     finally:
         conn.close()
+    if gallery and ok:
+        n = kick_gallery([x[0] for x in ok])
+        if n:
+            print(f"  [图集] 已触发 {n} 篇后台下载")
     return ok, bad
 
 
@@ -116,6 +191,7 @@ def main(argv=None):
     ap.add_argument("--keys", default=None, help="5 个完整 40 位 key，逗号分隔")
     ap.add_argument("--apply", action="store_true", help="把计划写进 DB（需配 --keys）")
     ap.add_argument("--no-publish-flag", action="store_true", help="--apply 时不设 publish_xhs=1")
+    ap.add_argument("--no-gallery", action="store_true", help="--apply 后不自动触发图集下载")
     ap.add_argument("--db", default=None, help="DB 路径")
     args = ap.parse_args(argv)
     db = args.db or default_db()
@@ -157,11 +233,13 @@ def main(argv=None):
             sys.exit(2)
         print("\n[写入 DB]" + ("（同时设 publish_xhs=1）" if not args.no_publish_flag
                               else "（只写 xhs_pub_time）"))
-        ok, bad = apply_plan(db, keys, plan, not args.no_publish_flag)
+        ok, bad = apply_plan(db, keys, plan, not args.no_publish_flag,
+                             gallery=not args.no_gallery)
         print(f"  成功 {len(ok)} 条 / 失败 {len(bad)} 条")
         if bad:
             for k, why in bad:
-                print(f"  FAIL {k} -> {why}")
-            sys.exit(1)
+                print(f"  SKIP {k[:12]} -> {why}")
+            if not ok:                       # 全部被拒才算失败；部分成功 → 0（供批量脚本继续）
+                sys.exit(1)
         print("  提醒：本脚本不触发发布（禁止 POST /api/trigger-publish）。")
     return 0
