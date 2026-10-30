@@ -90,6 +90,7 @@ GALLERY_SITES: dict[str, str] = {
     "pinzuba.news":         "article, main",
     "friday.kodansha.co.jp": "article, main",
     "shueisha.online":       ".article-photo",
+    "wpb.shueisha.co.jp":    ".carousel-gallery-a__list",
     "entamenext.com":        ".articleGalleryImg",
     "musicvoice.jp":         "article, .entry-content",
     "daily.co.jp":           "article.detailContent",
@@ -130,6 +131,12 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
 
 # URL に含まれる「図集っぽい」キーワード（なければ外部リンク全体を対象）
 GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slide", "gazo"]
+
+# 个别站点的图集页路径不含上面的通用关键词，按站点单独放行（不放进 GALLERY_NO_HINT_SITES，
+# 因为这些站点的其他路径（如 sponichi 的 /kiji/ 相关文章）不是图集）。
+GALLERY_EXTRA_PATH_HINTS = {
+    "sponichi.co.jp": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html（图集在 photo-carousel）
+}
 
 
 # ============ Notion ============
@@ -190,7 +197,9 @@ def parse_page_meta(page: dict) -> dict:
 
 def _domain_of(url: str) -> str:
     from urllib.parse import urlparse
-    return urlparse(url).netloc.lstrip("www.")
+    # 不能用 lstrip("www.")：它按字符集合去掉开头的 w 和 .，会把 wpb.shueisha.co.jp 变成 pb.…、
+    # web.gekisaka.jp 变成 eb.…，按域名的登记匹配就全部落空。
+    return urlparse(url).netloc.removeprefix("www.")
 
 
 def _is_valid_gallery_url(url: str) -> bool:
@@ -307,7 +316,9 @@ def detect_gallery_link(article_url: str) -> str:
                 return href
             # 其他站点需要含图集关键词
             href_lower = href.lower()
-            if any(hint in href_lower for hint in GALLERY_URL_HINTS):
+            extra = next((v for k, v in GALLERY_EXTRA_PATH_HINTS.items() if k in domain), ())
+            if (any(hint in href_lower for hint in GALLERY_URL_HINTS)
+                    or any(h in urlparse(href).path.lower() for h in extra)):
                 print(f"  🔗 找到图集外链 ({domain}): {href[:70]}")
                 return href
     except Exception as e:
