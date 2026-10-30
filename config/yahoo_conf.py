@@ -78,40 +78,70 @@ PROXY_URL = (
 NO_PROXY = os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or ""
 
 
-_PROXY_STATE = {"ts": 0.0, "ok": None}
+_PROXY_STATE = {"ts": 0.0, "ok": None, "url": None}
+PROXY_PORT_RANGE = range(20800, 20821)   # VeloceMac Mixed 端口漂移区间（见 ops/recover-host.sh）
+
+
+def _tcp_ok(host: str, port: int, timeout: float = 0.35) -> bool:
+    import socket
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _discover_port(host: str):
+    """当前配置端口不通时，在 20800-20820 里找活的那一个（生产靠 check_proxy 退直连，这里更进一步）。"""
+    for port in PROXY_PORT_RANGE:
+        if _tcp_ok(host, port):
+            return port
+    return None
+
+
+def proxy_url() -> str:
+    """当前应使用的代理 URL（含端口漂移自愈）；不可用时返回空串。
+
+    结果缓存 60s：失败过就扫描一次漂移区间，找到了就用它并打印一条提示。
+    """
+    import time as _t
+    from urllib.parse import urlparse as _up
+
+    if not PROXY_URL:
+        return ""
+    now = _t.time()
+    if _PROXY_STATE["ok"] is not None and now - _PROXY_STATE["ts"] < 60:
+        return _PROXY_STATE["url"] or ""
+
+    u = _up(PROXY_URL)
+    host, port = u.hostname, (u.port or 80)
+    if _tcp_ok(host, port):
+        _PROXY_STATE.update(ts=now, ok=True, url=PROXY_URL)
+        return PROXY_URL
+
+    alt = _discover_port(host)
+    if alt:
+        url = f"{u.scheme}://{host}:{alt}"
+        if alt != port:
+            print(f"  ↻ 代理端口漂移：配置 {port} 不通，实际 {alt} → 自动切换")
+        _PROXY_STATE.update(ts=now, ok=True, url=url)
+        return url
+
+    _PROXY_STATE.update(ts=now, ok=False, url=None)
+    return ""
 
 
 def proxy_alive(timeout: float = 2.0, ttl: float = 60.0) -> bool:
-    """代理端口是否可连（TCP 探测，结果缓存 ttl 秒）。
-
-    只探端口，不发请求 —— 比 requests 的三次重试快得多。供 get_proxies() 兜底。
-    """
-    import socket
-    import time as _t
-    if not PROXY_URL:
-        return False
-    now = _t.time()
-    if _PROXY_STATE["ok"] is not None and now - _PROXY_STATE["ts"] < ttl:
-        return bool(_PROXY_STATE["ok"])
-    ok = False
-    try:
-        u = urlparse(PROXY_URL)
-        s = socket.create_connection((u.hostname, u.port or 80), timeout=timeout)
-        s.close()
-        ok = True
-    except Exception:  # noqa: BLE001
-        ok = False
-    _PROXY_STATE.update(ts=now, ok=ok)
-    return ok
+    """代理是否可用（含端口漂移自愈）。保留旧签名，内部走 proxy_url()。"""
+    return bool(proxy_url())
 
 
 def get_proxies() -> dict:
     """返回 requests 格式的代理字典；代理不可达时返回空字典（自动直连）。"""
-    if not PROXY_URL:
+    url = proxy_url()
+    if not url:
         return {}
-    if not proxy_alive():
-        return {}
-    return {"http": PROXY_URL, "https": PROXY_URL}
+    return {"http": url, "https": url}
 
 
 def get_socks_proxy() -> str:
