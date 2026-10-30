@@ -316,14 +316,20 @@ _WWW_QR_JS = (
     "return '';})()")
 
 
-def _www_tab_ws():
+def _www_tab_ws(create=False):
+    """取当前 www 标签的 ws。
+
+    create=False（默认）：**不自建标签** —— 状态轮询每几秒一次，自建就会把 /explore 页
+    反复开回来（视频流烧 CPU）。没有标签就返回 None，由调用方用缓存兜底。
+    create=True：只有显式登录/二维码流程才允许新建。
+    """
     import urllib.request
     tabs = json.loads(urllib.request.urlopen(f"http://{CDP_HOST}:{CDP_PORT}/json", timeout=5).read())
     tab = next((t for t in tabs if t.get("type") == "page" and "www.xiaohongshu.com" in t.get("url", "")), None)
-    if not tab:
+    if not tab and create:
         req = urllib.request.Request(f"http://{CDP_HOST}:{CDP_PORT}/json/new?https://www.xiaohongshu.com/explore", method="PUT")
         tab = json.loads(urllib.request.urlopen(req, timeout=8).read())
-    return tab.get("webSocketDebuggerUrl")
+    return (tab or {}).get("webSocketDebuggerUrl")
 
 
 WWW_ACCOUNT_JS = (
@@ -382,12 +388,21 @@ def _save_creator_meta(acc):
         pass
 
 
-def _www_account():
-    """读当前 www 标签的登录账户：profileId(userId) + 昵称 + redId（读 __INITIAL_STATE__，零导航）。"""
+_WWW_CACHE = {"ts": 0.0, "acc": None}
+
+
+def _www_account(create=False):
+    """读当前 www 标签的登录账户：profileId(userId) + 昵称 + redId（读 __INITIAL_STATE__，零导航）。
+
+    create=False 时不新建标签（轮询用）；没有标签就返回上次缓存，避免把 /explore 反复开回来。
+    """
+    import time as _t
     from websockets.sync.client import connect
-    ws_url = _www_tab_ws()
+    if not create and _WWW_CACHE["acc"] and _t.time() - _WWW_CACHE["ts"] < 30:
+        return _WWW_CACHE["acc"]
+    ws_url = _www_tab_ws(create=create)
     if not ws_url:
-        return {"logged_in": False}
+        return _WWW_CACHE["acc"] or {"logged_in": False, "unknown": True}
     with connect(ws_url, max_size=None) as ws:
         ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
                             "params": {"returnByValue": True, "expression": WWW_ACCOUNT_JS}}))
@@ -395,7 +410,10 @@ def _www_account():
             mm = json.loads(ws.recv(timeout=10))
             if mm.get("id") == 1:
                 v = (mm.get("result") or {}).get("result", {}).get("value")
-                return v if isinstance(v, dict) else {"logged_in": False}
+                v = v if isinstance(v, dict) else {"logged_in": False}
+                if v.get("logged_in"):
+                    _WWW_CACHE.update(ts=_t.time(), acc=v)
+                return v
 
 
 def _www_logged_in():
@@ -418,10 +436,13 @@ def _www_logged_in():
 
 
 def _www_login_screenshot(wait=6):
-    """导航 explore → 优先直接读 .qrcode 的 img(canvas) 为 data URL；拿不到再整页截屏兜底。"""
+    """导航 explore → 优先直接读 .qrcode 的 img(canvas) 为 data URL；拿不到再整页截屏兜底。
+
+    仅此流程允许 create=True（显式点「登录/二维码」才会开标签）。
+    """
     import base64
     from websockets.sync.client import connect
-    ws_url = _www_tab_ws()
+    ws_url = _www_tab_ws(create=True)
     if not ws_url:
         return None
     with connect(ws_url, max_size=None) as ws:

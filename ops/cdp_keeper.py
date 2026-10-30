@@ -35,6 +35,15 @@ def _clean_tabs():
             print("[cdp_keeper] closed blank tab", flush=True)
         except Exception:  # noqa: BLE001
             pass
+    # 关掉 www 的 /explore（视频流，持续烧 CPU；用户明确不需要）
+    for t in pages:
+        u = t.get("url") or ""
+        if "www.xiaohongshu.com/explore" in u:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json/close/{t['id']}", timeout=5).read()
+                print("[cdp_keeper] closed explore tab", flush=True)
+            except Exception:  # noqa: BLE001
+                pass
     if keep and blanks:
         try:
             import websocket
