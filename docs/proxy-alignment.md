@@ -80,18 +80,25 @@ docker exec xhs supervisorctl -c /opt/ops/supervisord.conf restart webapp >/dev/
 
 并把脚本副本纳入版本库 `ops/gateway-watchdog.sh`（便于追溯）。
 
-### ④ 图片 CDN 直连：**实测后决定不做**
+### ④ 图片 CDN 直连：实测后仍不做
 
-用真实 URL + 根路径分别测直连 / 代理：
-
-| 域名 | 直连 | 代理 | 结论 |
+| 域名 | 直连（3 次取最好）| 走代理 | 判定 |
 |---|---|---|---|
-| `newsatcl-pctr.c.yimg.jp`（主力）| 200 / 2.4–5.2s | 200 / 1.6–3.0s | 都通，**代理更快**（2.47s vs 3.72s）|
-| `gravure.mantan-web.jp` | 200 / 0.79s | 200 / 2.34s | 直连更快（单站点，不值得特判）|
-| `cdn.livedoor.jp` / `img-mdpr.freetls.fastly.net` / `data.smart-flash.jp` | 000 | 404/403 | **必须代理** |
-| `lpt.c.yimg.jp` / `sns-img.xhscdn.com` / `ismcdn.jp` | DNS 无记录（宿主也查不到）| 失败 | 域名已失效 |
+| `newsatcl-pctr.c.yimg.jp`（主力，236 条配图）| 404 | 404 | 两边都可达；**真实图片 URL 实测代理更快**（2.47s vs 3.72s）|
+| `s.yimg.jp` | 404 | 404 | 都可达 |
+| `ci.xiaohongshu.com` | 403 | 403 | 都可达 |
+| `gravure.mantan-web.jp` | 200 | 200 | 都可达（直连 0.79s 更快）|
+| `cdn.deview.co.jp` | 403 | 302 | 都可达 |
+| `data.smart-flash.jp` | 403 | 403 | **都可达**（早先测到 000 是偶发）|
+| `cdn.livedoor.jp` | **000** | 404 | **必须代理**（TCP 通、TLS 握手被阻断）|
+| `img-mdpr.freetls.fastly.net` | **000** | 404 | **必须代理**（TCP 443 直接不通）|
+| `lpt.c.yimg.jp` / `sns-img.xhscdn.com` / `ismcdn.jp` | DNS 无记录 | 同样失败 | 域名已失效，与代理无关 |
+判据：`000` = 连 HTTP 响应都没有（DNS/TCP/TLS 任一环节失败）；`403`/`404` = 服务器已应答，
+说明链路可达，只是该路径不存在或无权限。
 
-→ `DIRECT_ONLY_DOMAINS` 保持只有 `realsound.jp`；下载一律显式走代理。
+**结论：8 个在用域名里 6 个直连可达，只有 2 个必须代理。**
+但仍**不把 CDN 加进 `DIRECT_ONLY_DOMAINS`**：主力 CDN（yimg）走代理更快，
+其余直连也没有明显收益，为单点收益引入特判不划算。
 
 ## 5. 执行顺序
 
