@@ -78,9 +78,38 @@ PROXY_URL = (
 NO_PROXY = os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or ""
 
 
-def get_proxies() -> dict:
-    """返回 requests 格式的代理字典，无代理时返回空字典。"""
+_PROXY_STATE = {"ts": 0.0, "ok": None}
+
+
+def proxy_alive(timeout: float = 2.0, ttl: float = 60.0) -> bool:
+    """代理端口是否可连（TCP 探测，结果缓存 ttl 秒）。
+
+    只探端口，不发请求 —— 比 requests 的三次重试快得多。供 get_proxies() 兜底。
+    """
+    import socket
+    import time as _t
     if not PROXY_URL:
+        return False
+    now = _t.time()
+    if _PROXY_STATE["ok"] is not None and now - _PROXY_STATE["ts"] < ttl:
+        return bool(_PROXY_STATE["ok"])
+    ok = False
+    try:
+        u = urlparse(PROXY_URL)
+        s = socket.create_connection((u.hostname, u.port or 80), timeout=timeout)
+        s.close()
+        ok = True
+    except Exception:  # noqa: BLE001
+        ok = False
+    _PROXY_STATE.update(ts=now, ok=ok)
+    return ok
+
+
+def get_proxies() -> dict:
+    """返回 requests 格式的代理字典；代理不可达时返回空字典（自动直连）。"""
+    if not PROXY_URL:
+        return {}
+    if not proxy_alive():
         return {}
     return {"http": PROXY_URL, "https": PROXY_URL}
 
