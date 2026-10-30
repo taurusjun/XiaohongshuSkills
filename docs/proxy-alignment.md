@@ -80,20 +80,18 @@ docker exec xhs supervisorctl -c /opt/ops/supervisord.conf restart webapp >/dev/
 
 并把脚本副本纳入版本库 `ops/gateway-watchdog.sh`（便于追溯）。
 
-### ④ 图片 CDN 直连：**本次不做**
+### ④ 图片 CDN 直连：**实测后决定不做**
 
-2026-10-30 在容器内 `curl --noproxy` 实测：
+用真实 URL + 根路径分别测直连 / 代理：
 
-| 域 | 直连 |
-|---|---|
-| `gravure.mantan-web.jp` | 200（1.7s）|
-| `cdn.deview.co.jp` | 403 |
-| `lpt.c.yimg.jp` / `sns-img.xhscdn.com` / `ismcdn.jp` / `cdn.livedoor.jp` / `data.smart-flash.jp` / `img-mdpr.freetls.fastly.net` | **000（连不上）** |
+| 域名 | 直连 | 代理 | 结论 |
+|---|---|---|---|
+| `newsatcl-pctr.c.yimg.jp`（主力）| 200 / 2.4–5.2s | 200 / 1.6–3.0s | 都通，**代理更快**（2.47s vs 3.72s）|
+| `gravure.mantan-web.jp` | 200 / 0.79s | 200 / 2.34s | 直连更快（单站点，不值得特判）|
+| `cdn.livedoor.jp` / `img-mdpr.freetls.fastly.net` / `data.smart-flash.jp` | 000 | 404/403 | **必须代理** |
+| `lpt.c.yimg.jp` / `sns-img.xhscdn.com` / `ismcdn.jp` | DNS 无记录（宿主也查不到）| 失败 | 域名已失效 |
 
-→ 这批 CDN 在容器网络里**大多必须走代理**，整体加入 `DIRECT_ONLY_DOMAINS` 会直接打断下载。
-结论：暂不加入；将来只按“真实图片 URL 实测 200 且 <2s”的域名逐个加。
-
----
+→ `DIRECT_ONLY_DOMAINS` 保持只有 `realsound.jp`；下载一律显式走代理。
 
 ## 5. 执行顺序
 
