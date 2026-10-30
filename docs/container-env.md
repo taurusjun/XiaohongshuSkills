@@ -80,6 +80,22 @@ docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d
 但仍**不把 CDN 加进 `DIRECT_ONLY_DOMAINS`**：主力 CDN（yimg）走代理更快，
 其余直连也没有明显收益，为单点收益引入特判不划算。
 
+### 2.5 AWS WAF 站点：**不要发送浏览器 UA**（2026-10-30 实测）
+
+`natalie.mu` 用 AWS WAF，规则是「**UA 与 TLS 指纹必须一致**」：
+
+| 请求 | 结果 |
+|---|---|
+| `curl` 默认 UA（`curl/8.7.1`）| 200 ✅ |
+| `requests` 默认 UA（`python-requests/x`）| 200 ✅ |
+| 残缺 Mozilla UA（`... AppleWebKit/537.36` 后面没了）| **405 / SSLError** ❌ |
+| 完整 Chrome UA（`... (KHTML, like Gecko) Chrome/131 ... Safari/537.36`）| **000 / 405** ❌ |
+| 不带 UA（`curl -H "User-Agent:"`）| 405 ❌ |
+
+结论：**浏览器 UA 配非浏览器 TLS 指纹 = 明确的 bot 信号**。
+`_scrape_natalie_gallery()` 已改为 `headers.pop("User-Agent")`，走 requests 默认 UA；
+CDP（9222 真实浏览器）仍作为 WAF 兜底。
+
 ## 3. LLM（`agent/llm.py`）
 
 | 变量 | 说明 |

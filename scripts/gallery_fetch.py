@@ -2271,6 +2271,9 @@ def _scrape_natalie_gallery(gallery_url: str) -> list[str]:
     from sqlite_db import _log_db_error
 
     headers = {**HEADERS, "Referer": "https://natalie.mu/"}
+    # natalie 的 AWS WAF 会拦「自称浏览器、但 TLS 指纹不像浏览器」的请求（实测：残缺 Mozilla UA → 405/SSLError；
+    # 去掉 UA 走 requests 默认 UA → 200）。这里显式不发送浏览器 UA。
+    headers.pop("User-Agent", None)
     p = urlparse(gallery_url)
 
     m_gid = re.search(r'/gallery/news/(\d+)', p.path)
