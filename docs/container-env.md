@@ -21,15 +21,55 @@
 ## 2. Mac/colima 专属（`docker-compose.override.mac.yml`）
 
 ```yaml
-build.args.APT_MIRROR: mirrors.cloud.tencent.com          # 境内 apt 加速（base 默认官方源）
+build.args.APT_MIRROR: mirrors.cloud.tencent.com          # 境内 apt 加速
 environment.PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-environment.HTTP_PROXY / HTTPS_PROXY: http://192.168.5.2:20809   # = VM 网关 → 宿主 Mac 的 127.0.0.1:20809
-environment.ALL_PROXY: socks5://192.168.5.2:20809
-environment.NO_PROXY / no_proxy: 127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn
-sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路由；否则 pip 走 IPv6 报 Network unreachable
+environment.NO_PROXY / no_proxy: 127.0.0.1,localhost,api.deepseek.com,news.yahoo.co.jp,yimg.jp,creator.xiaohongshu.com,www.xiaohongshu.com,open.feishu.cn
+sysctls."net.ipv6.conf.all.disable_ipv6": "1"             # 容器仅 IPv4 路由
 ```
 
-**⚠️ 代理关键点**：`scripts/.env` 里有 `HTTP_PROXY=http://127.0.0.1:20809`（宿主代理）。组件用 `python-dotenv`（`override=False`）加载它，**不会覆盖容器已有的 env**——所以上面的 override 值优先，避免容器把代理指向自身的 `127.0.0.1` 而失败。**主链路/境内服务走 `NO_PROXY` 直连。**
+### 2.1 代理**不再写进 compose env**（2026-10-30 起）
+
+原因：compose 的 `environment:` 在**容器创建时固化**，端口一漂移就必须重建容器；
+而挂载的 `scripts/.env` 可以在不重建容器的情况下更新。
+
+| 部署 | 代理写在哪 | 值 |
+|---|---|---|
+| 容器 | `xhs-docker-src/scripts/.env`（bind mount 进容器）| `http://192.168.5.2:20809`（`192.168.5.2` = VM 网关 → 宿主 `127.0.0.1:PORT`）|
+| 生产 | `~/PG/XiaohongshuSkills/scripts/.env` | `http://127.0.0.1:20809`（进程在宿主）|
+
+`config/yahoo_conf._load_env()` 在进程启动时用 `setdefault` 读入 → **容器 env 必须保持为空**，
+否则 env 会盖过文件（这就是之前改了 `.env` 却不生效的原因）。
+
+### 2.2 端口漂移的唯一处理者：`~/gateway-watchdog.sh`（launchd 每 120s）
+
+| 步骤 | 行为 |
+|---|---|
+| 1 | 探活：先读 Nayout 日志的 `mixed-port`；不通再 `seq 20800 20820` 逐个 probe |
+| 2 | 漂移 → `sed` 改生产 `.env` + `ai.hermes.gateway.plist` |
+| 3 | 漂移 → **也** `sed` 改容器 `.env`，并 `docker exec xhs supervisorctl restart webapp` |
+| 4 | 回收 9223 代理 Chrome（`--proxy-server` 是启动参数，只能重启）|
+
+**VeloceMac 的 Mixed 端口不固定**，在 20800–20820 之间漂移；不要在任何业务代码里写扫描，
+代理判定只做「有配置就返回、没有/不可用就直连」。
+
+### 2.3 重建容器的唯一正确命令
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d
+```
+
+只跑 `docker compose up -d` 会丢 `data/.venv/logs/tmp/gallery/exports` 6 个挂载（2026-10-30 踩过）。
+
+### 2.4 图片 CDN 是否可直连（2026-10-30 实测，容器内 `curl --noproxy`）
+
+| 域 | 直连结果 |
+|---|---|
+| `gravure.mantan-web.jp` | 200（1.7s）|
+| `cdn.deview.co.jp` | 403 |
+| `lpt.c.yimg.jp` / `sns-img.xhscdn.com` / `ismcdn.jp` / `cdn.livedoor.jp` / `data.smart-flash.jp` / `img-mdpr.freetls.fastly.net` | **000（连不上）** |
+
+结论：**这批 CDN 在容器网络里大多必须走代理**，不能整体加进 `DIRECT_ONLY_DOMAINS`。
+只有实测 200 的域才可加，且要按真实图片 URL 复测后再加。
 
 ## 3. LLM（`agent/llm.py`）
 
