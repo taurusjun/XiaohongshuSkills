@@ -1,6 +1,6 @@
 #!/bin/bash
 # 每日备份：VACUUM INTO 安全快照（不碰线上文件，对并发写安全）
-# 2026-10-31 起：**每天一次、只保留最新 1 份**（原为每小时 + 24/7/3 分层，占 12G）
+# 2026-10-31 起：每天一次、保留最近 7 份（原为每小时 + 24/7/3 分层，占 12G）
 set -euo pipefail
 DB="${SQLITE_PATH:-/home/user/PG/XiaohongshuSkills/data/news_dev.db}"
 DEST="${DB_BACKUP_DIR:-/backup}"
@@ -15,8 +15,8 @@ sqlite3 "$DB" "VACUUM INTO '$TMP'"
 [ "$(sqlite3 "$TMP" 'PRAGMA integrity_check;')" = "ok" ] || { echo "integrity FAIL"; rm -f "$TMP"; exit 1; }
 [ "$(sqlite3 "$TMP" 'SELECT COUNT(*) FROM news;')" -gt 0 ] || { echo "empty FAIL"; rm -f "$TMP"; exit 1; }
 
-# 只留最新 1 份
-ls -1t "$DEST/daily"/news_dev-*.db 2>/dev/null | tail -n +2 | xargs -I{} rm -f {} 2>/dev/null || true
+# 保留最近 7 份（约 2.7G；原为 1 份）
+ls -1t "$DEST/daily"/news_dev-*.db 2>/dev/null | tail -n +8 | xargs -I{} rm -f {} 2>/dev/null || true
 
 # 清掉旧的分层目录（hourly/weekly）
 rm -rf "$DEST/hourly" "$DEST/weekly" 2>/dev/null || true
