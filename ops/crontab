@@ -18,7 +18,7 @@ XHS_WEBAPI_BASE=http://127.0.0.1:5000
 # reflection-runner：生产 周日 23:00 → 容器 周一 00:00
 0 0 * * 1 cd /home/user/PG/XiaohongshuSkills && .venv/bin/python scripts/reflection_runner.py >> logs/reflection.log 2>&1
 # db-backup：生产 每小时:17 → 容器 每小时:47（错开）
-47 * * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
+47 3 * * * cd /home/user/PG/XiaohongshuSkills && /opt/ops/backup_db.sh >> logs/backup.log 2>&1
 # 每小时重启容器主 Chrome(9222)，清累积空转；keeper 自动重拉
 5 * * * * /opt/ops/restart_main_chrome.sh >> /home/user/PG/XiaohongshuSkills/logs/cdp_restart.log 2>&1
 
