@@ -71,6 +71,12 @@ def scrape(gallery_url: str) -> list[str]:
                     page_soup = BeautifulSoup(resp.text, "html.parser")
                     break
                 except Exception as e:
+                    _code = getattr(getattr(e, "response", None), "status_code", None)
+                    if _code == 429 and retry < 2:      # 限流：拉长退避，别把整篇判失败
+                        _wait = 15 * (retry + 1)
+                        print(f"  ⏳ oricon 429 限流，等待 {_wait}s 后重试（第 {retry+1} 次）")
+                        time.sleep(_wait)
+                        continue
                     if retry < 2:
                         time.sleep(3 * (retry + 1))
                         continue
