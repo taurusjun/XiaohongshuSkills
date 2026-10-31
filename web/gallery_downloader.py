@@ -104,7 +104,10 @@ def _download(key: str, gallery_url: str = ""):
                 "hochi.news", "oricon.co.jp", "natalie.mu", "mantan-web.jp",
                 "smart-flash.jp", "encount.press", "daily.co.jp",
             }
-            _skip_ig = any(d in gallery_url for d in _SKIP_IG_DETECT)
+            # oricon 的 /embed/photo/ 页正文就是 IG 帖子（不是侧栏 widget）→ 不跳过
+            _embed_ig = ("oricon.co.jp" in gallery_url and "/embed/photo/" in gallery_url)
+            _skip_ig = any(d in gallery_url for d in _SKIP_IG_DETECT) and not _embed_ig
+            _ig_files = 0
             try:
                 from gallery_fetch import _extract_instagram_permalink, _extract_instagram_shortcode
                 import requests as _rq
@@ -112,21 +115,23 @@ def _download(key: str, gallery_url: str = ""):
                 permalink = _extract_instagram_permalink(r2.text) if r2 else ''
                 sc = _extract_instagram_shortcode(r2.text) if r2 else ''
                 if permalink or sc:
-                    gallery_url = permalink if permalink else f'https://www.instagram.com/p/{sc}/'
-                    log.append(f'📸 检测到 Instagram embed: {gallery_url}')
-                    files = _dl_ig(gallery_url, d)
+                    _ig_url = permalink if permalink else f'https://www.instagram.com/p/{sc}/'
+                    log.append(f'📸 检测到 Instagram embed: {_ig_url}')
+                    files = _dl_ig(_ig_url, d)
+                    _ig_files = len(files)
                     for f in files:
                         log.append(f'  ✓ {f}')
                     image_urls = []
-                    task['images'] = [str(d / f) for f in sorted(os.listdir(d))
-                                      if not f.startswith('.') and not f.startswith('cover.')]
-                    task['status'] = 'done'
-                    task['log'] = '\n'.join(log)
-                    return
+                    if not _embed_ig:      # oricon embed：正文既有 IG 也有站点照片 → 继续抓并合并
+                        task['images'] = [str(d / f) for f in sorted(os.listdir(d))
+                                          if not f.startswith('.') and not f.startswith('cover.')]
+                        task['status'] = 'done'
+                        task['log'] = '\n'.join(log)
+                        return
             except Exception:
                 pass
             mixed_urls = scrape_gallery_images(gallery_url)
-            if not mixed_urls:
+            if not mixed_urls and not _ig_files:
                 task['status'] = 'error: 图集为空'
                 task['log'] = '\n'.join(log)
                 return
@@ -164,7 +169,7 @@ def _download(key: str, gallery_url: str = ""):
                     _proxies = _proxies_all if ("twimg.com" in url and _proxies_all) else None
                     resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
                     # 按内容定扩展名，别信 URL 后缀（站点常在 .jpg 上返回 WebP）
-                    fname = f'{i+1:03d}.{_sniff_ext(resp.content, url)}'
+                    fname = f'{i+1+_ig_files:03d}.{_sniff_ext(resp.content, url)}'
                     (d / fname).write_bytes(resp.content)
                     log.append(f'    ✓ {fname}')
                 except Exception as e2:
