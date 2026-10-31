@@ -96,6 +96,18 @@ docker compose -f docker-compose.yml -f docker-compose.override.mac.yml up -d
 `_scrape_natalie_gallery()` 已改为 `headers.pop("User-Agent")`，走 requests 默认 UA；
 CDP（9222 真实浏览器）仍作为 WAF 兜底。
 
+### 2.6 图集站点的「多入口 URL」要归一化（2026-10-31）
+
+同一个图集常有多个入口形式，抓取前必须归一化，否则解析器拿不到目标结构：
+
+| 站点 | 入口形式 | 归一化后 |
+|---|---|---|
+| oricon | `/news/<id>/embed/photo/?anc=...`（JS 渲染，无 `main_photo`）| `/news/<id>/photo/1/` |
+| tokyo-sports | 文章页 `/articles/-/<id>` → 「この記事の写真を見る」 | `/articles/photo/<id>`（单页全部照片，`div.c-article-img`，srcset 取最大宽度）|
+| natalie | `/gallery/news/<gid>/<pid>` | 原样（见 §2.5 的 UA 规则）|
+
+实现：`scripts/gallery_fetch.py::normalize_gallery_url()` 在 `scrape_gallery_images()` 入口统一调用。
+
 ## 3. LLM（`agent/llm.py`）
 
 | 变量 | 说明 |
