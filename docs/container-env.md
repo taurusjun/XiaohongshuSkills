@@ -108,6 +108,22 @@ CDP（9222 真实浏览器）仍作为 WAF 兜底。
 
 实现：`scripts/gallery_fetch.py::normalize_gallery_url()` 在 `scrape_gallery_images()` 入口统一调用。
 
+### 2.7 图集页里的 Instagram embed（2026-10-31）
+
+`web/gallery_downloader.py` 有 `_SKIP_IG_DETECT`（防侧栏 IG widget），但**不能按站点一律跳过**：
+
+| 情形 | 正确做法 |
+|---|---|
+| 普通图集站（oricon `/photo/1/`、natalie、sponichi…）| 跳过 IG 检测（侧栏 widget 多为广告/账号推荐）|
+| **embed 页**（oricon `/news/<id>/embed/photo/`）| 正文就是 IG 帖子 → **必须检测** |
+| 混合内容（站点照片 + IG 帖子）| **两者都下**，不能二选一 |
+
+实现要点：
+
+1. `_embed_ig = ("oricon.co.jp" in url and "/embed/photo/" in url)` → 为真时不跳过；
+2. 检测到 IG 后**不早退**：先 `_dl_ig()` 下 IG，再 `scrape_gallery_images()` 抓站点图，合并；
+3. 站点图片编号要**接续**（`i+1+_ig_files`），否则从 001 开始会覆盖 IG 第一张（实测 12 张变 11 张）。
+
 ## 3. LLM（`agent/llm.py`）
 
 | 变量 | 说明 |
