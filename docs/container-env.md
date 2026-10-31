@@ -124,6 +124,30 @@ CDP（9222 真实浏览器）仍作为 WAF 兜底。
 2. 检测到 IG 后**不早退**：先 `_dl_ig()` 下 IG，再 `scrape_gallery_images()` 抓站点图，合并；
 3. 站点图片编号要**接续**（`i+1+_ig_files`），否则从 001 开始会覆盖 IG 第一张（实测 12 张变 11 张）。
 
+### 2.8 `gallery_status='none'` 的排查口径（2026-10-31 全量重试后总结）
+
+一次性重试 54 篇 `none`：**43 篇找回**（ok 10 → 53），剩余 34 篇分三类，别把第三类当 bug：
+
+| 类别 | 特征 | 判定 |
+|---|---|---|
+| ① 真没有图集 | `gallery_url` 打开后只有 1 张配图；或根本没有 `<img>` 图集容器 | `none` 正确（如 sponichi 的 `/articles/xxx.html` 是文章页，页内只有 `*_view.jpg`，`class="slide"` 是导航菜单）|
+| ② 原始链接不可得 | `link` 是 `news.yahoo.co.jp/articles/<hash>`，Yahoo 页面 canonical 指回自己、不暴露原文 URL，DB 也没存原始链接 | 无法解析，`none` 可接受（要修得在**抓取阶段**把原始 URL 落库）|
+| ③ 限流/偶发 | 单次返回 429 / 超时 | 重跑可恢复；oricon 已加 429 退避（15s/30s）|
+
+**排查顺序**（省时间）：
+
+```
+1. SELECT gallery_url, link FROM news WHERE key=?       -- gallery_url 是不是文章页
+2. curl 该 URL | grep -c '<img' + 看 class 是否真是图集容器
+3. 若 link 是 Yahoo 文章页 → 直接判定「原始链接不可得」，别再折腾解析器
+```
+
+**批量重试的正确姿势**：
+
+- 用 `services.gallery --keys <40位全键> --force`（不受 `none` 持久标记影响）
+- **串行 + 间隔 3–5s**：并发或过快会触发 oricon/部分站点的 429，反而把能抓的判成失败
+- 重试后按 `gallery_status` 统计，别只看单篇日志
+
 ## 3. LLM（`agent/llm.py`）
 
 | 变量 | 说明 |
