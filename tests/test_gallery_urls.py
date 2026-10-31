@@ -25,3 +25,21 @@ def test_oricon_embed_recognized_as_gallery():
     from scripts.gallery_fetch import is_gallery_url, normalize_gallery_url
     u = normalize_gallery_url("https://www.oricon.co.jp/news/2489906/embed/photo/?anc=337")
     assert is_gallery_url(u)
+
+
+def test_domain_of_does_not_mangle_subdomains():
+    """lstrip("www.") 会按字符集吃字符：wpb.shueisha.co.jp → pb.shueisha.co.jp。"""
+    from scripts.gallery_fetch import _domain_of
+    assert _domain_of("https://wpb.shueisha.co.jp/photo/1") == "wpb.shueisha.co.jp"
+    assert _domain_of("https://www.tokyo-sports.co.jp/articles/-/1") == "tokyo-sports.co.jp"
+    assert _domain_of("https://web.gekisaka.jp/news/1") == "web.gekisaka.jp"
+
+
+def test_sponichi_extra_path_hint():
+    from scripts.gallery_fetch import GALLERY_EXTRA_PATH_HINTS
+    assert "/articles/" in GALLERY_EXTRA_PATH_HINTS.get("sponichi.co.jp", ())
+
+
+def test_wpb_shueisha_supported():
+    from scripts.gallery_fetch import GALLERY_SITES
+    assert "wpb.shueisha.co.jp" in GALLERY_SITES
