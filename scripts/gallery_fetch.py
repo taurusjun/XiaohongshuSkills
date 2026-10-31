@@ -80,6 +80,7 @@ GALLERY_SITES: dict[str, str] = {
     "full-count.jp":        ".photo_main, article",
     "nishispo.nishinippon.co.jp": "article, .contents",
     "thefirsttimes.jp":          "article, .m-gallery-list",
+    "tokyo-sports.co.jp":        ".c-article-img, article",
     "kstyle.com":           "article, body",
     "yorozoonews.jp":       "article, .article-body",
     "nikkan-spa.jp":        "article, .post-content",
@@ -2972,8 +2973,68 @@ def _extract_youtube_video_id(html_text: str) -> str:
     return ""
 
 
+def normalize_gallery_url(url: str) -> str:
+    """把图集 URL 归一化成「能抓的结构」。
+
+    oricon：Yahoo 里给的是 /news/<id>/embed/photo/?anc=...（JS 渲染的嵌入页，无 main_photo），
+    真正的照片页是 /news/<id>/photo/1/。
+    """
+    import re as _re
+    if not url:
+        return url
+    m = _re.match(r"https?://(?:www\.)?oricon\.co\.jp/news/(\d+)/embed/photo", url)
+    if m:
+        return f"https://www.oricon.co.jp/news/{m.group(1)}/photo/1/"
+    return url
+
+
+def _scrape_tokyo_sports(gallery_url: str) -> list[str]:
+    """tokyo-sports.co.jp /articles/photo/<id>：单页列出全部照片（div.c-article-img）。
+
+    图片形如 https://tokyo-sports.ismcdn.jp/mwimgs/<a>/<b>/<width>w/img_<hash>.jpg，
+    srcset 里有多个宽度 → 取最大的那个。
+    """
+    import re
+    headers = {**HEADERS, "Referer": "https://www.tokyo-sports.co.jp/"}
+    try:
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return []
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ tokyo-sports 请求失败: {e}")
+        return []
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    out, seen = [], set()
+
+    def _width(u: str) -> int:
+        m = re.search(r"/(\d+)w/", u)
+        return int(m.group(1)) if m else 0
+
+    for div in soup.select("div.c-article-img"):
+        if "c-article-img--side" in (div.get("class") or []):   # 侧栏相关文章缩略图，不是本图集
+            continue
+        img = div.find("img")
+        if not img:
+            continue
+        blob = " ".join(filter(None, [
+            img.get("srcset") or "", img.get("imagesrcset") or "", img.get("src") or ""]))
+        cands = re.findall(r"https://tokyo-sports\.ismcdn\.jp/mwimgs/[^\s,]+?\.jpg", blob)
+        if not cands:
+            continue
+        best = max(cands, key=_width)
+        m = re.search(r"img_[a-f0-9]+", best)
+        key = m.group(0) if m else best
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(best)
+    return out
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
+    gallery_url = normalize_gallery_url(gallery_url)
     domain = _domain_of(gallery_url)
 
 # 站点专用抓取器（分页图集）
@@ -3005,6 +3066,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "encount.press" in domain:
         images = _scrape_encount(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "tokyo-sports.co.jp" in domain:
+        images = _scrape_tokyo_sports(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
