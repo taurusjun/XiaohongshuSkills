@@ -130,7 +130,7 @@ CDP（9222 真实浏览器）仍作为 WAF 兜底。
 
 | 类别 | 特征 | 判定 |
 |---|---|---|
-| ① 真没有图集 | `gallery_url` 打开后只有 1 张配图；或根本没有 `<img>` 图集容器 | `none` 正确（如 sponichi 的 `/articles/xxx.html` 是文章页，页内只有 `*_view.jpg`，`class="slide"` 是导航菜单）|
+| ① 单图文章 | `gallery_url` 打开后只有 1 张配图、没有图集容器（如 sponichi `/articles/xxx.html`，页内只有 `*_view.jpg`）| **2026-11-02 起**：回退 `og:image` 当 1 张，不再报「图集为空」|
 | ② 原始链接不可得 | `link` 是 `news.yahoo.co.jp/articles/<hash>`，Yahoo 页面 canonical 指回自己、不暴露原文 URL，DB 也没存原始链接 | 无法解析，`none` 可接受（要修得在**抓取阶段**把原始 URL 落库）|
 | ③ 限流/偶发 | 单次返回 429 / 超时 | 重跑可恢复；oricon 已加 429 退避（15s/30s）|
 
