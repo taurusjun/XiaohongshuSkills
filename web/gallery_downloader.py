@@ -55,6 +55,25 @@ def get_status(key: str) -> dict:
     return {'status': 'idle', 'images': [], 'log': ''}
 
 
+def _og_single_image(gallery_url: str) -> str:
+    """单图文章回退：页面没有图集容器时，用 og:image 当唯一一张。"""
+    try:
+        import requests as _rq
+        from bs4 import BeautifulSoup
+        from config.yahoo_conf import get_proxies
+        r = _rq.get(gallery_url, headers=HEADERS, proxies=get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return ""
+        og = BeautifulSoup(r.text, "html.parser").find("meta", attrs={"property": "og:image"})
+        src = (og.get("content") if og else "") or ""
+        low = src.lower()
+        if not src or any(k in low for k in ("logo", "icon", "banner", "/common/")):
+            return ""
+        return src
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _download(key: str, gallery_url: str = ""):
     """后台下载线程"""
     task = {'status': 'running', 'log': '', 'images': []}
@@ -131,6 +150,11 @@ def _download(key: str, gallery_url: str = ""):
             except Exception:
                 pass
             mixed_urls = scrape_gallery_images(gallery_url)
+            if not mixed_urls and not _ig_files:
+                _og = _og_single_image(gallery_url)
+                if _og:
+                    log.append('ℹ️ 无图集容器 → 回退 og:image 单图')
+                    mixed_urls = [_og]
             if not mixed_urls and not _ig_files:
                 task['status'] = 'error: 图集为空'
                 task['log'] = '\n'.join(log)
