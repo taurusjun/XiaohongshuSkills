@@ -3378,6 +3378,15 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
             if len(images) >= MAX_IMAGES:
                 break
 
+        if not images:
+            # 单图文章：页面没有图集容器时，用 og:image 当唯一一张（比直接报「图集为空」有用）
+            _og = soup.find("meta", attrs={"property": "og:image"})
+            _src = (_og.get("content") if _og else "") or ""
+            _low = _src.lower()
+            if _src and not any(k in _low for k in ("logo", "icon", "banner", "/common/")):
+                images = [_to_large_url(normalize(_src), domain)]
+                print("  ℹ️ 页面无图集容器 → 回退到 og:image 单图")
+
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     except Exception as e:
