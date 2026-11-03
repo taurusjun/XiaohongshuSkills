@@ -2628,7 +2628,7 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
 .meta-select{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card-bg);color:var(--text);font-family:var(--font);outline:none}
 .meta-select:focus{border-color:var(--blue)}
 /* img strip */
-.img-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
+.img-strip{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;padding:4px 0}
 .img-strip .img-item{position:relative;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;transition:opacity .15s}
 .img-strip .img-item img{height:100px;border-radius:6px;display:block}
 .img-strip .img-item .chk{position:absolute;top:5px;left:5px;width:16px;height:16px;accent-color:var(--red);cursor:pointer}
