@@ -81,6 +81,7 @@ GALLERY_SITES: dict[str, str] = {
     "nishispo.nishinippon.co.jp": "article, .contents",
     "thefirsttimes.jp":          "article, .m-gallery-list",
     "tokyo-sports.co.jp":        ".c-article-img, article",
+    "futabasha-change.com":      "article, .c-article-img",
     "kstyle.com":           "article, body",
     "yorozoonews.jp":       "article, .article-body",
     "nikkan-spa.jp":        "article, .post-content",
@@ -136,7 +137,8 @@ GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slid
 # 个别站点的图集页路径不含上面的通用关键词，按站点单独放行（不放进 GALLERY_NO_HINT_SITES，
 # 因为这些站点的其他路径（如 sponichi 的 /kiji/ 相关文章）不是图集）。
 GALLERY_EXTRA_PATH_HINTS = {
-    "sponichi.co.jp": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html（图集在 photo-carousel）
+    "sponichi.co.jp": ("/articles/",),
+    "futabasha-change.com": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html（图集在 photo-carousel）
 }
 
 
@@ -972,9 +974,25 @@ def _scrape_realsound(gallery_url: str) -> list[str]:
     url = gallery_url
     tried_article = False
 
+    def _get(_url: str):
+        """WAF/网络偶发 → 重试 2 次（间隔 3s/6s）"""
+        import time as _t
+        for _i in range(3):
+            try:
+                _r = requests.get(_url, headers=headers, proxies=_get_proxies(), timeout=15)
+                if _r.status_code == 200:
+                    return _r
+            except Exception:  # noqa: BLE001
+                pass
+            if _i < 2:
+                _t.sleep(3 * (_i + 1))
+        return None
+
     for _ in range(MAX_IMAGES + 1):
         try:
-            r = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=15)
+            r = _get(url)
+            if r is None:
+                break
             s = BeautifulSoup(r.text, "html.parser")
 
             img = s.select_one("figure img")
@@ -3026,6 +3044,53 @@ def _scrape_tokyo_sports(gallery_url: str) -> list[str]:
     return out
 
 
+def _scrape_futabasha(gallery_url: str) -> list[str]:
+    """futabasha-change.com /articles/-/<id>?page=N —— 每页一张主图，?page=N 分页。"""
+    import re as _re
+    from urllib.parse import urlparse, urlunparse
+
+    p = urlparse(gallery_url)
+    base = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+    headers = {**HEADERS, "Referer": f"{p.scheme}://{p.netloc}/"}
+
+    def _fetch(url: str) -> str:
+        try:
+            r = requests.get(url, headers=headers, proxies=_get_proxies(), timeout=20)
+            return r.text if r.status_code == 200 else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _width(u: str) -> int:
+        m = _re.search(r"/(\d+)w", u)
+        if m:
+            return int(m.group(1))
+        m = _re.search(r"/(\d+)h", u)
+        return int(m.group(1)) * 2 if m else 0
+
+    def _collect(h: str, seen: dict) -> None:
+        for u in _re.findall(r"https://fc\.ismcdn\.jp/mwimgs/[^\s\"',]+?\.jpg", h):
+            if "/common/" in u:
+                continue
+            m = _re.search(r"img_[a-f0-9]+", u)
+            key = m.group(0) if m else u
+            if key not in seen or _width(u) > _width(seen[key]):
+                seen[key] = u
+
+    first = _fetch(f"{base}?page=1")
+    if not first:
+        return []
+    pages = {int(x) for x in _re.findall(r"[?&]page=(\d+)", first)}
+    total = min(max(pages) if pages else 1, 30)
+
+    seen: dict[str, str] = {}
+    _collect(first, seen)
+    for n in range(2, total + 1):
+        h = _fetch(f"{base}?page={n}")
+        if h:
+            _collect(h, seen)
+    return list(seen.values())
+
+
 def scrape_gallery_images(gallery_url: str) -> list[str]:
     """通用图集抓取：先用站点 CSS selector 定位容器，再提取大图"""
     gallery_url = normalize_gallery_url(gallery_url)
@@ -3060,6 +3125,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "encount.press" in domain:
         images = _scrape_encount(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "futabasha-change.com" in domain:
+        images = _scrape_futabasha(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "tokyo-sports.co.jp" in domain:
