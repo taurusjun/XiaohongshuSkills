@@ -710,6 +710,9 @@ def _produce(cand, pkg, channel, first=None):
                 if _titles_c:
                     title = _pick_title(_titles_c, cand) or title
                     _log(f"  选标题: {title}")
+            if not (title or "").strip():
+                title = (cand.get("title") or "").strip()   # 兜底：宁可弱标题也不能空
+                _log(f"  ⚠️ LLM 未产出标题，回退 DB 标题: {title[:20]}")
             # gzh：LLM 可能把正文放进 gzh_body（而非 body）→ 回退读取
             if not (body or "").strip() and (d.get("gzh_body") or "").strip():
                 body = d.get("gzh_body")

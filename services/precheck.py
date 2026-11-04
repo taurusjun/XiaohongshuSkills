@@ -119,6 +119,9 @@ def check_title(title, channel="xhs"):
     problems, warns = [], []
     if title is None:
         return problems, warns
+    if not str(title).strip():
+        problems.append("标题为空（LLM 未产出标题）")
+        return problems, warns
     is_gzh = (channel == "gzh")
     tl = title_len(title)
     limit = TITLE_MAX_GZH if is_gzh else TITLE_MAX_XHS

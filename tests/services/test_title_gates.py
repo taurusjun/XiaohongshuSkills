@@ -131,3 +131,7 @@ def test_pick_title_all_over_length_takes_closest():
     long1 = "甲" * 30
     long2 = "乙" * 22
     assert _pick_title([long1, long2], cand) == long2
+
+def test_empty_title_fails():
+    assert any("标题为空" in p for p in pc.check_title("", "xhs")[0])
+    assert any("标题为空" in p for p in pc.check_title("   ", "xhs")[0])
