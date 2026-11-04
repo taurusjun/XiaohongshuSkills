@@ -1375,6 +1375,7 @@ def _build_title_prompt(title_ja: str, content_ja: str,
 
 {TITLE_QUALITY}
 
+硬约束：标题严格 ≤20 字（含标点）。超长时先砍修饰语/虚词，**必须保留人名或团名**（不许为了省字数删掉主角名）。
 严格只输出一行JSON。格式：{{"title":"生成的中文标题"}}
 
 ===== 素材 =====
@@ -1393,8 +1394,8 @@ def generate_title_only(title_ja: str, content_ja: str,
                                  summary=summary, story_type=story_type,
                                  current_title=current_title, content_zh=content_zh,
                                  outro=outro)
-    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.7,
-                          response_format={"type": "json_object"}, thinking_disabled=True, stage="title_pass2")
+    result = call_litellm(prompt, system_prompt="只输出JSON", max_tokens=4000, temperature=0.9,
+                          response_format={"type": "json_object"}, thinking_disabled=False, stage="title_pass2")
     if not result:
         return ""
     # 占位符黑名单：prompt 模板示例值 + LLM 思考时常见垃圾占位符

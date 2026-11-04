@@ -73,3 +73,44 @@ def test_lexicon_replaces_jp_terms(tmp_path, monkeypatch):
     LX.reload()
     assert LX.replace("三款包全是别注") == "三款包全是特别定制"
     assert LX.replace("W中心站位") == "双中心站位"
+
+
+def test_check_title_only():
+    """标题门禁可单独复用（3 候选选择用）。"""
+    assert pc.check_title("她停工两年", "xhs")[0]
+    assert pc.check_title("指原莉乃把当年伤自己的规则删了", "xhs")[0] == []
+    assert any("抽象" in w for w in pc.check_title("指原莉乃把当年伤自己的规则删了", "xhs")[1])
+
+
+def test_abstract_tail_is_warn_only():
+    """只写抽象动作 → WARN，不阻断。"""
+    p, w = pc.check_title("指原莉乃把当年伤自己的规则删了", "xhs")
+    assert p == []
+    assert any("抽象" in x for x in w)
+
+
+def test_pick_title_prefers_concrete():
+    from agent.write import _pick_title
+    cand = {"title": "指原莉乃把当年伤自己的规则删了"}
+    chosen = _pick_title([
+        "指原莉乃把当年伤自己的规则删了",          # 复用 DB + 抽象
+        "指原莉乃三个团，不办总选举也不禁恋爱",    # 具体
+        "她停工两年",                              # 代词开头
+    ], cand)
+    assert chosen == "指原莉乃三个团，不办总选举也不禁恋爱"
+
+
+def test_reused_db_title():
+    from agent.write import _reused_db_title
+    assert _reused_db_title("指原莉乃把当年伤自己的规则删了",
+                            "指原莉乃把当年伤自己的规则删了")
+    assert not _reused_db_title("指原莉乃三个团，不办总选举也不禁恋爱",
+                                "指原莉乃把当年伤自己的规则删了")
+
+def test_pick_title_tie_takes_first():
+    """无数字/书名号时三条同分 → 取第一条（LLM 的画面型）。"""
+    from agent.write import _pick_title
+    cand = {"title": "指原莉乃把当年伤自己的规则删了"}
+    first = "指原莉乃删了总选举，还取消了恋爱禁止"
+    assert _pick_title([first, "指原莉乃拿制作人奖：我吃过那种苦",
+                        "指原莉乃：不让她们再排一次名次"], cand) == first

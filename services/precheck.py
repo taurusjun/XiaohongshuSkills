@@ -68,6 +68,8 @@ JP_LOANWORD_RE = re.compile(
 )
 # 正文里的日文缩写（标题门禁管不到正文）。
 JP_TERM_BODY = ("W中心", "Ｗ中心", "Wセンター", "センター", "Wキメ", "立ち位置")
+# 落点只写了一个抽象动作（删了/改了/开始了），没有具体规则/数字/对象 → WARN
+ABSTRACT_TAIL = ("删了", "改了", "换了", "变了", "没了", "做了", "开始了", "结束了")
 # 黑话锚点白名单（只用于放宽：命中即认为锚点齐全）。
 GROUP_ANCHOR_RE = re.compile(r"[\u4e00-\u9fa5A-Za-z≒≠=！!]{2,8}(?:46|48)")
 GROUP_ANCHOR_WORDS = (
@@ -76,7 +78,7 @@ GROUP_ANCHOR_WORDS = (
     "桃色幸运草", "早安少女组", "BE:FIRST", "JO1", "INI", "ME:I", "TWICE", "BTS",
 )
 
-__all__ = ["split_title_body", "check_text", "check", "main"]
+__all__ = ["split_title_body", "check_title", "check_text", "check", "main"]
 
 
 def split_title_body(text):
@@ -112,6 +114,51 @@ def _has_anchor(title):
     )
 
 
+def check_title(title, channel="xhs"):
+    """只查标题门禁（供写稿选候选/复用）。返回 (problems, warns)。"""
+    problems, warns = [], []
+    if title is None:
+        return problems, warns
+    is_gzh = (channel == "gzh")
+    tl = title_len(title)
+    limit = TITLE_MAX_GZH if is_gzh else TITLE_MAX_XHS
+    if tl > limit:
+        problems.append(f"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）")
+
+    if not is_gzh:
+        tail = _title_tail(title)
+        if PRONOUN_HEAD_RE.match(title):
+            problems.append(f"标题以「{title[:2]}」开头（零身份锚点）：改成人名/团名/事件主语")
+        if SHELL_VERB_RE.search(tail):
+            problems.append(
+                f"标题落点是空壳（{tail}）：说了「发了什么类别」，没说是什么样子。"
+                f"换成具体画面（「回了个星星眼」）或换有画面的一侧")
+        elif tail.endswith(SHELL_BARE):
+            problems.append(f"标题落点是空壳（{tail}）：发文/发声后面没有宾语，补实际内容或换落点")
+        else:
+            _hit = next((w for w in SHELL_TAIL_WARN if tail.endswith(w)), None)
+            if _hit:
+                warns.append(f"标题落点是泛反应词「{_hit}」（{title[:16]}）：确认前一分句已给出具体内容")
+            _abs = next((w for w in ABSTRACT_TAIL if tail.endswith(w)), None)
+            if _abs:
+                warns.append(
+                    f"标题落点偏抽象（…{_abs}）：补一个具体规则/数字/对象，别只写动作（{title[:16]}）")
+        _jarg = [w for w in JARGON_TITLE if w in title]
+        if _jarg:
+            if not _has_anchor(title):
+                problems.append(
+                    f"标题堆圈内黑话（{'/'.join(_jarg)}）且零团名/全名/作品名锚点"
+                    f"（{title[:18]}）：把团名或全名放进标题，术语最多留一个")
+            elif len(_jarg) >= 2:
+                warns.append(f"标题含 {len(_jarg)} 个圈内黑话（{'/'.join(_jarg)}）：确认只留最必要的一个")
+    _loan = JP_LOANWORD_RE.findall(title)
+    if _loan:
+        problems.append(
+            f"标题用了日文商品词「{'/'.join(sorted(set(_loan)))}」（{title[:18]}）：换中文表达"
+            f"（别注→特别定制、受注→接单、完売→售罄、入荷→到货）")
+    return problems, warns
+
+
 def check_text(text, spec, channel="xhs"):
     """对草稿文本做机械门禁检查（按渠道），返回结果 dict。"""
     title, body = split_title_body(text)
@@ -124,42 +171,9 @@ def check_text(text, spec, channel="xhs"):
         problems.append(f"标题残留编号前缀: {title[:20]}")
 
     if title is not None:
-        tl = title_len(title)
-        limit = TITLE_MAX_GZH if is_gzh else TITLE_MAX_XHS
-        if tl > limit:
-            problems.append(f"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）")
-
-        if not is_gzh:
-            tail = _title_tail(title)
-            if PRONOUN_HEAD_RE.match(title):
-                problems.append(
-                    f"标题以「{title[:2]}」开头（零身份锚点）：改成人名/团名/事件主语")
-            if SHELL_VERB_RE.search(tail):
-                problems.append(
-                    f"标题落点是空壳（{tail}）：说了「发了什么类别」，没说是什么样子。"
-                    f"换成具体画面（「回了个星星眼」）或换有画面的一侧")
-            elif tail.endswith(SHELL_BARE):
-                problems.append(
-                    f"标题落点是空壳（{tail}）：发文/发声后面没有宾语，补实际内容或换落点")
-            else:
-                _hit = next((w for w in SHELL_TAIL_WARN if tail.endswith(w)), None)
-                if _hit:
-                    warns.append(
-                        f"标题落点是泛反应词「{_hit}」（{title[:16]}）：确认前一分句已给出具体内容")
-            _jarg = [w for w in JARGON_TITLE if w in title]
-            if _jarg:
-                if not _has_anchor(title):
-                    problems.append(
-                        f"标题堆圈内黑话（{'/'.join(_jarg)}）且零团名/全名/作品名锚点"
-                        f"（{title[:18]}）：把团名或全名放进标题，术语最多留一个")
-                elif len(_jarg) >= 2:
-                    warns.append(
-                        f"标题含 {len(_jarg)} 个圈内黑话（{'/'.join(_jarg)}）：确认只留最必要的一个")
-        _loan = JP_LOANWORD_RE.findall(title)
-        if _loan:
-            problems.append(
-                f"标题用了日文商品词「{'/'.join(sorted(set(_loan)))}」（{title[:18]}）：换中文表达"
-                f"（别注→特别定制、受注→接单、完売→售罄、入荷→到货）")
+        _tp, _tw = check_title(title, channel)
+        problems += _tp
+        warns += _tw
 
     body_len = content_len(body)
     _jp_body = [w for w in JP_TERM_BODY if w in body]

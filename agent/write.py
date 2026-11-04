@@ -19,9 +19,11 @@ from services.word_count import content_len  # noqa: E402
 SKILL_FILE = "skills/creative/xhs-write-publish-flow/SKILL.md"
 REVIEW_PROMPT = "skills/creative/xhs-write-publish-flow/reviews/chinese-review-prompt.md"
 SYS = ('你是小红书日娱写稿助手。只输出严格 JSON 对象：'
-       '{"key": "<40位key>", "channel": "xhs|gzh|both", "title": "...", "body": "...", '
+       '{"key": "<40位key>", "channel": "xhs|gzh|both", '
+       '"titles": ["画面型标题", "对位型标题", "引语型标题"], "body": "...", '
        '"gzh_title": "...", "gzh_body": "..."}。'
-       'channel=both 时 title/body 为 xhs 版、gzh_title/gzh_body 为公众号版；'
+       'xhs 必须给 titles 三条候选：同一篇的三种不同落点（不是同义改写），程序会按门禁自动选一条；'
+       'channel=both 时 body 为 xhs 版、gzh_title/gzh_body 为公众号版；'
        'channel 非 both 时 gzh_title/gzh_body 留空。不要任何多余文字。')
 
 __all__ = ["pick_candidates", "prepare_package", "compose", "score_content", "write_one",
@@ -250,6 +252,41 @@ def prepare_package(cand):
             "spec": {"fmt": cand.get("format"), "lf": cand.get("is_long_form"), "ja": len(cj)}}
 
 
+def _reused_db_title(title, db_title):
+    """标题是否几乎照搬 DB 标题（DB 标题只是线索，照搬会继承它的弱落点）。"""
+    import difflib
+    a, b = (title or "").strip(), (db_title or "").strip()
+    if not a or not b:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.85
+
+
+def _pick_title(candidates, cand):
+    """从 3 条候选里按「门禁全过 + 具体性最高 + 不复用 DB 标题」选一条。"""
+    best, best_score = "", -10
+    for t in candidates or []:
+        t = (t or "").strip()
+        if not t:
+            continue
+        problems, _warns = _pc.check_title(t, "xhs")
+        if problems:
+            continue
+        score = 0
+        if re.search(r"[0-9０-９]", t):
+            score += 2
+        if any(q in t for q in ("《", "「", "『")):
+            score += 2
+        if re.search(r"[0-9０-９]\s*(万|亿|人|组|次|年|天|岁|cm|kg|小时)", t):
+            score += 1
+        if _reused_db_title(t, cand.get("title")):
+            score -= 2
+        if score > best_score:
+            best, best_score = t, score
+    if not best and candidates:
+        best = (candidates[0] or "").strip()      # 全不合格 → 交给 precheck 反馈
+    return best
+
+
 def _compose_msgs(cand, pkg, force_channel=None):
     """构建首轮 [system, user（写作包）]。"""
     msgs = [{"role": "system", "content": SYS + "\n\n" + _read("agent/prompts/write.md")}]
@@ -261,7 +298,9 @@ def _compose_msgs(cand, pkg, force_channel=None):
                  if _conf == "low" else "")
         chan_note = (_lead + f"机械预判渠道：{pkg.get('pre_channel', 'xhs')}（可覆盖；拿不准沿用它）。"
                      "若同一素材 xhs 与 gzh 都合适，可选 channel=\"both\" 并同时给 gzh_title/gzh_body。")
-    user = (f"素材 key={cand['key']} title={cand.get('title')} fmt={cand.get('format')} "
+    user = (f"素材 key={cand['key']} db_title={cand.get('title')}"
+            "（仅线索：可能是弱标题/张冠李戴，禁止直接复用或只做同义改写） "
+            f"fmt={cand.get('format')} "
             f"lf={cand.get('is_long_form')}；长度要求：{pkg['target']}。\n{chan_note}\n"
             "全中文（假名≤5），行内「、」≤1，标题≤20字。（同事件素材可合并；同人物历史不合并正文。）\n\n"
             f"=== content_ja（原文全文）===\n{pkg['content_ja']}")
@@ -657,11 +696,15 @@ def _produce(cand, pkg, channel, first=None):
             d, _ = compose(cand, pkg, force_channel=channel, history=_msgs_in)
             history = _msgs_in + [{"role": "assistant", "content": json.dumps(d, ensure_ascii=False)}]
             _bt = (d.get("body") or d.get("gzh_body") or "")
-            _log(f"  撰写完成 {int(_t.time() - _c0)}s | title={(d.get('title') or d.get('gzh_title') or '')[:18]} "
-                 f"body={len(_bt)}字")
+            _log(f"  撰写完成 {int(_t.time() - _c0)}s | 候选={len(d.get('titles') or [])} body={len(_bt)}字")
             if d.get("related"):
                 llm_related = d.get("related")
             title, body = d.get("title") or "", d.get("body") or ""
+            if channel != "gzh":
+                _titles_c = [t for t in (d.get("titles") or []) if isinstance(t, str) and t.strip()]
+                if _titles_c:
+                    title = _pick_title(_titles_c, cand) or title
+                    _log(f"  选标题: {title}")
             # gzh：LLM 可能把正文放进 gzh_body（而非 body）→ 回退读取
             if not (body or "").strip() and (d.get("gzh_body") or "").strip():
                 body = d.get("gzh_body")
@@ -697,6 +740,9 @@ def _produce(cand, pkg, channel, first=None):
             pass
         if channel == "gzh":
             gate += _gz.check(title, body)
+        if attempts < 3 and _reused_db_title(title, cand.get("title")):
+            gate.append("标题几乎照搬 DB 标题：DB 标题只是线索，必须基于原文重选落点"
+                        "（规则名/数字/原话/作品名），不要只做同义改写")
         mech["problems"] = gate
         if gate:
             _log(f"  ✗ 门禁未过: {'; '.join(gate)[:120]}")

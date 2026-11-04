@@ -107,6 +107,8 @@ SHELL_TAIL_WARN = (
     "炸了", "引热议", "引发热议", "引关注", "引起关注", "上热搜", "有反应",
     "反应", "回应", "表态",
 )
+# 落点只写抽象动作（删了/改了/开始了），没有具体规则/数字/对象 → WARN
+ABSTRACT_TAIL = ("删了", "改了", "换了", "变了", "没了", "做了", "开始了", "结束了")
 
 
 def body_of(path):
@@ -189,6 +191,11 @@ def check(path, spec):
             if hit_warn:
                 warns.append(
                     f"标题落点是泛反应词「{hit_warn}」（{title[:16]}）：确认前一分句已给出具体内容，否则读者不知道发生了什么"
+                )
+            _abs = next((w for w in ABSTRACT_TAIL if tail.endswith(w)), None)
+            if _abs:
+                warns.append(
+                    f"标题落点偏抽象（…{_abs}）：补一个具体规则/数字/对象，别只写动作（{title[:16]}）"
                 )
 
     # 10/31：圈内黑话门禁。黑话本身不是错，错的是「黑话当锚点用」——

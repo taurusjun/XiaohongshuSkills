@@ -40,6 +40,7 @@ from batch_precheck import (  # noqa: E402
     JARGON_TITLE,
     JP_LOANWORD_RE,
     SHELL_BARE,
+    ABSTRACT_TAIL,
     SHELL_TAIL_WARN,
     SHELL_VERB_RE,
 )
@@ -103,6 +104,9 @@ def judge(title):
     hit = next((w for w in SHELL_TAIL_WARN if tail.endswith(w)), None)
     if hit:
         return "WARN", f"泛反应词「{hit}」"
+    hit_abs = next((w for w in ABSTRACT_TAIL if tail.endswith(w)), None)
+    if hit_abs:
+        return "WARN", f"抽象落点「{hit_abs}」"
     if len(jarg) >= 2:
         return "WARN", f"黑话≥2（{'/'.join(jarg)}）"
     return "PASS", ""
@@ -115,6 +119,7 @@ GATE_NAMES = {
     "jargon": "圈内黑话",
     "loan": "日文商品词",
     "warn": "泛反应词",
+    "concrete": "抽象落点",
 }
 
 
@@ -137,6 +142,7 @@ def main():
             else "length" if "字数" in why
             else "jargon" if "黑话" in why
             else "loan" if "日文商品词" in why
+            else "concrete" if "抽象" in why
             else "warn"
         )
         if args.gate != "all" and key != args.gate:
