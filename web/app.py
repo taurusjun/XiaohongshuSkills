@@ -52,6 +52,8 @@ from web.services_views import services_bp
 app.register_blueprint(services_bp)
 from web.feedback_views import feedback_bp
 app.register_blueprint(feedback_bp)
+from web.dualrun_views import dualrun_bp
+app.register_blueprint(dualrun_bp)
 
 
 @app.after_request
