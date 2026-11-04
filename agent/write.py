@@ -285,7 +285,10 @@ def _pick_title(candidates, cand):
         if score > best_score:
             best, best_score = t, score
     if not best and candidates:
-        best = (candidates[0] or "").strip()      # 全不合格 → 交给 precheck 反馈
+        # 全不合格 → 优先超字数最少的一条（下一轮只需局部修剪，不用整条重写）
+        _valid = [(t or "").strip() for t in candidates if (t or "").strip()]
+        if _valid:
+            best = min(_valid, key=lambda t: max(0, _pc.title_len(t) - 20))
     return best
 
 

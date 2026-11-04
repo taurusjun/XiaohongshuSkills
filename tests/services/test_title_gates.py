@@ -123,3 +123,11 @@ def test_pick_title_prefers_contrast():
     contrast = "指原莉乃不办总选举，却保留了恋爱自由"
     plain = "指原莉乃在东京巨蛋领奖"
     assert _pick_title([plain, contrast], cand) == contrast
+
+def test_pick_title_all_over_length_takes_closest():
+    """三条都超字数 → 选超得最少的一条（下一轮只修剪）。"""
+    from agent.write import _pick_title
+    cand = {"title": "旧标题"}
+    long1 = "甲" * 30
+    long2 = "乙" * 22
+    assert _pick_title([long1, long2], cand) == long2
