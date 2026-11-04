@@ -46,6 +46,8 @@ p{{text-align:center;font-size:18px}}</style></head>
 app = Flask(__name__)
 from web.wechat_views import wechat_bp
 app.register_blueprint(wechat_bp)
+from web.dualrun_views import dualrun_bp
+app.register_blueprint(dualrun_bp)
 init_db()
 
 @app.before_request
