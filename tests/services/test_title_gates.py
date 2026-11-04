@@ -114,3 +114,12 @@ def test_pick_title_tie_takes_first():
     first = "指原莉乃删了总选举，还取消了恋爱禁止"
     assert _pick_title([first, "指原莉乃拿制作人奖：我吃过那种苦",
                         "指原莉乃：不让她们再排一次名次"], cand) == first
+
+
+def test_pick_title_prefers_contrast():
+    """对比/争议角度优先于纯画面/纯信息（关键词加分）。"""
+    from agent.write import _pick_title
+    cand = {"title": "指原莉乃把当年伤自己的规则删了"}
+    contrast = "指原莉乃不办总选举，却保留了恋爱自由"
+    plain = "指原莉乃在东京巨蛋领奖"
+    assert _pick_title([plain, contrast], cand) == contrast

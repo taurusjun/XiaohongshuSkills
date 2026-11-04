@@ -278,6 +278,8 @@ def _pick_title(candidates, cand):
             score += 2
         if re.search(r"[0-9０-９]\s*(万|亿|人|组|次|年|天|岁|cm|kg|小时)", t):
             score += 1
+        if re.search(r"却|但|反而|一边|另一边|反差|对比|争议|VS|vs", t):
+            score += 1          # 对比/争议优先（同分时靠候选顺序，对位型排第 1）
         if _reused_db_title(t, cand.get("title")):
             score -= 2
         if score > best_score:
