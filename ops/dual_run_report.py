@@ -10,6 +10,7 @@
 """
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import sqlite3
@@ -23,10 +24,23 @@ from services.word_count import content_len, title_len  # noqa: E402
 PROD_DB = os.path.expanduser("~/PG/XiaohongshuSkills/data/news_dev.db")
 CONT_DB = os.path.expanduser("~/PG/xhs-storage/data/news_dev.db")
 OUT_DIR = os.path.expanduser("~/PG/xhs-storage/logs/dual_run")
+BATCH_DIR = os.path.expanduser("~/PG/xhs-storage/data/write_batches")
 
 KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 CONTRAST_RE = re.compile(r"却|但|反而|一边|另一边|反差|对比|争议|VS|vs")
 DIMS = ("爆发点", "情绪价值", "信息增量", "内容深度", "标题质量")
+
+
+def batch_keys(date):
+    """容器当日实际处理的 key（write_batches manifest；没有则返回 None）。"""
+    p = Path(BATCH_DIR) / f"{date}.json"
+    if not p.is_file():
+        return None
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return [x["key"] for x in (d.get("processed") or []) if x.get("ok", True)]
 
 
 def connect(path):
@@ -35,16 +49,28 @@ def connect(path):
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
 
-def drafts(db, date):
-    """当日成稿：rewritten_content 非空，且当天有更新。"""
+def drafts(db, date, keys=None):
+    """当日成稿。
+
+    keys 非空：按 batch manifest 精确取（容器）；
+    否则：按 updated_at 取（生产；含 related_keys 更新，仅作参考）。
+    """
     if db is None:
         return {}
+    cols = ("SELECT key, COALESCE(rewritten_title,''), COALESCE(rewritten_content,''), "
+            "COALESCE(content_ja,''), COALESCE(format,''), COALESCE(publish_mode,'') FROM news ")
+    if keys:
+        out = {}
+        for i in range(0, len(keys), 400):
+            chunk = keys[i:i + 400]
+            cur = db.execute(cols + "WHERE key IN (%s)" % ",".join("?" * len(chunk)), chunk)
+            for r in cur:
+                if r[2]:
+                    out[r[0]] = {"title": r[1], "body": r[2], "ja": r[3], "fmt": r[4], "mode": r[5]}
+        return out
     cur = db.execute(
-        """SELECT key, COALESCE(rewritten_title,''), COALESCE(rewritten_content,''),
-                  COALESCE(content_ja,''), COALESCE(format,''), COALESCE(publish_mode,'')
-           FROM news
-           WHERE COALESCE(rewritten_content,'') <> ''
-             AND date(COALESCE(updated_at, created_at)) = ?""", (date,))
+        cols + "WHERE COALESCE(rewritten_content,'') <> '' "
+        "AND date(COALESCE(updated_at, created_at)) = ?", (date,))
     return {r[0]: {"title": r[1], "body": r[2], "ja": r[3], "fmt": r[4], "mode": r[5]}
             for r in cur}
 
@@ -109,7 +135,8 @@ def fmt_pct(a, b):
 def report(date):
     prod = connect(PROD_DB)
     cont = connect(CONT_DB)
-    pd, cd = drafts(prod, date), drafts(cont, date)
+    ckeys = batch_keys(date)
+    pd, cd = drafts(prod, date), drafts(cont, date, ckeys)
     pset, cset = set(pd), set(cd)
     both = pset & cset
 
@@ -122,6 +149,9 @@ def report(date):
               f"| 两边都写 | {len(both)} | — |",
               f"| 仅生产写 | {len(pset - cset)} | — |",
               f"| 仅容器写 | — | {len(cset - pset)} |",
+              "",
+              "> 容器口径 = `write_batches/<date>.json`（实际处理清单）；"
+              "生产无 manifest，按 `updated_at` 统计，会含 related_keys 更新。",
               ""]
 
     # 标题
