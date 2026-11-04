@@ -2,6 +2,8 @@
 
 - **xhs**：标题≤20；story lf=1 正文≥800 且 `##`≥2；news 无 `##`；无 `###`；顿号行 0；
   假名≤5；日文新字体 FAIL（嶋/壱 降级 WARN）；密度≥30%。
+- **标题（10/31 新增）**：代词开头 / 空壳落点 / 黑话无锚点 / 日文商品词 → FAIL；
+  泛反应词 / 黑话≥2 → WARN；gzh 只套日文商品词与正文日文缩写。
 - **gzh**：标题≤30；**不套** 30% 密度门、不套 story/news 结构门（公众号长文排版自由）；
   其余（顿号/假名/新字体）照旧。对齐 `xhs-content-review`「gzh 稿不按 xhs 5 维/密度门」。
 差异：不再 shell out 调 xhs_word_count.py，直接调 services.word_count。
@@ -45,6 +47,35 @@ KANA_MAX = _TH_X.get("kana_max", 5)
 DENSITY_MIN = _TH_X.get("density_min", 30)
 KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 
+# ── 10/31 标题门禁（迁移自 skill batch_precheck.py，2026-11-04）──
+# 空壳落点：把差异化信息写成「证据动词+类别名词」，读者拿不到画面。
+# 精度优先：只拦「发/晒/回/贴了+表情类名词」与「发文/发声（无宾语）」；
+# 刻意不拦「一句台词，两种表情」这类把空壳词当对比极的好标题。
+PRONOUN_HEAD_RE = re.compile(r"^[「『（(\s]*(他们|她们|他|她|它)")
+SHELL_VERB_RE = re.compile(
+    r"(也|还|又|只|就)?(发|晒|回|贴|po|PO)(了|了个|了一张|了一段)?(表情包|表情|动态|照片|图)$"
+)
+SHELL_BARE = ("发文", "发声")
+SHELL_TAIL_WARN = (
+    "炸了", "引热议", "引发热议", "引关注", "引起关注", "上热搜", "有反应",
+    "反应", "回应", "表态",
+)
+# 圈内黑话：术语是压缩信息，不是「不需要解释的信息」；无锚点时 FAIL。
+JARGON_TITLE = ("Under", "W中心", "Ｗ中心", "Wセンター", "新单", "表题曲", "标题曲", "选拔曲", "期生曲")
+# 日文商品/流通词直接当中文名词用（中文里不成立，误伤面≈0）。
+JP_LOANWORD_RE = re.compile(
+    r"(?<![特区分别级个识])别注|別注|受注|完売|完卖|入荷|予約|预约受付|数量限定|别色|別色|别注品|新作发表"
+)
+# 正文里的日文缩写（标题门禁管不到正文）。
+JP_TERM_BODY = ("W中心", "Ｗ中心", "Wセンター", "センター", "Wキメ", "立ち位置")
+# 黑话锚点白名单（只用于放宽：命中即认为锚点齐全）。
+GROUP_ANCHOR_RE = re.compile(r"[\u4e00-\u9fa5A-Za-z≒≠=！!]{2,8}(?:46|48)")
+GROUP_ANCHOR_WORDS = (
+    "乃木坂", "樱坂", "欅坂", "榉坂", "日向坂", "Snow Man", "SixTONES", "浪花男子",
+    "なにわ男子", "timelesz", "King & Prince", "Kis-My-Ft2", "≒JOY", "≠ME", "=LOVE",
+    "桃色幸运草", "早安少女组", "BE:FIRST", "JO1", "INI", "ME:I", "TWICE", "BTS",
+)
+
 __all__ = ["split_title_body", "check_text", "check", "main"]
 
 
@@ -65,6 +96,22 @@ def body_of(path):
         return split_title_body(f.read())
 
 
+def _title_tail(title):
+    """末分句（按逗号/分号/冒号切），去掉尾部标点。与 skill batch_precheck 同口径。"""
+    clauses = [c.strip() for c in re.split(r"[，,；;：:]", title or "") if c.strip()]
+    tail = clauses[-1] if clauses else (title or "")
+    return tail.strip(" 　。！？!?…~～」』）)】")
+
+
+def _has_anchor(title):
+    """标题本身的锚点：书名号 / xx46·xx48 / 团名白名单（无 plan name 时的口径）。"""
+    return (
+        "《" in title
+        or bool(GROUP_ANCHOR_RE.search(title))
+        or any(w in title for w in GROUP_ANCHOR_WORDS)
+    )
+
+
 def check_text(text, spec, channel="xhs"):
     """对草稿文本做机械门禁检查（按渠道），返回结果 dict。"""
     title, body = split_title_body(text)
@@ -82,7 +129,44 @@ def check_text(text, spec, channel="xhs"):
         if tl > limit:
             problems.append(f"标题 {tl} 字 > {limit}（{'公众号' if is_gzh else 'news/story'}上限；就地改短到 <={limit}）")
 
+        if not is_gzh:
+            tail = _title_tail(title)
+            if PRONOUN_HEAD_RE.match(title):
+                problems.append(
+                    f"标题以「{title[:2]}」开头（零身份锚点）：改成人名/团名/事件主语")
+            if SHELL_VERB_RE.search(tail):
+                problems.append(
+                    f"标题落点是空壳（{tail}）：说了「发了什么类别」，没说是什么样子。"
+                    f"换成具体画面（「回了个星星眼」）或换有画面的一侧")
+            elif tail.endswith(SHELL_BARE):
+                problems.append(
+                    f"标题落点是空壳（{tail}）：发文/发声后面没有宾语，补实际内容或换落点")
+            else:
+                _hit = next((w for w in SHELL_TAIL_WARN if tail.endswith(w)), None)
+                if _hit:
+                    warns.append(
+                        f"标题落点是泛反应词「{_hit}」（{title[:16]}）：确认前一分句已给出具体内容")
+            _jarg = [w for w in JARGON_TITLE if w in title]
+            if _jarg:
+                if not _has_anchor(title):
+                    problems.append(
+                        f"标题堆圈内黑话（{'/'.join(_jarg)}）且零团名/全名/作品名锚点"
+                        f"（{title[:18]}）：把团名或全名放进标题，术语最多留一个")
+                elif len(_jarg) >= 2:
+                    warns.append(
+                        f"标题含 {len(_jarg)} 个圈内黑话（{'/'.join(_jarg)}）：确认只留最必要的一个")
+        _loan = JP_LOANWORD_RE.findall(title)
+        if _loan:
+            problems.append(
+                f"标题用了日文商品词「{'/'.join(sorted(set(_loan)))}」（{title[:18]}）：换中文表达"
+                f"（别注→特别定制、受注→接单、完売→售罄、入荷→到货）")
+
     body_len = content_len(body)
+    _jp_body = [w for w in JP_TERM_BODY if w in body]
+    if _jp_body:
+        problems.append(
+            f"正文出现日文缩写「{'/'.join(sorted(set(_jp_body)))}」：读者看不懂，改成中文"
+            f"（W中心→双中心、センター→中心/中间位）")
     h2 = [l for l in body.split("\n") if l.startswith("## ")]
     h3 = [l for l in body.split("\n") if l.startswith("###")]
 

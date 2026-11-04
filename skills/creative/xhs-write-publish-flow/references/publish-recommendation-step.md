@@ -10,12 +10,58 @@
 3. **数据总览**：断更天数、本月每日发布量、候选池规模、当前待发队列条数。
 4. **落库确认**：5 篇 `xhs_pub_time` + `publish_xhs=1` 已验证。
 
+### 0.1 「跑完了吗」只认库，不认 cron 的 `last_status=ok`
+
+定时写稿任务的 `last_status=ok` 只说明 agent 那一轮正常结束，**不保证管道最后一步落库**——工具轮次用尽时它会写完稿、出完推荐、然后在排期前停住，报告里自己写「排期未落库」。
+被问「写稿/排期跑完了吗」或自己验收时，一律查库三件套，别读 cron 状态下结论：
+
+```bash
+DB=~/PG/XiaohongshuSkills/data/news_dev.db
+# 1) 当日成稿数 + 是否 preselected=1 / publish_xhs=0
+sqlite3 "$DB" "SELECT count(*) FROM news WHERE date(created_at)=date('now','localtime') AND COALESCE(rewritten_content,'')!=''"
+# 2) 明天的排期是否真写进去了（0 行 = 最后一步没跑）
+sqlite3 "$DB" "SELECT substr(key,1,12), xhs_pub_time, publish_xhs FROM news WHERE xhs_pub_time LIKE '<明天日期>%' ORDER BY xhs_pub_time"
+# 3) 正文非空 + 图集张数
+ls ~/.cache/xhs_images/<40位key> | wc -l
+```
+
+四项一次跑完用现成脚本：`python3 scripts/verify_scheduled.py`（默认校验 JST 明天的排期，`--keys` 可只查指定篇；images=1 视为可疑并打印出来）。
+
+补跑的姿势：`pub_history_gate.py --strict --keys ...`（exit 0）→ `pub_time_plan.py --keys ... --apply` → 核 `xhs_pub_time`/`publish_xhs`/图集张数 → 汇报。全程仍禁止 `POST /api/trigger-publish`。
+
+### 0.2 排期前逐篇核「标题写的是不是正文那个人」
+
+一条素材常同时讲两个人（主角与陪衬、当事人与出席者），标题若挑了配角、正文主线却是另一个，用户一眼判定不合格。
+排期前对 5 篇各做一次：`GET /api/news/<key>` 读 `title` 与前两段，标题里的人必须是正文前两段的主语；不一致就改标题（`sqlite3 UPDATE news SET title=?`），改的是标签不是正文，不必重跑 renwei。
+多主角素材的写法：标题给正文主线那个人 + 事件，另一位放正文后段当背景。
+
 ## 1.5 ⚠️ 直接查 DB 时 `publish_xhs` 是整数 1/0，不是 `'published'`（10/09 实测）
 
 `'published'` 只是 **API 的枚举别名**（`/api/news?publish_xhs=published` 服务端映射成 `publish_xhs=1`）。
 **用 sqlite3 直接查历史数据/人物面板时必须写 `publish_xhs=1 AND COALESCE(publish_time,'')!=''`**；
 写成 `publish_xhs='published'` 会**静默返回 0 行**——10/09 阶段 6 的人物历史面板因此全部 n=0（川荣李奈/道枝/乃木坂… 全查不到），白跑一轮。
-另外，判断「已发布」不能只看 `publish_xhs=1`（**定时队列也是 1**），必须叠加 `publish_time` 非空。
+另外，判断「已发布」不能只看 `publish_xhs=1`（**定时队列也是 1**）。
+
+## 1.7 ⚠️ `publish_time` 在「排期时」就被写入，不是发布时刻（10/29 实测）
+
+10/29 04:00 查库时出现两个互相矛盾的读数，根因是这条：
+
+```
+xhs_pub_time=2026-10-29 08:55  publish_time=2026-10-28 21:34  publish_xhs=1   # 还没到点
+max(publish_time) = 2026-10-28 21:54                                          # 看着像「最后一条已发」
+```
+
+即：**队列条在排期那一刻就把 `publish_time` 填成排期时刻**，`xhs_views` 仍为 0。于是 §1.5 那条「`publish_xhs=1 AND publish_time!=''` = 已发布」在本库**不成立**，照它算会把今天 5 条未发队列当成「刚发过」，得出「断更 0 天、刚发 5 条」的假结论。
+
+**正确口径（三条各管一件事）：**
+
+| 要查什么 | 用哪个字段 |
+|---|---|
+| 待发队列条数（已排期未到点） | `publish_xhs=1 AND status='active' AND COALESCE(xhs_pub_time,'')!=''`，再按 `xhs_pub_time > now` 分「未来/今日在途」 |
+| 真实已发布 | `coalesce(xhs_views,0)>0`（最稳），或 `publish_time` 与 `xhs_pub_time` 同日同刻且 `xhs_views>0` |
+| 断更天数 | 以 `max(publish_time) WHERE coalesce(xhs_views,0)>0` 为准，不要用全表 `max(publish_time)` |
+
+**`publish_xhs=1 AND publish_time=''` 查「待发」会返回 0 行**（本库常态），看到 0 不要判「队列空/管道停摆」，改查 `xhs_pub_time`。人物历史面板（`n / 中位 / 峰值 / 最近3条`）用 `publish_xhs=1 AND COALESCE(publish_time,'')!=''` 是安全的——它要的是「有排期记录」的池子，只是别把最新一条的日期当「刚发过」。
 
 ## 1.6 候选池/节奏盘点（本节 SQL 与上面 §1 同源）
 
@@ -66,11 +112,16 @@ python3 pub_time_plan.py --keys <K1>,<K2>,<K3>,<K4>,<K5> --apply
 - `--apply` 只做 `UPDATE news SET xhs_pub_time=?, publish_xhs=1 WHERE key=?`，
   写后自动读回校验；`--no-publish-flag` 则只写 `xhs_pub_time`。
   **不碰** `publish_mode` / `publish_method` / `related_keys` / `rewritten_*`。
-- ⚠️ **`--apply` 不会真的踢到图集下载（10/26 实测）**：脚本尾巴的图集环节 5 条全 skip，
-  报 `URL can't contain control characters. "/api/gallery-download/('0f9fcd9e…"`（把 tuple 的 repr 拼进了 URL）；
-  且 `--apply` 走 sqlite UPDATE，本来就不经过 `PUT /api/news` 那条自动起线程的路径。
-  **排期后手工逐条补**：`curl -s --noproxy '*' -X POST "http://127.0.0.1:5000/api/gallery-download/<40位key>" -H 'Content-Type: application/json' -d '{"gallery_url":""}'`，
-  再等 `gallery-status=done` 且多张 → 回填 `publish_images`（否则线上只有封面一张图）。
+- ⚠️ **`--apply` 的图集环节：tuple 拼 URL 的 bug 已修，但「已有缓存」会假装下过**。
+  旧版把 `apply_plan` 返回的 `(key, 时段, 时间)` 三元组直接丢给 `kick_gallery_download`，URL 里拼进元组 repr，
+  5 条全 skip 成 `URL can't contain control characters` —— 排期照样显示成功，一张图都没下（历史两次踩过，现已在脚本内改成只传 key，头注释写明）。
+  **修好后仍要逐条核张数**：抓取阶段若图集页 scrape 失败，`gallery_downloader._download` 会回退成 og:image 单图并存成 `article_00.jpg`，状态记 `done`；
+  之后 `get_status` 见非 cover 图就判 done、`kick_gallery_download` 直接 skip → **真图集永远补不下来**，线上只有一张头图。
+  排期后逐条 `ls ~/.cache/xhs_images/<40位key> | wc -l`：只有 1 张的强制重下（该 POST 端点只挡 running、不查缓存）：
+  `curl -s --noproxy '*' -X POST "http://127.0.0.1:5000/api/gallery-download/<40位key>" -H 'Content-Type: application/json' -d '{"gallery_url":""}'`，
+  再等 `gallery-status=done` 且多张（真图集 9–44 张）→ 回填 `publish_images`。
+  只有返回 `error: 未检测到图集链接` 的（Yahoo 单图文）才是真的只有封面一张，这种别硬补、留给发布侧用封面。
+  图集里会混进站点噪声（几百字节的 icon / 相邻文章缩略图），按体积筛掉 <1KB 的再挑图。
 
 **10/27 实测两点补充：**
 1. **`pub_time_plan.py --keys` 只认完整 40 位 key**（`WHERE key=?` 精确匹配）。传 12 位前缀 → 5 条全部 `FAIL <key> 不存在`，而且**时间表已经先打印出来了**，容易误判成「已排好」。先解析：`SELECT key FROM news WHERE substr(key,1,12)=?`，拼成逗号串再传。

@@ -281,5 +281,75 @@
  "たぶん": {
   "zh": "大概",
   "type": "word"
+ },
+ "别注": {
+  "zh": "特别定制",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "別注": {
+  "zh": "特别定制",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "受注": {
+  "zh": "接单",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "完売": {
+  "zh": "售罄",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "入荷": {
+  "zh": "到货",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "予約": {
+  "zh": "预订",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "予約受付": {
+  "zh": "预约受理",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "数量限定": {
+  "zh": "限量",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "W中心": {
+  "zh": "双中心",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
+ },
+ "立ち位置": {
+  "zh": "站位",
+  "type": "word",
+  "action": "translate",
+  "status": "manual",
+  "source": "manual"
  }
 }

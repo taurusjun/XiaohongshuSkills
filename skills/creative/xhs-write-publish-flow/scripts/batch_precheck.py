@@ -66,6 +66,48 @@ SHINTAI_WARN = "嶋壱"
 # 所以预检只用「行内顿号 >= 2」这一个条件，不要自写完整正则（会误报 20+ 行）
 KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 
+# 10/31：标题落点（末分句结尾）空壳门禁。
+# 失败形态：把素材里最有信息量的细节写成「证据动词+类别名词」，读者拿不到任何画面。
+# 实锤：「大西流星扮成夏尔，原作者也发了表情」—— 20字内、锚点齐全、过了全部既有门禁，
+# 但「表情」是什么没人知道，等于把「原作者盖章」这个最强信号降格成废话。
+# 精度优先：只拦「发/晒/回/贴了+表情类名词」与「发文/发声（无宾语）」这两种真·空壳形态。
+# 刻意不拦「一句台词，两种表情」「被镜头抓到的表情」这类把空壳词当对比极/带具体物的好标题。
+SHELL_VERB_RE = re.compile(
+    r"(也|还|又|只|就)?(发|晒|回|贴|po|PO)(了|了个|了一张|了一段)?(表情包|表情|动态|照片|图)$"
+)
+SHELL_BARE = ("发文", "发声")
+# 10/31 第二例（c0040119）：标题堆日式黑话（新单/Under曲/W中心）+ 零团名 + 人名缩成昵称
+# 「新单Under曲叫"编辑"，W中心是理理杏和莲加」——粉丝觉得是废话，路人 0 秒读不懂。
+# 黑话是「压缩过的信息」，不是「不需要解释的信息」；压缩时先砍术语，团名/全名最后砍。
+JARGON_TITLE = ("Under", "W中心", "Ｗ中心", "Wセンター", "新单", "表题曲", "标题曲", "选拔曲", "期生曲")
+# 10/31 第三例（5a9e366a）：标题落点写成日文商品词「别注」，中文读者不认
+# 「小嶋阳菜和LeSportsac联名，三款包全是别注」——20字、人名靠前、无代词，全部门禁通过，
+# 但「别注」= 別注（特别定制）是日文词，中文没这个说法，标题等于没说完。
+# 判据：日文商品/流通词直接当中文名词用 → FAIL（中文里不会出现这些词，误伤面≈0）
+JP_LOANWORD_TITLE = (
+    "别注", "別注", "受注", "完売", "完卖", "入荷", "予約", "预约受付",
+    "数量限定", "别色", "別色", "别注品", "新作发表",
+)
+# 10/31 修正误报：「特别注重」里的「别注」不是日文词（cb1fe978 被误判）。
+# 用负向前瞻排除 特別/分别/区别/级别/个别/识别 这些中文常见搭配。
+JP_LOANWORD_RE = re.compile(
+    r"(?<![特区分别级个识])别注|別注|受注|完売|完卖|入荷|予約|预约受付|数量限定|别色|別色|别注品|新作发表"
+)
+# 正文里的日文缩写（标题门禁管不到正文，5a9e/c004 各踩一次）
+JP_TERM_BODY = ("W中心", "Ｗ中心", "Wセンター", "センター", "Wキメ", "立ち位置")
+# 团名锚点白名单（只用于「放宽」黑话门禁：命中即认为锚点齐全，不会因此多拦稿）
+GROUP_ANCHOR_RE = re.compile(r"[\u4e00-\u9fa5A-Za-z≒≠=！!]{2,8}(?:46|48)")
+GROUP_ANCHOR_WORDS = (
+    "乃木坂", "樱坂", "欅坂", "榉坂", "日向坂", "Snow Man", "SixTONES", "浪花男子",
+    "なにわ男子", "timelesz", "King & Prince", "Kis-My-Ft2", "≒JOY", "≠ME", "=LOVE",
+    "桃色幸运草", "早安少女组", "BE:FIRST", "JO1", "INI", "ME:I", "TWICE", "BTS",
+)
+# 标题党/泛化反应家族：只 WARN（前半句常有具体信息，一刀切会误伤历史好稿）
+SHELL_TAIL_WARN = (
+    "炸了", "引热议", "引发热议", "引关注", "引起关注", "上热搜", "有反应",
+    "反应", "回应", "表态",
+)
+
 
 def body_of(path):
     """返回 (标题, 正文)。首行必须带 ## ；缺首行时按整文件当正文并报警。"""
@@ -125,7 +167,70 @@ def check(path, spec):
                     f"标题不含 name 候选（{'/'.join(alts)}）：人名非必须，确认钩子本身够硬、锚点够清楚"
                 )
 
+    # 10/31 硬门禁：标题的落点（最后一个分句的结尾）不能是空壳词。
+    # 实测（大西流星扮夏尔稿 6810400b）：两条素材合并后唯一差异点=原作者回应，
+    # 标题写成「大西流星扮成夏尔，原作者也发了表情」—— 20 字内、锚点齐全、过了全部
+    # 既有门禁，但「表情」是什么读者拿不到任何画面，等于把最强信号降格成废话。
+    # 规则：差异化信息必须落到「具体画面 / 具体身份」，不能落到 表情·发文·发声·反应·热搜 这类名词。
+    if title is not None:
+        clauses = [c.strip() for c in re.split(r"[，,；;：:]", title) if c.strip()]
+        tail = (clauses[-1] if clauses else title).strip(" 　。！？!?…~～」』）)】")
+        if SHELL_VERB_RE.search(tail):
+            problems.append(
+                f"标题落点是空壳（{tail}）：说了「发了什么类别」，没说是什么样子。"
+                f"换成具体画面（「回了个星星眼」）或换成有画面的一侧"
+            )
+        elif tail.endswith(SHELL_BARE):
+            problems.append(
+                f"标题落点是空壳（{tail}）：发文/发声后面没有宾语，读者不知道内容，补实际内容或换落点"
+            )
+        else:
+            hit_warn = next((w for w in SHELL_TAIL_WARN if tail.endswith(w)), None)
+            if hit_warn:
+                warns.append(
+                    f"标题落点是泛反应词「{hit_warn}」（{title[:16]}）：确认前一分句已给出具体内容，否则读者不知道发生了什么"
+                )
+
+    # 10/31：圈内黑话门禁。黑话本身不是错，错的是「黑话当锚点用」——
+    # 术语对粉丝是压缩信息，对划屏路人是乱码；标题里黑话已经够多时，至少得有一个可检索的锚点。
+    if title is not None:
+        jarg = [w for w in JARGON_TITLE if w in title]
+        if jarg:
+            cand = [n.strip() for n in re.split(r"[,，/|、]", str(names)) if n.strip()] if names else []
+            has_anchor = (
+                any(a in title or (len(a) >= 3 and a[:3] in title) for a in cand)
+                or "《" in title
+                or bool(GROUP_ANCHOR_RE.search(title))
+                or any(w in title for w in GROUP_ANCHOR_WORDS)
+            )
+            if not has_anchor:
+                problems.append(
+                    f"标题堆圈内黑话（{'/'.join(jarg)}）且零团名/全名/作品名锚点（{title[:18]}）："
+                    f"路人 0 秒读不懂。把团名或全名放进标题，术语最多留一个，其余改中文口语"
+                )
+            elif len(jarg) >= 2:
+                warns.append(
+                    f"标题含 {len(jarg)} 个圈内黑话（{'/'.join(jarg)}）：锚点够了，但确认术语只留最必要的一个"
+                )
+
+    # 10/31：日文商品词直接当中文名词用（别注/受注/完売…），中文读者解码不了 —— 一律 FAIL。
+    if title is not None:
+        loan = JP_LOANWORD_RE.findall(title)
+        if loan:
+            problems.append(
+                f"标题用了日文商品词「{'/'.join(sorted(set(loan)))}」（{title[:18]}）：中文没这个说法，读者不知道是什么。"
+                f"换成中文表达（别注→特别定制、受注→接单、完売→售罄、入荷→到货）"
+            )
+
     body_len = wc(body)
+    # 10/31：日文缩写混进正文（W中心=Wセンター=双中心）——标题门禁管不到正文，单独查。
+    # 用户原话：「W中心 是什么玩意？？你他妈能说人话吗」。
+    jp_body = [w for w in JP_TERM_BODY if w in body]
+    if jp_body:
+        problems.append(
+            f"正文出现日文缩写「{'/'.join(sorted(set(jp_body)))}」：读者看不懂，改成中文"
+            f"（W中心→双中心、センター→中心/中间位）"
+        )
     h2 = [l for l in body.split("\n") if l.startswith("## ")]
     h3 = [l for l in body.split("\n") if l.startswith("###")]
 

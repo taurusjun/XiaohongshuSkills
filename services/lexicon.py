@@ -462,3 +462,9 @@ def main(argv=None):
         print("未知命令")
         return 2
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(main(sys.argv[1:]))

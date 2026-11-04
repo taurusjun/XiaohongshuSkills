@@ -4,6 +4,19 @@
 
 ---
 
+## 交互节奏（10/31 教训，硬规则）
+
+批量返工/审查时最容易犯的不是写错，是**长时间静默**。10/31 一次会话里用户连问三次「你还活着吗」「我擦，你死了吗！！」——因为连续多次长耗时工具调用之间没有任何输出。
+
+规则：
+
+1. **一次工具链连续超过 ~90 秒没有用户可见输出 → 先发一句进度**（一句话，不解释方法论）：「在跑 X，第 N 条」。
+2. **不要连续 3 次以上纯工具调用而不说话**。宁可把 5 个脚本合并成 1 次调用，也不要 5 次静默。
+3. 排查/返工类的多步任务，**每完成一个可交付单元就落一句结论**（「标题改了，正文在核」），不要等全部做完才一次性汇报。
+4. 用户的「还活着吗」= 对静默的抗议，不是关心；不要回「在的」了事，直接给当前状态一句话。
+
+---
+
 ## 阶段1：写前准备
 
 ### 1a. 确认key并通读content_ja
@@ -179,6 +192,15 @@ data = {
 详见 `references/python-urllib-inline-write.md`。
 
 ### 三步验证（入库后必做）
+
+**⚠️ 先记一条：`PUT` 的字段白名单不含 `score_dims`。** 10/31 实测 `PUT {"score_dims": "..."}` 返回 `{"ok": true}`，但 GET 回来字段一字未变（静默失败，不报错）。改评分/重打分只能走 `sqlite3 UPDATE`，更新后必须同连接 SELECT 验证。同理别指望 PUT 能写 `grade` / `grade_reason`。
+
+```python
+import sqlite3
+conn = sqlite3.connect("/Users/user/PG/XiaohongshuSkills/data/news_dev.db")
+conn.execute("UPDATE news SET score_dims=? WHERE key=?", (score, k)); conn.commit()
+print(conn.execute("SELECT score_dims FROM news WHERE key=?", (k,)).fetchone()[0] == score)  # 必须 True
+```
 
 ```bash
 # 1. 基本验证

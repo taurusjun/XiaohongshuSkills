@@ -31,6 +31,10 @@
 * --apply 只做一件事：`UPDATE news SET xhs_pub_time=?, publish_xhs=1 WHERE key=?`
   （`--no-publish-flag` 则只设 xhs_pub_time）。**不触发发布**，
   不碰 publish_mode / publish_method / related_keys / rewritten_*。
+* --apply 成功后会自动 oneway 踢图集下载；**必须传纯 key 字符串**。
+  apply_plan 返回 (key, slot, ts) 三元组，直接丢进 kick_gallery_download
+  会把元组 repr 拼进 URL，全部 skip 成 "URL can't contain control characters"，
+  排期看似成功但 5 篇一张图都没下（11/04 实战踩过，已修）。
 """
 
 import argparse
@@ -244,7 +248,9 @@ def main():
             sys.exit(1)
         print("  提醒：本脚本不触发发布（禁止 POST /api/trigger-publish）。")
         if not args.no_gallery and not args.no_publish_flag:
-            kick_gallery_download(ok, args.api_base)
+            # apply_plan 返回 (key, slot, ts) 三元组，这里只取 key；
+            # 直接传元组会把 repr 拼进 URL → "URL can't contain control characters"
+            kick_gallery_download([k for k, _slot, _ts in ok], args.api_base)
         else:
             print("\n[图集下载] 跳过（--no-gallery 或 --no-publish-flag）")
 
