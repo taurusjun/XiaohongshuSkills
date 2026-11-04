@@ -206,7 +206,7 @@ def report(date):
                   "| key | 生产标题字数 | 容器标题字数 | 生产正文 | 容器正文 |",
                   "|---|---|---|---|---|"]
         for k, at, bt, ab, bb in diffs[:5]:
-            lines.append(f"| {k[:12]} | {at} | {bt} | {ab} | {bb} |")
+            lines.append(f"| {k[:16]} | {at} | {bt} | {ab} | {bb} |")
         lines.append("")
 
     # 容器运行状况
