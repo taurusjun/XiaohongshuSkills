@@ -30,7 +30,7 @@ def load_env():
 ENV = load_env()
 DEEPSEEK_URL   = ENV.get("LITELLM_URL",   "https://api.deepseek.com") + "/chat/completions"
 DEEPSEEK_KEY   = ENV.get("LITELLM_API_KEY", os.environ.get("LITELLM_API_KEY", ""))
-DEEPSEEK_MODEL = ENV.get("LITELLM_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = ENV.get("LITELLM_MODEL", "deepseek-flash")
 
 def filter_tags_for_hashtag(tags_str: str) -> str:
     """只保留英文/罗马字 tag，过滤掉含 CJK 字符的 tag。"""
