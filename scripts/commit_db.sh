@@ -1,5 +1,7 @@
 #!/bin/bash
 # 每小时本地滚动备份：保留当前 + 上一个版本
+# 重要：绝不在库被其他进程打开时覆盖/替换 data/news_dev.db（会产生 stale WAL，
+#       表现为 "database disk image is malformed"）。只生成一致性快照，不动原库。
 # 用法: bash scripts/commit_db.sh "备注信息"
 
 set -e
@@ -13,8 +15,13 @@ TMP="$BACKUP_DIR/.tmp/news_dev_clean_$(date +%s).db"
 
 mkdir -p "$BACKUP_DIR/.tmp"
 
-echo "📦 dump/restore 优化中..."
-sqlite3 "$DB" ".dump" | sqlite3 "$TMP"
+echo "📦 生成一致性快照（VACUUM INTO）..."
+rm -f "$TMP"
+if ! sqlite3 "$DB" "VACUUM INTO '$TMP'" 2>/dev/null; then
+    # 老版本 SQLite 兜底：online backup，同样不动原库
+    rm -f "$TMP"
+    sqlite3 "$DB" ".backup '$TMP'"
+fi
 
 echo "🔍 验证..."
 ROWS=$(sqlite3 "$TMP" "SELECT COUNT(*) FROM news;")
@@ -26,26 +33,22 @@ if [ "$OK" != "ok" ] || [ "$ROWS" -eq 0 ]; then
     exit 1
 fi
 
-# 比对内容 hash，没变化也滚动（保证 prev 不丢）
-OLD_HASH=$(sqlite3 "$DB" "SELECT * FROM news;" 2>/dev/null | shasum | cut -d' ' -f1)
-NEW_HASH=$(sqlite3 "$TMP" "SELECT * FROM news;" | shasum | cut -d' ' -f1)
-
-if [ "$OLD_HASH" = "$NEW_HASH" ]; then
-    echo "⏭️  DB 内容无变化，但仍然滚动备份保证 prev"
-else
-    # 替换 DB 文件（优化后的版本）
-    cp "$TMP" "$DB"
-fi
-rm -f "$TMP"
-
-# 滚动备份：当前 → prev，新版本 → 当前
+# 滚动备份：内容没变就不滚动；变了则 当前 → prev，新快照 → 当前
 if [ -f "$BACKUP_FILE" ]; then
-    # 比较备份和当前是否相同，相同则不滚动（避免 prev == current）
-    if ! cmp -s "$BACKUP_FILE" "$DB"; then
-        mv "$BACKUP_FILE" "$PREV_FILE"
+    OLD_HASH=$(sqlite3 "$BACKUP_FILE" "SELECT * FROM news;" 2>/dev/null | shasum | cut -d' ' -f1)
+    NEW_HASH=$(sqlite3 "$TMP" "SELECT * FROM news;" | shasum | cut -d' ' -f1)
+    if [ "$OLD_HASH" = "$NEW_HASH" ]; then
+        echo "⏭️  备份内容无变化，不滚动"
+        rm -f "$TMP"
+        echo "✅ 滚动备份完成"
+        echo "  当前版本: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+        [ -f "$PREV_FILE" ] && echo "  上版本:   $PREV_FILE ($(du -h "$PREV_FILE" | cut -f1))"
+        exit 0
     fi
+    mv "$BACKUP_FILE" "$PREV_FILE"
 fi
-cp "$DB" "$BACKUP_FILE"
+cp "$TMP" "$BACKUP_FILE"
+rm -f "$TMP"
 
 echo "✅ 滚动备份完成"
 echo "  当前版本: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
