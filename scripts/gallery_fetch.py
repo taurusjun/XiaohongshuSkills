@@ -62,6 +62,7 @@ GALLERY_SITES: dict[str, str] = {
     "hochi.news":           ".article-image, article",
     "sponichi.co.jp":       ".photo-area, article",
     "oricon.co.jp":         "div.main_photo",
+    "numero.jp":            "p.picture img, .block-pagination img",
     "natalie.mu":           ".chronicle-article-photo, article",
     "billboard-japan.com":  ".article-photo, article",
     "iza.ne.jp":             "main, article",
@@ -137,6 +138,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
 # 个别站点的图集页路径不含通用关键词，按站点单独放行（不放进 GALLERY_NO_HINT_SITES，
 # 因为这些站点的其他路径（如 sponichi 的 /kiji/ 相关文章）不是图集）。
 GALLERY_EXTRA_PATH_HINTS = {
+    "numero.jp": ("/interview",),
     "sponichi.co.jp": ("/articles/",),
     "futabasha-change.com": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html
 }
@@ -222,6 +224,10 @@ def _is_valid_gallery_url(url: str) -> bool:
     if "nikkan-spa.jp" in p.netloc and "attachment_id" in p.query:
         return True
     if "deview.co.jp" in p.netloc and "am_article_id" in p.query:
+        return True
+    # numero.jp 的访谈页是单段路径：/interview509/
+    import re as _re
+    if "numero.jp" in p.netloc and _re.fullmatch(r"/interview\d+/?", p.path):
         return True
     return False
 
@@ -312,9 +318,12 @@ def detect_gallery_link(article_url: str) -> str:
             # 只排除路径深度 ≤ 2 的纯导航页（如 /news/、/feature/）
             # 路径有 3 层以上（如 /news/0000802151/attachment/）属于文章子页，保留
             path_parts = [p for p in path.split("/") if p]
+            extra = next((v for k, v in GALLERY_EXTRA_PATH_HINTS.items() if k in domain), ())
             exclude_top = ["/feature", "/movie", "/video", "/special",
                            "/tieup", "/campaign", "/program", "/column", "/interview"]
-            if len(path_parts) <= 1 and any(path.startswith(ex) for ex in exclude_top + ["/news"]):
+            if (len(path_parts) <= 1
+                    and any(path.startswith(ex) for ex in exclude_top + ["/news"])
+                    and not any(path.startswith(h) for h in extra)):
                 continue
             # 无需关键词的站点直接返回
             if any(site in domain for site in GALLERY_NO_HINT_SITES):
@@ -322,7 +331,6 @@ def detect_gallery_link(article_url: str) -> str:
                 return href
             # 其他站点需要含图集关键词
             href_lower = href.lower()
-            extra = next((v for k, v in GALLERY_EXTRA_PATH_HINTS.items() if k in domain), ())
             if (any(hint in href_lower for hint in GALLERY_URL_HINTS)
                     or any(h in urlparse(href).path.lower() for h in extra)):
                 print(f"  🔗 找到图集外链 ({domain}): {href[:70]}")
@@ -3383,6 +3391,8 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
                     if not tokens:
                         continue
                     u = tokens[0]
+                    if u.startswith("data:"):
+                        continue
                     w = 0
                     if len(tokens) >= 2:
                         try:
@@ -3394,9 +3404,9 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
                 if best_url:
                     return best_url
             # data-* 候选列表（按优先级）
-            for attr in ("data-src", "data-lazy-src", "data-original",
+            for attr in ("data-src", "data-src-img", "data-lazy-src", "data-original",
                          "data-full-src", "data-zoom-src", "data-large",
-                         "data-hi-res", "data-image", "src"):
+                         "data-hi-res", "data-image", "data-src-webp", "src"):
                 v = img_tag.get(attr, "")
                 if v and not v.startswith("data:"):
                     return v
@@ -3417,7 +3427,9 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         seen = set()
 
         for container in containers:
-            for img in container.find_all("img"):
+            # selector 可能直接选中 <img>（如 "figure img"），此时 find_all 会返回空
+            imgs = [container] if getattr(container, "name", "") == "img" else container.find_all("img")
+            for img in imgs:
                 src = best_src(img)
                 if not src:
                     continue
