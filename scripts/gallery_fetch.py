@@ -3065,10 +3065,12 @@ def normalize_gallery_url(url: str) -> str:
 
 
 def _scrape_tokyo_sports(gallery_url: str) -> list[str]:
-    """tokyo-sports.co.jp /articles/photo/<id>：单页列出全部照片（div.c-article-img）。
+    """tokyo-sports.co.jp /articles/photo/<id>：单页列出全部照片。
 
-    图片形如 https://tokyo-sports.ismcdn.jp/mwimgs/<a>/<b>/<width>w/img_<hash>.jpg，
-    srcset 里有多宽度 → 取最大。
+    照片页用 slick slider（c-article-img--slider）承载本组照片；
+    其余 c-article-img 多为相关文章缩略图。图片形如
+    https://tokyo-sports.ismcdn.jp/mwimgs/<a>/<b>/<width>w/img_<hash>.jpg，
+    srcset / data-src 里有多宽度 → 取最大。
     """
     import re
     headers = {**HEADERS, "Referer": "https://www.tokyo-sports.co.jp/"}
@@ -3087,15 +3089,22 @@ def _scrape_tokyo_sports(gallery_url: str) -> list[str]:
         m = re.search(r"/(\d+)w/", u)
         return int(m.group(1)) if m else 0
 
-    for div in soup.select("div.c-article-img"):
-        if "c-article-img--side" in (div.get("class") or []):
-            continue
+    # 只取本组照片的 slider；没有再退回到所有 c-article-img（排除侧栏）
+    slider = [d for d in soup.select("div.c-article-img--slider")
+              if "c-article-img--side" not in (d.get("class") or [])]
+    targets = slider or [d for d in soup.select("div.c-article-img")
+                         if "c-article-img--side" not in (d.get("class") or [])]
+    for div in targets:
         img = div.find("img")
         if not img:
             continue
-        blob = " ".join(filter(None, [img.get("srcset") or "",
-                                      img.get("imagesrcset") or "",
-                                      img.get("src") or ""]))
+        blob = " ".join(filter(None, [
+            img.get("srcset") or "",
+            img.get("imagesrcset") or "",
+            img.get("data-srcset") or "",
+            img.get("data-src") or "",
+            img.get("src") or "",
+        ]))
         cands = re.findall(r"https://tokyo-sports\.ismcdn\.jp/mwimgs/[^\s,]+?\.jpg", blob)
         if not cands:
             continue
