@@ -74,6 +74,7 @@ GALLERY_SITES: dict[str, str] = {
     "mantan-web.jp":        ".photo-area, article",
     "inside-games.jp":      "article, body",
     "bookbang.jp":          "article",
+    "maquia.hpplus.jp":     ".article-block-gallery-image img, .article-block-photo img",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
     "maidonanews.jp":       ".photo, article",
@@ -139,6 +140,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
 # 因为这些站点的其他路径（如 sponichi 的 /kiji/ 相关文章）不是图集）。
 GALLERY_EXTRA_PATH_HINTS = {
     "numero.jp": ("/interview",),
+    "bookbang.jp": ("/article/",),
     "sponichi.co.jp": ("/articles/",),
     "futabasha-change.com": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html
 }
@@ -338,6 +340,61 @@ def detect_gallery_link(article_url: str) -> str:
     except Exception as e:
         print(f"  ⚠️ 检测图集链接失败: {e}")
     return ""
+
+
+def _scrape_maquia(gallery_url: str) -> list[str]:
+    """maquia.hpplus.jp /photo/：Fastly Client Challenge 拦 requests，需 CDP 渲染。"""
+    import requests as _rq
+    from bs4 import BeautifulSoup
+
+    def parse(html_text: str) -> list[str]:
+        if not html_text:
+            return []
+        soup = BeautifulSoup(html_text, "html.parser")
+        out, seen = [], set()
+        for node in soup.select(".article-block-gallery-image img, .article-block-photo img"):
+            src = (node.get("data-src") or node.get("src") or "").strip()
+            if src.startswith("//"):
+                src = "https:" + src
+            if not src.startswith("http") or src in seen:
+                continue
+            seen.add(src)
+            out.append(src)
+            if len(out) >= MAX_IMAGES:
+                break
+        return out
+
+    html = ""
+    try:
+        r = _rq.get(gallery_url, headers={**HEADERS, "Referer": "https://maquia.hpplus.jp/"},
+                    proxies=_get_proxies(), timeout=15)
+        if r.status_code == 200:
+            html = r.text
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ maquia requests 失败: {e}")
+
+    # requests 能拿到真页就直接用
+    if len(html) >= 10000 and "Client Challenge" not in html and "_fs-ch-" not in html:
+        imgs = parse(html)
+        if imgs:
+            return imgs
+
+    # CDP：先 fetch 专用 Chrome（9333），失败/为空再回退主 Chrome（9222）
+    from scrapers import cdp_page_html
+    ports = []
+    try:
+        if _rq.get(f"http://{CDP_HOST}:9333/json/version", timeout=2).ok:
+            ports.append(9333)
+    except Exception:
+        pass
+    if CDP_PORT not in ports:
+        ports.append(CDP_PORT)
+    for port in ports:
+        print(f"  🌐 maquia 走 CDP:{port}")
+        imgs = parse(cdp_page_html(gallery_url, port=port, wait=10.0))
+        if imgs:
+            return imgs
+    return []
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
@@ -3168,6 +3225,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "wpb.shueisha.co.jp" in gallery_url:
         images = _scrape_wpb_shueisha(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "maquia.hpplus.jp" in domain:
+        images = _scrape_maquia(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
