@@ -8,3 +8,10 @@ def test_numero_interview_supported():
     assert is_gallery_url("https://numero.jp/interview509/")
     assert is_gallery_url("https://numero.jp/interview123/")
     assert not is_gallery_url("https://numero.jp/magazine/")
+
+
+def test_maquia_photo_supported():
+    """maquia.hpplus.jp 的 /photo/ 页是 Fastly 挑战页，需 CDP 渲染。"""
+    from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
+    assert "maquia.hpplus.jp" in GALLERY_SITES
+    assert is_gallery_url("https://maquia.hpplus.jp/makeup/photo/113456/")
