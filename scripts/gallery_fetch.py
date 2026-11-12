@@ -74,6 +74,7 @@ GALLERY_SITES: dict[str, str] = {
     "mantan-web.jp":        ".photo-area, article",
     "inside-games.jp":      "article, body",
     "bookbang.jp":          "article",
+    "dailyshincho.jp":      ".p-gallery__thumbnail img",
     "maquia.hpplus.jp":     ".article-block-gallery-image img, .article-block-photo img",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
@@ -392,6 +393,54 @@ def _scrape_maquia(gallery_url: str) -> list[str]:
         if imgs:
             return imgs
     return []
+
+
+def _scrape_dailyshincho(gallery_url: str) -> list[str]:
+    """dailyshincho.jp 图集：?photo=N 是同一组照片的选择页。
+
+    文章页本身（无 ?photo）没有图集；带 ?photo=N 的页面有 8 个缩略图，
+    但**当前选中的那张只出现在主图/og:image**，所以要把它补回来。
+    """
+    import re
+    headers = {**HEADERS, "Referer": "https://www.dailyshincho.jp/"}
+    # 无 ?photo=N 时文章页没有图集，强制 photo=1
+    base = gallery_url
+    if "photo=" not in base:
+        base += ("&" if "?" in base else "?") + "photo=1"
+    try:
+        r = requests.get(base, headers=headers, proxies=_get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return []
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ dailyshincho 请求失败: {e}")
+        return []
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    out, seen = [], set()
+
+    def add(src: str):
+        src = (src or "").strip()
+        if not src.startswith("http") or "dailyshincho.com/wp-content/uploads/" not in src:
+            return
+        full = re.sub(r"-\d+x\d+(?=\.(?:jpe?g|png|webp))", "", src)
+        m = re.search(r"/(\d+_\d+)\.", full)
+        key = m.group(1) if m else full
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(full)
+
+    for img in soup.select(".p-gallery__thumbnail img, img.p-gallery__image"):
+        add(img.get("data-src") or img.get("src") or "")
+    og = soup.find("meta", attrs={"property": "og:image"})
+    if og:
+        add(og.get("content") or "")
+
+    def _num(u: str) -> int:
+        m = re.search(r"_(\d+)\.", u)
+        return int(m.group(1)) if m else 999
+    out.sort(key=_num)
+    return out[:MAX_IMAGES]
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
@@ -3211,6 +3260,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "maquia.hpplus.jp" in domain:
         images = _scrape_maquia(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "dailyshincho.jp" in domain:
+        images = _scrape_dailyshincho(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
