@@ -59,3 +59,10 @@ def test_maquia_photo_supported():
     from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
     assert "maquia.hpplus.jp" in GALLERY_SITES
     assert is_gallery_url("https://maquia.hpplus.jp/makeup/photo/113456/")
+
+
+def test_dailyshincho_photo_supported():
+    """dailyshincho.jp 图集只在 ?photo=N 页面出现，且当前选中图在 og:image。"""
+    from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
+    assert "dailyshincho.jp" in GALLERY_SITES
+    assert is_gallery_url("https://www.dailyshincho.jp/article/2026/11112200/?photo=2")
