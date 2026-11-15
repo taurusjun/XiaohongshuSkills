@@ -81,6 +81,74 @@ def _og_single_image(gallery_url: str) -> str:
         return ""
 
 
+def _is_yahoo_video_article(article_url: str) -> bool:
+    """Yahoo News 视频文章：HTML 里带 hasVideo / yvpub / data-contentid。"""
+    if "news.yahoo.co.jp/articles/" not in article_url:
+        return False
+    try:
+        import requests as _rq
+        from config.yahoo_conf import get_proxies
+        r = _rq.get(article_url, headers=HEADERS, proxies=get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return False
+        t = r.text
+        return ('"hasVideo":true' in t.replace(" ", "")
+                or "data-contentid" in t or "yvpub" in t)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _dl_yahoo_video(article_url: str, d) -> str:
+    """用 yt-dlp 的 yahoo:japannews 解析器下载视频；优先 720p。
+
+    代理端口会在 20808/20809 之间漂移，先探活再显式传给 yt-dlp。
+    """
+    import subprocess
+    import requests as _rq
+    ytdlp = os.path.join(os.path.dirname(sys.executable), "yt-dlp")
+    if not os.path.exists(ytdlp):
+        ytdlp = "yt-dlp"
+    out = str(d / "video.%(ext)s")
+    env = {**os.environ}
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+              "http_proxy", "https_proxy", "all_proxy"):
+        env.pop(k, None)
+    env["NO_PROXY"] = "localhost,127.0.0.1"
+
+    if os.path.exists("/.dockerenv"):
+        hosts = ("192.168.5.2:20808", "192.168.5.2:20809")
+    else:
+        hosts = ("127.0.0.1:20808", "127.0.0.1:20809")
+    proxy = ""
+    for h in hosts:
+        p = f"http://{h}"
+        try:
+            r = _rq.get("https://www.google.com", proxies={"http": p, "https": p}, timeout=3)
+            if r.status_code < 500:
+                proxy = p
+                break
+        except Exception:  # noqa: BLE001
+            pass
+
+    cmd = [ytdlp, "-f", "hls-3998/hls-1637/hls-1093/best",
+           "--no-warnings", "--no-playlist", "--concurrent-fragments", "8",
+           "--retries", "3", "--fragment-retries", "10",
+           "-o", out]
+    if proxy:
+        cmd += ["--proxy", proxy]
+    cmd.append(article_url)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=env)
+        if r.returncode != 0:
+            print("yt-dlp failed:", (r.stderr or "")[-300:])
+    except Exception as e:  # noqa: BLE001
+        print("yt-dlp error:", e)
+    for f in sorted(d.glob("video.*")):
+        if f.suffix.lower() in (".mp4", ".mkv", ".webm"):
+            return str(f)
+    return ""
+
+
 def _download(key: str, gallery_url: str = ""):
     """后台下载线程"""
     task = {'status': 'running', 'log': '', 'images': []}
@@ -99,6 +167,21 @@ def _download(key: str, gallery_url: str = ""):
                 log.append(f'🔍 检测图集链接: {article_url[:60]}...')
                 gallery_url = detect_gallery_link(article_url)
             if not gallery_url:
+                if _is_yahoo_video_article(article_url):
+                    log.append('🎬 检测到 Yahoo 视频文章，开始下载视频…')
+                    task['log'] = '\n'.join(log)
+                    d = CACHE_DIR / key
+                    d.mkdir(parents=True, exist_ok=True)
+                    vpath = _dl_yahoo_video(article_url, d)
+                    if vpath:
+                        task['status'] = 'done'
+                        task['images'] = [vpath]
+                        update_news(key, {'gallery_video': vpath, 'gallery_images': []})
+                        log.append(f'✅ 视频已下载: {vpath}')
+                    else:
+                        task['status'] = 'error: 视频下载失败'
+                    task['log'] = '\n'.join(log)
+                    return
                 task['status'] = 'error: 未检测到图集链接'
                 task['log'] = '\n'.join(log)
                 # 持久标记：该篇**确认没有图集页**（原 skill 口径「配图走封面即可」）
