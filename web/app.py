@@ -344,7 +344,15 @@ def api_active_tasks():
     for tid, t in _tasks.items():
         if isinstance(t, dict) and t.get('status') == 'running':
             active.append({'task_id': tid, 'status': 'running', 'log': t.get('log', '')})
-    return jsonify({"active": active, "fetch_running": _fetch_running, "publish_running": _publish_running})
+    try:
+        from web.gallery_downloader import _tasks as _gtasks
+        gallery_running = any(isinstance(t, dict) and t.get('status') == 'running'
+                              for t in _gtasks.values())
+    except Exception:
+        gallery_running = False
+    return jsonify({"active": active, "fetch_running": _fetch_running,
+                    "publish_running": _publish_running,
+                    "gallery_running": gallery_running})
 
 @app.route('/api/regenerate-title/<key>', methods=['POST'])
 def api_regenerate_title(key):
@@ -3492,4 +3500,4 @@ def api_collect_metrics_batch():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
