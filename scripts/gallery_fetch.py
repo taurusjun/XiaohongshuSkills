@@ -75,6 +75,7 @@ GALLERY_SITES: dict[str, str] = {
     "inside-games.jp":      "article, body",
     "bookbang.jp":          "article",
     "dailyshincho.jp":      ".p-gallery__thumbnail img",
+    "voisjp.me":            "img.size-full",
     "maquia.hpplus.jp":     ".article-block-gallery-image img, .article-block-photo img",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
@@ -142,6 +143,7 @@ GALLERY_URL_HINTS = ["photo", "picture", "gallery", "image", "img", "pic", "slid
 GALLERY_EXTRA_PATH_HINTS = {
     "numero.jp": ("/interview",),
     "bookbang.jp": ("/article/",),
+    "voisjp.me": ("/news/",),
     "sponichi.co.jp": ("/articles/",),
     "futabasha-change.com": ("/articles/",),   # 如 /entertainment/news/2023/03/28/articles/xxxxc.html（图集在 photo-carousel）
 }
@@ -441,6 +443,37 @@ def _scrape_dailyshincho(gallery_url: str) -> list[str]:
         return int(m.group(1)) if m else 999
     out.sort(key=_num)
     return out[:MAX_IMAGES]
+
+
+def _scrape_voisjp(gallery_url: str) -> list[str]:
+    """voisjp.me 图集：文章页正文用 img.size-full 列全部原图。
+
+    页脚/侧栏的 related-photo-item 是 180x120 缩略图，必须排除。
+    """
+    headers = {**HEADERS, "Referer": "https://voisjp.me/"}
+    try:
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return []
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ voisjp 请求失败: {e}")
+        return []
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    out, seen = [], set()
+    for img in soup.select("img.size-full"):
+        src = (img.get("data-src") or img.get("src") or "").strip()
+        if not src.startswith("http"):
+            continue
+        if "thumbnail" in src or "-180x120" in src:
+            continue
+        if src in seen:
+            continue
+        seen.add(src)
+        out.append(src)
+        if len(out) >= MAX_IMAGES:
+            break
+    return out
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
@@ -3264,6 +3297,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "dailyshincho.jp" in domain:
         images = _scrape_dailyshincho(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "voisjp.me" in domain:
+        images = _scrape_voisjp(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
