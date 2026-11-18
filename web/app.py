@@ -2324,19 +2324,21 @@ body{font:13px/1.5 var(--font);background:var(--bg);color:var(--text);height:100
         {% for p in news.gallery_images %}
         <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
           {% if p.endswith('.mp4') %}
-          <video src="/local-image?path={{p}}" style="height:100px;border-radius:6px"></video>
+          <video src="/local-image?path={{p}}" controls style="height:100px;border-radius:6px"></video>
           {% else %}
           <img src="/local-image?path={{p}}">
           {% endif %}
           <input type="checkbox" class="chk" data-path="{{p}}" onclick="event.stopPropagation()">
           <button class="btn btn-gray" style="font-size:9px;padding:1px 5px;position:absolute;bottom:2px;right:2px" onclick="event.stopPropagation();setAsCover('{{p}}')" title="设为封面">📷</button>
+          <a href="/local-image?path={{p}}" download onclick="event.stopPropagation()" style="font-size:9px;color:var(--blue);margin-top:2px;text-decoration:none">⬇ 保存</a>
         </div>
         {% endfor %}
         {% if news.gallery_video %}
         <div class="img-item" onclick="togglePublishImg(this)" style="display:flex;flex-direction:column;align-items:center">
-          <video src="/local-image?path={{news.gallery_video}}" style="height:100px;border-radius:6px"></video>
+          <video src="/local-image?path={{news.gallery_video}}" controls style="height:100px;border-radius:6px"></video>
           <span style="font-size:9px;color:var(--red);margin-top:2px">🎬 视频</span>
           <input type="checkbox" class="chk" data-path="{{news.gallery_video}}" onclick="event.stopPropagation()">
+          <a href="/local-image?path={{news.gallery_video}}" download onclick="event.stopPropagation()" style="font-size:9px;color:var(--blue);margin-top:2px;text-decoration:none">⬇ 保存视频</a>
         </div>
         {% endif %}
       </div>

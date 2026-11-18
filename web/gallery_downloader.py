@@ -264,7 +264,7 @@ def _download(key: str, gallery_url: str = ""):
                     log.append(f'  ✓ {f}')
                 task['log'] = '\n'.join(log)
             if video_urls:
-                log.append(f'🎬 找到 {len(video_urls)} 个推特视频')
+                log.append(f'🎬 找到 {len(video_urls)} 个推特媒体')
             if image_urls:
                 log.append(f'📷 抓到 {len(image_urls)} 张图片')
             task['log'] = '\n'.join(log)
@@ -308,15 +308,19 @@ def _download(key: str, gallery_url: str = ""):
 
         task['status'] = 'done'
         images = [str(d / f) for f in sorted(os.listdir(d))
-                  if f != 'meta.json' and not f.startswith('.')]
+                  if f != 'meta.json' and not f.startswith('.')
+                  and not f.startswith('cover.') and not f.startswith('article_')]
         task['images'] = images
         log.append(f'✅ 已缓存 {len(images)} 张')
+        imgs = [i for i in images if not i.endswith('.mp4')]
+        # 没有视频时也要把图片落库，否则详情页刷新后看不到
+        if imgs:
+            update_news(key, {'gallery_images': imgs})
         # Save video to DB if any
         vids = [str(d / f) for f in sorted(os.listdir(d))
                 if f.endswith('.mp4') and not f.startswith('.')]
         if vids:
-            update_news(key, {'gallery_video': vids[0],
-                              'gallery_images': [i for i in images if not i.endswith('.mp4')]})
+            update_news(key, {'gallery_video': vids[0], 'gallery_images': imgs})
         task['log'] = '\n'.join(log)
 
     except Exception as e:
