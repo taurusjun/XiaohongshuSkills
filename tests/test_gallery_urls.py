@@ -66,3 +66,10 @@ def test_dailyshincho_photo_supported():
     from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
     assert "dailyshincho.jp" in GALLERY_SITES
     assert is_gallery_url("https://www.dailyshincho.jp/article/2026/11112200/?photo=2")
+
+
+def test_voisjp_news_supported():
+    """voisjp.me 图集页在 /news/<id>/<page>/，正文图是 img.size-full。"""
+    from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
+    assert "voisjp.me" in GALLERY_SITES
+    assert is_gallery_url("https://voisjp.me/news/322310/2/")
