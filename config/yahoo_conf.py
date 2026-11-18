@@ -43,10 +43,34 @@ NO_PROXY = os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or ""
 
 
 def get_proxies() -> dict:
-    """返回 requests 格式的代理字典，无代理时返回空字典。"""
+    """返回 requests 格式的代理字典；端口在 20808/20809 漂移时自动探活。"""
     if not PROXY_URL:
         return {}
-    return {"http": PROXY_URL, "https": PROXY_URL}
+    import socket, time
+    from urllib.parse import urlparse
+
+    now = time.time()
+    ts, cached = getattr(get_proxies, "_cache", (0.0, ""))
+    if cached and now - ts < 60:
+        return {"http": cached, "https": cached}
+
+    chosen = PROXY_URL
+    p = urlparse(PROXY_URL)
+    host, port = p.hostname, p.port
+    if host and port:
+        def alive(pt):
+            try:
+                with socket.create_connection((host, pt), timeout=0.3):
+                    return True
+            except OSError:
+                return False
+        if not alive(port):
+            for alt in (20808, 20809):
+                if alt != port and alive(alt):
+                    chosen = f"{p.scheme}://{host}:{alt}"
+                    break
+    get_proxies._cache = (now, chosen)
+    return {"http": chosen, "https": chosen}
 
 
 def get_socks_proxy() -> str:
