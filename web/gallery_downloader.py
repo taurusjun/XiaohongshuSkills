@@ -16,6 +16,7 @@ from unified_media_downloader import download_youtube as _dl_yt
 from unified_media_downloader import download_twitter as _dl_tw
 
 CACHE_DIR = Path(GALLERY_CACHE_DIR).expanduser()
+MIN_GALLERY_SIDE = 600
 
 
 def _sniff_ext(data: bytes, url: str = "") -> str:
@@ -184,6 +185,16 @@ def _download(key: str, gallery_url: str = ""):
 
         d = CACHE_DIR / key
         d.mkdir(parents=True, exist_ok=True)
+        # 清掉上次残留的图片/半成品，避免旧缩略图混进本次结果
+        for _f in d.iterdir():
+            if not _f.is_file() or _f.name == 'meta.json':
+                continue
+            if _f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp', '.gif') or \
+                    _f.name.endswith(('.part', '.ytdl')):
+                try:
+                    _f.unlink()
+                except Exception:
+                    pass
 
         # Instagram
         if 'instagram.com/p/' in gallery_url or 'instagram.com/reel/' in gallery_url:
@@ -275,6 +286,18 @@ def _download(key: str, gallery_url: str = ""):
                 try:
                     _proxies = _proxies_all if ("twimg.com" in url and _proxies_all) else None
                     resp = __import__('requests').get(url, headers=dl_headers, timeout=30, proxies=_proxies)
+                    # 小图（缩略图/图标）直接跳过
+                    try:
+                        from PIL import Image as _Image
+                        import io as _io
+                        with _Image.open(_io.BytesIO(resp.content)) as _im:
+                            _w, _h = _im.size
+                        if max(_w, _h) < MIN_GALLERY_SIDE:
+                            log.append(f'    ⏭ 跳过小图 {url.rsplit("/", 1)[-1]} ({_w}x{_h})')
+                            task['log'] = '\n'.join(log)
+                            continue
+                    except Exception:
+                        pass
                     # 按内容定扩展名，别信 URL 后缀（站点常在 .jpg 上返回 WebP）
                     fname = f'{i+1+_ig_files:03d}.{_sniff_ext(resp.content, url)}'
                     (d / fname).write_bytes(resp.content)
