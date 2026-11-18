@@ -96,8 +96,12 @@ def get_proxies() -> dict:
     if host and port:
         def alive(pt):
             try:
-                with socket.create_connection((host, pt), timeout=0.3):
-                    return True
+                s = socket.create_connection((host, pt), timeout=0.6)
+                s.settimeout(0.6)
+                s.sendall(b"CONNECT www.google.com:443 HTTP/1.1\r\nHost: www.google.com:443\r\n\r\n")
+                data = s.recv(64)
+                s.close()
+                return data.startswith(b"HTTP/1.1 200") or data.startswith(b"HTTP/1.0 200")
             except OSError:
                 return False
         if not alive(port):
