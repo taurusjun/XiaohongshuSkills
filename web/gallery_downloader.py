@@ -290,7 +290,7 @@ def _download(key: str, gallery_url: str = ""):
                     log.append(f'  ✓ {f}')
                 task['log'] = '\n'.join(log)
             if video_urls:
-                log.append(f'🎬 找到 {len(video_urls)} 个推特视频')
+                log.append(f'🎬 找到 {len(video_urls)} 个推特媒体')
             if image_urls:
                 log.append(f'📷 抓到 {len(image_urls)} 张图片')
             task['log'] = '\n'.join(log)
