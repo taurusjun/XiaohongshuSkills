@@ -76,6 +76,7 @@ GALLERY_SITES: dict[str, str] = {
     "bookbang.jp":          "article",
     "dailyshincho.jp":      ".p-gallery__thumbnail img",
     "voisjp.me":            "img.size-full",
+    "joshi-spa.jp":          "img.attachment-manga",
     "maquia.hpplus.jp":     ".article-block-gallery-image img, .article-block-photo img",
     "thetv.jp":             ".newsimage",
     "efight.jp":            ".attachment img, article img",
@@ -124,6 +125,7 @@ GALLERY_NO_HINT_SITES = {"limo.media", "mezamashi.media", "smart-flash.jp",
                          "chunichi.co.jp", "mantan-web.jp", "inside-games.jp",
                          "efight.jp", "thetv.jp", "maidonanews.jp", "encount.press",
                          "nishispo.nishinippon.co.jp",
+                         "joshi-spa.jp",
                          "iza.ne.jp", "thefirsttimes.jp", "kstyle.com",
                          "realsound.jp", "lasisa.net",
                          "yorozoonews.jp", "nikkan-spa.jp", "animeanime.jp",
@@ -474,6 +476,37 @@ def _scrape_voisjp(gallery_url: str) -> list[str]:
         if len(out) >= MAX_IMAGES:
             break
     return out
+
+
+def _scrape_joshispa(gallery_url: str) -> list[str]:
+    """joshi-spa.jp 漫画文章：正文只有一张 img.attachment-manga，取 srcset 最大的原图。"""
+    headers = {**HEADERS, "Referer": "https://joshi-spa.jp/"}
+    try:
+        r = requests.get(gallery_url, headers=headers, proxies=_get_proxies(), timeout=15)
+        if r.status_code != 200:
+            return []
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ joshi-spa 请求失败: {e}")
+        return []
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    img = soup.select_one("img.attachment-manga")
+    if not img:
+        return []
+    best, best_w = "", 0
+    for part in (img.get("srcset") or "").split(","):
+        toks = part.strip().split()
+        if len(toks) >= 2:
+            try:
+                w = int(toks[1].rstrip("w"))
+            except ValueError:
+                w = 0
+            if w > best_w:
+                best_w, best = w, toks[0]
+    src = (best or img.get("data-src") or img.get("src") or "").strip()
+    if src.startswith("//"):
+        src = "https:" + src
+    return [src] if src.startswith("http") else []
 
 
 def _scrape_oricon(gallery_url: str) -> list[str]:
@@ -3301,6 +3334,10 @@ def scrape_gallery_images(gallery_url: str) -> list[str]:
         return images
     if "voisjp.me" in domain:
         images = _scrape_voisjp(gallery_url)
+        print(f"  📷 抓到 {len(images)} 张图片")
+        return images
+    if "joshi-spa.jp" in domain:
+        images = _scrape_joshispa(gallery_url)
         print(f"  📷 抓到 {len(images)} 张图片")
         return images
     if "oricon.co.jp" in domain:
