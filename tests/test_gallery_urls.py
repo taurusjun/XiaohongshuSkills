@@ -73,3 +73,10 @@ def test_voisjp_news_supported():
     from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
     assert "voisjp.me" in GALLERY_SITES
     assert is_gallery_url("https://voisjp.me/news/322310/2/")
+
+
+def test_joshispa_supported():
+    """joshi-spa.jp 漫画文章：正文只有 img.attachment-manga，srcset 最大是原图。"""
+    from scripts.gallery_fetch import GALLERY_SITES, is_gallery_url
+    assert "joshi-spa.jp" in GALLERY_SITES
+    assert is_gallery_url("https://joshi-spa.jp/1437723/ubulove20261112")
