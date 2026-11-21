@@ -200,7 +200,7 @@ def _download(key: str, gallery_url: str = ""):
         d.mkdir(parents=True, exist_ok=True)
         # 清掉上次残留的图片/半成品，避免旧缩略图混进本次结果
         for _f in d.iterdir():
-            if not _f.is_file() or _f.name == 'meta.json':
+            if not _f.is_file() or _f.name == 'meta.json' or _f.name.startswith('cover.'):
                 continue
             if _f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp', '.gif') or \
                     _f.name.endswith(('.part', '.ytdl')):
