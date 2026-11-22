@@ -23,9 +23,9 @@
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>
-		<integer>21</integer>
+		<integer>4</integer>
 		<key>Minute</key>
-		<integer>30</integer>
+		<integer>0</integer>
 	</dict>
 	<key>WorkingDirectory</key>
 	<string>/Users/user/PG/xhs-docker-src</string>
