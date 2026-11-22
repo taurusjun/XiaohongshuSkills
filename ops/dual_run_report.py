@@ -75,6 +75,21 @@ def drafts(db, date, keys=None):
             for r in cur}
 
 
+def drafts_window(db, date, start="23:00", end="02:00"):
+    """生产写稿窗口：date 23:00 → date+1 02:00（生产无 manifest）。"""
+    if db is None:
+        return {}
+    end_date = (dt.date.fromisoformat(date) + dt.timedelta(days=1)).isoformat()
+    cols = ("SELECT key, COALESCE(rewritten_title,''), COALESCE(rewritten_content,''), "
+            "COALESCE(content_ja,''), COALESCE(format,''), COALESCE(publish_mode,'') FROM news ")
+    cur = db.execute(
+        cols + "WHERE COALESCE(rewritten_content,'') <> '' "
+        "AND updated_at >= ? AND updated_at < ?",
+        (f"{date} {start}:00", f"{end_date} {end}:00"))
+    return {r[0]: {"title": r[1], "body": r[2], "ja": r[3], "fmt": r[4], "mode": r[5]}
+            for r in cur}
+
+
 def candidates(db, date):
     if db is None:
         return 0
@@ -136,7 +151,7 @@ def report(date, container_batch_date=None):
     prod = connect(PROD_DB)
     cont = connect(CONT_DB)
     ckeys = batch_keys(container_batch_date or date)
-    pd, cd = drafts(prod, date), drafts(cont, date, ckeys)
+    pd, cd = drafts_window(prod, date), drafts(cont, date, ckeys)
     pset, cset = set(pd), set(cd)
     both = pset & cset
 
@@ -153,7 +168,7 @@ def report(date, container_batch_date=None):
               f"| 仅容器写 | — | {len(cset - pset)} |",
               "",
               f"> 容器口径 = `write_batches/{container_batch_date or date}.json`（实际处理清单）；"
-              "生产无 manifest，按 `updated_at` 统计，会含 related_keys 更新。",
+              "生产按写稿窗口（23:00–次日 02:00）统计。",
               ""]
 
     # 标题
