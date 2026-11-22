@@ -132,15 +132,17 @@ def fmt_pct(a, b):
     return f"{a}/{b} ({a / b * 100:.0f}%)" if b else f"{a}/0"
 
 
-def report(date):
+def report(date, container_batch_date=None):
     prod = connect(PROD_DB)
     cont = connect(CONT_DB)
-    ckeys = batch_keys(date)
+    ckeys = batch_keys(container_batch_date or date)
     pd, cd = drafts(prod, date), drafts(cont, date, ckeys)
     pset, cset = set(pd), set(cd)
     both = pset & cset
 
     lines = [f"# 双跑日报 {date}", ""]
+    if container_batch_date and container_batch_date != date:
+        lines += [f"> 容器批次日期：{container_batch_date}（跨午夜）", ""]
     lines += ["## 覆盖", "",
               "| 指标 | 生产 | 容器 |",
               "|---|---|---|",
@@ -150,7 +152,7 @@ def report(date):
               f"| 仅生产写 | {len(pset - cset)} | — |",
               f"| 仅容器写 | — | {len(cset - pset)} |",
               "",
-              "> 容器口径 = `write_batches/<date>.json`（实际处理清单）；"
+              f"> 容器口径 = `write_batches/{container_batch_date or date}.json`（实际处理清单）；"
               "生产无 manifest，按 `updated_at` 统计，会含 related_keys 更新。",
               ""]
 
@@ -264,6 +266,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=None)
     ap.add_argument("--days", type=int, default=0)
+    ap.add_argument("--container-next-day", action="store_true",
+                    help="容器写稿跨过午夜：batch 读 date+1 的 manifest")
     ap.add_argument("--out-dir", default=OUT_DIR)
     a = ap.parse_args(argv)
 
@@ -272,7 +276,8 @@ def main(argv=None):
         out = Path(a.out_dir) / f"trend-{dt.date.today().isoformat()}.md"
     else:
         date = a.date or (dt.date.today() - dt.timedelta(days=1)).isoformat()
-        text = report(date)
+        cdate = (dt.date.fromisoformat(date) + dt.timedelta(days=1)).isoformat() if a.container_next_day else date
+        text = report(date, cdate)
         out = Path(a.out_dir) / f"{date}.md"
 
     out.parent.mkdir(parents=True, exist_ok=True)
